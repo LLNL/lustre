@@ -180,7 +180,7 @@ if [ -f $RPM_BUILD_DIR/lustre-%{version}/lustre/include/linux/lustre_types.h ] ;
   echo '%attr(-, root, root) /usr/include/linux/lustre_types.h' >>lustre.files
 fi
 
-echo '%attr(-, root, root) %{_libdir}/lustre/tests/*' >lustre-tests.files
+# echo '%attr(-, root, root) %{_libdir}/lustre/tests/*' >lustre-tests.files
 echo '%attr(-, root, root) /lib/modules/%{kversion}/kernel/fs/lustre/llog_test.*' >>lustre-tests.files
 modules_excludes="llog_test"
 if [ -d $RPM_BUILD_ROOT%{_libdir}/lustre/liblustre/tests ] ; then
