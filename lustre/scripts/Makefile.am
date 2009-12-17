@@ -40,15 +40,14 @@ sbinscripts = lc_servip lustre_up14 lustre_rmmod
 genscripts = lustre_config lc_modprobe lc_net lc_hb lc_cluman lustre_createcsv \
     lc_md lc_lvm lustre_start
 
-sbin_SCRIPTS = $(genscripts) $(sbinscripts)
-bin_SCRIPTS = lustre_req_history
+noinst_SCRIPTS = $(genscripts) $(sbinscripts) lustre_req_history
 
 EXTRA_DIST = license-status maketags.sh version_tag.pl lc_common \
 	     $(addsuffix .in,$(genscripts)) lc_mon $(sbinscripts) \
 	     $(bin_SCRIPTS) tree_status.pl
 
 scriptlibdir = @libexecdir@/@PACKAGE@
-scriptlib_DATA = lc_common
+noinst_DATA = lc_common
 
 CLEANFILES = $(genscripts)
 
