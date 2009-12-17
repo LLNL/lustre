@@ -114,15 +114,6 @@ done
 check_version automake automake-$AMVER "1.7.8"
 check_version autoconf autoconf "2.57"
 
-echo "Running aclocal-$AMVER $ACLOCAL_FLAGS..."
-aclocal-$AMVER $ACLOCAL_FLAGS || exit 1
-echo "Running autoheader..."
-autoheader || exit 1
-echo "Running automake-$AMVER..."
-automake-$AMVER -a -c $AMOPT || exit 1
-echo "Running autoconf..."
-autoconf || exit 1
-
 # Run autogen.sh in these directories
 for dir in $CONFIGURE_DIRS; do
     if [ -d $dir ] ; then
@@ -132,3 +123,12 @@ for dir in $CONFIGURE_DIRS; do
         popd >/dev/null
     fi
 done
+
+echo "Running aclocal-$AMVER $ACLOCAL_FLAGS..."
+aclocal-$AMVER $ACLOCAL_FLAGS || exit 1
+echo "Running autoheader..."
+autoheader || exit 1
+echo "Running automake-$AMVER..."
+automake-$AMVER -a -c $AMOPT || exit 1
+echo "Running autoconf..."
+autoconf || exit 1
