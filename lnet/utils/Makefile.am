@@ -46,7 +46,8 @@ libuptlctl_a_SOURCES = portals.c nidstrings.c debug.c l_ioctl.c
 libuptlctl_a_CPPFLAGS = $(LLCPPFLAGS)
 libuptlctl_a_CFLAGS = $(LLCFLAGS) -DLUSTRE_UTILS=1
 
-sbin_PROGRAMS = debugctl
+noinst_PROGRAMS = debugctl
+sbin_PROGRAMS =
 
 lib_LIBRARIES = libptlctl.a
 
@@ -58,7 +59,8 @@ endif
 libptlctl_a_SOURCES = portals.c nidstrings.c debug.c l_ioctl.c parser.c parser.h
 
 if UTILS
-sbin_PROGRAMS += ptlctl routerstat wirecheck lst
+noinst_PROGRAMS += ptlctl wirecheck
+sbin_PROGRAMS += routerstat lst
 if LIBLUSTRE
 sbin_PROGRAMS += lstclient
 endif
