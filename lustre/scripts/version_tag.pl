@@ -126,7 +126,8 @@ sub get_latest_mtime()
     } else {
         my $tree_status = new IO::File;
         if (!$tree_status->open("tree_status")) {
-            die "unable to open the tree_status file: $!\n";
+            $last_mtime = time();
+            return $last_mtime;
         }
         my $line;
         while (defined($line = <$tree_status>)) {
