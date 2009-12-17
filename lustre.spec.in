@@ -140,8 +140,6 @@ cat >lustre.files <<EOF
 %attr(-, root, root) /usr/sbin/*
 %attr(-, root, root) /usr/bin/*
 
-%attr(-, root, root) /usr/share/lustre
-
 %attr(-, root, root) %{_libdir}/libptlctl.a
 %attr(-, root, root) %{_libdir}/liblustreapi.a
 %attr(-, root, root) /usr/include/lustre
@@ -150,6 +148,10 @@ cat >lustre.files <<EOF
 
 %attr(-, root, root) %{_libexecdir}/lustre/lc_common
 EOF
+
+if [ -f $RPM_BUILD_ROOT/usr/share/lustre ]; then
+  echo '%attr(-, root, root) /usr/share/lustre' >>lustre.files
+fi
 
 if [ -f $RPM_BUILD_ROOT%{_libdir}/libcfsutil.a ] ; then
   echo '%attr(-, root, root) %{_libdir}/libcfsutil.a' >>lustre.files
