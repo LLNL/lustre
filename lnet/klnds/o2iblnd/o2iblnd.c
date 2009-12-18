@@ -65,45 +65,6 @@ kiblnd_cksum (void *ptr, int nob)
         return (sum == 0) ? 1 : sum;
 }
 
-static char *
-kiblnd_msgtype2str(int type)
-{
-        switch (type) {
-        case IBLND_MSG_CONNREQ:
-                return "CONNREQ";
-
-        case IBLND_MSG_CONNACK:
-                return "CONNACK";
-
-        case IBLND_MSG_NOOP:
-                return "NOOP";
-
-        case IBLND_MSG_IMMEDIATE:
-                return "IMMEDIATE";
-
-        case IBLND_MSG_PUT_REQ:
-                return "PUT_REQ";
-
-        case IBLND_MSG_PUT_NAK:
-                return "PUT_NAK";
-
-        case IBLND_MSG_PUT_ACK:
-                return "PUT_ACK";
-
-        case IBLND_MSG_PUT_DONE:
-                return "PUT_DONE";
-
-        case IBLND_MSG_GET_REQ:
-                return "GET_REQ";
-
-        case IBLND_MSG_GET_DONE:
-                return "GET_DONE";
-
-        default:
-                return "???";
-        }
-}
-
 static int
 kiblnd_msgtype2size(int type)
 {
@@ -592,12 +553,70 @@ void
 kiblnd_debug_tx (kib_tx_t *tx)
 {
         CDEBUG(D_CONSOLE, "      %p snd %d q %d w %d rc %d dl %lx "
-               "cookie "LPX64" msg %s%s type %x cred %d\n",
+               "cookie "LPX64" msg %s%s type %x cred %d aqt %lx\n",
                tx, tx->tx_sending, tx->tx_queued, tx->tx_waiting,
                tx->tx_status, tx->tx_deadline, tx->tx_cookie,
                tx->tx_lntmsg[0] == NULL ? "-" : "!",
                tx->tx_lntmsg[1] == NULL ? "-" : "!",
-               tx->tx_msg->ibm_type, tx->tx_msg->ibm_credits);
+               tx->tx_msg->ibm_type, tx->tx_msg->ibm_credits,
+               tx->tx_active_q_time);
+}
+
+/* Caller must be holding the reference on conn to prevent the qp from
+   being destroyed while we are using it. */
+void
+kiblnd_debug_ib_qp(kib_conn_t *conn)
+{
+        struct ib_qp_attr attr;
+        int qp_attr_mask = ~0;
+        struct ib_qp_init_attr qp_init_attr;
+
+        if (conn->ibc_cmid == NULL || conn->ibc_cmid->qp == NULL)
+                return;
+
+        ib_query_qp(conn->ibc_cmid->qp, &attr, qp_attr_mask, &qp_init_attr);
+
+        CDEBUG(D_CONSOLE, "   ib_qp: qp_state %d cur_qp_state %d mtu %d mig_state %d\n",
+               attr.qp_state, attr.cur_qp_state, attr.path_mtu,
+               attr.path_mig_state);
+        CDEBUG(D_CONSOLE, "   ib_qp: qkey %u rq_psn %u sq_psn %u dest_qp_num %u\n",
+               attr.qkey, attr.rq_psn, attr.sq_psn, attr.dest_qp_num);
+        CDEBUG(D_CONSOLE, "   ib_qp: qkey %u rq_psn %u sq_psn %u dest_qp_num %u\n",
+               attr.qkey, attr.rq_psn, attr.sq_psn, attr.dest_qp_num);
+        CDEBUG(D_CONSOLE, "   ib_qp_cap: swr %u rwr %u ssge %u rsge %u inline %u\n",
+               attr.cap.max_send_wr, attr.cap.max_recv_wr,
+               attr.cap.max_send_sge, attr.cap.max_recv_sge,
+               attr.cap.max_inline_data);
+        CDEBUG(D_CONSOLE, "   ib_ah_attr     : dlid %hu sl %hu s_p_bits %hx rate %hu flags %hu port %hu\n",
+               attr.ah_attr.dlid,
+               (u16)attr.ah_attr.sl,
+               (u16)attr.ah_attr.src_path_bits,
+               (u16)attr.ah_attr.static_rate,
+               (u16)attr.ah_attr.ah_flags,
+               (u16)attr.ah_attr.port_num);
+        CDEBUG(D_CONSOLE, "   ib_ah_attr(alt): dlid %hu sl %hu s_p_bits %hx rate %hu flags %hu port %hu\n",
+               attr.alt_ah_attr.dlid,
+               (u16)attr.alt_ah_attr.sl,
+               (u16)attr.alt_ah_attr.src_path_bits,
+               (u16)attr.alt_ah_attr.static_rate,
+               (u16)attr.alt_ah_attr.ah_flags,
+               (u16)attr.alt_ah_attr.port_num);
+        CDEBUG(D_CONSOLE, "   ib_qp: pkey %hu alt_pkey %hu en %hu sq %hu\n",
+               attr.pkey_index,
+               attr.alt_pkey_index,
+               (u16)attr.en_sqd_async_notify,
+               (u16)attr.sq_draining);
+        CDEBUG(D_CONSOLE, "   ib_qp: max_rd %hu max_dest %hu min_rnr %hu port %hu\n",
+               (u16)attr.max_rd_atomic,
+               (u16)attr.max_dest_rd_atomic,
+               (u16)attr.min_rnr_timer,
+               (u16)attr.port_num);
+        CDEBUG(D_CONSOLE, "   ib_qp: timeout %hu retry %hu rnr_re %hu alt_port %hu alt_timeout %hu\n",
+               (u16)attr.timeout,
+               (u16)attr.retry_cnt,
+               (u16)attr.rnr_retry,
+               (u16)attr.alt_port_num,
+               (u16)attr.alt_timeout);
 }
 
 void
@@ -615,7 +634,9 @@ kiblnd_debug_conn (kib_conn_t *conn)
                conn->ibc_state, conn->ibc_noops_posted,
                conn->ibc_nsends_posted, conn->ibc_credits,
                conn->ibc_outstanding_credits, conn->ibc_reserved_credits);
-        CDEBUG(D_CONSOLE, "   comms_err %d\n", conn->ibc_comms_error);
+        CDEBUG(D_CONSOLE, "   ready %d scheduled %d comms_err %d last_send %lx\n",
+               conn->ibc_ready, conn->ibc_scheduled, conn->ibc_comms_error,
+               conn->ibc_last_send);
 
         CDEBUG(D_CONSOLE, "   early_rxs:\n");
         list_for_each(tmp, &conn->ibc_early_rxs)
@@ -2378,6 +2399,9 @@ kiblnd_base_startup (void)
         INIT_LIST_HEAD(&kiblnd_data.kib_sched_conns);
         init_waitqueue_head(&kiblnd_data.kib_sched_waitq);
 
+        for (i = 0; i < KH_LAST; i++)
+                spin_lock_init(&kiblnd_data.kib_hist[i].kh_lock);
+
         kiblnd_data.kib_error_qpa.qp_state = IB_QPS_ERR;
 
         /* lists/ptrs/locks initialised */
@@ -2575,6 +2599,7 @@ void __exit
 kiblnd_module_fini (void)
 {
         lnet_unregister_lnd(&the_o2iblnd);
+        kiblnd_proc_fini();
         kiblnd_tunables_fini();
 }
 
@@ -2590,6 +2615,10 @@ kiblnd_module_init (void)
                   <= IBLND_MSG_SIZE);
 
         rc = kiblnd_tunables_init();
+        if (rc != 0)
+                return rc;
+
+        rc = kiblnd_proc_init();
         if (rc != 0)
                 return rc;
 
