@@ -23,6 +23,8 @@
 
 SERVICE=${0##*/}
 
+[ -d /var/dumps ] || mkdir -p -m 755 /var/dumps
+
 : ${LUSTRE_CFG:=/etc/lustre/lustre.cfg}
 [ -f ${LUSTRE_CFG} ] && . ${LUSTRE_CFG}
 [ -f /etc/sysconfig/lustre ] && . /etc/sysconfig/lustre
