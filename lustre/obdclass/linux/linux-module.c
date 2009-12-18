@@ -229,7 +229,7 @@ static struct file_operations obd_psdev_fops = {
 /* modules setup */
 cfs_psdev_t obd_psdev = {
         .minor = OBD_MINOR,
-        .name  = "obd_psdev",
+        .name  = "obd",
         .fops  = &obd_psdev_fops,
 };
 
