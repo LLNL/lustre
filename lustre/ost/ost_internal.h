@@ -37,7 +37,7 @@
 #ifndef OST_INTERNAL_H
 #define OST_INTERNAL_H
 
-#define OSS_SERVICE_WATCHDOG_FACTOR 2
+#define OSS_SERVICE_WATCHDOG_FACTOR 6
 
 /*
  * tunables for per-thread page pool (bug 5137)
