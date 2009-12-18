@@ -41,7 +41,7 @@ static int peer_timeout = 180;
 CFS_MODULE_PARM(peer_timeout, "i", int, 0444,
                 "Seconds without aliveness news to declare peer dead (<=0 to disable)");
 
-static int nconnds = 4;
+static int nconnds = 8;
 CFS_MODULE_PARM(nconnds, "i", int, 0444,
                 "# connection daemons");
 
