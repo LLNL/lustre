@@ -407,6 +407,12 @@ struct ll_sb_info {
         unsigned long long        ll_sa_cached;  /* ls count got in cache */
         unsigned long long        ll_sa_hit;     /* hit count */
         unsigned long long        ll_sa_miss;    /* miss count */
+
+        /* avoid redundant statfs */
+        cfs_waitq_t               ll_statfs_waitq;
+        spinlock_t                ll_statfs_lock;
+        int                       ll_statfs_in_progress;
+        int                       ll_statfs_rc;
 };
 
 #define LL_DEFAULT_MAX_RW_CHUNK      (32 * 1024 * 1024)
