@@ -123,7 +123,7 @@ char debug_file_path_arr[1024] = "/bgl/ion/tmp/lustre-log";
 #elif defined(__arch_um__)
 char debug_file_path_arr[1024] = "/r/tmp/lustre-log";
 #else
-char debug_file_path_arr[1024] = "/tmp/lustre-log";
+char debug_file_path_arr[1024] = "/var/dumps/lustre-log";
 #endif
 /* We need to pass a pointer here, but elsewhere this must be a const */
 char *debug_file_path = &debug_file_path_arr[0];
