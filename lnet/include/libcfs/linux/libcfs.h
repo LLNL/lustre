@@ -137,8 +137,9 @@ struct ptldebug_header {
 #endif
 
 #define LUSTRE_TRACE_SIZE (THREAD_SIZE >> 5)
+#define LUSTRE_RED_ZONE   64
 
-#if defined(__KERNEL__) && !defined(__x86_64__)
+#ifdef __KERNEL__
 # ifdef  __ia64__
 #  define CDEBUG_STACK() (THREAD_SIZE -                                 \
                           ((unsigned long)__builtin_dwarf_cfa() &       \
@@ -153,12 +154,16 @@ struct ptldebug_header {
 do {                                                                    \
         unsigned long _stack = CDEBUG_STACK();                          \
                                                                         \
-        if (_stack > 3*THREAD_SIZE/4 && _stack > libcfs_stack) {        \
+        if (_stack > 7 * THREAD_SIZE / 8 && _stack > libcfs_stack) {    \
                 libcfs_stack = _stack;                                  \
                 libcfs_debug_msg(NULL, DEBUG_SUBSYSTEM, D_WARNING,      \
                                  file, func, line,                      \
-                                 "maximum lustre stack %lu\n", _stack); \
-              /*panic("LBUG");*/                                        \
+                                 "lustre stack usage %lu/%lu\n",        \
+                                 _stack, (unsigned long)THREAD_SIZE);   \
+                if (_stack > THREAD_SIZE - LUSTRE_RED_ZONE) {           \
+                        dump_stack();                                   \
+                        panic("LBUG: Lustre Stack Red Zone");           \
+                }                                                       \
         }                                                               \
 } while (0)
 #define CHECK_STACK()     __CHECK_STACK(__FILE__, __func__, __LINE__)
