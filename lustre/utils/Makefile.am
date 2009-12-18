@@ -6,7 +6,7 @@ AM_LDFLAGS := -L$(top_builddir)/lnet/utils
 
 LIBPTLCTL := $(top_builddir)/lnet/utils/libptlctl.a
 
-sbin_scripts =
+sbin_scripts = lflush
 noinst_scripts = lrun
 bin_scripts = llstat llobdstat plot-llstat
 
