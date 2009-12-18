@@ -1506,9 +1506,10 @@ int mds_handle(struct ptlrpc_request *req)
                 int recovering;
 
                 if (!class_connected_export(req->rq_export)) {
-                        CERROR("operation %d on unconnected MDS from %s\n",
+                        CDEBUG(D_HA,"operation %d on unconnected MDS from %s\n",
                                lustre_msg_get_opc(req->rq_reqmsg),
                                libcfs_id2str(req->rq_peer));
+
                         req->rq_status = -ENOTCONN;
                         GOTO(out, rc = -ENOTCONN);
                 }
@@ -2061,18 +2062,18 @@ static int mds_setup(struct obd_device *obd, obd_count len, void *buf)
 
         label = fsfilt_get_label(obd, obd->u.obt.obt_sb);
         if (obd->obd_recovering) {
-                LCONSOLE_WARN("MDT %s now serving %s (%s%s%s), but will be in "
+                LCONSOLE_WARN("%s: Now serving %s (%s%s%s), but will be in "
                               "recovery for at least %d:%.02d, or until %d "
                               "client%s reconnect%s. \n",
                               obd->obd_name, lustre_cfg_string(lcfg, 1),
-                              label ?: "", label ? "/" : "", str,
+                              label ? : "", label ? "/" : "", str,
                               obd->obd_recovery_timeout / 60,
                               obd->obd_recovery_timeout % 60,
                               obd->obd_recoverable_clients,
                               (obd->obd_recoverable_clients == 1) ? "":"s",
                               (obd->obd_recoverable_clients == 1) ? "s":"");
         } else {
-                LCONSOLE_INFO("MDT %s now serving %s (%s%s%s) with recovery "
+                LCONSOLE_INFO("%s: now serving %s (%s%s%s) with recovery "
                               "%s\n", obd->obd_name, lustre_cfg_string(lcfg, 1),
                               label ?: "", label ? "/" : "", str,
                               obd->obd_replayable ? "enabled" : "disabled");

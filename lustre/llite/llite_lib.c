@@ -188,6 +188,7 @@ static struct ll_sb_info *ll_init_sbi(void)
         list_add_tail(&sbi->ll_list, &ll_super_blocks);
         up_write(&ll_sb_sem);
 
+        sbi->ll_flags |= LL_SBI_VERBOSE;
 #ifdef ENABLE_CHECKSUM
         sbi->ll_flags |= LL_SBI_DATA_CHECKSUM;
 #endif
@@ -887,6 +888,16 @@ static int ll_options(char *options, int *flags)
                         *flags &= ~tmp;
                         goto next;
                 }
+                tmp = ll_set_opt("verbose", s1, LL_SBI_VERBOSE);
+                if (tmp) {
+                        *flags |= tmp;
+                        goto next;
+                }
+                tmp = ll_set_opt("noverbose", s1, LL_SBI_VERBOSE);
+                if (tmp) {
+                        *flags &= ~tmp;
+                        goto next;
+                }
                 LCONSOLE_ERROR_MSG(0x152, "Unknown option '%s', won't mount.\n",
                                    s1);
                 RETURN(-EINVAL);
@@ -1235,8 +1246,8 @@ out_free:
                 OBD_FREE(osc, strlen(osc) + 1);
         if (err)
                 ll_put_super(sb);
-        else
-                LCONSOLE_WARN("Client %s has started\n", profilenm);
+        else if (sbi->ll_flags & LL_SBI_VERBOSE)
+                LCONSOLE_WARN("Mounted %s\n", profilenm);
 
         RETURN(err);
 } /* ll_fill_super */
@@ -1285,6 +1296,9 @@ void ll_put_super(struct super_block *sb)
                 class_manual_cleanup(obd);
         }
 
+        if (sbi->ll_flags & LL_SBI_VERBOSE)
+                LCONSOLE_WARN("Unmounted %s\n", profilenm ? profilenm : "");
+
         if (profilenm)
                 class_del_profile(profilenm);
 
@@ -1292,8 +1306,6 @@ void ll_put_super(struct super_block *sb)
         lsi->lsi_llsbi = NULL;
 
         lustre_common_put_super(sb);
-
-        LCONSOLE_WARN("client %s umount complete\n", ll_instance);
 
         cfs_module_put();
 
@@ -2283,6 +2295,7 @@ void ll_umount_begin(struct super_block *sb)
 int ll_remount_fs(struct super_block *sb, int *flags, char *data)
 {
         struct ll_sb_info *sbi = ll_s2sbi(sb);
+        char *profilenm = get_profile_name(sb);
         int err;
         __u32 read_only;
 
@@ -2303,8 +2316,10 @@ int ll_remount_fs(struct super_block *sb, int *flags, char *data)
                 }
 
                 if (err) {
-                        CERROR("Failed to change the read-only flag during "
-                               "remount: %d\n", err);
+                        if (sbi->ll_flags & LL_SBI_VERBOSE)
+                                LCONSOLE_WARN("Failed to remount %s %s (%d)\n",
+                                              profilenm, read_only ?
+                                              "read-only" : "read-write", err);
                         return err;
                 }
 
@@ -2312,6 +2327,10 @@ int ll_remount_fs(struct super_block *sb, int *flags, char *data)
                         sb->s_flags |= MS_RDONLY;
                 else
                         sb->s_flags &= ~MS_RDONLY;
+
+                if (sbi->ll_flags & LL_SBI_VERBOSE)
+                        LCONSOLE_WARN("Remounted %s %s\n", profilenm,
+                                      read_only ?  "read-only" : "read-write");
         }
         return 0;
 }
