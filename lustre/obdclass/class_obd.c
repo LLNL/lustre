@@ -95,13 +95,13 @@ EXPORT_SYMBOL(obd_timeout_set);
 unsigned int ldlm_timeout_set;
 EXPORT_SYMBOL(ldlm_timeout_set);
 /* Adaptive timeout defs here instead of ptlrpc module for /proc/sys/ access */
-unsigned int at_min = 0;
+unsigned int at_min = 15;
 EXPORT_SYMBOL(at_min);
 unsigned int at_max = 600;
 EXPORT_SYMBOL(at_max);
 unsigned int at_history = 600;
 EXPORT_SYMBOL(at_history);
-int at_early_margin = 5;
+int at_early_margin = 10;
 EXPORT_SYMBOL(at_early_margin);
 int at_extra = 30;
 EXPORT_SYMBOL(at_extra);
