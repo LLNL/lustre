@@ -1,0 +1,43 @@
+.TH LFLUSH 8 Lustre LLNL LFLUSH
+.SH NAME
+lflush \- revoke all client locks
+.SH SYNOPSIS
+.B "lflush [-v]"
+.br
+.SH DESCRIPTION
+.B lflush
+synchronously revokes all Lustre MDC, OSC, and MGC locks on the local client,
+returning them to the lock manager for reuse.  This causes all Lustre
+page cache pages to be flushed (if dirty) or discarded (if clean).
+If Lustre servers are unavailable,
+.B lflush
+will block until recovery is complete.
+.LP
+.B lflush
+can be called from a batch resource manager epilog script to ensure that the
+next job has all available memory.  In the case of slurm, the node will
+remain in COMPLETING state while the epilog script executes.
+.LP
+A server will be skipped if its lock_count, lock_unused_count, and
+resource_count proc files all contain zeros.
+.LP
+.B lflush
+must be run as root.
+.SH OPTIONS
+.B lflush
+accepts the following options:
+.TP
+.I "-v"
+causes
+.B lflush
+to list each server before it flushes the servers locks.
+.SH FILES
+/proc/fs/lustre/ldlm/namespaces/<server>/lru_size
+.br
+/proc/fs/lustre/ldlm/namespaces/<server>/lock_count
+.br
+/proc/fs/lustre/ldlm/namespaces/<server>/lock_unused_count
+.br
+/proc/fs/lustre/ldlm/namespaces/<server>/resource_count
+.SH AUTHOR
+Herb Wartens and Jim Garlick
