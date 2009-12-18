@@ -1,0 +1,84 @@
+#!/bin/bash
+#
+# Revoke all client locks, which should write all dirty Lustre
+# page cache pages and discard the clean ones.
+#
+# Based on flush-lustre-client-locks script by Herb Wartens.
+#
+
+declare -r nsdir=/proc/fs/lustre/ldlm/namespaces
+declare -r prog=lflush
+
+vopt=0
+retval=0
+
+die()
+{
+    echo "${prog}: $1" >&2
+    exit 1
+}
+
+warn()
+{
+    echo "${prog}: $1" >&2
+}
+
+lock_count()
+{
+    local server=$1
+    local nlock nulock nres
+
+    pushd ${nsdir} >/dev/null || die "could not chdir to ${nsdir}"
+        [ "${server}" = "*" ] && die "could not find any servers"
+        nlock=$(cat ${server}/lock_count 2>/dev/null)
+        nulock=$(cat ${server}/lock_unused_count 2>/dev/null)
+        nres=$(cat ${server}/resource_count 2>/dev/null)
+    popd >/dev/null
+
+    return $((${nlock:-0}+${nulock:-0}+${nres:-0}))
+}
+
+# Flush all locks for all servers
+flush_locks()
+{
+    local server count
+
+    pushd ${nsdir} >/dev/null || die "could not chdir to ${nsdir}"
+        for server in *; do
+            [ "${server}" = "*" ] && die "could not find any servers"
+            if ! lock_count ${server}; then
+                [ ${vopt} = 1 ] && warn "flushing ${server}"
+                if ! echo clear >${server}/lru_size; then
+                    warn "problem flushing ${server}"
+                    retval=1
+                fi
+            fi
+	done
+    popd >/dev/null
+}
+
+##
+## MAIN
+##
+
+[ $(id -u) = 0 ] || die "must run as root"
+
+if [ ! -d /proc/fs/lustre/ldlm/namespaces ]; then
+    warn "lustre client is not active - nothing to do"
+    exit 0
+fi
+
+while getopts "v" opt; do
+    case ${opt} in
+        v) vopt=1 ;;
+        *) die "Usage: ${prog} [-v]" ;;
+    esac
+done
+
+if [ -x /bin/sync ]; then
+    /bin/sync
+fi
+
+flush_locks
+
+exit ${retval}
