@@ -79,10 +79,10 @@ unsigned int obd_max_dirty_pages = 256;
 unsigned int obd_timeout = OBD_TIMEOUT_DEFAULT;   /* seconds */
 unsigned int ldlm_timeout = LDLM_TIMEOUT_DEFAULT; /* seconds */
 /* Adaptive timeout defs here instead of ptlrpc module for /proc/sys/ access */
-unsigned int at_min = 0;
+unsigned int at_min = 15;
 unsigned int at_max = 600;
 unsigned int at_history = 600;
-int at_early_margin = 5;
+int at_early_margin = 10;
 int at_extra = 30;
 
 cfs_atomic_t obd_dirty_pages;
