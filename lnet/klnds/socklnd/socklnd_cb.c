@@ -2237,13 +2237,24 @@ ksocknal_find_timed_out_conn (ksock_peer_t *peer)
                                      conn->ksnc_tx_deadline)) {
                         /* Timed out messages queued for sending or
                          * buffered in the socket's send buffer */
-                        ksocknal_conn_addref(conn);
-                        CNETERR("Timeout sending data to %s (%u.%u.%u.%u:%d) "
-                                "the network or that node may be down.\n",
-                                libcfs_id2str(peer->ksnp_id),
-                                HIPQUAD(conn->ksnc_ipaddr),
-                                conn->ksnc_port);
-                        return (conn);
+                        if (cfs_time_aftereq(cfs_time_current(),
+                                             cfs_time_add(peer->ksnp_last_alive,
+                                                          cfs_time_seconds(*ksocknal_tunables.ksnd_keepalive)))) {
+                                ksocknal_conn_addref(conn);
+                                CNETERR("Timeout sending data to %s "
+                                       "(%u.%u.%u.%u:%d) the network or that "
+                                       "node may be down.\n",
+                                       libcfs_id2str(peer->ksnp_id),
+                                       HIPQUAD(conn->ksnc_ipaddr),
+                                       conn->ksnc_port);
+                                return (conn);
+                        } else {
+                                CNETERR("DID NOT Timeout sending data to %s "
+                                       "(%u.%u.%u.%u:%d).\n",
+                                       libcfs_id2str(peer->ksnp_id),
+                                       HIPQUAD(conn->ksnc_ipaddr),
+                                       conn->ksnc_port);
+                        }
                 }
         }
 
