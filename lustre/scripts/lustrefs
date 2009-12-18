@@ -23,6 +23,8 @@
 # Short-Description: Mounts and unmounts all Lustre mount points.
 ### END INIT INFO
 
+[ -d /var/dumps ] || mkdir -p -m 755 /var/dumps
+
 # Source function library.
 if [ -f /etc/init.d/functions ]; then
    . /etc/init.d/functions
