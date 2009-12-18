@@ -1,0 +1,60 @@
+.TH ldev.conf 5 Lustre ldev.conf /etc/ldev.conf
+.SH NAME
+/etc/ldev.conf \- lustre device configuration file
+.SH DESCRIPTION
+The ldev.conf file contains a list of Lustre devices used by the
+\fBldev\fR utility.
+.SH FORMAT
+Comments beginning with a hash (#) are ignored.  Each line represents one
+device and includes the following information separated by white space:
+.TP
+.I "local hostname"
+The name of the host where the device normally runs.
+.TP
+.I "foreign hostname"
+The name of the host where the device runs when failed over.
+If failover is not used, insert a hypen as a placeholder.
+.TP
+.I "label"
+The Lustre label associated with the device in the form \fIfsname-SRVnnnn\fR
+where \fIfsname\fR is the file system name, \fISRV\fR is \fBOST\fR or
+\fBMDT\fR, and \fInnnn\fR is the four-digit hex index of the device.
+.TP
+.I "path"
+The path name of the device.  In failover configurations it should be available
+on both local and foreign hosts, e.g. use the symlinks maintained by udev
+in \fI/dev/disk/by-id\fR.
+.TP
+.I "journal-path"
+The path name of the journal device, if any.  This field may be omitted.
+.SH EXAMPLE
+.nf
+#local  foreign/-  label    device-path   [journal-path]
+tycho-mds1 -    lc1-MDT0000 /dev/sda      /dev/sdc
+tycho1  tycho5  lc1-OST0000 /dev/disk/by-id/scsi-10103a262891d340100
+tycho1  tycho5  lc1-OST0008 /dev/disk/by-id/scsi-10103a262681d340200
+tycho1  tycho5  lc1-OST0010 /dev/disk/by-id/scsi-10103a2629e1d340300
+tycho2  tycho6  lc1-OST0001 /dev/disk/by-id/scsi-10103a262b51d340400
+tycho2  tycho6  lc1-OST0009 /dev/disk/by-id/scsi-10103a262c81d340500
+tycho2  tycho6  lc1-OST0011 /dev/disk/by-id/scsi-10103a262e31d340600
+tycho3  tycho7  lc1-OST0002 /dev/disk/by-id/scsi-10103a263001d340700
+tycho3  tycho7  lc1-OST000a /dev/disk/by-id/scsi-10103a263231d340800
+tycho3  tycho7  lc1-OST0012 /dev/disk/by-id/scsi-10103a263831d340900
+tycho4  tycho8  lc1-OST0003 /dev/disk/by-id/scsi-10103a263a21d340a00
+tycho4  tycho8  lc1-OST000b /dev/disk/by-id/scsi-10103a263b71d340b00
+tycho4  tycho8  lc1-OST0013 /dev/disk/by-id/scsi-10103a263cb1d340c00
+tycho5  tycho1  lc1-OST0004 /dev/disk/by-id/scsi-101046e6b401d341100
+tycho5  tycho1  lc1-OST000c /dev/disk/by-id/scsi-101046e6b591d341200
+tycho5  tycho1  lc1-OST0014 /dev/disk/by-id/scsi-101046e6bb41d341300
+tycho6  tycho2  lc1-OST0005 /dev/disk/by-id/scsi-101046e6bdc1d341400
+tycho6  tycho2  lc1-OST000d /dev/disk/by-id/scsi-101046e6bf91d341500
+tycho6  tycho2  lc1-OST0015 /dev/disk/by-id/scsi-101046e6d061d341600
+tycho7  tycho3  lc1-OST0016 /dev/disk/by-id/scsi-101046e6d1a1d341700
+tycho7  tycho3  lc1-OST000e /dev/disk/by-id/scsi-101046e6d2d1d341800
+tycho7  tycho3  lc1-OST0016 /dev/disk/by-id/scsi-101046e6d461d341900
+tycho8  tycho4  lc1-OST0007 /dev/disk/by-id/scsi-101046e6d611d341a00
+tycho8  tycho4  lc1-OST000f /dev/disk/by-id/scsi-101046e6d7e1d341b00
+tycho8  tycho4  lc1-OST0017 /dev/disk/by-id/scsi-101046e6d901d341c00
+.fi
+.SH "SEE ALSO"
+.BR ldev (8)
