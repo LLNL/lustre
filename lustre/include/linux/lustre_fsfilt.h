@@ -194,7 +194,7 @@ static inline lvfs_sbdev_type fsfilt_journal_sbdev(struct obd_device *obd,
 do {                                                                      \
         if (cfs_time_before(jiffies, start + 15 * CFS_HZ))                \
                 break;                                                    \
-        else if (cfs_time_before(jiffies, start + 30 * CFS_HZ))           \
+        else if (cfs_time_before(jiffies, start + DISK_TIMEOUT / 2 * CFS_HZ)) \
                 CDEBUG(D_VFSTRACE, "%s: slow %s %lus\n", obd->obd_name,   \
                        msg, (jiffies-start) / CFS_HZ);                    \
         else if (cfs_time_before(jiffies, start + DISK_TIMEOUT * CFS_HZ)) \
