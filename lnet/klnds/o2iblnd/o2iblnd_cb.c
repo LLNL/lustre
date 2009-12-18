@@ -2962,6 +2962,12 @@ kiblnd_check_conns (int idx)
         list_for_each (ptmp, peers) {
                 peer = list_entry (ptmp, kib_peer_t, ibp_list);
 
+                /* Assume peer uses the same keepalive as mine */
+                if (cfs_time_after(cfs_time_add(peer->ibp_last_alive,
+                                                cfs_time_seconds(*kiblnd_tunables.kib_keepalive)),
+                                   cfs_time_current()))
+                        continue;
+
                 list_for_each (ctmp, &peer->ibp_conns) {
                         conn = list_entry (ctmp, kib_conn_t, ibc_list);
 
