@@ -1,0 +1,115 @@
+.TH LPURGE 8 Lustre LLNL LPURGE
+.SH NAME
+lpurge \- lustre purge utility
+.SH SYNOPSIS
+.B "lpurge [options] directory"
+.br
+.SH DESCRIPTION
+.B lpurge
+recursively descends \fIdirectory\fR, generating a list of files that
+have not been used in a specified number of days.  The time of last use is
+defined as the greatest of atime, mtime, or ctime.
+Files can optionally be removed as the list is generated.
+All types of files are considered for eligibility except directories.
+Symbolic links are not followed in directory traversal or file removal.
+.LP
+Although \fBlpurge\fR works with any file system, it activates an
+optimization to minimize costly stat(2) calls if it detects
+that \fIdirectory\fR is on a Lustre file system.
+On Lustre, stat(2) triggers queries to both the metadata server (MDS)
+and object storage servers (OSS). To avoid calling stat(2) on every file,
+\fBlpurge\fR first calls the IOC_MDC_GETFILEINFO ioctl to retrieve the
+MDS times, and only calls stat(2) if MDS times are older than the
+purge threshold.
+.LP
+\fBlpurge\fR provides the following statistics on stderr upon completion:
+number of inodes scanned (including directories), number of inodes scanned
+per second, percentage of scanned inodes eligible for purge, total size
+of eligible files, and elapsed wall clock time.
+.SH OPTIONS
+.B lpurge
+accepts the following options:
+.TP
+\fI\-R\fB, \fI\-\-remove\fR
+Unlink eligible files during the scan.
+If this option is used, a purge threshold and log file must also be specified
+on the command line (see below).
+.TP
+\fI\-d\fR, \fI\-\-days\fR n
+Set the purge threshold to \fIn\fR days ago.
+Files with a time of last use older than the purge threshold
+will be considered eligible for purge.
+.TP
+\fI\-o\fR, \fI\-\-outfile\fR filename
+Log eligible files to \fIfilename\fR.
+If \fIfilename\fR exists, output will be appended.
+If \fIfilename\fR is \-, log to stdout.
+The log file contains one line per eligible file, with each line
+containing the following fields delimited by single spaces:
+(1) \fIa|c|m\fR (single character) indicating which of atime, ctime,
+or mtime appears in field 2;
+(2) \fItime-of-last-use\fR in yyyy-mm-dd-hh:mm:ss format;
+(3) \fIsize\fR (fixed point, kilobyte resolution) in megabytes;
+(4) \fIuid\fR of file owner;
+and (5) \fIpath\fR of file.
+.TP
+\fI\-i\fR, \fI\-\-inode-tally\fR filename
+Log a count of inodes (including directories) contained in the top
+level subdirectories of \fIdirectory\fR to \fIfilename\fR.
+If \fIfilename\fR exists, it will be truncated.
+If \fIfilename\fR is \-, log to stdout.
+Each line contains the inode count and subdirectory path.
+All inodes are counted regardless of their purge eligibility.
+Inodes contained under excluded directories (see below) are not counted.
+.TP
+\fI\-x\fR, \fI\-\-exclude\fR directory
+Do not descend into \fIdirectory\fR.
+The path should be fully qualified.
+Excluded directories with the same path prefix as the purge directory
+must exist or \fBlpurge\fR will refuse to start.
+This option may be specified multiple times and in combination with
+the \fI\-X\fR option.
+.TP
+\fI\-X\fR, \fI\-\-exclude\-from\fR filename
+Exclude directory paths listed, one per line, in \fIfilename\fR.
+Directory paths should be fully qualified.
+Excluded directories with the same path prefix as the purge directory
+must exist or \fBlpurge\fR will refuse to start.
+This option may be specified multiple times and in combination with
+the \fI\-x\fR option.
+The file may contain white space or comments prefixed with a \fI#\fR
+character.
+.TP
+\fI\-s\fR, \fI\-\-stat\-always\fR
+Disable the Lustre optimization discussed in the DESCRIPTION section,
+and always use the stat(2) system call.
+.SH "EXAMPLES"
+To run \fBlpurge\fR weekly on the /mnt/lustre file system, purging
+files with time of last use older than 60 days, one might put a script
+like the following in /etc/cron.weekly:
+.IP
+.nf
+#!/bin/bash
+OFILE=/var/log/lpurge.files.$(date +%Y-%m-%d)
+IFILE=/var/log/lpurge.inodes.$(date +%Y-%m-%d)
+/usr/sbin/lpurge -R -d 60 -X /etc/lpurge.exemptions \\
+                 -o $OFILE -i $IFILE /mnt/lustre
+/admin/scripts/lpurge-post $OFILE $IFILE
+.fi
+.LP
+The optional \fIlpurge-post\fR post-processing script could split
+lpurge.files on the uid field to create and email weekly purge
+reports to users.  It could also generate summary reports of
+inodes and storage space reclaimed per user, and plot per-user
+file size histograms to get a picture of how the file system
+is being used and by whom.
+.SH CAVEATS
+\fBlpurge\fR only calls statfs(2) on \fIdirectory\fR, and presumes its
+determination whether or not \fIdirectory\fR is in Lustre applies
+recursively.
+.LP
+\fBlpurge\fR presumes that \fIatime\fR, \fIctime\fR, \fImtime\fR are
+coherent across clients.  It would appear that \fIatime\fR (at least)
+may not be coherent, therefore it is suggested that lustre locks be
+explicitly dropped, e.g. by running \fBlflush\fR or remounting,
+before running \fBlpurge\fR.
