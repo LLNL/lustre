@@ -192,6 +192,10 @@ void lbug_with_loc(const char *file, const char *func, const int line)
                 /* not reached */
         }
 
+        /* Ensure all debug pages are dumped by current cpu */
+        if (libcfs_panic_on_lbug)
+                libcfs_panic_in_progress = 1;
+
         libcfs_debug_dumpstack(NULL);
         if (!libcfs_panic_on_lbug)
                 libcfs_debug_dumplog();
