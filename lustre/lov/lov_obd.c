@@ -3276,7 +3276,9 @@ EXPORT_SYMBOL(lov_stripe_lock);
 
 void lov_stripe_unlock(struct lov_stripe_md *md)
 {
-        LASSERT(md->lsm_lock_owner == cfs_current());
+        LASSERTF(md->lsm_lock_owner == cfs_current(),
+                 "lock_owner %p is not equal to current %p\n",
+                 md->lsm_lock_owner, cfs_current());
         md->lsm_lock_owner = NULL;
         spin_unlock(&md->lsm_lock);
 }
