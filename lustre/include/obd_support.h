@@ -98,7 +98,7 @@ extern unsigned int obd_alloc_fail_rate;
  * and there's no urgent need to evict a client just because it's idle, we
  * should be very conservative here. */
 #define PING_EVICT_TIMEOUT (PING_INTERVAL * 6)
-#define DISK_TIMEOUT 50          /* Beyond this we warn about disk speed */
+#define DISK_TIMEOUT 300         /* Beyond this we warn about disk speed */
 #define CONNECTION_SWITCH_MIN 5U /* Connection switching rate limiter */
  /* Max connect interval for nonresponsive servers; ~50s to avoid building up
     connect requests in the LND queues, but within obd_timeout so we don't
