@@ -828,7 +828,9 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
                 *status = -EIO;
                 LBUG();
         } else if (imp->imp_state == LUSTRE_IMP_CLOSED) {
-                DEBUG_REQ(D_ERROR, req, "IMP_CLOSED ");
+                /* pings may safely race with umount */
+                DEBUG_REQ(lustre_msg_get_opc(req->rq_reqmsg) == OBD_PING ?
+                          D_HA : D_ERROR, req, "IMP_CLOSED ");
                 *status = -EIO;
         } else if (req->rq_send_state == LUSTRE_IMP_CONNECTING &&
                  imp->imp_state == LUSTRE_IMP_CONNECTING) {
@@ -845,7 +847,7 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
                  * This indicates the requests should be discarded; an -EIO
                  * may result in a resend of the request. */
                 if (!imp->imp_deactive)
-                        DEBUG_REQ(D_ERROR, req, "IMP_INVALID");
+                        DEBUG_REQ(D_NET, req, "IMP_INVALID");
                 *status = -ESHUTDOWN; /* bz 12940 */
         } else if (req->rq_import_generation != imp->imp_generation) {
                 DEBUG_REQ(D_ERROR, req, "req wrong generation:");

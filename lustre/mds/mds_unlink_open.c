@@ -266,8 +266,8 @@ int mds_cleanup_pending(struct obd_device *obd)
                         GOTO(err_out, rc = PTR_ERR(dchild));
                 }
                 if (!dchild->d_inode) {
-                        CWARN("%s: orphan %s has already been removed\n",
-                              obd->obd_name, d_name);
+                        LCONSOLE_WARN("%s: orphan %s has already been "
+                                      "removed\n", obd->obd_name, d_name);
                         GOTO(next, rc = 0);
                 }
 
@@ -283,8 +283,8 @@ int mds_cleanup_pending(struct obd_device *obd)
                 if (mds_inode_is_orphan(child_inode) &&
                     mds_orphan_open_count(child_inode)) {
                         MDS_UP_READ_ORPHAN_SEM(child_inode);
-                        CWARN("%s: orphan %s re-opened during recovery\n",
-                              obd->obd_name, d_name);
+                        LCONSOLE_WARN("%s: orphan %s re-opened during "
+                                      "recovery\n", obd->obd_name, d_name);
                         GOTO(next, rc = 0);
                 }
                 /** Keep orphans for possible use by delayed exports. Remove
@@ -320,8 +320,8 @@ err_out:
 err_pop:
         pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
         if (item > 0)
-                CWARN("%s: removed %d pending open-unlinked files\n",
-                      obd->obd_name, item);
+                LCONSOLE_WARN("%s: removed %d pending open-unlinked files\n",
+                              obd->obd_name, item);
         RETURN(rc);
 
 err_mntget:
@@ -384,7 +384,7 @@ int mds_check_stale_orphan(struct obd_device *obd, struct ll_fid *fid)
                 }
                 if (orphan->d_inode != inode) {
                         l_dput(orphan);
-                        CWARN("%s: Found wrong orphan %s %p/%p\n",
+                        LCONSOLE_WARN("%s: Found wrong orphan %s %p/%p\n",
                               obd->obd_name, fidname, orphan->d_inode, inode);
                         GOTO(unlock_child, rc = -EFAULT);
                 }
