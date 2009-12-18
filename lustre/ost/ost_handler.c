@@ -2077,7 +2077,7 @@ static int ost_setup(struct obd_device *obd, obd_count len, void *buf)
         ost->ost_service =
                 ptlrpc_init_svc(OST_NBUFS, OST_BUFSIZE, OST_MAXREQSIZE,
                                 OST_MAXREPSIZE, OST_REQUEST_PORTAL,
-                                OSC_REPLY_PORTAL, OSS_SERVICE_WATCHDOG_FACTOR,
+                                OSC_REPLY_PORTAL, 2*OSS_SERVICE_WATCHDOG_FACTOR,
                                 ost_handle, LUSTRE_OSS_NAME,
                                 obd->obd_proc_entry, target_print_req,
                                 oss_min_threads, oss_max_threads, "ll_ost",
