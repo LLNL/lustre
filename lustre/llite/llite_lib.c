@@ -208,6 +208,11 @@ static struct ll_sb_info *ll_init_sbi(void)
         /* metadata statahead is enabled by default */
         sbi->ll_sa_max = LL_SA_RPC_DEF;
 
+        cfs_waitq_init(&sbi->ll_statfs_waitq);
+        spin_lock_init(&sbi->ll_statfs_lock);
+        sbi->ll_statfs_in_progress = 0;
+        sbi->ll_statfs_rc = 0;
+
         RETURN(sbi);
 
 out:
@@ -1722,6 +1727,7 @@ int ll_statfs_internal(struct super_block *sb, struct obd_statfs *osfs,
 {
         struct ll_sb_info *sbi = ll_s2sbi(sb);
         struct obd_statfs obd_osfs;
+        cfs_waitlink_t wl;
         int rc;
         ENTRY;
 
@@ -1739,8 +1745,46 @@ int ll_statfs_internal(struct super_block *sb, struct obd_statfs *osfs,
         if (sbi->ll_flags & LL_SBI_LAZYSTATFS)
                 flags |= OBD_STATFS_NODELAY;
 
-        rc = obd_statfs_rqset(class_exp2obd(sbi->ll_osc_exp),
-                              &obd_osfs, max_age, flags);
+        /* Avoid redundant statfs opterations.  If one is already in progress,
+         * just wait for its result.
+         */
+        spin_lock_bh(&sbi->ll_statfs_lock);
+        if (!sbi->ll_statfs_in_progress) {
+                sbi->ll_statfs_in_progress = 1;
+                spin_unlock_bh(&sbi->ll_statfs_lock);
+
+                rc = obd_statfs_rqset(class_exp2obd(sbi->ll_osc_exp),
+                                      &obd_osfs, max_age, flags);
+
+                spin_lock_bh(&sbi->ll_statfs_lock);
+                sbi->ll_statfs_in_progress = 0;
+                sbi->ll_statfs_rc = rc;
+                if (cfs_waitq_active(&sbi->ll_statfs_waitq))
+                        cfs_waitq_broadcast(&sbi->ll_statfs_waitq);
+                spin_unlock_bh(&sbi->ll_statfs_lock);
+        } else {
+                cfs_waitlink_init(&wl);
+                set_current_state(TASK_INTERRUPTIBLE);
+                cfs_waitq_add(&sbi->ll_statfs_waitq, &wl);
+                spin_unlock_bh(&sbi->ll_statfs_lock);
+
+                cfs_waitq_wait(&wl, CFS_TASK_INTERRUPTIBLE);
+
+                spin_lock_bh(&sbi->ll_statfs_lock);
+                cfs_waitq_del(&sbi->ll_statfs_waitq, &wl);
+                set_current_state (TASK_RUNNING);
+                rc = sbi->ll_statfs_rc;
+                spin_unlock_bh(&sbi->ll_statfs_lock);
+
+                if (rc == 0) {
+                        /* We know that a statfs was just performed, so we
+                         * force use of the cached value by using a max_age
+                         * of zero.
+                         */
+                        rc = obd_statfs_rqset(class_exp2obd(sbi->ll_osc_exp),
+                                              &obd_osfs, 0, flags);
+                }
+        }
         if (rc) {
                 CERROR("obd_statfs fails: rc = %d\n", rc);
                 RETURN(rc);
