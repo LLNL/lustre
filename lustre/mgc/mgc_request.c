@@ -917,7 +917,7 @@ static int mgc_import_event(struct obd_device *obd,
                 break;
         }
         case IMP_EVENT_ACTIVE:
-                LCONSOLE_WARN("%s: Reactivating import\n", obd->obd_name);
+                CDEBUG(D_INFO, "%s: Reactivating import\n", obd->obd_name);
                 /* Clearing obd_no_recov allows us to continue pinging */
                 obd->obd_no_recov = 0;
                 break;

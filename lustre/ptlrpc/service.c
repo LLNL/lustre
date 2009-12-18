@@ -645,7 +645,7 @@ static int ptlrpc_check_req(struct ptlrpc_request *req)
 {
         if (lustre_msg_get_conn_cnt(req->rq_reqmsg) <
             req->rq_export->exp_conn_cnt) {
-                DEBUG_REQ(D_ERROR, req,
+                DEBUG_REQ(D_RPCTRACE, req,
                           "DROPPING req from old connection %d < %d",
                           lustre_msg_get_conn_cnt(req->rq_reqmsg),
                           req->rq_export->exp_conn_cnt);
@@ -1373,10 +1373,9 @@ put_rpc_export:
 
 put_conn:
         if (cfs_time_current_sec() > request->rq_deadline) {
-                DEBUG_REQ(D_WARNING, request, "Request x"LPU64" took longer "
-                          "than estimated (%ld%+lds); client may timeout.",
-                          request->rq_xid, request->rq_deadline -
-                          request->rq_arrival_time.tv_sec,
+                DEBUG_REQ(D_WARNING, request, "Request took longer than "
+                          "estimated (%ld%+lds); client may timeout.",
+                          request->rq_deadline-request->rq_arrival_time.tv_sec,
                           cfs_time_current_sec() - request->rq_deadline);
         }
 
@@ -1481,10 +1480,10 @@ ptlrpc_server_handle_reply (struct ptlrpc_service *svc)
         if (nlocks == 0 && !been_handled) {
                 /* If we see this, we should already have seen the warning
                  * in mds_steal_ack_locks()  */
-                CWARN("All locks stolen from rs %p x"LPD64".t"LPD64
-                      " o%d NID %s\n", rs, rs->rs_xid, rs->rs_transno,
-                      lustre_msg_get_opc(rs->rs_msg),
-                      libcfs_nid2str(exp->exp_connection->c_peer.nid));
+                LCONSOLE_WARN("All locks stolen from rs %p x"LPD64".t"LPD64
+                              " o%d NID %s\n", rs, rs->rs_xid, rs->rs_transno,
+                              lustre_msg_get_opc(rs->rs_msg),
+                              libcfs_nid2str(exp->exp_connection->c_peer.nid));
         }
 
         if ((!been_handled && rs->rs_on_net) || nlocks > 0) {

@@ -569,8 +569,9 @@ int mgs_handle(struct ptlrpc_request *req)
         opc = lustre_msg_get_opc(req->rq_reqmsg);
         if (opc != MGS_CONNECT) {
                 if (!class_connected_export(req->rq_export)) {
-                        CERROR("lustre_mgs: operation %d on unconnected MGS\n",
-                               opc);
+                        CDEBUG(D_HA,"operation %d on unconnected MGS from %s\n",
+                               opc, libcfs_id2str(req->rq_peer));
+
                         req->rq_status = -ENOTCONN;
                         GOTO(out, rc = -ENOTCONN);
                 }
@@ -657,7 +658,7 @@ int mgs_handle(struct ptlrpc_request *req)
         LASSERT(current->journal_info == NULL);
 
         if (rc)
-                CERROR("MGS handle cmd=%d rc=%d\n", opc, rc);
+                CDEBUG(D_MGS, "MGS handle cmd=%d rc=%d\n", opc, rc);
 
  out:
         target_send_reply(req, rc, fail);
