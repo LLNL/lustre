@@ -753,14 +753,16 @@ static int ptlrpc_at_send_early_reply(struct ptlrpc_request *req)
             (MSG_REPLAY | MSG_LAST_REPLAY)) {
                 /* Use at_extra as early reply period for recovery requests
                  * but keep it not longer than recovery time / 4 */
-                at_add(&svc->srv_at_estimate,
-                       min(at_extra,
-                           req->rq_export->exp_obd->obd_recovery_timeout / 4));
+                at_measured(&svc->srv_at_estimate,
+                            min(at_extra,
+                            req->rq_export->exp_obd->obd_recovery_timeout / 4));
                 newdl = cfs_time_current_sec();
         } else {
                 /* Fake our processing time into the future to ask the
                  * clients for some extra amount of time */
-                at_add(&svc->srv_at_estimate, at_extra);
+                at_measured(&svc->srv_at_estimate, at_extra +
+                            cfs_time_current_sec() -
+                            req->rq_arrival_time.tv_sec);
                 newdl = req->rq_arrival_time.tv_sec;
         }
         newdl += at_get(&svc->srv_at_estimate);
