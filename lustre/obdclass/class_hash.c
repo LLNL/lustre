@@ -89,7 +89,7 @@ lh_write_unlock(lustre_hash_t *lh)
  * @cur_bits - Initial hash table size, in bits
  * @max_bits - Maximum allowed hash table resize, in bits
  * @ops      - Registered hash table operations
- * @flags    - LH_REHASH enable synamic hash resizing
+ * @flags    - LH_REHASH enable dynamic hash resizing
  *           - LH_SORT enable chained hash sort
  */
 lustre_hash_t *
@@ -106,6 +106,7 @@ lustre_hash_init(char *name, unsigned int cur_bits, unsigned int max_bits,
         LASSERT(cur_bits > 0);
         LASSERT(max_bits >= cur_bits);
         LASSERT(max_bits < 31);
+        LASSERT(!(cur_bits != max_bits && (flags & LH_REHASH) == 0));
 
         LIBCFS_ALLOC_PTR(lh);
         if (!lh)
@@ -126,9 +127,6 @@ lustre_hash_init(char *name, unsigned int cur_bits, unsigned int max_bits,
         lh->lh_max_theta = 1 << (LH_THETA_BITS + 1);
         lh->lh_ops = ops;
         lh->lh_flags = flags;
-        if (cur_bits != max_bits && (lh->lh_flags & LH_REHASH) == 0)
-                CERROR("Rehash is disabled for %s, ignore max_bits %d\n",
-                       name, max_bits);
 
         /* theta * 1000 */
         __lustre_hash_set_theta(lh, 500, 2000);
