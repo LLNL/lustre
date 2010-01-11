@@ -1754,19 +1754,17 @@ int target_queue_last_replay_reply(struct ptlrpc_request *req, int rc)
 
         /* only count the first "replay over" request from each
            export */
+        spin_lock(&exp->exp_lock);
         if (exp->exp_replay_needed) {
-                spin_lock(&exp->exp_lock);
                 exp->exp_replay_needed = 0;
-                spin_unlock(&exp->exp_lock);
 
                 if (!exp->exp_delayed) {
                         --obd->obd_recoverable_clients;
                 } else {
-                        spin_lock(&exp->exp_lock);
                         exp->exp_delayed = 0;
-                        spin_unlock(&exp->exp_lock);
                         delayed_done = 1;
                         if (obd->obd_delayed_clients == 0) {
+                                spin_unlock(&exp->exp_lock);
                                 spin_unlock_bh(&obd->obd_processing_task_lock);
                                 LBUG();
                         }
@@ -1774,6 +1772,7 @@ int target_queue_last_replay_reply(struct ptlrpc_request *req, int rc)
                 }
         }
         recovery_done = (obd->obd_recoverable_clients == 0);
+        spin_unlock(&exp->exp_lock);
         spin_unlock_bh(&obd->obd_processing_task_lock);
 
         if (delayed_done) {
