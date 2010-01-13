@@ -1563,8 +1563,11 @@ int lprocfs_exp_rd_uuid(char *page, char **start, off_t off, int count,
         *eof = 1;
         page[0] = '\0';
         lprocfs_exp_rd_cb_data_init(&cb_data, page, count, eof, &len);
-        lustre_hash_for_each_key(obd->obd_nid_hash, &stats->nid,
-                                 lprocfs_exp_print_uuid, &cb_data);
+
+        /* obd->obd_nid_hash may be destroyed before this proc entry */
+        if (obd->obd_nid_hash)
+                lustre_hash_for_each_key(obd->obd_nid_hash, &stats->nid,
+                                         lprocfs_exp_print_uuid, &cb_data);
         return (*cb_data.len);
 }
 
@@ -1597,8 +1600,11 @@ int lprocfs_exp_rd_hash(char *page, char **start, off_t off, int count,
         *eof = 1;
         page[0] = '\0';
         lprocfs_exp_rd_cb_data_init(&cb_data, page, count, eof, &len);
-        lustre_hash_for_each_key(obd->obd_nid_hash, &stats->nid,
-                                 lprocfs_exp_print_hash, &cb_data);
+
+        /* obd->obd_nid_hash may be destroyed before this proc entry */
+        if (obd->obd_nid_hash)
+                lustre_hash_for_each_key(obd->obd_nid_hash, &stats->nid,
+                                         lprocfs_exp_print_hash, &cb_data);
         return (*cb_data.len);
 }
 
@@ -2133,7 +2139,10 @@ int lprocfs_obd_rd_hash(char *page, char **start, off_t off,
         struct obd_device *obd = data;
         int c = 0;
 
-        if (obd == NULL)
+        if (obd == NULL ||
+            obd->obd_uuid_hash == NULL ||
+            obd->obd_nid_hash == NULL ||
+            obd->obd_nid_stats_hash == NULL)
                 return 0;
 
         c += lustre_hash_debug_header(page, count);
