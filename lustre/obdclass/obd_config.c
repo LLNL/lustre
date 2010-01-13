@@ -506,12 +506,15 @@ int class_cleanup(struct obd_device *obd, struct lustre_cfg *lcfg)
 
         /* destroy an uuid-export hash body */
         lustre_hash_exit(obd->obd_uuid_hash);
+        obd->obd_uuid_hash = NULL;
 
         /* destroy a nid-export hash body */
         lustre_hash_exit(obd->obd_nid_hash);
+        obd->obd_nid_hash = NULL;
 
         /* destroy a nid-stats hash body */
         lustre_hash_exit(obd->obd_nid_stats_hash);
+        obd->obd_nid_stats_hash = NULL;
 
         /* Precleanup stage 1, we must make sure all exports (other than the
            self-export) get destroyed. */
