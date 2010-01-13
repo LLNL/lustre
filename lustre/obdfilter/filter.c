@@ -1338,7 +1338,10 @@ obd_id filter_last_id(struct filter_obd *filter, obd_gr group)
 
         /* FIXME: object groups */
         spin_lock(&filter->fo_objidlock);
-        id = filter->fo_last_objids[group];
+        if (filter->fo_last_objids == NULL)
+                id = -1;
+        else
+                id = filter->fo_last_objids[group];
         spin_unlock(&filter->fo_objidlock);
 
         return id;
