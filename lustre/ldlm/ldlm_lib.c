@@ -1202,6 +1202,8 @@ static void target_request_copy_get(struct ptlrpc_request *req)
         req->rq_copy_queued = 1;
         /* increase refcount to keep request in queue */
         atomic_inc(&req->rq_refcount);
+        /* release service thread while request is queued */
+        ptlrpc_server_active_request_dec(req);
 }
 
 static void target_request_copy_put(struct ptlrpc_request *req)
@@ -1213,6 +1215,7 @@ static void target_request_copy_put(struct ptlrpc_request *req)
          */
         LASSERT(req->rq_copy_queued);
         class_export_rpc_put(req->rq_export);
+        ptlrpc_server_active_request_inc(req);
         ptlrpc_server_drop_request(req);
 }
 
