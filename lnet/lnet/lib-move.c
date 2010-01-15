@@ -1326,8 +1326,9 @@ lnet_send(lnet_nid_t src_nid, lnet_msg_t *msg)
                 src_ni = lnet_nid2ni_locked(src_nid);
                 if (src_ni == NULL) {
                         LNET_UNLOCK();
-                        CERROR("Can't send to %s: src %s is not a local nid\n",
-                               libcfs_nid2str(dst_nid), libcfs_nid2str(src_nid));
+                        LCONSOLE_WARN("Can't send to %s: src %s is not a "
+                                      "local nid\n", libcfs_nid2str(dst_nid),
+                                      libcfs_nid2str(src_nid));
                         return -EINVAL;
                 }
                 LASSERT (!msg->msg_routing);
@@ -1346,8 +1347,9 @@ lnet_send(lnet_nid_t src_nid, lnet_msg_t *msg)
                         lnet_ni_decref_locked(local_ni);
                         lnet_ni_decref_locked(src_ni);
                         LNET_UNLOCK();
-                        CERROR("No route to %s via from %s\n",
-                               libcfs_nid2str(dst_nid), libcfs_nid2str(src_nid));
+                        LCONSOLE_WARN("No route to %s via from %s\n",
+                                      libcfs_nid2str(dst_nid),
+                                      libcfs_nid2str(src_nid));
                         return -EINVAL;
                 }
 
@@ -1370,8 +1372,8 @@ lnet_send(lnet_nid_t src_nid, lnet_msg_t *msg)
                 lnet_ni_decref_locked(src_ni);  /* lp has ref on src_ni; lose mine */
                 if (rc != 0) {
                         LNET_UNLOCK();
-                        CERROR("Error %d finding peer %s\n", rc,
-                               libcfs_nid2str(dst_nid));
+                        LCONSOLE_WARN("Error %d finding peer %s\n", rc,
+                                      libcfs_nid2str(dst_nid));
                         /* ENOMEM or shutting down */
                         return rc;
                 }
@@ -1396,7 +1398,8 @@ lnet_send(lnet_nid_t src_nid, lnet_msg_t *msg)
                         if (src_ni != NULL)
                                 lnet_ni_decref_locked(src_ni);
                         LNET_UNLOCK();
-                        CERROR("No route to %s\n", libcfs_id2str(msg->msg_target));
+                        LCONSOLE_WARN("No route to %s\n",
+                                      libcfs_id2str(msg->msg_target));
                         return -EHOSTUNREACH;
                 }
 
@@ -1422,9 +1425,10 @@ lnet_send(lnet_nid_t src_nid, lnet_msg_t *msg)
                                 lnet_ni_decref_locked(src_ni);
                         LNET_UNLOCK();
 
-                        CERROR("No route to %s via %s (all routers down)\n",
-                               libcfs_id2str(msg->msg_target),
-                               libcfs_nid2str(src_nid));
+                        LCONSOLE_WARN("No route to %s via %s "
+                                      "(all routers down)\n",
+                                      libcfs_id2str(msg->msg_target),
+                                      libcfs_nid2str(src_nid));
                         return -EHOSTUNREACH;
                 }
 
