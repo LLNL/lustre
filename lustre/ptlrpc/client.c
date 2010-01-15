@@ -933,9 +933,11 @@ static int ptlrpc_console_allow(struct ptlrpc_request *req)
                         return 0;
 
                 /* Suppress unavailable/again reconnect requests */
-                err = lustre_msg_get_status(req->rq_repmsg);
-                if (err == -ENODEV || err == -EAGAIN)
-                        return 0;
+                if (req->rq_repmsg != NULL) {
+                        err = lustre_msg_get_status(req->rq_repmsg);
+                        if (err == -ENODEV || err == -EAGAIN)
+                                return 0;
+                }
         }
 
         return 1;
@@ -1426,14 +1428,19 @@ int ptlrpc_expire_one_request(struct ptlrpc_request *req, int async_unlink)
         int rc = 0;
         ENTRY;
 
-        DEBUG_REQ(req->rq_fake ? D_INFO : D_WARNING, req, 
-                  "Request x"LPU64" sent from %s to NID %s"
-                  " %lus ago has %s (%lds prior to deadline).\n", req->rq_xid,
-                  imp ? imp->imp_obd->obd_name : "<?>",
-                  imp ? libcfs_nid2str(imp->imp_connection->c_peer.nid) : "<?>",
-                  cfs_time_current_sec() - req->rq_sent,
-                  req->rq_net_err ? "failed due to network error" : "timed out",
-                  req->rq_deadline - req->rq_sent);
+        DEBUG_REQ(D_NETERROR, req, "%s (sent at %lu, %lus ago)",
+                  req->rq_net_err ? "network error" : "timeout",
+                  (long)req->rq_sent, cfs_time_current_sec() - req->rq_sent);
+
+        if (imp != NULL && ptlrpc_console_allow(req)) {
+                LCONSOLE_WARN("%s: Request %s sent %lus ago to %s has %s "
+                              "(limit %lus)\n", imp->imp_obd->obd_name,
+                              ll_opcode2str(lustre_msg_get_opc(req->rq_reqmsg)),
+                              cfs_time_current_sec() - req->rq_sent,
+                              libcfs_nid2str(imp->imp_connection->c_peer.nid),
+                              req->rq_net_err ? "failed due to network error" :
+                              "timed out", req->rq_deadline - req->rq_sent);
+        }
 
         if (imp != NULL && obd_debug_peer_on_timeout)
                 LNetCtl(IOC_LIBCFS_DEBUG_PEER, &imp->imp_connection->c_peer);
