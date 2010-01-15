@@ -1325,13 +1325,11 @@ static int cb_ostlist(char *path, DIR *parent, DIR *d, void *data,
                        struct dirent64 *de)
 {
         struct find_param *param = (struct find_param *)data;
-        int ret;
 
         LASSERT(parent != NULL || d != NULL);
 
         /* Prepare odb. */
-        ret = setup_obd_uuid(d ? d : parent, path, param);
-        return ret == 0 ? 1 : ret;
+        return setup_obd_uuid(d ? d : parent, path, param);
 }
 
 int llapi_ostlist(char *path, struct find_param *param)
