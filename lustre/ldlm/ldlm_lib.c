@@ -542,7 +542,7 @@ static int target_handle_reconnect(struct lustre_handle *conn,
                 /* Might be a re-connect after a partition. */
                 if (!memcmp(&conn->cookie, &hdl->cookie, sizeof conn->cookie)) {
                         if (target->obd_recovering)
-                                LCONSOLE_WARN("%s: client %s (at %s) reconnect"
+                                LCONSOLE_WARN("%s: Client %s (at %s) reconnect"
                                         "ing, waiting for %d clients in "
                                         "recovery for %lds\n", target->obd_name,
                                         obd_uuid2str(&exp->exp_client_uuid),
@@ -553,7 +553,7 @@ static int target_handle_reconnect(struct lustre_handle *conn,
                                         &target->obd_recovery_timer),
                                         cfs_time_current())));
                         else
-                                LCONSOLE_WARN("%s: client %s (at %s) "
+                                LCONSOLE_WARN("%s: Client %s (at %s) "
                                         "reconnecting\n", target->obd_name,
                                         obd_uuid2str(&exp->exp_client_uuid),
                                         obd_export_nid2str(exp));
@@ -622,7 +622,8 @@ int target_recovery_check_and_stop(struct obd_device *obd)
         if (target_fs_version_capable(obd)) {
                 class_handle_stale_exports(obd);
         } else {
-                CWARN("Versions are not supported by ldiskfs, VBR is OFF\n");
+                LCONSOLE_WARN("Versions are not supported by ldiskfs, "
+                              "VBR is OFF\n");
                 class_disconnect_stale_exports(obd, exp_flags_from_obd(obd));
         }
         /* VBR: no clients are remained to replay, stop recovery */
@@ -785,7 +786,7 @@ int target_handle_connect(struct ptlrpc_request *req, svc_handler_t handler)
         /* we've found an export in the hash */
         if (export->exp_connecting) {
                 /* bug 9635, et. al. */
-                LCONSOLE_WARN("%s: exp %p already connecting\n",
+                LCONSOLE_WARN("%s: Exp %p already connecting\n",
                               export->exp_obd->obd_name, export);
                 class_export_put(export);
                 export = NULL;
@@ -793,14 +794,14 @@ int target_handle_connect(struct ptlrpc_request *req, svc_handler_t handler)
         } else if (mds_conn && export->exp_connection) {
                 if (req->rq_peer.nid != export->exp_connection->c_peer.nid)
                         /* mds reconnected after failover */
-                        CWARN("%s: received MDS connection from NID %s,"
-                              " removing former export from NID %s\n",
+                        LCONSOLE_WARN("%s: Received MDS connection from "
+                            "NID %s, removing former export from NID %s\n",
                             target->obd_name, libcfs_nid2str(req->rq_peer.nid),
                             libcfs_nid2str(export->exp_connection->c_peer.nid));
                 else
                         /* new mds connection from the same nid */
-                        CWARN("%s: received new MDS connection from NID %s,"
-                              " removing former export from same NID\n",
+                        LCONSOLE_WARN("%s: Received new MDS connection from "
+                            "NID %s, removing former export from same NID\n",
                             target->obd_name, libcfs_nid2str(req->rq_peer.nid));
                 class_fail_export(export);
                 class_export_put(export);
@@ -810,7 +811,7 @@ int target_handle_connect(struct ptlrpc_request *req, svc_handler_t handler)
                    req->rq_peer.nid != export->exp_connection->c_peer.nid &&
                    (lustre_msg_get_op_flags(req->rq_reqmsg) &
                     MSG_CONNECT_INITIAL)) {
-                LCONSOLE_WARN("%s: client UUID %s seen on new NID %s when "
+                LCONSOLE_WARN("%s: Client UUID %s seen on new NID %s when "
                               "existing NID %s is already connected\n",
                               target->obd_name, cluuid.uuid,
                               libcfs_nid2str(req->rq_peer.nid),
@@ -846,7 +847,7 @@ no_export:
                 OBD_FAIL_TIMEOUT(OBD_FAIL_TGT_DELAY_CONNECT, 2 * obd_timeout);
         } else if (req->rq_export == NULL &&
                    atomic_read(&export->exp_rpc_count) > 0) {
-                LCONSOLE_WARN("%s: client %s (at %s) refused connection, "
+                LCONSOLE_WARN("%s: Client %s (at %s) refused connection, "
                               "still busy with %d references\n",
                               target->obd_name, cluuid.uuid,
                               libcfs_nid2str(req->rq_peer.nid),
@@ -855,7 +856,7 @@ no_export:
         } else if (req->rq_export != NULL &&
                    atomic_read(&export->exp_rpc_count) > 1) {
                 /* the current connect rpc has increased exp_rpc_count */
-                LCONSOLE_WARN("%s: client %s (at %s) refused reconnection, "
+                LCONSOLE_WARN("%s: Client %s (at %s) refused reconnection, "
                               "still busy with %d active RPCs\n",
                               target->obd_name, cluuid.uuid,
                               libcfs_nid2str(req->rq_peer.nid),
@@ -877,9 +878,10 @@ no_export:
                 GOTO(out, rc = -EALREADY);
         } else if (export->exp_delayed && target->obd_recovering) {
                 /* VBR: don't allow delayed connection during recovery */
-                CWARN("%s: NID %s (%s) export was already marked as delayed "
-                      "and will wait for end of recovery\n", target->obd_name,
-                       libcfs_nid2str(req->rq_peer.nid), cluuid.uuid);
+                LCONSOLE_WARN("%s: NID %s (%s) export was already marked "
+                    "as delayed and will wait for end of recovery\n",
+                    target->obd_name, libcfs_nid2str(req->rq_peer.nid),
+                    cluuid.uuid);
                 GOTO(out, rc = -EBUSY);
         } else {
                 OBD_FAIL_TIMEOUT(OBD_FAIL_TGT_DELAY_RECONNECT, 2 * obd_timeout);
@@ -926,7 +928,7 @@ no_export:
 
         if (export == NULL) {
                 if (target->obd_recovering) {
-                        LCONSOLE_WARN("%s: denying connection for new client "
+                        LCONSOLE_WARN("%s: Denying connection for new client "
                                 "%s (at %s), waiting for %d clients in "
                                 "recovery for %lds\n", target->obd_name,
                                 cluuid.uuid, libcfs_nid2str(req->rq_peer.nid),
@@ -1194,13 +1196,13 @@ static void target_send_delayed_replies(struct obd_device *obd)
                                     obd->obd_recovery_start);
 
         LCONSOLE_INFO("%s: Recovery period over after %d:%.02d, of %d clients "
-                      "%d recovered and %d %s evicted.\n", obd->obd_name,
+                      "%d recovered and %d %s evicted\n", obd->obd_name,
                       (int)elapsed_time/60, (int)elapsed_time%60, max_clients,
                       obd->obd_connected_clients,
                       obd->obd_stale_clients,
                       obd->obd_stale_clients == 1 ? "was" : "were");
 
-        LCONSOLE_INFO("%s: sending delayed replies to %d recovered clients\n",
+        LCONSOLE_INFO("%s: Sending delayed replies to %d recovered clients\n",
                       obd->obd_name, obd->obd_connected_clients);
 
         list_for_each_entry_safe(req, tmp, &obd->obd_delayed_reply_queue,
@@ -1336,7 +1338,7 @@ void target_stop_recovery(void *data, int abort)
         spin_unlock_bh(&obd->obd_processing_task_lock);
 
         if (abort) {
-                LCONSOLE_WARN("%s: recovery is aborted by administrative "
+                LCONSOLE_WARN("%s: Recovery is aborted by administrative "
                               "request; %d clients are not recovered "
                               "(%d clients did)\n", obd->obd_name,
                               obd->obd_recoverable_clients,
@@ -1437,7 +1439,7 @@ static void check_and_start_recovery_timer(struct obd_device *obd,
                 spin_unlock_bh(&obd->obd_processing_task_lock);
                 return;
         }
-        LCONSOLE_WARN("%s: starting recovery timer for %u seconds\n",
+        LCONSOLE_INFO("%s: Starting recovery timer for %u seconds\n",
                       obd->obd_name, obd->obd_recovery_timeout);
         obd->obd_recovery_start = cfs_time_current_sec();
         obd->obd_recovery_handler = handler;
@@ -1775,8 +1777,8 @@ int target_queue_last_replay_reply(struct ptlrpc_request *req, int rc)
 
         /* VBR: disconnect export with failed recovery */
         if (exp->exp_vbr_failed) {
-                CWARN("%s: disconnect export %s\n", obd->obd_name,
-                      exp->exp_client_uuid.uuid);
+                LCONSOLE_WARN("%s: disconnect export %s\n", obd->obd_name,
+                              exp->exp_client_uuid.uuid);
                 class_fail_export(exp);
                 req->rq_status = 0;
                 ptlrpc_send_reply(req, 0);
