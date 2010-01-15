@@ -377,7 +377,8 @@ restart_request:
         rc = ptlrpc_queue_wait(req);
         if (rc) {
                 CERROR("ptlrpc_queue_wait failed, rc: %d\n", rc);
-                GOTO(out, rc);
+                if (rc != -EIO)
+                        GOTO(out, rc);
         }
 
         oqc = NULL;
