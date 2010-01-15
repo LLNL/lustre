@@ -899,7 +899,7 @@ static int ptlrpc_connect_interpret(struct ptlrpc_request *request,
                                        lustre_msg_get_handle(
                                        request->rq_repmsg)->cookie);
                         } else {
-                                LCONSOLE_WARN("evicted from %s (at %s) "
+                                LCONSOLE_WARN("Evicted from %s (at %s) "
                                               "after server handle changed from "
                                               LPX64" to "LPX64"\n",
                                               obd2cli_tgt(imp->imp_obd),

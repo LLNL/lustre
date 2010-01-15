@@ -961,9 +961,10 @@ static int ptlrpc_check_status(struct ptlrpc_request *req)
                 __u32 opc = lustre_msg_get_opc(req->rq_reqmsg);
 
                 if (ptlrpc_console_allow(req))
-                        LCONSOLE_ERROR_MSG(0x011,"an error occurred while "
-                                           "communicating with %s. The %s "
+                        LCONSOLE_ERROR_MSG(0x011,"%s: An error occurred while "
+                                           "communicating with NID %s; the %s "
                                            "operation failed with %d\n",
+                                           imp->imp_obd->obd_name,
                                            libcfs_nid2str(
                                            imp->imp_connection->c_peer.nid),
                                            ll_opcode2str(opc), err);
