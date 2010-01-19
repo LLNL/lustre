@@ -266,7 +266,7 @@ int mds_cleanup_pending(struct obd_device *obd)
                         GOTO(err_out, rc = PTR_ERR(dchild));
                 }
                 if (!dchild->d_inode) {
-                        LCONSOLE_WARN("%s: orphan %s has already been "
+                        LCONSOLE_WARN("%s: Orphan %s has already been "
                                       "removed\n", obd->obd_name, d_name);
                         GOTO(next, rc = 0);
                 }
@@ -283,8 +283,8 @@ int mds_cleanup_pending(struct obd_device *obd)
                 if (mds_inode_is_orphan(child_inode) &&
                     mds_orphan_open_count(child_inode)) {
                         MDS_UP_READ_ORPHAN_SEM(child_inode);
-                        LCONSOLE_WARN("%s: orphan %s re-opened during "
-                                      "recovery\n", obd->obd_name, d_name);
+                        CDEBUG(D_INFO, "%s: orphan %s re-opened during "
+                               "recovery\n", obd->obd_name, d_name);
                         GOTO(next, rc = 0);
                 }
                 /** Keep orphans for possible use by delayed exports. Remove
@@ -320,7 +320,7 @@ err_out:
 err_pop:
         pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
         if (item > 0)
-                LCONSOLE_WARN("%s: removed %d pending open-unlinked files\n",
+                LCONSOLE_WARN("%s: Removed %d pending open-unlinked files\n",
                               obd->obd_name, item);
         RETURN(rc);
 
