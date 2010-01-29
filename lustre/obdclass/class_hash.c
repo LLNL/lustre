@@ -180,13 +180,18 @@ lustre_hash_exit(lustre_hash_t *lh)
                         lh_exit(lh, hnode);
                 }
 
-                LASSERT(hlist_empty(&(lhb->lhb_head)));
-                LASSERT(atomic_read(&lhb->lhb_count) == 0);
+                LASSERTF(hlist_empty(&(lhb->lhb_head)),
+                         "hash bucket %d from %s is not empty\n", i, lh->lh_name);
+                LASSERTF(atomic_read(&lhb->lhb_count) == 0,
+                         "hash bucket %d from %s has #entries > 0 (%d)\n", i,
+                         lh->lh_name, atomic_read(&lhb->lhb_count));
                 write_unlock(&lhb->lhb_rwlock);
                 LIBCFS_FREE_PTR(lhb);
         }
 
-        LASSERT(atomic_read(&lh->lh_count) == 0);
+        LASSERTF(atomic_read(&lh->lh_count) == 0,
+                 "hash %s still has #entries > 0 (%d)\n", lh->lh_name,
+                 atomic_read(&lh->lh_count));
         lh_write_unlock(lh);
 
         LIBCFS_FREE(lh->lh_buckets, sizeof(*lh->lh_buckets) << lh->lh_cur_bits);
@@ -343,9 +348,9 @@ lustre_hash_del(lustre_hash_t *lh, void *key, struct hlist_node *hnode)
         i = lh_hash(lh, key, lh->lh_cur_mask);
         lhb = lh->lh_buckets[i];
         LASSERT(i <= lh->lh_cur_mask);
-        LASSERT(!hlist_unhashed(hnode));
 
         write_lock(&lhb->lhb_rwlock);
+        LASSERT(!hlist_unhashed(hnode));
         obj = __lustre_hash_bucket_del(lh, lhb, hnode);
         write_unlock(&lhb->lhb_rwlock);
         lh_read_unlock(lh);
@@ -733,7 +738,7 @@ void lustre_hash_rehash_key(lustre_hash_t *lh, void *old_key, void *new_key,
                 write_lock(&new_lhb->lhb_rwlock);
                 write_lock(&old_lhb->lhb_rwlock);
         } else { /* do nothing */
-                read_unlock(&lh->lh_rwlock);
+                lh_read_unlock(lh);
                 EXIT;
                 return;
         }
