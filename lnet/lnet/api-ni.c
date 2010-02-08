@@ -1814,7 +1814,8 @@ lnet_ping (lnet_process_id_t id, int timeout_ms, lnet_process_id_t *ids, int n_i
                 goto out_1;
         }
 
-        if (info->pi_version != LNET_PROTO_PING_VERSION) {
+        if (info->pi_version != LNET_PROTO_PING_VERSION &&
+            info->pi_version != LNET_PROTO_PING_VERSION1) {
                 CERROR("%s: Unexpected version 0x%x\n",
                        libcfs_id2str(id), info->pi_version);
                 goto out_1;
@@ -1829,17 +1830,31 @@ lnet_ping (lnet_process_id_t id, int timeout_ms, lnet_process_id_t *ids, int n_i
         if (info->pi_nnis < n_ids)
                 n_ids = info->pi_nnis;
 
-        if (nob < offsetof(lnet_ping_info_t, pi_ni[n_ids])) {
-                CERROR("%s: Short reply %d(%d expected)\n", libcfs_id2str(id),
-                       nob, (int)offsetof(lnet_ping_info_t, pi_ni[n_ids]));
-                goto out_1;
+        if (info->pi_version == LNET_PROTO_PING_VERSION1) {
+                if (nob < offsetof(lnet_ping_info_t_v1, pi_nid[n_ids])) {
+                        CERROR("%s: Short reply %d(%d expected)\n",
+                               libcfs_id2str(id), nob, (int)
+                               offsetof(lnet_ping_info_t_v1, pi_nid[n_ids]));
+                        goto out_1;
+                }
+        } else {
+                if (nob < offsetof(lnet_ping_info_t, pi_ni[n_ids])) {
+                        CERROR("%s: Short reply %d(%d expected)\n",
+                               libcfs_id2str(id), nob, (int)
+                               offsetof(lnet_ping_info_t, pi_ni[n_ids]));
+                        goto out_1;
+                }
         }
 
         rc = -EFAULT;                           /* If I SEGV... */
 
         for (i = 0; i < n_ids; i++) {
                 tmpid.pid = info->pi_pid;
-                tmpid.nid = info->pi_ni[i].ns_nid;
+                if (info->pi_version == LNET_PROTO_PING_VERSION1)
+                        tmpid.nid = ((lnet_ping_info_t_v1 *)info)->pi_nid[i];
+                else
+                        tmpid.nid = info->pi_ni[i].ns_nid;
+
 #ifdef __KERNEL__
                 if (copy_to_user(&ids[i], &tmpid, sizeof(tmpid)))
                         goto out_1;
