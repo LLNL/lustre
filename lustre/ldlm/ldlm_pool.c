@@ -169,11 +169,7 @@ static inline __u64 ldlm_pool_slv_max(__u32 L)
 
 static inline __u64 ldlm_pool_slv_min(__u32 L)
 {
-        /*
-         * The SLV must never drop lower than 1000 or it becomes
-         * insensitive to small changes in the slv_factor.
-         */
-        return 1000;
+        return 1;
 }
 
 enum {
@@ -261,7 +257,9 @@ static inline void ldlm_pool_recalc_slv(struct ldlm_pool *pl)
         limit = ldlm_pool_get_limit(pl);
         granted = atomic_read(&pl->pl_granted);
 
-        grant_usage = max_t(int, limit - (granted - grant_plan), 1);
+        grant_usage = limit - (granted - grant_plan);
+        if (grant_usage <= 0)
+                grant_usage = 1;
 
         /*
          * Find out SLV change factor which is the ratio of grant usage
@@ -271,13 +269,13 @@ static inline void ldlm_pool_recalc_slv(struct ldlm_pool *pl)
          * SLV. And the opposite, the more grant plan is over-consumed
          * (load time) the faster drops SLV.
          */
-        slv_factor = (grant_usage * 1000) / limit;
+        slv_factor = (grant_usage * 100) / limit;
         if (2 * abs(granted - limit) > limit) {
                 slv_factor *= slv_factor;
-                slv_factor = dru(slv_factor, 1000);
+                slv_factor = dru(slv_factor, 100);
         }
         slv = slv * slv_factor;
-        slv = dru(slv, 1000);
+        slv = dru(slv, 100);
 
         if (slv > ldlm_pool_slv_max(limit)) {
                 slv = ldlm_pool_slv_max(limit);
