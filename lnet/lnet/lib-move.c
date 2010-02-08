@@ -155,6 +155,7 @@ lnet_match_md(int index, int op_mask, lnet_process_id_t src,
               lnet_libmd_t **md_out)
 {
         lnet_portal_t    *ptl = &the_lnet.ln_portals[index];
+        struct list_head *head;
         lnet_me_t        *me;
         lnet_me_t        *tmp;
         lnet_libmd_t     *md;
@@ -169,7 +170,11 @@ lnet_match_md(int index, int op_mask, lnet_process_id_t src,
                 return LNET_MATCHMD_DROP;
         }
 
-        list_for_each_entry_safe (me, tmp, &ptl->ptl_ml, me_list) {
+        head = lnet_portal_me_head(index, src, match_bits);
+        if (head == NULL) /* nobody posted anything on this portal */
+                goto out;
+
+        list_for_each_entry_safe (me, tmp, head, me_list) {
                 md = me->me_md;
 
                 /* ME attached but MD not attached yet */
@@ -198,8 +203,9 @@ lnet_match_md(int index, int op_mask, lnet_process_id_t src,
                 /* not reached */
         }
 
+ out:
         if (op_mask == LNET_MD_OP_GET ||
-            (ptl->ptl_options & LNET_PTL_LAZY) == 0)
+            !lnet_portal_is_lazy(ptl))
                 return LNET_MATCHMD_DROP;
 
         return LNET_MATCHMD_NONE;
@@ -1566,9 +1572,7 @@ LNetSetLazyPortal(int portal)
         CDEBUG(D_NET, "Setting portal %d lazy\n", portal);
 
         LNET_LOCK();
-
-        ptl->ptl_options |= LNET_PTL_LAZY;
-
+        lnet_portal_set(ptl, LNET_PTL_LAZY);
         LNET_UNLOCK();
 
         return 0;
@@ -1586,7 +1590,7 @@ LNetClearLazyPortal(int portal)
 
         LNET_LOCK();
 
-        if ((ptl->ptl_options & LNET_PTL_LAZY) == 0) {
+        if (!lnet_portal_is_lazy(ptl)) {
                 LNET_UNLOCK();
                 return 0;
         }
@@ -1601,7 +1605,7 @@ LNetClearLazyPortal(int portal)
         list_del_init(&ptl->ptl_msgq);
 
         ptl->ptl_msgq_version++;
-        ptl->ptl_options &= ~LNET_PTL_LAZY;
+        lnet_portal_unset(ptl, LNET_PTL_LAZY);
 
         LNET_UNLOCK();
 
@@ -1656,12 +1660,14 @@ lnet_match_blocked_msg(lnet_libmd_t *md)
         struct list_head *tmp;
         struct list_head *entry;
         lnet_msg_t       *msg;
+        lnet_portal_t    *ptl;
         lnet_me_t        *me  = md->md_me;
-        lnet_portal_t    *ptl = &the_lnet.ln_portals[me->me_portal];
 
-        LASSERT (me->me_portal < the_lnet.ln_nportals);
+        LASSERT (me->me_portal >= 0 &&
+                 me->me_portal < the_lnet.ln_nportals);
 
-        if ((ptl->ptl_options & LNET_PTL_LAZY) == 0) {
+        ptl = &the_lnet.ln_portals[me->me_portal];
+        if (!lnet_portal_is_lazy(ptl)) {
                 LASSERT (list_empty(&ptl->ptl_msgq));
                 return;
         }
@@ -1765,7 +1771,6 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
         hdr->msg.put.offset = le32_to_cpu(hdr->msg.put.offset);
 
         index = hdr->msg.put.ptl_index;
-        ptl = &the_lnet.ln_portals[index];
 
         LNET_LOCK();
 
@@ -1784,6 +1789,7 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
                 return 0;
 
         case LNET_MATCHMD_NONE:
+                ptl = &the_lnet.ln_portals[index];
                 version = ptl->ptl_ml_version;
 
                 rc = 0;
@@ -1792,7 +1798,7 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
 
                 if (rc == 0 &&
                     !the_lnet.ln_shutdown &&
-                    ((ptl->ptl_options & LNET_PTL_LAZY) != 0)) {
+                    lnet_portal_is_lazy(ptl)) {
                         if (version != ptl->ptl_ml_version)
                                 goto again;
 

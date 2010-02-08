@@ -510,12 +510,18 @@ typedef struct {
 
 /* Options for lnet_portal_t::ptl_options */
 #define LNET_PTL_LAZY               (1 << 0)
+#define LNET_PTL_RDMA               (1 << 1)    /* RDMA portal, unique match */
+#define LNET_PTL_REQUEST            (1 << 2)    /* request portal */
+
+#define LNET_PORTAL_HASH_SIZE        113        /* ME hash size of RDMA portal (prime) */
+
 typedef struct {
-        struct list_head ptl_ml;  /* match list */
-        struct list_head ptl_msgq; /* messages blocking for MD */
-        __u64            ptl_ml_version;    /* validity stamp, only changed for new attached MD */
-        __u64            ptl_msgq_version;  /* validity stamp */
-        unsigned int     ptl_options;
+        struct list_head *ptl_mhash;            /* match hash */
+        struct list_head  ptl_mlist;            /* match list */
+        struct list_head  ptl_msgq;             /* messages blocking for MD */
+        __u64             ptl_ml_version;       /* validity stamp, only changed for new attached MD */
+        __u64             ptl_msgq_version;     /* validity stamp */
+        unsigned int      ptl_options;
 } lnet_portal_t;
 
 /* Router Checker states */
