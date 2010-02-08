@@ -767,6 +767,7 @@ void ptlrpc_set_add_req(struct ptlrpc_request_set *set,
                         struct ptlrpc_request *req)
 {
         /* The set takes over the caller's request reference */
+        LASSERT(list_empty(&req->rq_set_chain));
         list_add_tail(&req->rq_set_chain, &set->set_requests);
         req->rq_set = set;
         set->set_remaining++;
@@ -792,6 +793,7 @@ int ptlrpc_set_add_new_req(struct ptlrpcd_ctl *pc,
         /* 
          * The set takes over the caller's request reference. 
          */
+        LASSERT(list_empty(&req->rq_set_chain));
         list_add_tail(&req->rq_set_chain, &set->set_new_requests);
         req->rq_set = set;
         spin_unlock(&set->set_new_req_lock);
