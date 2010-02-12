@@ -516,6 +516,36 @@ int lprocfs_quota_wr_sync_blk(struct file *file, const char *buffer,
 }
 EXPORT_SYMBOL(lprocfs_quota_wr_sync_blk);
 
+int lprocfs_quota_rd_hash_cur_bits(char *page, char **start, off_t off,
+                                   int count, int *eof, void *data)
+{
+        struct obd_device *obd = (struct obd_device *)data;
+        LASSERT(obd != NULL);
+
+        return snprintf(page, count, "%d\n",
+                        lustre_hash_get_cur_bits(obd->u.obt.obt_qctxt.lqc_lqs_hash));
+}
+EXPORT_SYMBOL(lprocfs_quota_rd_hash_cur_bits);
+
+int lprocfs_quota_wr_hash_cur_bits(struct file *file, const char *buffer,
+                              unsigned long count, void *data)
+{
+        struct obd_device *obd = (struct obd_device *)data;
+        int val, rc;
+        LASSERT(obd != NULL);
+
+        rc = lprocfs_write_helper(buffer, count, &val);
+        if (rc)
+                return rc;
+
+        if (val < 1 || val > 31)
+                return -EINVAL;
+
+        lustre_hash_set_cur_bits(obd->u.obt.obt_qctxt.lqc_lqs_hash, val);
+        return count;
+}
+EXPORT_SYMBOL(lprocfs_quota_wr_hash_cur_bits);
+
 int lprocfs_quota_rd_switch_qs(char *page, char **start, off_t off,
                                int count, int *eof, void *data)
 {
@@ -688,6 +718,8 @@ struct lprocfs_vars lprocfs_quota_common_vars[] = {
                                    lprocfs_quota_wr_switch_seconds, 0 },
         { "quota_sync_blk", lprocfs_quota_rd_sync_blk,
                             lprocfs_quota_wr_sync_blk, 0},
+        { "quota_hash_cur_bits", lprocfs_quota_rd_hash_cur_bits,
+                            lprocfs_quota_wr_hash_cur_bits, 0},
         { NULL }
 };
 
