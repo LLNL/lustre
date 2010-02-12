@@ -100,11 +100,21 @@ int ptlrpcd_add_req(struct ptlrpc_request *req)
         struct ptlrpcd_ctl *pc;
         int rc;
 
-        if (req->rq_send_state == LUSTRE_IMP_FULL)
-                pc = &ptlrpcd_pc;
-        else
-                pc = &ptlrpcd_recovery_pc;
-        rc = ptlrpc_set_add_new_req(pc, req);
+        if (req->rq_set == NULL) {
+                if (req->rq_send_state == LUSTRE_IMP_FULL)
+                        pc = &ptlrpcd_pc;
+                else
+                        pc = &ptlrpcd_recovery_pc;
+
+                rc = ptlrpc_set_add_new_req(pc, req);
+        } else {
+                LASSERT(req->rq_phase == RQ_PHASE_NEW);
+                LASSERT(req->rq_send_state == LUSTRE_IMP_REPLAY);
+
+                cfs_waitq_signal(&req->rq_set->set_waitq);
+                return 0;
+        }
+
         if (rc) {
                 /*
                  * Thread is probably in stop now so we need to
