@@ -574,6 +574,12 @@ static inline int llog_create(struct llog_ctxt *ctxt, struct llog_handle **res,
         if (!raised)
                 cfs_cap_raise(CFS_CAP_SYS_RESOURCE);
         rc = lop->lop_create(ctxt, res, logid, name);
+        if (rc == -ENOENT) {
+                /* Bug 910: Since this is an inline function, we should
+                 * get the name of the calling function here
+                 * (expect llog_cat_id2handle for bug) */
+                CERROR("lop_create function returned ENOENT\n");
+        }
         if (!raised)
                 cfs_cap_lower(CFS_CAP_SYS_RESOURCE);
         RETURN(rc);
