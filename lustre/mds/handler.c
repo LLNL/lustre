@@ -235,12 +235,19 @@ struct dentry *mds_fid2dentry(struct mds_obd *mds, struct ll_fid *fid,
         /* under ext3 this is neither supposed to return bad inodes
            nor NULL inodes. */
         result = mds_lookup(obd, fid_name, mds->mds_fid_de, strlen(fid_name));
-        if (IS_ERR(result))
+        if (IS_ERR(result)) {
+                CERROR("mds_lookup() (fid_name %s ino/gen %lu/%u) returned %ld\n",
+                        fid_name, ino, generation, PTR_ERR(result));
                 RETURN(result);
+        }
 
         inode = result->d_inode;
-        if (!inode)
+        if (!inode) {
+                CERROR("mds_lookup() (fid_name %s ino/gen %lu/%u) "
+                        "returned dentry with NULL inode\n",
+                        fid_name, ino, generation);
                 RETURN(ERR_PTR(-ENOENT));
+        }
 
        if (inode->i_nlink == 0) {
                 if (inode->i_mode == 0 &&
@@ -253,12 +260,15 @@ struct dentry *mds_fid2dentry(struct mds_obd *mds, struct ll_fid *fid,
                                       atomic_read(&inode->i_count));
                 }
                 dput(result);
+                CERROR("mds_lookup() (fid_name %s ino/gen %lu/%u) "
+                        "returned inode with no hard links\n",
+                        fid_name, ino, generation);
                 RETURN(ERR_PTR(-ENOENT));
         }
 
         if (generation && inode->i_generation != generation) {
                 /* we didn't find the right inode.. */
-                CDEBUG(D_INODE, "found wrong generation: inode %lu, link: %lu, "
+                CERROR("found wrong generation: inode %lu, link: %lu, "
                        "count: %d, generation %u/%u\n", inode->i_ino,
                        (unsigned long)inode->i_nlink,
                        atomic_read(&inode->i_count), inode->i_generation,
