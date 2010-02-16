@@ -1363,11 +1363,14 @@ static void server_wait_finished(struct vfsmount *mnt)
         cfs_waitq_init(&waitq);
 
         while (cfs_atomic_read(&mnt->mnt_count) > 1) {
-                if (waited && (waited % 30 == 0))
+                if (waited && (waited % 30 == 0)) {
                         LCONSOLE_WARN("Mount still busy with %d refs after "
                                        "%d secs.\n",
                                        atomic_read(&mnt->mnt_count),
                                        waited);
+                        if (waited >= 120)
+                                LBUG();
+                }
                 /* Cannot use l_event_wait() for an interruptible sleep. */
                 waited += 3;
                 blocked = l_w_e_set_sigs(sigmask(SIGKILL)); 
