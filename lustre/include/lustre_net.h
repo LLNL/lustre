@@ -101,7 +101,7 @@
  * considered full when less than ?_MAXREQSIZE is left in them.
  */
 
-#define LDLM_THREADS_AUTO_MIN (2)
+#define LDLM_THREADS_AUTO_MIN (4)
 #define LDLM_THREADS_AUTO_MAX min_t(unsigned, num_online_cpus()*num_online_cpus()*32, 128)
 #define LDLM_BL_THREADS  LDLM_THREADS_AUTO_MIN
 #define LDLM_NBUFS      (64 * num_online_cpus())
