@@ -2106,60 +2106,6 @@ void ldlm_put_ref(void)
         EXIT;
 }
 
-static int ldlm_cancel_hpreq_lock_match(struct ptlrpc_request *req,
-                                        struct ldlm_lock *lock)
-{
-        struct ldlm_request *dlm_req;
-        int i, count;
-        ENTRY;
-
-        dlm_req = lustre_swab_reqbuf(req, DLM_LOCKREQ_OFF, sizeof(*dlm_req),
-                                     lustre_swab_ldlm_request);
-        LASSERT(dlm_req != NULL);
-        count = dlm_req->lock_count ? dlm_req->lock_count : 1;
-
-        for (i = 0; i < count; i++) {
-                if (dlm_req->lock_handle[i].cookie == lock->l_handle.h_cookie)
-                        RETURN(1);
-        }
-
-        RETURN(0);
-}
-
-static int ldlm_cancel_hpreq_check(struct ptlrpc_request *req)
-{
-        RETURN(1);
-}
-
-struct ptlrpc_hpreq_ops ldlm_hpreq_cancel = {
-        .hpreq_lock_match  = ldlm_cancel_hpreq_lock_match,
-        .hpreq_check       = ldlm_cancel_hpreq_check,
-};
-
-static int ldlm_hpreq_handler(struct ptlrpc_request *req)
-{
-        ENTRY;
-
-        if (req->rq_export) {
-                int opc = lustre_msg_get_opc(req->rq_reqmsg);
-                struct ldlm_request *dlm_req;
-
-                if (opc == LDLM_CANCEL) {
-                        dlm_req = lustre_swab_reqbuf(req, DLM_LOCKREQ_OFF,
-                                                     sizeof(*dlm_req),
-                                                     lustre_swab_ldlm_request);
-                        if (!dlm_req) {
-                                CERROR("Missing/short ldlm_request\n");
-                                RETURN(-EFAULT);
-                        }
-
-                        req->rq_ops = &ldlm_hpreq_cancel;
-                }
-        }
-
-        RETURN(0);
-}
-
 static int ldlm_setup(void)
 {
         struct ldlm_bl_pool *blp;
@@ -2216,7 +2162,7 @@ static int ldlm_setup(void)
                                 ldlm_cancel_handler, "ldlm_canceld",
                                 ldlm_svc_proc_dir, NULL,
                                 ldlm_min_threads, ldlm_max_threads,
-                                "ldlm_cn", ldlm_hpreq_handler);
+                                "ldlm_cn", NULL);
 
         if (!ldlm_state->ldlm_cancel_service) {
                 CERROR("failed to start service\n");
