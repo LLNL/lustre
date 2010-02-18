@@ -1368,8 +1368,8 @@ static void server_wait_finished(struct vfsmount *mnt)
                                        "%d secs.\n",
                                        atomic_read(&mnt->mnt_count),
                                        waited);
-                        if (waited >= 120)
-                                LBUG();
+                        if (waited == 120)
+                                libcfs_debug_dumplog();
                 }
                 /* Cannot use l_event_wait() for an interruptible sleep. */
                 waited += 3;
