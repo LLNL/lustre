@@ -871,7 +871,7 @@ static int filter_init_server_data(struct obd_device *obd, struct file * filp)
                 exp = class_new_export(obd, (struct obd_uuid *)lcd->lcd_uuid);
                 if (IS_ERR(exp)) {
                         if (PTR_ERR(exp) == -EALREADY) {
-                                /* export already exists, zero out this one */
+                                /* export already exists */
                                 CERROR("Duplicate export %s!\n", lcd->lcd_uuid);
                                 continue;
                         }
@@ -1623,8 +1623,9 @@ static int filter_destroy_internal(struct obd_device *obd, obd_id objid,
 
         rc = filter_vfs_unlink(dparent->d_inode, dchild, obd->u.obt.obt_vfsmnt);
         if (rc)
-                CERROR("error unlinking objid %.*s: rc %d\n",
-                       dchild->d_name.len, dchild->d_name.name, rc);
+                CDEBUG_LIMIT(rc == -ENOENT ? D_INODE : D_ERROR,
+                             "error unlinking objid %.*s: rc %d\n",
+                             dchild->d_name.len, dchild->d_name.name, rc);
         return(rc);
 }
 
@@ -2106,7 +2107,7 @@ int filter_common_setup(struct obd_device *obd, struct lustre_cfg* lcfg,
         q = bdev_get_queue(mnt->mnt_sb->s_bdev);
         if (queue_max_sectors(q) < queue_max_hw_sectors(q) &&
             queue_max_sectors(q) < PTLRPC_MAX_BRW_SIZE >> 9)
-                LCONSOLE_INFO("%s: underlying device %s should be tuned "
+                LCONSOLE_INFO("%s: Underlying device %s should be tuned "
                               "for larger I/O requests: max_sectors = %u "
                               "could be up to max_hw_sectors=%u\n",
                               obd->obd_name, mnt->mnt_sb->s_id,

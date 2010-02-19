@@ -779,7 +779,7 @@ int mgs_handle(struct ptlrpc_request *req)
         LASSERT(current->journal_info == NULL);
 
         if (rc)
-                CERROR("MGS handle cmd=%d rc=%d\n", opc, rc);
+                CDEBUG(D_MGS, "MGS handle cmd=%d rc=%d\n", opc, rc);
 
 out:
         target_send_reply(req, rc, fail);

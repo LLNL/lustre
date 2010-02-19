@@ -1042,7 +1042,9 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
                 *status = -EIO;
                 LBUG();
         } else if (imp->imp_state == LUSTRE_IMP_CLOSED) {
-                DEBUG_REQ(D_ERROR, req, "IMP_CLOSED ");
+                /* pings may safely race with umount */
+                DEBUG_REQ(lustre_msg_get_opc(req->rq_reqmsg) == OBD_PING ?
+                          D_HA : D_ERROR, req, "IMP_CLOSED ");
                 *status = -EIO;
         } else if (ptlrpc_send_limit_expired(req)) {
                 /* probably doesn't need to be a D_ERROR after initial testing */
@@ -1057,7 +1059,7 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
                 }
         } else if (imp->imp_invalid || imp->imp_obd->obd_no_recov) {
                 if (!imp->imp_deactive)
-                          DEBUG_REQ(D_ERROR, req, "IMP_INVALID");
+                        DEBUG_REQ(D_NET, req, "IMP_INVALID");
                 *status = -ESHUTDOWN; /* bz 12940 */
         } else if (req->rq_import_generation != imp->imp_generation) {
                 DEBUG_REQ(D_ERROR, req, "req wrong generation:");
@@ -1119,10 +1121,12 @@ static int ptlrpc_check_status(struct ptlrpc_request *req)
         if (lustre_msg_get_type(req->rq_repmsg) == PTL_RPC_MSG_ERR) {
                 struct obd_import *imp = req->rq_import;
                 __u32 opc = lustre_msg_get_opc(req->rq_reqmsg);
-                LCONSOLE_ERROR_MSG(0x011,"an error occurred while communicating"
-                                " with %s. The %s operation failed with %d\n",
-                                libcfs_nid2str(imp->imp_connection->c_peer.nid),
-                                ll_opcode2str(opc), err);
+                LCONSOLE_ERROR_MSG(0x011, "%s: Communicating with %s, "
+                                   "operation %s failed with %d.\n",
+                                   imp->imp_obd->obd_name,
+                                   libcfs_nid2str(
+                                   imp->imp_connection->c_peer.nid),
+                                   ll_opcode2str(opc), err);
                 RETURN(err < 0 ? err : -EINVAL);
         }
 
@@ -1138,13 +1142,12 @@ static int ptlrpc_check_status(struct ptlrpc_request *req)
                 __u32 opc = lustre_msg_get_opc(req->rq_reqmsg);
 
                 if (ptlrpc_console_allow(req))
-                        LCONSOLE_ERROR_MSG(0x011,"an error occurred while "
-                                           "communicating with %s. The %s "
-                                           "operation failed with %d\n",
+                        LCONSOLE_ERROR_MSG(0x011, "%s: Communicating with %s, "
+                                           "operation %s failed with %d\n",
+                                           imp->imp_obd->obd_name,
                                            libcfs_nid2str(
                                            imp->imp_connection->c_peer.nid),
                                            ll_opcode2str(opc), err);
-
                 RETURN(err < 0 ? err : -EINVAL);
         }
 
