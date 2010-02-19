@@ -656,7 +656,7 @@ static int ping_evictor_main(void *arg)
                         if (expire_time > exp->exp_last_request_time) {
                                 class_export_get(exp);
                                 cfs_spin_unlock(&obd->obd_dev_lock);
-                                 LCONSOLE_WARN("%s: haven't heard from client %s"
+                                LCONSOLE_WARN("%s: haven't heard from client %s"
                                               " (at %s) in %ld seconds. I think"
                                               " it's dead, and I am evicting"
                                               " it. exp %p, cur %ld expire %ld"
