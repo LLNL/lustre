@@ -1273,8 +1273,8 @@ void class_disconnect_stale_exports(struct obd_device *obd,
         cfs_spin_unlock(&obd->obd_dev_lock);
 
         if (evicted) {
-                CDEBUG(D_HA, "%s: disconnecting %d stale clients\n",
-                       obd->obd_name, evicted);
+                LCONSOLE_WARN("%s: disconnecting %d stale clients\n",
+                              obd->obd_name, obd->obd_stale_clients);
                 obd->obd_stale_clients += evicted;
         }
         class_disconnect_export_list(&work_list, exp_flags_from_obd(obd) |
@@ -1345,9 +1345,10 @@ int obd_export_evict_by_nid(struct obd_device *obd, const char *nid)
                 LASSERTF(doomed_exp != obd->obd_self_export,
                          "self-export is hashed by NID?\n");
                 exports_evicted++;
-                CWARN("%s: evict NID '%s' (%s) #%d at adminstrative request\n",
-                       obd->obd_name, nid, doomed_exp->exp_client_uuid.uuid,
-                       exports_evicted);
+                LCONSOLE_WARN("%s: evicting %s (at %s) by administrative "
+                              "request\n", obd->obd_name,
+                              obd_uuid2str(&doomed_exp->exp_client_uuid),
+                              obd_export_nid2str(doomed_exp));
                 class_fail_export(doomed_exp);
                 class_export_put(doomed_exp);
         } while (1);
