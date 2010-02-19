@@ -682,7 +682,7 @@ static int mds_init_server_data(struct obd_device *obd, struct file *file)
         obd->obd_last_committed = mds->mds_last_transno;
 
         if (obd->obd_recoverable_clients) {
-                CWARN("RECOVERY: service %s, %d recoverable clients, "
+                CDEBUG(D_HA, "RECOVERY: service %s, %d recoverable clients, "
                       "%d delayed clients, last_transno "LPU64"\n",
                       obd->obd_name, obd->obd_recoverable_clients,
                       obd->obd_delayed_clients, mds->mds_last_transno);

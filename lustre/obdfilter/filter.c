@@ -942,8 +942,6 @@ static int filter_init_server_data(struct obd_device *obd, struct file * filp)
                 if (IS_ERR(exp)) {
                         if (PTR_ERR(exp) == -EALREADY) {
                                 /* export already exists, zero out this one */
-                                CERROR("Zeroing out duplicate export due to "
-                                       "bug 10479.\n");
                                 lcd->lcd_uuid[0] = '\0';
                         } else {
                                 GOTO(err_client, rc = PTR_ERR(exp));
@@ -996,11 +994,11 @@ static int filter_init_server_data(struct obd_device *obd, struct file * filp)
         obd->obd_last_committed = le64_to_cpu(fsd->lsd_last_transno);
 
         if (obd->obd_recoverable_clients) {
-                CWARN("RECOVERY: service %s, %d recoverable clients, "
-                      "%d delayed clients, last_rcvd "LPU64"\n",
-                      obd->obd_name, obd->obd_recoverable_clients,
-                      obd->obd_delayed_clients,
-                      le64_to_cpu(fsd->lsd_last_transno));
+                CDEBUG(D_HA, "RECOVERY: service %s, %d recoverable clients, "
+                       "%d delayed clients, last_rcvd "LPU64"\n",
+                       obd->obd_name, obd->obd_recoverable_clients,
+                       obd->obd_delayed_clients,
+                       le64_to_cpu(fsd->lsd_last_transno));
                 obd->obd_next_recovery_transno = obd->obd_last_committed + 1;
                 obd->obd_recovering = 1;
                 obd->obd_recovery_start = 0;
@@ -1556,8 +1554,9 @@ static int filter_destroy_internal(struct obd_device *obd, obd_id objid,
 
         rc = filter_vfs_unlink(dparent->d_inode, dchild, filter->fo_vfsmnt);
         if (rc)
-                CERROR("error unlinking objid %.*s: rc %d\n",
-                       dchild->d_name.len, dchild->d_name.name, rc);
+                CDEBUG_LIMIT(rc == -ENOENT ? D_INODE : D_ERROR,
+                             "error unlinking objid %.*s: rc %d\n",
+                             dchild->d_name.len, dchild->d_name.name, rc);
         return(rc);
 }
 
@@ -1998,7 +1997,7 @@ int filter_common_setup(struct obd_device *obd, obd_count len, void *buf,
         q = bdev_get_queue(mnt->mnt_sb->s_bdev);
         if (q->max_sectors < q->max_hw_sectors &&
             q->max_sectors < PTLRPC_MAX_BRW_SIZE >> 9)
-                LCONSOLE_INFO("%s: underlying device %s should be tuned "
+                LCONSOLE_INFO("%s: Underlying device %s should be tuned "
                               "for larger I/O requests: max_sectors = %u "
                               "could be up to max_hw_sectors=%u\n",
                               obd->obd_name, mnt->mnt_sb->s_id,
@@ -3084,9 +3083,9 @@ static int filter_destroy_precreated(struct obd_export *exp, struct obdo *oa,
         last = filter_last_id(filter, doa.o_gr);
         skip_orphan = !!(exp->exp_connect_flags & OBD_CONNECT_SKIP_ORPHAN);
 
-        CWARN("%s: deleting orphan objects from "LPU64" to "LPU64"%s\n",
-               exp->exp_obd->obd_name, oa->o_id + 1, last,
-               skip_orphan ? ", orphan objids won't be reused any more." : ".");
+        LCONSOLE_WARN("%s: Deleting orphan objects from "LPU64" to "LPU64"%s\n",
+                      exp->exp_obd->obd_name, oa->o_id + 1, last,
+                      skip_orphan ? ", orphan objids won't be reused any more." : ".");
 
         for (id = last; id > oa->o_id; id--) {
                 doa.o_id = id;
@@ -3500,8 +3499,8 @@ int filter_recreate(struct obd_device *obd, struct obdo *oa)
         }
 
         if (rc == 0)
-                CWARN("%s: recreated missing object "LPU64"/"LPU64"\n",
-                      obd->obd_name, oa->o_id, oa->o_gr);
+                LCONSOLE_WARN("%s: Recreated missing object "LPU64"/"LPU64"\n",
+                              obd->obd_name, oa->o_id, oa->o_gr);
 
         oa->o_valid = old_valid;
         oa->o_flags = old_flags;
@@ -3968,7 +3967,7 @@ int filter_iocontrol(unsigned int cmd, struct obd_export *exp,
 
         switch (cmd) {
         case OBD_IOC_ABORT_RECOVERY: {
-                CERROR("aborting recovery for device %s\n", obd->obd_name);
+                LCONSOLE_WARN("%s: Aborting recovery\n", obd->obd_name);
                 target_abort_recovery(obd);
                 RETURN(0);
         }
