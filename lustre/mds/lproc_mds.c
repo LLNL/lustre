@@ -268,7 +268,8 @@ static int lprocfs_wr_group_upcall(struct file *file, const char *buffer,
         if (strcmp(hash->uc_name, obd->obd_name) != 0)
                 CWARN("%s: write to upcall name %s for MDS %s\n",
                       obd->obd_name, hash->uc_upcall, obd->obd_name);
-        CWARN("%s: group upcall set to %s\n", obd->obd_name, hash->uc_upcall);
+        CDEBUG(D_CONFIG, "%s: group upcall set to %s\n",
+               obd->obd_name, hash->uc_upcall);
 
         return count;
 }

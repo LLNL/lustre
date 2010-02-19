@@ -1100,8 +1100,8 @@ void class_disconnect_stale_exports(struct obd_device *obd,
         }
         spin_unlock(&obd->obd_dev_lock);
 
-        CDEBUG(D_HA, "%s: disconnecting %d stale clients\n",
-               obd->obd_name, obd->obd_stale_clients);
+        LCONSOLE_WARN("%s: disconnecting %d stale clients\n",
+                      obd->obd_name, obd->obd_stale_clients);
         class_disconnect_export_list(&work_list, flags);
         EXIT;
 }
@@ -1451,8 +1451,11 @@ int obd_export_evict_by_uuid(struct obd_device *obd, char *uuid)
                 CERROR("%s: can't disconnect %s: no exports found\n",
                        obd->obd_name, uuid);
         } else {
-                CWARN("%s: evicting %s at adminstrative request\n",
-                       obd->obd_name, doomed_exp->exp_client_uuid.uuid);
+                LCONSOLE_WARN("%s: evicting %s (at %s) by adminstrative "
+                              "request\n", obd->obd_name,
+                              obd_uuid2str(&doomed_exp->exp_client_uuid),
+                              obd_export_nid2str(doomed_exp));
+
                 class_fail_export(doomed_exp);
                 class_export_put(doomed_exp);
                 exports_evicted++;

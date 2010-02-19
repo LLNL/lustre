@@ -1507,9 +1507,10 @@ int mds_handle(struct ptlrpc_request *req)
                 int recovering;
 
                 if (!class_connected_export(req->rq_export)) {
-                        CERROR("operation %d on unconnected MDS from %s\n",
+                        CDEBUG(D_HA,"operation %d on unconnected MDS from %s\n",
                                lustre_msg_get_opc(req->rq_reqmsg),
                                libcfs_id2str(req->rq_peer));
+
                         req->rq_status = -ENOTCONN;
                         GOTO(out, rc = -ENOTCONN);
                 }
