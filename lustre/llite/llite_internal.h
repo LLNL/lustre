@@ -304,6 +304,7 @@ enum stats_track_type {
 #define LL_SBI_LLITE_CHECKSUM  0x100 /* checksum each page in memory */
 #define LL_SBI_LAZYSTATFS      0x200 /* lazystatfs mount option */
 #define LL_SBI_32BIT_API       0x400 /* generate 32 bit inodes. */
+#define LL_SBI_VERBOSE         0x800 /* verbose mount/umount */
 
 /* default value for ll_sb_info->contention_time */
 #define SBI_DEFAULT_CONTENTION_SECONDS     60
