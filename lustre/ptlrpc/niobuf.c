@@ -502,6 +502,20 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
          * cleanly from the previous attempt */
         LASSERT(!request->rq_receiving_reply);
 
+        if (unlikely(current->journal_info)) {
+                static cfs_time_t next_time;
+                int *info = cfs_current()->journal_info;
+
+                if (info != NULL && *info != LTD_MAGIC &&
+                    cfs_time_after(cfs_time_current(), next_time)) {
+                        libcfs_debug_dumpstack(NULL);
+                        DEBUG_REQ(D_ERROR, request,
+                                  "sending RPC with active journal_info\n");
+                        libcfs_debug_dumpstack(NULL);
+                        next_time = cfs_time_shift(60);
+                }
+        }
+
         if (request->rq_import->imp_obd &&
             request->rq_import->imp_obd->obd_fail) {
                 CDEBUG(D_HA, "muting rpc for failed imp obd %s\n",
