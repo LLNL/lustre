@@ -615,12 +615,11 @@ static int ldlm_cb_interpret(struct ptlrpc_request *req, void *data, int rc)
         LASSERT(lock != NULL);
         if (rc != 0) {
                 /* If client canceled the lock but the cancel has not
-                 * been received yet, we need to update lvbo for non
-                 * PR locks to have the proper attributes cached. */
-                if (rc == -EINVAL && arg->type == LDLM_BL_CALLBACK &&
-                    lock->l_granted_mode != LCK_PR)
-                        ldlm_res_lvbo_update(lock->l_resource, NULL, 0, 1);
-
+                 * been recieved yet, we need to update lvbo to have the
+                 * proper attributes cached. */
+                if (rc == -EINVAL && arg->type == LDLM_BL_CALLBACK)
+                        ldlm_res_lvbo_update(lock->l_resource, NULL,
+                                             0, 1);
                 rc = ldlm_handle_ast_error(lock, req, rc,
                                            arg->type == LDLM_BL_CALLBACK
                                            ? "blocking" : "completion");
@@ -1360,8 +1359,7 @@ int ldlm_request_cancel(struct ptlrpc_request *req,
                         }
                         if (res != NULL) {
                                 ldlm_resource_getref(res);
-                                if (lock->l_granted_mode != LCK_PR)
-                                        ldlm_res_lvbo_update(res, NULL, 0, 1);
+                                ldlm_res_lvbo_update(res, NULL, 0, 1);
                         }
                         pres = res;
                 }
@@ -2108,83 +2106,6 @@ void ldlm_put_ref(void)
         EXIT;
 }
 
-static int ldlm_cancel_hpreq_lock_match(struct ptlrpc_request *req,
-                                        struct ldlm_lock *lock)
-{
-        struct ldlm_request *dlm_req;
-        int i, count;
-        ENTRY;
-
-        dlm_req = lustre_swab_reqbuf(req, DLM_LOCKREQ_OFF, sizeof(*dlm_req),
-                                     lustre_swab_ldlm_request);
-        LASSERT(dlm_req != NULL);
-        count = dlm_req->lock_count ? dlm_req->lock_count : 1;
-
-        for (i = 0; i < count; i++)
-                if (dlm_req->lock_handle[i].cookie == lock->l_handle.h_cookie)
-                        RETURN(1);
-
-        RETURN(0);
-}
-
-/* Mark requests for locks with pending waiters as high priority */
-static int ldlm_cancel_hpreq_check(struct ptlrpc_request *req)
-{
-        struct ldlm_request *dlm_req;
-        struct ldlm_lock *lock;
-        int i, count, ret = 0;
-        ENTRY;
-
-        dlm_req = lustre_swab_reqbuf(req, DLM_LOCKREQ_OFF, sizeof(*dlm_req),
-                                     lustre_swab_ldlm_request);
-        LASSERT(dlm_req != NULL);
-        count = dlm_req->lock_count ? dlm_req->lock_count : 1;
-
-        for (i = 0; i < count; i++) {
-                lock = ldlm_handle2lock(&dlm_req->lock_handle[i]);
-                if (!lock)
-                        continue;
-
-                spin_lock_bh(&waiting_locks_spinlock);
-                if (!list_empty(&lock->l_pending_chain))
-                        ret = 1;
-                spin_unlock_bh(&waiting_locks_spinlock);
-
-                LDLM_LOCK_PUT(lock);
-        }
-
-        RETURN(ret);
-}
-
-struct ptlrpc_hpreq_ops ldlm_hpreq_cancel = {
-        .hpreq_lock_match  = ldlm_cancel_hpreq_lock_match,
-        .hpreq_check       = ldlm_cancel_hpreq_check,
-};
-
-static int ldlm_hpreq_handler(struct ptlrpc_request *req)
-{
-        ENTRY;
-
-        if (req->rq_export) {
-                int opc = lustre_msg_get_opc(req->rq_reqmsg);
-                struct ldlm_request *dlm_req;
-
-                if (opc == LDLM_CANCEL) {
-                        dlm_req = lustre_swab_reqbuf(req, DLM_LOCKREQ_OFF,
-                                                     sizeof(*dlm_req),
-                                                     lustre_swab_ldlm_request);
-                        if (!dlm_req) {
-                                CERROR("Missing/short ldlm_request\n");
-                                RETURN(-EFAULT);
-                        }
-
-                        req->rq_ops = &ldlm_hpreq_cancel;
-                }
-        }
-
-        RETURN(0);
-}
-
 static int ldlm_setup(void)
 {
         struct ldlm_bl_pool *blp;
@@ -2241,7 +2162,7 @@ static int ldlm_setup(void)
                                 ldlm_cancel_handler, "ldlm_canceld",
                                 ldlm_svc_proc_dir, NULL,
                                 ldlm_min_threads, ldlm_max_threads,
-                                "ldlm_cn", ldlm_hpreq_handler);
+                                "ldlm_cn", NULL);
 
         if (!ldlm_state->ldlm_cancel_service) {
                 CERROR("failed to start service\n");
