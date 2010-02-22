@@ -100,6 +100,31 @@ int ptlrpcd_add_req(struct ptlrpc_request *req)
         struct ptlrpcd_ctl *pc;
         int rc;
 
+        spin_lock(&req->rq_lock);
+        if (req->rq_invalid_rqset) {
+                cfs_duration_t timeout;
+                struct l_wait_info lwi;
+
+                req->rq_invalid_rqset = 0;
+                spin_unlock(&req->rq_lock);
+                
+                timeout = cfs_time_seconds(5);
+                lwi = LWI_TIMEOUT(timeout, back_to_sleep, NULL);
+                l_wait_event(req->rq_reply_waitq, (req->rq_set == NULL), &lwi);
+        } else if (req->rq_set) {
+                LASSERT(req->rq_phase == RQ_PHASE_NEW);
+                LASSERT(req->rq_send_state == LUSTRE_IMP_REPLAY);
+
+                /* ptlrpc_check_set will decrease the count */
+                req->rq_set->set_remaining++;
+                spin_unlock(&req->rq_lock);
+
+                cfs_waitq_signal(&req->rq_set->set_waitq);
+                return 0;
+        } else {
+                spin_unlock(&req->rq_lock);
+        }
+
         if (req->rq_send_state == LUSTRE_IMP_FULL)
                 pc = &ptlrpcd_pc;
         else
