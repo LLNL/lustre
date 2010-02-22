@@ -683,7 +683,6 @@ struct ptlrpc_request_set *ptlrpc_prep_set(void)
         CFS_INIT_LIST_HEAD(&set->set_requests);
         cfs_waitq_init(&set->set_waitq);
         set->set_remaining = 0;
-        atomic_set(&set->set_replaying, 0);
         spin_lock_init(&set->set_new_req_lock);
         CFS_INIT_LIST_HEAD(&set->set_new_requests);
         CFS_INIT_LIST_HEAD(&set->set_cblist);
@@ -742,7 +741,6 @@ void ptlrpc_set_destroy(struct ptlrpc_request_set *set)
         }
 
         LASSERT(set->set_remaining == 0);
-        LASSERT(atomic_read(&set->set_replaying) == 0);
 
         OBD_FREE(set, sizeof(*set));
         EXIT;
@@ -769,7 +767,6 @@ void ptlrpc_set_add_req(struct ptlrpc_request_set *set,
                         struct ptlrpc_request *req)
 {
         /* The set takes over the caller's request reference */
-        LASSERT(list_empty(&req->rq_set_chain));
         list_add_tail(&req->rq_set_chain, &set->set_requests);
         req->rq_set = set;
         set->set_remaining++;
@@ -795,7 +792,6 @@ int ptlrpc_set_add_new_req(struct ptlrpcd_ctl *pc,
         /* 
          * The set takes over the caller's request reference. 
          */
-        LASSERT(list_empty(&req->rq_set_chain));
         list_add_tail(&req->rq_set_chain, &set->set_new_requests);
         req->rq_set = set;
         spin_unlock(&set->set_new_req_lock);
@@ -1429,10 +1425,7 @@ int ptlrpc_check_set(struct ptlrpc_request_set *set)
         }
 
         /* If we hit an error, we want to recover promptly. */
-        if (force_timer_recalc)
-                RETURN(1);
-
-        RETURN(!set->set_remaining && !atomic_read(&set->set_replaying));
+        RETURN(set->set_remaining == 0 || force_timer_recalc);
 }
 
 /* Return 1 if we should give up, else 0 */
@@ -1650,10 +1643,9 @@ int ptlrpc_set_wait(struct ptlrpc_request_set *set)
                  * EINTR.
                  * I don't really care if we go once more round the loop in
                  * the error cases -eeb. */
-        } while (rc || set->set_remaining || atomic_read(&set->set_replaying));
+        } while (rc != 0 || set->set_remaining != 0);
 
         LASSERT(set->set_remaining == 0);
-        LASSERT(atomic_read(&set->set_replaying) == 0);
 
         rc = 0;
         list_for_each(tmp, &set->set_requests) {
@@ -2258,8 +2250,6 @@ static int ptlrpc_replay_interpret(struct ptlrpc_request *req,
         struct obd_import *imp = req->rq_import;
 
         ENTRY;
-        if (req->rq_set)
-                atomic_dec(&req->rq_set->set_replaying);
         atomic_dec(&imp->imp_replay_inflight);
 
         if (!ptlrpc_client_replied(req)) {
@@ -2345,8 +2335,6 @@ int ptlrpc_replay_req(struct ptlrpc_request *req)
 
         DEBUG_REQ(D_HA, req, "REPLAY");
 
-        if (req->rq_set)
-                atomic_inc(&req->rq_set->set_replaying);
         atomic_inc(&req->rq_import->imp_replay_inflight);
         ptlrpc_request_addref(req); /* ptlrpcd needs a ref */
 

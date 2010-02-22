@@ -195,7 +195,6 @@ typedef int (*set_interpreter_func)(struct ptlrpc_request_set *, void *, int);
 
 struct ptlrpc_request_set {
         int               set_remaining; /* # uncompleted requests */
-        atomic_t          set_replaying; /* # requests being replayed */
         cfs_waitq_t       set_waitq;
         cfs_waitq_t      *set_wakeup_ptr;
         struct list_head  set_requests;
