@@ -594,6 +594,7 @@ ptlrpc_prep_req_pool(struct obd_import *imp, __u32 version, int opcode,
         CFS_INIT_LIST_HEAD(&request->rq_history_list);
         CFS_INIT_LIST_HEAD(&request->rq_exp_list);
         cfs_waitq_init(&request->rq_reply_waitq);
+        cfs_waitq_init(&request->rq_set_waitq);
         request->rq_xid = ptlrpc_next_xid();
         atomic_set(&request->rq_refcount, 1);
 
@@ -650,6 +651,7 @@ struct ptlrpc_request *ptlrpc_prep_fakereq(struct obd_import *imp,
         CFS_INIT_LIST_HEAD(&request->rq_history_list);
         CFS_INIT_LIST_HEAD(&request->rq_exp_list);
         cfs_waitq_init(&request->rq_reply_waitq);
+        cfs_waitq_init(&request->rq_set_waitq);
 
         request->rq_xid = ptlrpc_next_xid();
         atomic_set(&request->rq_refcount, 1);
@@ -736,7 +738,12 @@ void ptlrpc_set_destroy(struct ptlrpc_request_set *set)
                         set->set_remaining--;
                 }
 
+                spin_lock(&req->rq_lock);
                 req->rq_set = NULL;
+                req->rq_invalid_rqset = 0;
+                spin_unlock(&req->rq_lock);
+
+                cfs_waitq_signal(&req->rq_set_waitq);
                 ptlrpc_req_finished (req);
         }
 
@@ -767,6 +774,7 @@ void ptlrpc_set_add_req(struct ptlrpc_request_set *set,
                         struct ptlrpc_request *req)
 {
         /* The set takes over the caller's request reference */
+        LASSERT(list_empty(&req->rq_set_chain));
         list_add_tail(&req->rq_set_chain, &set->set_requests);
         req->rq_set = set;
         set->set_remaining++;
@@ -792,6 +800,7 @@ int ptlrpc_set_add_new_req(struct ptlrpcd_ctl *pc,
         /* 
          * The set takes over the caller's request reference. 
          */
+        LASSERT(list_empty(&req->rq_set_chain));
         list_add_tail(&req->rq_set_chain, &set->set_new_requests);
         req->rq_set = set;
         spin_unlock(&set->set_new_req_lock);
@@ -1643,6 +1652,15 @@ int ptlrpc_set_wait(struct ptlrpc_request_set *set)
                  * EINTR.
                  * I don't really care if we go once more round the loop in
                  * the error cases -eeb. */
+                if (rc == 0 && set->set_remaining == 0) {
+                        list_for_each(tmp, &set->set_requests) {
+                                req = list_entry(tmp, struct ptlrpc_request, 
+                                                 rq_set_chain);
+                                spin_lock(&req->rq_lock);
+                                req->rq_invalid_rqset = 1;
+                                spin_unlock(&req->rq_lock);
+                        }
+                }
         } while (rc != 0 || set->set_remaining != 0);
 
         LASSERT(set->set_remaining == 0);
