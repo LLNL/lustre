@@ -1311,8 +1311,6 @@ ptlrpc_server_handle_request(struct ptlrpc_service *svc,
         ptlrpc_rqphase_move(request, RQ_PHASE_INTERPRET);
         spin_unlock(&svc->srv_lock);
 
-        ptlrpc_hpreq_fini(request);
-
         if(OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_DUMP_LOG))
                 libcfs_debug_dumplog();
 
@@ -1373,6 +1371,8 @@ put_rpc_export:
                 class_export_rpc_put(export);
 
 put_conn:
+        ptlrpc_hpreq_fini(request);
+
         if (cfs_time_current_sec() > request->rq_deadline) {
                 DEBUG_REQ(D_WARNING, request, "Request took longer than "
                           "estimated (%ld%+lds); client may timeout.",
