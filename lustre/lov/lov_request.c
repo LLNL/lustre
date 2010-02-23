@@ -686,9 +686,9 @@ int lov_update_create_set(struct lov_request_set *set,
 
         if (rc && lov->lov_tgts[req->rq_idx] &&
             lov->lov_tgts[req->rq_idx]->ltd_active) {
-                /* Precreating objects may timeout when an OST is
-                 * restarted and is always a non-critical event. */
-                CDEBUG(rc == -ETIMEDOUT ? D_HA : D_ERROR,
+                /* Pre-creating objects may timeout via -ETIMEDOUT or
+                 * -ENOTCONN both are always non-critical events. */
+                CDEBUG(rc == -ETIMEDOUT || rc == -ENOTCONN ? D_HA : D_ERROR,
                        "error creating fid "LPX64" sub-object "
                        "on OST idx %d/%d: rc = %d\n",
                        set->set_oi->oi_oa->o_id, req->rq_idx,
