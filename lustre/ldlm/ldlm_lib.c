@@ -576,22 +576,25 @@ static int target_handle_reconnect(struct lustre_handle *conn,
 
                 /* Might be a re-connect after a partition. */
                 if (!memcmp(&conn->cookie, &hdl->cookie, sizeof conn->cookie)) {
-                        if (target->obd_recovering)
+                        if (target->obd_recovering) {
+                                int timeout = cfs_duration_sec(cfs_time_sub(
+                                        cfs_timer_deadline(
+                                        &target->obd_recovery_timer),
+                                        cfs_time_current()));
+
                                 LCONSOLE_WARN("%s: Client %s (at %s) reconnect"
-                                        "ing, waiting for %d clients in "
-                                        "recovery for %lds\n", target->obd_name,
+                                        "ing, waiting for %d clients in recov"
+                                        "ery for %d:%.02d\n", target->obd_name,
                                         obd_uuid2str(&exp->exp_client_uuid),
                                         obd_export_nid2str(exp),
                                         target->obd_recoverable_clients,
-                                        cfs_duration_sec(cfs_time_sub(
-                                        cfs_timer_deadline(
-                                        &target->obd_recovery_timer),
-                                        cfs_time_current())));
-                        else
+                                        timeout / 60, timeout % 60);
+                        } else {
                                 LCONSOLE_WARN("%s: Client %s (at %s) "
                                         "reconnecting\n", target->obd_name,
                                         obd_uuid2str(&exp->exp_client_uuid),
                                         obd_export_nid2str(exp));
+                        }
 
                         conn->cookie = exp->exp_handle.h_cookie;
                         /* target_handle_connect() treats EALREADY and
@@ -968,14 +971,16 @@ no_export:
 
         if (export == NULL) {
                 if (target->obd_recovering) {
+                        int timeout = cfs_duration_sec(cfs_time_sub(
+                                cfs_timer_deadline(&target->obd_recovery_timer),
+                                cfs_time_current()));
+
                         LCONSOLE_WARN("%s: Denying connection for new client "
                                 "%s (at %s), waiting for %d clients in "
-                                "recovery for %lds\n", target->obd_name,
+                                "recovery for %d:%.02d\n", target->obd_name,
                                 cluuid.uuid, libcfs_nid2str(req->rq_peer.nid),
                                 target->obd_recoverable_clients,
-                                cfs_duration_sec(cfs_time_sub(
-                                cfs_timer_deadline(&target->obd_recovery_timer),
-                                cfs_time_current())));
+                                timeout / 60, timeout % 60);
                         rc = -EBUSY;
                 } else {
  dont_check_exports:
@@ -1480,8 +1485,9 @@ static void check_and_start_recovery_timer(struct obd_device *obd,
                 spin_unlock_bh(&obd->obd_processing_task_lock);
                 return;
         }
-        LCONSOLE_INFO("%s: Starting recovery timer for %u seconds\n",
-                      obd->obd_name, obd->obd_recovery_timeout);
+        LCONSOLE_INFO("%s: Starting recovery timer for %d:%.02d\n",
+                      obd->obd_name, obd->obd_recovery_timeout / 60,
+                      obd->obd_recovery_timeout % 60);
         obd->obd_recovery_start = cfs_time_current_sec();
         obd->obd_recovery_handler = handler;
         cfs_timer_init(&obd->obd_recovery_timer, target_recovery_expired, obd);
