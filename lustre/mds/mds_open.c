@@ -891,9 +891,8 @@ static int mds_open_by_fid(struct ptlrpc_request *req, struct ll_fid *fid,
 
         if (dchild->d_inode != NULL) {
                 mds_inode_set_orphan(dchild->d_inode);
-                LCONSOLE_INFO("%s: Pending orphan %s re-opened from "
-                              "NID %s\n", obd->obd_name, fidname,
-                              libcfs_nid2str(req->rq_peer.nid));
+                CWARN("Orphan %s found and opened in PENDING directory\n",
+                       fidname);
         } else {
                 __u64 *pre_versions = lustre_msg_get_versions(req->rq_reqmsg);
                 l_dput(dchild);

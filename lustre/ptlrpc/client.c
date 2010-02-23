@@ -929,14 +929,8 @@ static int ptlrpc_check_reply(struct ptlrpc_request *req)
 /* Conditionally suppress specific console messages */
 static int ptlrpc_console_allow(struct ptlrpc_request *req)
 {
-        __u32 opc;
+        __u32 opc = lustre_msg_get_opc(req->rq_reqmsg);
         int err;
-
-        /* Allow the message */
-        if (req->rq_import == NULL || req->rq_reqmsg == NULL)
-                return 1;
-
-        opc = lustre_msg_get_opc(req->rq_reqmsg);
 
         /* Suppress particular reconnect errors which are to be expected.  No
          * errors are suppressed for the initial connection on an import */
@@ -948,11 +942,9 @@ static int ptlrpc_console_allow(struct ptlrpc_request *req)
                         return 0;
 
                 /* Suppress unavailable/again reconnect requests */
-                if (req->rq_repmsg) {
-                        err = lustre_msg_get_status(req->rq_repmsg);
-                        if (err == -ENODEV || err == -EAGAIN)
-                                return 0;
-                }
+                err = lustre_msg_get_status(req->rq_repmsg);
+                if (err == -ENODEV || err == -EAGAIN)
+                        return 0;
         }
 
         return 1;
@@ -1444,9 +1436,14 @@ int ptlrpc_expire_one_request(struct ptlrpc_request *req, int async_unlink)
         int rc = 0;
         ENTRY;
 
-        DEBUG_REQ(D_NETERROR, req, "%s (sent at %lu, %lus ago)",
-                  req->rq_net_err ? "network error" : "timeout",
-                  (long)req->rq_sent, cfs_time_current_sec() - req->rq_sent);
+        DEBUG_REQ(req->rq_fake ? D_INFO : D_WARNING, req, 
+                  "Request x"LPU64" sent from %s to NID %s"
+                  " %lus ago has %s (%lds prior to deadline).\n", req->rq_xid,
+                  imp ? imp->imp_obd->obd_name : "<?>",
+                  imp ? libcfs_nid2str(imp->imp_connection->c_peer.nid) : "<?>",
+                  cfs_time_current_sec() - req->rq_sent,
+                  req->rq_net_err ? "failed due to network error" : "timed out",
+                  req->rq_deadline - req->rq_sent);
 
         if (imp != NULL && obd_debug_peer_on_timeout)
                 LNetCtl(IOC_LIBCFS_DEBUG_PEER, &imp->imp_connection->c_peer);
@@ -1454,17 +1451,6 @@ int ptlrpc_expire_one_request(struct ptlrpc_request *req, int async_unlink)
         spin_lock(&req->rq_lock);
         req->rq_timedout = 1;
         spin_unlock(&req->rq_lock);
-
-        if (imp != NULL && ptlrpc_console_allow(req)) {
-                LCONSOLE_WARN("%s: Request %s sent %lus ago to %s has %s "
-                              "(limit %lus)\n", imp->imp_obd->obd_name,
-                              req->rq_reqmsg == NULL ? "with no reqmsg" :
-                              ll_opcode2str(lustre_msg_get_opc(req->rq_reqmsg)),
-                              cfs_time_current_sec() - req->rq_sent,
-                              libcfs_nid2str(imp->imp_connection->c_peer.nid),
-                              req->rq_net_err ? "failed due to network error" :
-                              "timed out", req->rq_deadline - req->rq_sent);
-        }
 
         ptlrpc_unregister_reply(req, async_unlink);
         ptlrpc_unregister_bulk(req, async_unlink);
