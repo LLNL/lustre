@@ -1455,8 +1455,9 @@ static void check_and_start_recovery_timer(struct obd_device *obd)
                 cfs_spin_unlock(&obd->obd_recovery_task_lock);
                 return;
         }
-        LCONSOLE_INFO("%s: Starting recovery timer for %u seconds\n",
-                      obd->obd_name, obd->obd_recovery_timeout);
+        LCONSOLE_INFO("%s: Starting recovery timer for %d:%.02d\n",
+                      obd->obd_name, obd->obd_recovery_timeout / 60,
+                      obd->obd_recovery_timeout % 60);
         obd->obd_recovery_start = cfs_time_current_sec();
         cfs_spin_unlock(&obd->obd_recovery_task_lock);
 
