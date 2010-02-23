@@ -614,6 +614,9 @@ int target_recovery_check_and_stop(struct obd_device *obd)
 {
         int abort_recovery = 0;
 
+        if (obd->obd_stopping)
+                return 1;
+
         spin_lock_bh(&obd->obd_processing_task_lock);
         abort_recovery = obd->obd_abort_recovery;
         obd->obd_abort_recovery = 0;
@@ -1311,6 +1314,7 @@ void target_cleanup_recovery(struct obd_device *obd)
         CFS_INIT_LIST_HEAD(&clean_list);
         spin_lock_bh(&obd->obd_processing_task_lock);
         list_splice_init(&obd->obd_recovery_queue, &clean_list);
+        cfs_waitq_signal(&obd->obd_next_transno_waitq);
         spin_unlock_bh(&obd->obd_processing_task_lock);
         list_for_each_safe(tmp, n, &clean_list) {
                 req = list_entry(tmp, struct ptlrpc_request, rq_list);
@@ -1501,6 +1505,11 @@ static int check_for_next_transno(struct obd_device *obd)
         struct ptlrpc_request *req;
         int wake_up = 0, connected, completed, queue_len, max;
         __u64 next_transno, req_transno;
+
+        if (obd->obd_stopping) {
+                CDEBUG(D_HA, "waking for stopping device\n");
+                return 1;
+        }
 
         spin_lock_bh(&obd->obd_processing_task_lock);
         req = list_entry(obd->obd_recovery_queue.next,
