@@ -2238,17 +2238,30 @@ ug_output:
                 return CMD_HELP;
         }
 
-        if (qctl.qc_cmd == LUSTRE_Q_GETQUOTA)
-                print_quota_title(name, &qctl);
-
         mnt = argv[optind];
 
         rc1 = llapi_quotactl(mnt, &qctl);
-        if (rc1 == -1 && errno == ESRCH) {
-                fprintf(stderr, "\n%s quotas are not enabled.\n",
-                        qctl.qc_type == USRQUOTA ? "user" : "group");
-                goto out;
+        if (rc1 == -1) {
+                switch (errno) {
+                case ESRCH:
+                        fprintf(stderr, "%s quotas are not enabled.\n",
+                                qctl.qc_type == USRQUOTA ? "user" : "group");
+                        goto out;
+                case EPERM:
+                        fprintf(stderr, "Permission denied.\n");
+                        goto out;
+                case ENOENT:
+                        /* llapi_quotactl printed "No such file..." error message. */
+                        goto out;
+                default:
+                        fprintf(stderr, "Unexpected quotactl error: %s\n",
+                                strerror(errno));
+                }
         }
+
+        if (qctl.qc_cmd == LUSTRE_Q_GETQUOTA)
+                print_quota_title(name, &qctl);
+
         if (rc1 && *obd_type)
                 fprintf(stderr, "%s %s ", obd_type, obd_uuid);
 
@@ -2274,7 +2287,7 @@ out:
         if (pass == 1)
                 goto ug_output;
 
-        return 0;
+        return rc1;
 }
 #endif /* HAVE_SYS_QUOTA_H! */
 
