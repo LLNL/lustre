@@ -371,8 +371,7 @@ int client_quota_ctl(struct obd_export *exp, struct obd_quotactl *oqctl)
         rc = ptlrpc_queue_wait(req);
         if (rc) {
                 CERROR("ptlrpc_queue_wait failed, rc: %d\n", rc);
-                if (rc != -EIO)
-                        GOTO(out, rc);
+                GOTO(out, rc);
         }
 
         oqc = NULL;
