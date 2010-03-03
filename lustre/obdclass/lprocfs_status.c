@@ -2130,6 +2130,9 @@ int lprocfs_obd_rd_hash(char *page, char **start, off_t off,
         c += lustre_hash_debug_str(obd->obd_uuid_hash, page + c, count - c);
         c += lustre_hash_debug_str(obd->obd_nid_hash, page + c, count - c);
         c += lustre_hash_debug_str(obd->obd_nid_stats_hash, page+c, count-c);
+        if (obd->u.obt.obt_qctxt.lqc_lqs_hash)
+                c += lustre_hash_debug_str(obd->u.obt.obt_qctxt.lqc_lqs_hash,
+                                           page + c, count - c);
 
         return c;
 }
