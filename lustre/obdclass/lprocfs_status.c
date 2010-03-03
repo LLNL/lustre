@@ -2130,7 +2130,6 @@ int lprocfs_obd_rd_hash(char *page, char **start, off_t off,
         c += lustre_hash_debug_str(obd->obd_uuid_hash, page + c, count - c);
         c += lustre_hash_debug_str(obd->obd_nid_hash, page + c, count - c);
         c += lustre_hash_debug_str(obd->obd_nid_stats_hash, page+c, count-c);
-#ifdef HAVE_QUOTA_SUPPORT
         if (((strncmp(obd->obd_type->typ_name, LUSTRE_MDS_NAME,
                      strlen(LUSTRE_MDS_NAME)) == 0) ||
             (strncmp(obd->obd_type->typ_name, LUSTRE_OST_NAME,
@@ -2138,7 +2137,6 @@ int lprocfs_obd_rd_hash(char *page, char **start, off_t off,
             (obd->u.obt.obt_qctxt.lqc_lqs_hash))
                 c += lustre_hash_debug_str(obd->u.obt.obt_qctxt.lqc_lqs_hash,
                                            page + c, count - c);
-#endif
 
         return c;
 }
