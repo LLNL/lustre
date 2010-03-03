@@ -1572,8 +1572,8 @@ static unsigned long
 stride_pg_count(pgoff_t st_off, unsigned long st_len, unsigned long st_pgs,
                 unsigned long off, unsigned long length)
 {
-        unsigned long start = off > st_off ? off - st_off : 0;
-        unsigned long end = off + length > st_off ? off + length - st_off : 0;
+        __u64 start = off > st_off ? off - st_off : 0;
+        __u64 end = off + length > st_off ? off + length - st_off : 0;
         unsigned long start_left = 0;
         unsigned long end_left = 0;
         unsigned long pg_count;
@@ -1581,17 +1581,17 @@ stride_pg_count(pgoff_t st_off, unsigned long st_len, unsigned long st_pgs,
         if (st_len == 0 || length == 0 || end == 0)
                 return length;
 
-        start_left = do_div(start, st_len);
+        start_left = (unsigned long)do_div(start, (__u32)st_len);
         if (start_left < st_pgs)
                 start_left = st_pgs - start_left;
         else
                 start_left = 0;
 
-        end_left = do_div(end, st_len);
+        end_left = (unsigned long)do_div(end, (__u32)st_len);
         if (end_left > st_pgs)
                 end_left = st_pgs;
 
-        CDEBUG(D_READA, "start %lu, end %lu start_left %lu end_left %lu \n",
+        CDEBUG(D_READA, "start "LPU64", end "LPU64" start_left %lu end_left %lu \n",
                start, end, start_left, end_left);
 
         if (start == end)
