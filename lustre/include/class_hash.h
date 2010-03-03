@@ -303,8 +303,6 @@ static inline void __lustre_hash_set_theta(lustre_hash_t *lh, int min, int max)
 /* Generic debug formatting routines mainly for proc handler */
 int lustre_hash_debug_header(char *str, int size);
 int lustre_hash_debug_str(lustre_hash_t *lh, char *str, int size);
-int lustre_hash_get_cur_bits(lustre_hash_t *lh);
-int lustre_hash_set_cur_bits(lustre_hash_t *lh, int cur_bits);
 
 /* 2^31 + 2^29 - 2^25 + 2^22 - 2^19 - 2^16 + 1 */
 #define CFS_GOLDEN_RATIO_PRIME_32 0x9e370001UL
