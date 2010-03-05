@@ -1394,8 +1394,10 @@ static void lov_dump_user_lmm_header(struct lov_user_md *lum, char *path,
                 if (verbose & ~VERBOSE_OFFSET)
                         llapi_printf(LLAPI_MSG_NORMAL, "%sstripe_offset:  ",
                                      prefix);
-                llapi_printf(LLAPI_MSG_NORMAL, "%u%c",
-                             lum->lmm_objects[0].l_ost_idx, nl);
+                llapi_printf(LLAPI_MSG_NORMAL, "%d%c",
+                             lum->lmm_stripe_offset ==
+                             (typeof(lum->lmm_stripe_offset))(-1) ? -1 :
+                             lum->lmm_stripe_offset, nl);
         }
 
         if ((verbose & VERBOSE_POOL) && (pool_name != NULL)) {
