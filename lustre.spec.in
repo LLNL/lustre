@@ -146,8 +146,6 @@ cat >lustre.files <<EOF
 
 %attr(-, root, root) %{_mandir}/man?/*
 
-%attr(-, root, root) %{_libexecdir}/lustre/lc_common
-
 %attr(-, root, root) %{_sysconfdir}/init.d/lnet
 %attr(-, root, root) %{_sysconfdir}/init.d/lustre
 %attr(-, root, root) %{_sysconfdir}/ldev.conf

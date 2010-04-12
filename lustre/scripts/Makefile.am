@@ -52,7 +52,7 @@ sbin_SCRIPTS = lhbadm ldev
 EXTRA_DIST = license-status maketags.sh version_tag.pl lc_common \
 	     $(addsuffix .in,$(genscripts)) lc_mon $(sbinscripts) \
 	     $(bin_SCRIPTS) tree_status.pl lustre lnet lustre_req_history \
-	     lhbadm haconfig lustrefs ldev
+	     lhbadm haconfig lustrefs ldev Lustre
 
 scriptlibdir = @libexecdir@/@PACKAGE@
 scriptlib_SCRIPTS = haconfig
