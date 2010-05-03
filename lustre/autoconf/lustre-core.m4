@@ -2263,9 +2263,6 @@ AC_CHECK_HEADERS([linux/random.h], [], [],
                   #endif
                  ])
 
-# utils/llverfs.c
-AC_CHECK_HEADERS([ext2fs/ext2fs.h])
-
 # check for -lz support
 ZLIB=""
 AC_CHECK_LIB([z],
@@ -2315,7 +2312,6 @@ AM_CONDITIONAL(CLIENT, test x$enable_client = xyes)
 AM_CONDITIONAL(SERVER, test x$enable_server = xyes)
 AM_CONDITIONAL(QUOTA, test x$enable_quota_module = xyes)
 AM_CONDITIONAL(BLKID, test x$ac_cv_header_blkid_blkid_h = xyes)
-AM_CONDITIONAL(EXT2FS_DEVEL, test x$ac_cv_header_ext2fs_ext2fs_h = xyes)
 AM_CONDITIONAL(LIBPTHREAD, test x$enable_libpthread = xyes)
 ])
 

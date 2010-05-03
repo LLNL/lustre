@@ -6,7 +6,8 @@ AM_LDFLAGS := -L$(top_builddir)/lnet/utils
 
 LIBPTLCTL := $(top_builddir)/lnet/utils/libptlctl.a
 
-sbin_scripts = lrun
+sbin_scripts =
+noinst_scripts = lrun
 bin_scripts = llstat llobdstat plot-llstat
 
 if UTILS
@@ -14,11 +15,12 @@ noinst_PROGRAMS = obdio obdbarrier
 EXTRA_PROGRAMS = wirecheck
 # mount only finds helpers in /sbin
 rootsbin_PROGRAMS = mount.lustre
-sbin_PROGRAMS = mkfs.lustre tunefs.lustre lctl wiretest \
+sbin_PROGRAMS = mkfs.lustre tunefs.lustre lctl \
 	l_getgroups llverfs llverdev llog_reader ll_recover_lost_found_objs \
-	lr_reader ltrack_stats lshowmount ll_decode_filter_fid
+	lshowmount ll_decode_filter_fid
+noinst_PROGRAMS += wiretest lr_reader ltrack_stats
 if LIBPTHREAD
-sbin_PROGRAMS += loadgen
+noinst_PROGRAMS += loadgen
 endif
 bin_PROGRAMS = lfs
 bin_SCRIPTS = $(bin_scripts)
@@ -40,24 +42,6 @@ loadgen_LDADD := $(LIBREADLINE) liblustreapi.a $(LIBPTLCTL) $(PTHREAD_LIBS)
 loadgen_DEPENDENCIES := $(LIBPTLCTL) liblustreapi.a
 
 lshowmount_SOURCES    = lshowmount.c nidlist.c nidlist.h
-
-if EXT2FS_DEVEL
-EXT2FSLIB = -lext2fs
-E2PLIB = -le2p
-else
-E2PLIB =
-EXT2FSLIB =
-endif
-
-if BLKID
-BLKIDLIB = -lblkid
-else
-BLKIDLIB =
-endif
-
-llverfs_LDADD := $(EXT2FSLIB) $(E2PLIB)
-
-llverdev_LDADD := $(EXT2FSLIB) $(BLKIDLIB)
 
 liblustreapi_a_SOURCES = liblustreapi.c
 
@@ -95,7 +79,7 @@ tunefs_lustre_DEPENDENCIES := $(mkfs_lustre_DEPENDENCIES)
 
 ltrack_stats_SOURCES = ltrack_stats.c
 
-EXTRA_DIST = $(sbin_scripts) $(bin_scripts)
+EXTRA_DIST = $(sbin_scripts) $(bin_scripts) $(noinst_scripts)
 
 # NOTE: this should only be run on i386.
 newwiretest: wirehdr.c wirecheck
