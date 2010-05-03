@@ -49,12 +49,8 @@ noinst_PROGRAMS += ll_sparseness_write mrename ll_dirstripe_verify mkdirmany
 noinst_PROGRAMS += openfilleddirunlink rename_many memhog iopentest1 iopentest2
 noinst_PROGRAMS += mmap_sanity flock_test writemany reads flocks_test
 # noinst_PROGRAMS += copy_attr mkdirdeep 
-bin_PROGRAMS = mcreate munlink
+noinst_PROGRAMS += mcreate munlink
 testdir = $(libdir)/lustre/tests
-test_SCRIPTS = $(noinst_SCRIPTS) $(noinst_PROGRAMS)
-nobase_test_SCRIPTS = $(nobase_noinst_SCRIPTS)
-test_DATA = $(noinst_DATA)
-nobase_test_DATA = $(nobase_noinst_DATA)
 endif # TESTS
 
 # mkdirdeep_LDADD=-L$(top_builddir)/lnet/utils -lptlctl $(LIBREADLINE)
