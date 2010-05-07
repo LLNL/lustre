@@ -1474,8 +1474,7 @@ static int mds_get_space(struct obd_device *obd, struct obd_quotactl *oqctl)
 {
         struct obd_quotactl *soqc;
         struct lvfs_run_ctxt saved;
-        __u64 curspace;
-        int rc;
+        int rc, rc1;
         ENTRY;
 
         OBD_ALLOC_PTR(soqc);
@@ -1487,26 +1486,25 @@ static int mds_get_space(struct obd_device *obd, struct obd_quotactl *oqctl)
         soqc->qc_type = oqctl->qc_type;
 
         rc = obd_quotactl(obd->u.mds.mds_lov_exp, soqc);
-        if (rc)
-                goto out;
 
-        curspace = soqc->qc_dqblk.dqb_curspace;
+        oqctl->qc_dqblk.dqb_curspace = soqc->qc_dqblk.dqb_curspace;
 
         push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
         soqc->qc_dqblk.dqb_curspace = 0;
-        rc = fsfilt_quotactl(obd, obd->u.obt.obt_sb, soqc);
+        rc1 = fsfilt_quotactl(obd, obd->u.obt.obt_sb, soqc);
         pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
-        if (rc)
-                goto out;
 
-        oqctl->qc_dqblk.dqb_curinodes = soqc->qc_dqblk.dqb_curinodes;
-        oqctl->qc_dqblk.dqb_valid |= QIF_INODES;
-        oqctl->qc_dqblk.dqb_curspace = curspace + soqc->qc_dqblk.dqb_curspace;
-        oqctl->qc_dqblk.dqb_valid |= QIF_USAGE;
+        oqctl->qc_dqblk.dqb_curinodes += soqc->qc_dqblk.dqb_curinodes;
+        if (!rc1)
+                oqctl->qc_dqblk.dqb_valid |= QIF_INODES;
+        oqctl->qc_dqblk.dqb_curspace += soqc->qc_dqblk.dqb_curspace;
+        if (!rc && !rc1)
+                oqctl->qc_dqblk.dqb_valid |= QIF_USAGE;
 
-out:
         OBD_FREE_PTR(soqc);
 
+        if (!rc)
+                rc = rc1;
         RETURN(rc);
 }
 
@@ -1540,17 +1538,24 @@ int mds_get_dqblk(struct obd_device *obd, struct obd_quotactl *oqctl)
         dqblk->dqb_btime = dquot->dq_dqb.dqb_btime;
         dqblk->dqb_itime = dquot->dq_dqb.dqb_itime;
         dqblk->dqb_valid |= QIF_LIMITS | QIF_TIMES;
-        /* mds_get_space will hopefully update stats to more accurate values */
-        dqblk->dqb_curinodes = dquot->dq_dqb.dqb_curinodes;
-        dqblk->dqb_curspace  = dquot->dq_dqb.dqb_curspace;
         up(&dquot->dq_sem);
 
         lustre_dqput(dquot);
         up(&mds->mds_qonoff_sem);
 
-        /* if mds_get_space fails we still return rc=0, but the unset
-         * QIF_INODES and QIF_USAGE will signal that the data are inaccurate */
         mds_get_space(obd, oqctl);
+
+        /*
+         * Querying of curinodes and/or curspace may have failed, administrative
+         * quota data are likely to be better approximation to the real usage in
+         * this case.
+         */
+
+        if (!(dqblk->dqb_valid & QIF_INODES) && dquot->dq_dqb.dqb_curinodes > 0)
+                dqblk->dqb_curinodes = dquot->dq_dqb.dqb_curinodes;
+
+        if (!(dqblk->dqb_valid & QIF_USAGE) && dquot->dq_dqb.dqb_curspace > 0)
+                dqblk->dqb_curspace = dquot->dq_dqb.dqb_curspace;
 
         EXIT;
         return 0;
