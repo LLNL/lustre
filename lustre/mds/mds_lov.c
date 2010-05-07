@@ -1231,8 +1231,6 @@ int mds_get_default_md(struct obd_device *obd, struct lov_mds_md *lmm,
         lmm->lmm_pattern = ldesc->ld_pattern;
         lmm->lmm_stripe_size = ldesc->ld_default_stripe_size;
         lmm->lmm_stripe_count = ldesc->ld_default_stripe_count;
-        ((struct lov_user_md*)lmm)->lmm_stripe_offset =
-                        ldesc->ld_default_stripe_offset;
         *size = sizeof(struct lov_mds_md);
 
         RETURN(sizeof(struct lov_mds_md));
