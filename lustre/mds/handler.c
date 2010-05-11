@@ -398,8 +398,6 @@ out:
                         med->med_lcd = NULL;
                 }
                 class_disconnect(exp);
-                /* release nid stat refererence */
-                lprocfs_exp_cleanup(exp);
         } else {
                 class_export_put(exp);
         }
