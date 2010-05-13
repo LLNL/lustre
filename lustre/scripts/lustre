@@ -495,7 +495,9 @@ case "$1" in
 		echo "ERROR: Too many arguments."
 		usage
 	fi
+	run_preexec_check "stop"
 	stop_lustre_services $2
+	run_postexec_check "stop"
 	;;
   status)
 	if [ $# -gt 2 ] ; then
