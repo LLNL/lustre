@@ -2286,7 +2286,7 @@ static struct ptlrpc_request *osc_build_req(struct client_obd *cli,
         if (pga == NULL)
                 RETURN(ERR_PTR(-ENOMEM));
 
-        OBDO_ALLOC(oa);
+        OBD_SLAB_ALLOC(oa, obdo_cachep, CFS_ALLOC_IO, sizeof(*oa));
         if (oa == NULL)
                 GOTO(out, req = ERR_PTR(-ENOMEM));
 
