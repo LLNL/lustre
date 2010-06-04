@@ -422,14 +422,6 @@ typedef struct {
         lnet_ni_status_t pi_ni[0];
 } WIRE_ATTR lnet_ping_info_t;
 
-typedef struct {
-        __u32            pi_magic;
-        __u32            pi_version;
-        lnet_pid_t       pi_pid;
-        __u32            pi_nnis;
-        lnet_nid_t       pi_nid[0];
-} WIRE_ATTR lnet_ping_info_t_v1;
-
 /* router checker data, per router */
 #define LNET_MAX_RTR_NIS   16
 #define LNET_PINGINFO_SIZE offsetof(lnet_ping_info_t, pi_ni[LNET_MAX_RTR_NIS])
