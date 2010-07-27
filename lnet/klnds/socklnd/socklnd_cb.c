@@ -983,11 +983,12 @@ ksocknal_send(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg)
 
         /* The first fragment will be set later in pro_pack */
         rc = ksocknal_launch_packet(ni, tx, target);
-        if (rc == 0)
-                return (0);
+        if (rc != 0) {
+                ksocknal_free_tx(tx);
+                return (-EIO);
+        }
 
-        ksocknal_free_tx(tx);
-        return (-EIO);
+        return (0);
 }
 
 int
