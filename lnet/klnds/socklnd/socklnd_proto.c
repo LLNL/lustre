@@ -43,6 +43,7 @@ static ksock_tx_t *
 ksocknal_queue_tx_msg_v1(ksock_conn_t *conn, ksock_tx_t *tx_msg)
 {
         /* V1.x, just enqueue it */
+        tx_msg->tx_queue_time = cfs_time_current();
         cfs_list_add_tail(&tx_msg->tx_list, &conn->ksnc_tx_queue);
         return NULL;
 }
@@ -85,6 +86,7 @@ ksocknal_queue_tx_zcack_v2(ksock_conn_t *conn,
          */
         if (tx == NULL) {
                 if (tx_ack != NULL) {
+                        tx_ack->tx_queue_time = cfs_time_current();
                         cfs_list_add_tail(&tx_ack->tx_list,
                                           &conn->ksnc_tx_queue);
                         conn->ksnc_tx_carrier = tx_ack;
@@ -94,9 +96,11 @@ ksocknal_queue_tx_zcack_v2(ksock_conn_t *conn,
 
         if (tx->tx_msg.ksm_type == KSOCK_MSG_NOOP) {
                 /* tx is noop zc-ack, can't piggyback zc-ack cookie */
-                if (tx_ack != NULL)
+                if (tx_ack != NULL) {
+                        tx_ack->tx_queue_time = cfs_time_current();
                         cfs_list_add_tail(&tx_ack->tx_list,
                                           &conn->ksnc_tx_queue);
+                }
                 return 0;
         }
 
@@ -127,12 +131,14 @@ ksocknal_queue_tx_msg_v2(ksock_conn_t *conn, ksock_tx_t *tx_msg)
          *   and replace the NOOP tx, and return the NOOP tx.
          */
         if (tx == NULL) { /* nothing on queue */
+                tx_msg->tx_queue_time = cfs_time_current();
                 cfs_list_add_tail(&tx_msg->tx_list, &conn->ksnc_tx_queue);
                 conn->ksnc_tx_carrier = tx_msg;
                 return NULL;
         }
 
         if (tx->tx_msg.ksm_type == KSOCK_MSG_LNET) { /* nothing to carry */
+                tx_msg->tx_queue_time = cfs_time_current();
                 cfs_list_add_tail(&tx_msg->tx_list, &conn->ksnc_tx_queue);
                 return NULL;
         }
@@ -165,6 +171,7 @@ ksocknal_queue_tx_zcack_v3(ksock_conn_t *conn,
 
         if ((tx = conn->ksnc_tx_carrier) == NULL) {
                 if (tx_ack != NULL) {
+                        tx_ack->tx_queue_time = cfs_time_current();
                         cfs_list_add_tail(&tx_ack->tx_list,
                                           &conn->ksnc_tx_queue);
                         conn->ksnc_tx_carrier = tx_ack;
@@ -259,6 +266,7 @@ ksocknal_queue_tx_zcack_v3(ksock_conn_t *conn,
 
         /* failed to piggyback ZC-ACK */
         if (tx_ack != NULL) {
+                tx_ack->tx_queue_time = cfs_time_current();
                 cfs_list_add_tail(&tx_ack->tx_list, &conn->ksnc_tx_queue);
                 /* the next tx can piggyback at least 1 ACK */
                 ksocknal_next_tx_carrier(conn);
