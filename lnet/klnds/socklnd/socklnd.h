@@ -149,6 +149,17 @@ typedef struct
         ksock_interface_t ksnn_interfaces[LNET_MAX_INTERFACES];
 } ksock_net_t;
 
+#define KSOCKNAL_HIST_MAX 32
+struct ksocknal_histogram {
+        spinlock_t        kh_lock;
+        unsigned long     kh_buckets[KSOCKNAL_HIST_MAX];
+};
+
+enum {
+        KSOCKNAL_HIST_TX = 0,
+        KSOCKNAL_HIST_LAST,
+};
+
 typedef struct
 {
         int               ksnd_init;            /* initialisation state */
@@ -186,7 +197,7 @@ typedef struct
         cfs_spinlock_t    ksnd_tx_lock;         /* serialise, NOT safe in g_lock */
 
         ksock_irqinfo_t   ksnd_irqinfo[NR_IRQS];/* irq->scheduler lookup */
-
+        struct ksocknal_histogram ksnd_hist[KSOCKNAL_HIST_LAST];
 } ksock_nal_data_t;
 
 #define SOCKNAL_INIT_NOTHING    0
@@ -224,6 +235,7 @@ typedef struct                                  /* transmit packet */
         struct ksock_conn      *tx_conn;        /* owning conn */
         lnet_msg_t             *tx_lnetmsg;     /* lnet message for lnet_finalize() */
         cfs_time_t              tx_deadline;    /* when (in jiffies) tx times out */
+        cfs_time_t              tx_queue_time;  /* time put on sock conn tx enque */
         ksock_msg_t             tx_msg;         /* socklnd message buffer */
         int                     tx_desc_size;   /* size of this descriptor */
         union {
@@ -592,3 +604,8 @@ extern void ksocknal_lib_csum_tx(ksock_tx_t *tx);
 extern int ksocknal_lib_memory_pressure(ksock_conn_t *conn);
 extern __u64 ksocknal_lib_new_incarnation(void);
 extern int ksocknal_lib_bind_thread_to_cpu(int id);
+
+void ksocknal_tally_log2(struct ksocknal_histogram *kh, unsigned int value);
+int ksocknal_proc_init(void);
+void ksocknal_proc_fini(void);
+
