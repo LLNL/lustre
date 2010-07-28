@@ -1494,6 +1494,9 @@ int ksocknal_scheduler (void *arg)
                                 list_add (&tx->tx_list, &conn->ksnc_tx_queue);
                         } else {
                                 /* Complete send; tx -ref */
+                                ksocknal_tally_log2(&ksocknal_data.ksnd_hist[KSOCKNAL_HIST_TX],
+                                                    cfs_time_sub(cfs_time_current(),
+                                                                 tx->tx_queue_time));
                                 ksocknal_tx_decref (tx);
 
                                 cfs_spin_lock_bh (&sched->kss_lock);
