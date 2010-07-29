@@ -2776,6 +2776,9 @@ kiblnd_base_startup (void)
         cfs_waitq_init(&kiblnd_data.kib_sched_waitq);
         cfs_waitq_init(&kiblnd_data.kib_failover_waitq);
 
+        for (i = 0; i < KH_LAST; i++)
+                cfs_spin_lock_init(&kiblnd_data.kib_hist[i].kh_lock);
+
         kiblnd_data.kib_error_qpa.qp_state = IB_QPS_ERR;
 
         /* lists/ptrs/locks initialised */
@@ -2916,6 +2919,7 @@ void __exit
 kiblnd_module_fini (void)
 {
         lnet_unregister_lnd(&the_o2iblnd);
+        kiblnd_proc_fini();
         kiblnd_tunables_fini();
 }
 
@@ -2931,6 +2935,10 @@ kiblnd_module_init (void)
                   <= IBLND_MSG_SIZE);
 
         rc = kiblnd_tunables_init();
+        if (rc != 0)
+                return rc;
+
+        rc = kiblnd_proc_init();
         if (rc != 0)
                 return rc;
 

@@ -1,5 +1,5 @@
 MODULES := ko2iblnd
-ko2iblnd-objs := o2iblnd.o o2iblnd_cb.o o2iblnd_modparams.o
+ko2iblnd-objs := o2iblnd.o o2iblnd_cb.o o2iblnd_modparams.o o2iblnd_proc.o
 
 # Need to make sure we use PRE, not POST here so that an external OFED
 # source pool overrides any in-kernel OFED sources
