@@ -786,22 +786,30 @@ kiblnd_post_tx_locked (kib_conn_t *conn, kib_tx_t *tx, int credit)
 
         if (conn->ibc_nsends_posted == IBLND_CONCURRENT_SENDS(ver)) {
                 /* tx completions outstanding... */
-                CDEBUG(D_NET, "%s: posted enough\n",
-                       libcfs_nid2str(peer->ibp_nid));
+                CDEBUG(D_NET, "%s[%d%d %d %d %d]: posted enough\n",
+                       libcfs_nid2str(peer->ibp_nid),
+                       conn->ibc_ready, conn->ibc_scheduled,
+                       conn->ibc_credits, conn->ibc_outstanding_credits,
+                       conn->ibc_reserved_credits);
                 return -EAGAIN;
         }
 
         if (credit != 0 && conn->ibc_credits == 0) {   /* no credits */
-                CDEBUG(D_NET, "%s: no credits\n",
-                       libcfs_nid2str(peer->ibp_nid));
+                CDEBUG(D_NET, "%s[%d%d %d %d]: no credits\n",
+                       libcfs_nid2str(peer->ibp_nid),
+                       conn->ibc_ready, conn->ibc_scheduled,
+                       conn->ibc_outstanding_credits,
+                       conn->ibc_reserved_credits);
                 return -EAGAIN;
         }
 
         if (credit != 0 && !IBLND_OOB_CAPABLE(ver) &&
             conn->ibc_credits == 1 &&   /* last credit reserved */
             msg->ibm_type != IBLND_MSG_NOOP) {      /* for NOOP */
-                CDEBUG(D_NET, "%s: not using last credit\n",
-                       libcfs_nid2str(peer->ibp_nid));
+                CDEBUG(D_NET, "%s[%d%d %d]: not using last credit\n",
+                       libcfs_nid2str(peer->ibp_nid),
+                       conn->ibc_ready, conn->ibc_scheduled,
+                       conn->ibc_reserved_credits);
                 return -EAGAIN;
         }
 
@@ -833,6 +841,14 @@ kiblnd_post_tx_locked (kib_conn_t *conn, kib_tx_t *tx, int credit)
         conn->ibc_nsends_posted++;
         if (msg->ibm_type == IBLND_MSG_NOOP)
                 conn->ibc_noops_posted++;
+
+        CDEBUG(D_NET, "%s[%d%d %d %d %d]: tx %s returns %d credits\n",
+               libcfs_nid2str(conn->ibc_peer->ibp_nid),
+               conn->ibc_ready, conn->ibc_scheduled,
+               conn->ibc_credits, conn->ibc_outstanding_credits,
+               conn->ibc_reserved_credits,
+               kiblnd_msgtype2str(tx->tx_msg->ibm_type),
+               tx->tx_msg->ibm_credits);
 
         /* CAVEAT EMPTOR!  This tx could be the PUT_DONE of an RDMA
          * PUT.  If so, it was first queued here as a PUT_REQ, sent and
@@ -3001,16 +3017,44 @@ kiblnd_check_txs_locked(kib_conn_t *conn, cfs_list_t *txs)
 static int
 kiblnd_conn_timed_out_locked(kib_conn_t *conn)
 {
-        return  kiblnd_check_txs_locked(conn, &conn->ibc_tx_queue) ||
-                kiblnd_check_txs_locked(conn, &conn->ibc_tx_noops) ||
-                kiblnd_check_txs_locked(conn, &conn->ibc_tx_queue_rsrvd) ||
-                kiblnd_check_txs_locked(conn, &conn->ibc_tx_queue_nocred) ||
-                kiblnd_check_txs_locked(conn, &conn->ibc_active_txs);
+        void kiblnd_debug_conn(kib_conn_t *);
+        int  cnt = 0;
+
+        if (kiblnd_check_txs_locked(conn, &conn->ibc_tx_queue)) {
+                CERROR("Timed out RDMA on queue ibc_tx_queue"
+                       " (sends that need a credit)\n");
+                cnt++;
+        }
+        if (kiblnd_check_txs_locked(conn, &conn->ibc_tx_noops)) {
+                CERROR("Timed out RDMA on queue ibc_tx_noops");
+                cnt++;
+        }
+        if (kiblnd_check_txs_locked(conn, &conn->ibc_tx_queue_rsrvd)) {
+                CERROR("Timed out RDMA on queue ibc_tx_queue_rsrvd"
+                       " (sends that need to reserve an ACK/DONE msg)\n");
+                cnt++;
+        }
+        if (kiblnd_check_txs_locked(conn, &conn->ibc_tx_queue_nocred)) {
+                CERROR("Timed out RDMA on queue ibc_tx_queue_nocred"
+                       " (sends that don't need a credit)\n");
+                cnt++;
+        }
+        if (kiblnd_check_txs_locked(conn, &conn->ibc_active_txs)) {
+                CERROR("Timed out RDMA on queue ibc_active_txs"
+                       " (active tx awaiting completion)\n");
+                cnt++;
+        }
+
+        if (cnt != 0)
+                kiblnd_debug_conn(conn);
+
+        return cnt;
 }
 
 void
 kiblnd_check_conns (int idx)
 {
+        void kiblnd_debug_ib_qp(kib_conn_t *);
         CFS_LIST_HEAD (closes);
         CFS_LIST_HEAD (checksends);
         cfs_list_t    *peers = &kiblnd_data.kib_peers[idx];
@@ -3054,6 +3098,7 @@ kiblnd_check_conns (int idx)
                                        conn->ibc_credits,
                                        conn->ibc_outstanding_credits,
                                        conn->ibc_reserved_credits);
+                                kiblnd_debug_ib_qp(conn);
                                 cfs_list_add(&conn->ibc_connd_list, &closes);
                         } else {
                                 cfs_list_add(&conn->ibc_connd_list,

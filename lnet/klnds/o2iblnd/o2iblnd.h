@@ -123,6 +123,7 @@ typedef struct
 #endif
         int              *kib_require_priv_port;/* accept only privileged ports */
         int              *kib_use_priv_port;    /* use privileged port for active connect */
+        char            **kib_qp_debug_upcall;
 } kib_tunables_t;
 
 extern kib_tunables_t  kiblnd_tunables;
@@ -792,6 +793,45 @@ kiblnd_abort_receives(kib_conn_t *conn)
                      &kiblnd_data.kib_error_qpa, IB_QP_STATE);
 }
 
+static inline char *
+kiblnd_msgtype2str(int type)
+{
+        switch (type) {
+        case IBLND_MSG_CONNREQ:
+                return "CONNREQ";
+
+        case IBLND_MSG_CONNACK:
+                return "CONNACK";
+
+        case IBLND_MSG_NOOP:
+                return "NOOP";
+
+        case IBLND_MSG_IMMEDIATE:
+                return "IMMEDIATE";
+
+        case IBLND_MSG_PUT_REQ:
+                return "PUT_REQ";
+
+        case IBLND_MSG_PUT_NAK:
+                return "PUT_NAK";
+
+        case IBLND_MSG_PUT_ACK:
+                return "PUT_ACK";
+
+        case IBLND_MSG_PUT_DONE:
+                return "PUT_DONE";
+
+        case IBLND_MSG_GET_REQ:
+                return "GET_REQ";
+
+        case IBLND_MSG_GET_DONE:
+                return "GET_DONE";
+
+        default:
+                return "???";
+        }
+}
+
 static inline const char *
 kiblnd_queue2str (kib_conn_t *conn, cfs_list_t *q)
 {
@@ -1012,7 +1052,6 @@ static inline dma_addr_t kiblnd_sg_dma_address(struct ib_device *dev,
 {
         return sg_dma_address(sg);
 }
-
 
 static inline unsigned int kiblnd_sg_dma_len(struct ib_device *dev,
                                              struct scatterlist *sg)

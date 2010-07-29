@@ -136,6 +136,10 @@ static int use_privileged_port = 1;
 CFS_MODULE_PARM(use_privileged_port, "i", int, 0644,
                 "use privileged port when initiating connection");
 
+static char *qp_debug_upcall = "";
+CFS_MODULE_PARM(qp_debug_upcall, "s", charp, 0444,
+                "upcall to run when ib timeout occurs");
+
 kib_tunables_t kiblnd_tunables = {
         .kib_dev_failover           = &dev_failover,
         .kib_service                = &service,
@@ -159,7 +163,8 @@ kib_tunables_t kiblnd_tunables = {
         .kib_fmr_cache              = &fmr_cache,
         .kib_pmr_pool_size          = &pmr_pool_size,
         .kib_require_priv_port      = &require_privileged_port,
-        .kib_use_priv_port          = &use_privileged_port
+        .kib_use_priv_port          = &use_privileged_port,
+        .kib_qp_debug_upcall        = &qp_debug_upcall
 };
 
 #if defined(CONFIG_SYSCTL) && !CFS_SYSFS_MODULE_PARM
