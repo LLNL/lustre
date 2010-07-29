@@ -326,6 +326,18 @@ typedef struct kib_net
         kib_dev_t           *ibn_dev;           /* underlying IB device */
 } kib_net_t;
 
+#define KIBLND_HIST_MAX 32
+struct kiblnd_histogram {
+        spinlock_t      kh_lock;
+        unsigned long   kh_buckets[KIBLND_HIST_MAX];
+};
+
+enum {
+        KH_TX_HIST = 0,
+        KH_CONN_SCHED_HIST,
+        KH_LAST,
+};
+
 typedef struct
 {
         int                  kib_init;          /* initialisation state */
@@ -348,6 +360,7 @@ typedef struct
         spinlock_t           kib_sched_lock;    /* serialise */
 
         struct ib_qp_attr    kib_error_qpa;      /* QP->ERROR */
+        struct kiblnd_histogram kib_hist[KH_LAST];
 } kib_data_t;
 
 #define IBLND_INIT_NOTHING         0
@@ -520,6 +533,7 @@ typedef struct kib_tx                           /* transmit message */
                 kib_fmr_t           fmr;        /* FMR */
         }                         tx_u;
         int                       tx_dmadir;    /* dma direction */
+        cfs_time_t                tx_active_q_time; /*time of enqueue on ibc_active_txs */
 } kib_tx_t;
 
 typedef struct kib_connvars
@@ -533,6 +547,7 @@ typedef struct kib_conn
         struct kib_peer    *ibc_peer;           /* owning peer */
         struct list_head    ibc_list;           /* stash on peer's conn list */
         struct list_head    ibc_sched_list;     /* schedule for attention */
+        cfs_time_t          ibc_sched_list_time;/* time added to sched list */
         __u16               ibc_version;        /* version of connection */
         __u64               ibc_incarnation;    /* which instance of the peer */
         atomic_t            ibc_refcount;       /* # users */
@@ -1002,6 +1017,10 @@ int  kiblnd_send(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg);
 int  kiblnd_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg, int delayed,
                  unsigned int niov, struct iovec *iov, lnet_kiov_t *kiov,
                  unsigned int offset, unsigned int mlen, unsigned int rlen);
+
+void kh_tally_log2(struct kiblnd_histogram *kh, unsigned int value);
+int kiblnd_proc_init(void);
+void kiblnd_proc_fini(void);
 
 /* compat macroses */
 #ifndef HAVE_SCATTERLIST_SETPAGE
