@@ -1517,6 +1517,7 @@ int ksocknal_scheduler (void *arg)
                         if (rc == -ENOMEM) {
                                 /* Do nothing; after a short timeout, this
                                  * conn will be reposted on kss_tx_conns. */
+                                CDEBUG(D_NET, "ENOMEM, message reenqueued\n");
                         } else if (conn->ksnc_tx_ready &&
                                    !cfs_list_empty (&conn->ksnc_tx_queue)) {
                                 /* reschedule for tx */
