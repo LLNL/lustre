@@ -514,7 +514,7 @@ lnet_setup_handle_hash (void)
         /* Arbitrary choice of hash table size */
 #ifdef __KERNEL__
         the_lnet.ln_lh_hash_size =
-                (2 * CFS_PAGE_SIZE) / sizeof (struct list_head);
+                (8 * CFS_PAGE_SIZE) / sizeof (struct list_head);
 #else
         the_lnet.ln_lh_hash_size = (MAX_MES + MAX_MDS + MAX_EQS)/4;
 #endif
