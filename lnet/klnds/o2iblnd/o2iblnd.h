@@ -507,9 +507,14 @@ typedef struct kib_rx                           /* receive message */
 #define IBLND_POSTRX_PEER_CREDIT  2             /* post: give peer back 1 credit */
 #define IBLND_POSTRX_RSRVD_CREDIT 3             /* post: give myself back 1 reserved credit */
 
+#define IBLND_TX_ACTIVE           0xbabecafe
+#define IBLND_TX_IDLE             0xdeadbeef
+
 typedef struct kib_tx                           /* transmit message */
 {
         struct list_head          tx_list;      /* queue on idle_txs ibc_tx_queue etc. */
+        int                       tx_magic;     /* magic number for debug */
+        int                       tx_comps;     /* completion event counter */
         kib_tx_pool_t            *tx_pool;      /* pool I'm from */
         struct kib_conn          *tx_conn;      /* owning conn */
         short                     tx_sending;   /* # tx callbacks outstanding */

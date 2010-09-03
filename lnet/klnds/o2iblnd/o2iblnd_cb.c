@@ -71,6 +71,7 @@ kiblnd_tx_done (lnet_ni_t *ni, kib_tx_t *tx)
 
         tx->tx_nwrq = 0;
         tx->tx_status = 0;
+        tx->tx_magic = IBLND_TX_IDLE;
 
         kiblnd_pool_free_node(&tx->tx_pool->tpo_pool, &tx->tx_list);
 
@@ -121,6 +122,9 @@ kiblnd_get_idle_tx (lnet_ni_t *ni)
         LASSERT (tx->tx_lntmsg[1] == NULL);
         LASSERT (tx->tx_u.pmr == NULL);
         LASSERT (tx->tx_nfrags == 0);
+
+        tx->tx_magic = IBLND_TX_ACTIVE;
+        tx->tx_comps = 0;
 
         return tx;
 }
@@ -968,7 +972,12 @@ kiblnd_tx_complete (kib_tx_t *tx, int status)
         kib_conn_t   *conn = tx->tx_conn;
         int           idle;
 
-        LASSERT (tx->tx_sending > 0);
+        LASSERTF (tx->tx_sending > 0,
+                  "TX: %p, type: %s, magic: %x, sending: %d, waiting: %d, "
+                  "queued: %d, cookie: "LPU64", comps: %d, status: %d\n",
+                  tx, kiblnd_msgtype2str(tx->tx_msg->ibm_type),
+                  tx->tx_magic, tx->tx_sending, tx->tx_waiting, tx->tx_queued,
+                  tx->tx_cookie, tx->tx_comps, status);
 
         if (failed) {
                 if (conn->ibc_state == IBLND_CONN_ESTABLISHED)
@@ -987,8 +996,8 @@ kiblnd_tx_complete (kib_tx_t *tx, int status)
 
         /* I could be racing with rdma completion.  Whoever makes 'tx' idle
          * gets to free it, which also drops its ref on 'conn'. */
-
         tx->tx_sending--;
+        tx->tx_comps++;
         conn->ibc_nsends_posted--;
         if (tx->tx_msg->ibm_type == IBLND_MSG_NOOP)
                 conn->ibc_noops_posted--;
