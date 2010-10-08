@@ -113,7 +113,7 @@ test_feature_flag()
 	local result=1
 	local feature
 
-	for feature in `/sbin/tune.ldiskfs -l $dev 2>/dev/null \
+	for feature in `/sbin/@TUNE2FS@ -l $dev 2>/dev/null \
 				| grep features: | sed -e 's/^.*: //'`; do
 		if [ "$feature" == "$flag" ]; then
 			result=0
@@ -132,13 +132,13 @@ mmp_test ()
 	local result=0
 
 	if [ "$REQUIRE_MMP_FEATURE" == "yes" ]; then
-		if [ -x /sbin/tune.ldiskfs ]; then
+		if [ -x /sbin/@TUNE2FS@ ]; then
 			if ! test_feature_flag $dev "mmp"; then
 				echo "mmp feature flag is not set on $dev"
 				result=1
 			fi
 		else
-			echo "/sbin/tune.ldiskfs not found"
+			echo "/sbin/@TUNE2FS@ not found"
 			result=1
 		fi
 	fi

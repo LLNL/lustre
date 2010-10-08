@@ -2413,6 +2413,7 @@ lustre/ptlrpc/autoMakefile
 lustre/quota/Makefile
 lustre/quota/autoMakefile
 lustre/scripts/Makefile
+lustre/scripts/lustre
 lustre/tests/Makefile
 lustre/tests/mpi/Makefile
 lustre/utils/Makefile
