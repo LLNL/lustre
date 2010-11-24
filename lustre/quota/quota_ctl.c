@@ -369,24 +369,22 @@ int client_quota_ctl(struct obd_export *exp, struct obd_quotactl *oqctl)
         req->rq_no_resend = 1;
 
         rc = ptlrpc_queue_wait(req);
-        if (rc) {
+        if (rc)
                 CERROR("ptlrpc_queue_wait failed, rc: %d\n", rc);
-                GOTO(out, rc);
-        }
 
-        if (req->rq_repmsg) {
-                oqc = lustre_swab_repbuf(req, REPLY_REC_OFF, sizeof(*oqc),
-                                         lustre_swab_obd_quotactl);
-                if (oqc != NULL) {
-                        *oqctl = *oqc;
-                } else {
-                        CERROR ("Can't unpack obd_quotactl\n");
-                        rc = -EPROTO;
-                }
+        if (req->rq_repmsg &&
+            (oqc = lustre_swab_repbuf(req, REPLY_REC_OFF, sizeof(*oqc),
+                                      lustre_swab_obd_quotactl))) {
+                *oqctl = *oqc;
+        } else if (!rc) {
+                CERROR ("Can't unpack obd_quotactl\n");
+                rc = -EPROTO;
         }
         EXIT;
+
 out:
         ptlrpc_req_finished(req);
+
         return rc;
 }
 
