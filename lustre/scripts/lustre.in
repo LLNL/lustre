@@ -48,8 +48,8 @@ run_preexec_check ()
         fi
 }
 
-# Usage: run_preexec_check [ start | restart | condrestart ]
-# The single parameter will be passed to the PREEXEC_SCRIPT
+# Usage: run_postexec_check [ start | restart | condrestart ]
+# The single parameter will be passed to the POSTEXEC_SCRIPT
 run_postexec_check ()
 {
         if [ -n "$POSTEXEC_CHECK" ] && ! $POSTEXEC_CHECK ; then
