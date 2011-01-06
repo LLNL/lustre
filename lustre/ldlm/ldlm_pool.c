@@ -543,7 +543,7 @@ static int ldlm_cli_pool_shrink(struct ldlm_pool *pl,
         spin_unlock(&ns->ns_unused_lock);
 
         if (nr) {
-                canceled = ldlm_cancel_lru(ns, nr, LDLM_SYNC,
+                canceled = ldlm_cancel_lru(ns, nr, LDLM_ASYNC,
                                            LDLM_CANCEL_SHRINK);
         }
 #ifdef __KERNEL__
