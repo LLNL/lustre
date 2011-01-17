@@ -50,6 +50,7 @@
 #include <obd_support.h>
 #include <lustre_net.h>
 #include <lustre_import.h>
+#include <lustre_disk.h>
 #include <lustre_log.h>
 #include <lustre_disk.h>
 #include <lustre_dlm.h>
@@ -1019,6 +1020,9 @@ int sptlrpc_target_local_copy_conf(struct obd_device *obd,
         int                   rc;
         ENTRY;
 
+        /* XXX: doesn't work with OSD yet */
+        RETURN(0);
+
         ctxt = llog_get_context(obd, LLOG_CONFIG_ORIG_CTXT);
         if (ctxt == NULL) {
                 CERROR("missing llog context\n");
@@ -1041,7 +1045,7 @@ int sptlrpc_target_local_copy_conf(struct obd_device *obd,
         if (rc == 0) {
                 rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
                 if (rc == 0) {
-                        rc = llog_destroy(llh);
+                        rc = llog_destroy(NULL, llh);
                         llog_free_handle(llh);
                 } else {
                         llog_close(llh);
@@ -1082,7 +1086,7 @@ out_ctx:
         RETURN(rc);
 }
 
-static int local_read_handler(struct llog_handle *llh,
+static int local_read_handler(const struct lu_env *env, struct llog_handle *llh,
                               struct llog_rec_hdr *rec,
                               void *data)
 {

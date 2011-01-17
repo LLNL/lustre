@@ -61,86 +61,62 @@ static struct lu_kmem_descr ofd_caches[] = {
 	}
 };
 
-static int ofd_stack_init(const struct lu_env *env,
-			  struct ofd_device *m, struct lustre_cfg *cfg)
+static int ofd_connect_to_next(const struct lu_env *env, struct ofd_device *m,
+			       const char *nextdev)
 {
-	struct lu_device	*ofd_lu = &m->ofd_dt_dev.dd_lu_dev;
-	const char		*dev = lustre_cfg_string(cfg, 0);
-	struct obd_type		*type;
-	struct lu_device_type	*ldt;
-	struct lu_device	*d;
-	struct ofd_thread_info	*info = ofd_info(env);
-	struct lustre_mount_info *lmi;
+	struct obd_connect_data	*data = NULL;
+	struct obd_device	*obd;
 	int			 rc;
 
 	ENTRY;
 
-	lmi = server_get_mount_2(dev);
-	if (lmi == NULL) {
-		CERROR("Cannot get mount info for %s!\n", dev);
-		RETURN(-ENODEV);
+	LASSERT(m->ofd_osd_exp == NULL);
+
+	OBD_ALLOC_PTR(data);
+	if (data == NULL)
+		GOTO(out, rc = -ENOMEM);
+
+	obd = class_name2obd(nextdev);
+	if (obd == NULL) {
+		CERROR("can't locate next device: %s\n", nextdev);
+		GOTO(out, rc = -ENOTCONN);
 	}
 
-	type = class_get_type(s2lsi(lmi->lmi_sb)->lsi_osd_type);
-	if (!type) {
-		CERROR("Unknown type: '%s'\n",
-		       s2lsi(lmi->lmi_sb)->lsi_osd_type);
-		RETURN(-ENODEV);
+	/* XXX: which flags we need on OST? */
+	data->ocd_version = LUSTRE_VERSION_CODE;
+
+	rc = obd_connect(env, &m->ofd_osd_exp, obd, &obd->obd_uuid, data, NULL);
+	if (rc) {
+		CERROR("cannot connect to next dev %s (%d)\n", nextdev, rc);
+		GOTO(out, rc);
 	}
 
-	ldt = type->typ_lu;
-	if (ldt == NULL) {
-		CERROR("type: '%s'\n", s2lsi(lmi->lmi_sb)->lsi_osd_type);
-		GOTO(out_type, rc = -EINVAL);
-	}
+	m->ofd_dt_dev.dd_lu_dev.ld_site =
+		m->ofd_osd_exp->exp_obd->obd_lu_dev->ld_site;
+	LASSERT(m->ofd_dt_dev.dd_lu_dev.ld_site);
+	m->ofd_osd = lu2dt_dev(m->ofd_osd_exp->exp_obd->obd_lu_dev);
+	m->ofd_dt_dev.dd_lu_dev.ld_site->ls_top_dev = &m->ofd_dt_dev.dd_lu_dev;
 
-	ldt->ldt_obd_type = type;
-	d = ldt->ldt_ops->ldto_device_alloc(env, ldt, cfg);
-	if (IS_ERR(d)) {
-		CERROR("Cannot allocate device: '%s'\n",
-		       s2lsi(lmi->lmi_sb)->lsi_osd_type);
-		GOTO(out_type, rc = -ENODEV);
-	}
+out:
+	if (data)
+		OBD_FREE_PTR(data);
+	RETURN(rc);
+}
 
-	LASSERT(ofd_lu->ld_site);
-	d->ld_site = ofd_lu->ld_site;
+static int ofd_stack_init(const struct lu_env *env, struct ofd_device *m,
+			  struct lustre_cfg *cfg)
+{
+	struct ofd_thread_info	*info = ofd_info(env);
+	int			 rc;
 
+	ENTRY;
+
+	LASSERT(m->ofd_osd_exp == NULL);
 	snprintf(info->fti_u.name, sizeof(info->fti_u.name),
 		 "%s-osd", lustre_cfg_string(cfg, 0));
 
-	type->typ_refcnt++;
+	rc = ofd_connect_to_next(env, m, info->fti_u.name);
 
-	rc = lu_env_refill((struct lu_env *)env);
-	if (rc != 0) {
-		CERROR("Failure to refill session: '%d'\n", rc);
-		GOTO(out_free, rc);
-	}
-
-	rc = ldt->ldt_ops->ldto_device_init(env, d, dev, NULL);
-	if (rc) {
-		CERROR("can't init device '%s', rc = %d\n",
-		       s2lsi(lmi->lmi_sb)->lsi_osd_type, rc);
-		GOTO(out_free, rc);
-	}
-	lu_device_get(d);
-	lu_ref_add(&d->ld_reference, "lu-stack", &lu_site_init);
-
-	m->ofd_osd = lu2dt_dev(d);
-
-	/* process setup config */
-	rc = d->ld_ops->ldo_process_config(env, d, cfg);
-	if (rc)
-		GOTO(out_fini, rc);
-
-	RETURN(rc);
-
-out_fini:
-	ldt->ldt_ops->ldto_device_fini(env, d);
-out_free:
-	type->typ_refcnt--;
-	ldt->ldt_ops->ldto_device_free(env, d);
-out_type:
-	class_put_type(type);
 	RETURN(rc);
 }
 
@@ -154,6 +130,7 @@ static void ofd_stack_fini(const struct lu_env *env, struct ofd_device *m,
 
 	ENTRY;
 
+	LASSERT(top);
 	lu_site_purge(env, top->ld_site, ~0);
 
 	/* process cleanup, pass mdt obd name to get obd umount flags */
@@ -169,11 +146,13 @@ static void ofd_stack_fini(const struct lu_env *env, struct ofd_device *m,
 		RETURN_EXIT;
 	}
 
-	LASSERT(top);
 	top->ld_ops->ldo_process_config(env, top, lcfg);
 	lustre_cfg_free(lcfg);
 
-	lu_stack_fini(env, &m->ofd_osd->dd_lu_dev);
+	lu_site_purge(env, top->ld_site, ~0);
+
+	LASSERT(m->ofd_osd_exp);
+	obd_disconnect(m->ofd_osd_exp);
 	m->ofd_osd = NULL;
 
 	EXIT;
@@ -389,8 +368,14 @@ static int ofd_procfs_init(struct ofd_device *ofd)
 		       obd->obd_name, rc);
 		GOTO(free_obd_stats, rc);
 	}
-	RETURN(0);
 
+	rc = lprocfs_job_stats_init(obd, LPROC_OFD_STATS_LAST,
+				    ofd_stats_counter_init);
+	if (rc)
+		GOTO(remove_entry_clear, rc);
+	RETURN(0);
+remove_entry_clear:
+	lprocfs_remove_proc_entry("clear", obd->obd_proc_exports_entry);
 free_obd_stats:
 	lprocfs_free_obd_stats(obd);
 obd_cleanup:
@@ -402,6 +387,7 @@ static int ofd_procfs_fini(struct ofd_device *ofd)
 {
 	struct obd_device *obd = ofd_obd(ofd);
 
+	lprocfs_job_stats_fini(obd);
 	lprocfs_remove_proc_entry("clear", obd->obd_proc_exports_entry);
 	lprocfs_free_per_client_stats(obd);
 	lprocfs_free_obd_stats(obd);
@@ -491,17 +477,12 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 
 	info = ofd_info_init(env, NULL);
 	if (info == NULL)
-		RETURN(-EFAULT);
-
-	rc = lu_site_init(&m->ofd_site, &m->ofd_dt_dev.dd_lu_dev);
-	if (rc)
-		GOTO(err_fini_proc, rc);
-	m->ofd_site.ls_top_dev = &m->ofd_dt_dev.dd_lu_dev;
+		GOTO(err_fini_proc, rc = -EFAULT);
 
 	rc = ofd_stack_init(env, m, cfg);
 	if (rc) {
 		CERROR("Can't init device stack, rc %d\n", rc);
-		GOTO(err_lu_site, rc);
+		GOTO(err_fini_proc, rc);
 	}
 
 	/* populate cached statfs data */
@@ -556,16 +537,7 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 	if (rc)
 		GOTO(err_fini_lut, rc);
 
-	target_recovery_init(&m->ofd_lut, ost_handle);
-
-	rc = lu_site_init_finish(&m->ofd_site);
-	if (rc)
-		GOTO(err_fs_cleanup, rc);
-
 	RETURN(0);
-err_fs_cleanup:
-	target_recovery_fini(obd);
-	ofd_fs_cleanup(env, m);
 err_fini_lut:
 	lut_fini(env, &m->ofd_lut);
 err_free_ns:
@@ -573,8 +545,6 @@ err_free_ns:
 	obd->obd_namespace = m->ofd_namespace = NULL;
 err_fini_stack:
 	ofd_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
-err_lu_site:
-	lu_site_fini(&m->ofd_site);
 err_fini_proc:
 	ofd_procfs_fini(m);
 	return rc;
@@ -601,8 +571,7 @@ static void ofd_fini(const struct lu_env *env, struct ofd_device *m)
 		d->ld_obd->obd_namespace = m->ofd_namespace = NULL;
 	}
 
-	ofd_stack_fini(env, m, m->ofd_site.ls_top_dev);
-	lu_site_fini(&m->ofd_site);
+	ofd_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
 	ofd_procfs_fini(m);
 	LASSERT(cfs_atomic_read(&d->ld_ref) == 0);
 	EXIT;

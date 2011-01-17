@@ -404,8 +404,6 @@ static int ofd_destroy_export(struct obd_export *exp)
 	ldlm_destroy_export(exp);
 	lut_client_free(exp);
 
-	ofd_fmd_cleanup(exp);
-
 	/*
 	 * discard grants once we're sure no more
 	 * interaction with the client is possible
@@ -451,7 +449,7 @@ static int ofd_adapt_sptlrpc_conf(const struct lu_env *env,
 	int			 rc;
 
 	sptlrpc_rule_set_init(&tmp_rset);
-	rc = sptlrpc_conf_target_get_rules(obd, &tmp_rset, initial);
+	rc = sptlrpc_conf_target_get_rules(env, obd, &tmp_rset, initial);
 	if (rc) {
 		CERROR("%s: failed get sptlrpc rules: rc = %d\n",
 		       obd->obd_name, rc);
@@ -835,10 +833,13 @@ int ofd_setattr(const struct lu_env *env, struct obd_export *exp,
 	obdo_from_la(oinfo->oi_oa, &info->fti_attr,
 		     OFD_VALID_FLAGS | LA_UID | LA_GID);
 	ofd_info2oti(info, oti);
+
+	ofd_counter_incr(exp, LPROC_OFD_STATS_SETATTR, oti->oti_jobid, 1);
+	EXIT;
 out_unlock:
 	ofd_object_put(env, fo);
 out:
-	RETURN(rc);
+	return rc;
 }
 
 static int ofd_punch(const struct lu_env *env, struct obd_export *exp,
@@ -916,6 +917,8 @@ static int ofd_punch(const struct lu_env *env, struct obd_export *exp,
 	obdo_from_la(oinfo->oi_oa, &info->fti_attr,
 		     OFD_VALID_FLAGS | LA_UID | LA_GID);
 	ofd_info2oti(info, oti);
+
+	ofd_counter_incr(exp, LPROC_OFD_STATS_PUNCH, oti->oti_jobid, 1);
 out:
 	ofd_object_put(env, fo);
 out_env:
@@ -1178,6 +1181,7 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 						  oa->o_seq);
 			if (rc)
 				break;
+			}
 		}
 		if (i > 0) {
 			/* some objects got created, we can return
@@ -1292,6 +1296,8 @@ static int ofd_sync(const struct lu_env *env, struct obd_export *exp,
 	oinfo->oi_oa->o_valid = OBD_MD_FLID;
 	rc = ofd_attr_get(env, fo, &info->fti_attr);
 	obdo_from_la(oinfo->oi_oa, &info->fti_attr, OFD_VALID_FLAGS);
+
+	ofd_counter_incr(exp, LPROC_OFD_STATS_SYNC, oinfo->oi_jobid, 1);
 	EXIT;
 unlock:
 	ofd_write_unlock(env, fo);
@@ -1356,20 +1362,27 @@ static int ofd_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
 
 static int ofd_ping(const struct lu_env *env, struct obd_export *exp)
 {
+	ofd_fmd_expire(exp);
 	return 0;
 }
 
-static int ofd_health_check(const struct lu_env *env, struct obd_device *obd)
+static int ofd_health_check(const struct lu_env *nul, struct obd_device *obd)
 {
 	struct ofd_device	*ofd = ofd_dev(obd->obd_lu_dev);
 	struct ofd_thread_info	*info;
+	struct lu_env		 env;
 #ifdef USE_HEALTH_CHECK_WRITE
 	struct thandle		*th;
 #endif
 	int			 rc = 0;
 
-	info = ofd_info_init(env, NULL);
-	rc = dt_statfs(env, ofd->ofd_osd, &info->fti_u.osfs);
+	/* obd_proc_read_health pass NULL env, we need real one */
+	rc = lu_env_init(&env, LCT_DT_THREAD);
+	if (rc)
+		RETURN(rc);
+
+	info = ofd_info_init(&env, NULL);
+	rc = dt_statfs(&env, ofd->ofd_osd, &info->fti_u.osfs);
 	if (unlikely(rc))
 		GOTO(out, rc);
 
@@ -1384,27 +1397,28 @@ static int ofd_health_check(const struct lu_env *env, struct obd_device *obd)
 	info->fti_buf.lb_len = CFS_PAGE_SIZE;
 	info->fti_off = 0;
 
-	th = dt_trans_create(env, ofd->ofd_osd);
+	th = dt_trans_create(&env, ofd->ofd_osd);
 	if (IS_ERR(th))
 		GOTO(out, rc = PTR_ERR(th));
 
-	rc = dt_declare_record_write(env, ofd->ofd_health_check_file,
+	rc = dt_declare_record_write(&env, ofd->ofd_health_check_file,
 				     info->fti_buf.lb_len, info->fti_off, th);
 	if (rc == 0) {
 		th->th_sync = 1; /* sync IO is needed */
-		rc = dt_trans_start_local(env, ofd->ofd_osd, th);
+		rc = dt_trans_start_local(&env, ofd->ofd_osd, th);
 		if (rc == 0)
-			rc = dt_record_write(env, ofd->ofd_health_check_file,
+			rc = dt_record_write(&env, ofd->ofd_health_check_file,
 					     &info->fti_buf, &info->fti_off,
 					     th);
 	}
-	dt_trans_stop(env, ofd->ofd_osd, th);
+	dt_trans_stop(&env, ofd->ofd_osd, th);
 
 	OBD_FREE(info->fti_buf.lb_buf, CFS_PAGE_SIZE);
 
 	CDEBUG(D_INFO, "write 1 page synchronously for checking io rc %d\n",rc);
 #endif
 out:
+	lu_env_fini(&env);
 	return !!rc;
 }
 

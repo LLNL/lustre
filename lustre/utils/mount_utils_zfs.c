@@ -239,10 +239,6 @@ int zfs_write_ldd(struct mkfs_opts *mop)
 	if (ret)
 		goto out_close;
 
-	ret = zfs_set_prop_param(zhp, ldd, PARAM_FAILMODE, LDD_FAILMODE_PROP);
-	if (ret)
-		goto out_close;
-
 	ret = zfs_set_prop_param(zhp, ldd, PARAM_MDT PARAM_ID_UPCALL,
 				 LDD_IDENTITY_UPCALL_PROP);
 	if (ret)
@@ -368,10 +364,6 @@ int zfs_read_ldd(char *ds,  struct lustre_disk_data *ldd)
 		goto out_close;
 
 	ret = zfs_get_prop_param(zhp, ldd, PARAM_FAILNODE, LDD_FAILNODE_PROP);
-	if (ret && (ret != ENOENT))
-		goto out_close;
-
-	ret = zfs_get_prop_param(zhp, ldd, PARAM_FAILMODE, LDD_FAILMODE_PROP);
 	if (ret && (ret != ENOENT))
 		goto out_close;
 
@@ -571,9 +563,9 @@ int zfs_make_lustre(struct mkfs_opts *mop)
 	 */
 	memset(mkfs_cmd, 0, PATH_MAX);
 	snprintf(mkfs_cmd, PATH_MAX,
-		 "zfs create -o canmount=off -o xattr=sa%s %s",
-		 zfs_mkfs_opts(mop, mkfs_tmp, PATH_MAX),
-		 ds);
+		 "zfs create -o canmount=off -o xattr=sa%s%s %s",
+		 zfs_refquota_opts(mop, mkfs_refquota, PATH_MAX),
+		 zfs_mkfs_opts(mop, mkfs_tmp, PATH_MAX), ds);
 
 	vprint("mkfs_cmd = %s\n", mkfs_cmd);
 	ret = run_command(mkfs_cmd, PATH_MAX);
@@ -678,6 +670,5 @@ void zfs_fini(void)
 		dlclose(handle_libzfs);
 		handle_libzfs = NULL;
 	}
-
 	osd_zfs_setup = 0;
 }

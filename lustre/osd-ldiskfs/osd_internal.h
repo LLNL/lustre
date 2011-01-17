@@ -54,6 +54,7 @@
 
 #include <ldiskfs/ldiskfs.h>
 #include <ldiskfs/ldiskfs_jbd2.h>
+#include <ldiskfs/ldiskfs_extents.h>
 #ifdef HAVE_LDISKFS_JOURNAL_CALLBACK_ADD
 # define journal_callback ldiskfs_journal_cb_entry
 # define osd_journal_callback_set(handle, func, jcb) \
@@ -71,8 +72,9 @@
 /* class_register_type(), class_unregister_type(), class_get_type() */
 #include <obd_class.h>
 #include <lustre_disk.h>
-#include <dt_object.h>
 #include <lquota.h>
+#include <lustre_fsfilt.h>
+#include <dt_object.h>
 
 #include "osd_oi.h"
 #include "osd_iam.h"
@@ -87,15 +89,17 @@ struct inode;
 #define I_LUSTRE_NOSCRUB	(1 << 31)
 
 /** Enable thandle usage statistics */
-#define OSD_THANDLE_STATS (0)
+#define OSD_THANDLE_STATS
 
 #ifdef HAVE_QUOTA_SUPPORT
 struct osd_ctxt {
         __u32 oc_uid;
         __u32 oc_gid;
-        cfs_kernel_cap_t oc_cap;
+        __u32 oc_cap;
 };
 #endif
+
+struct osd_compat_objid;
 
 struct osd_directory {
         struct iam_container od_container;
@@ -246,8 +250,6 @@ struct osd_otable_it {
 				 ooi_waiting:1; /* it::next is waiting. */
 };
 
-extern const int osd_dto_credits_noquota[];
-
 /*
  * osd device.
  */
@@ -255,7 +257,6 @@ struct osd_device {
         /* super-class */
         struct dt_device          od_dt_dev;
         /* information about underlying file system */
-        struct lustre_mount_info *od_mount;
         struct vfsmount          *od_mnt;
         /* object index */
         struct osd_oi           **od_oi_table;
@@ -264,8 +265,7 @@ struct osd_device {
         /*
          * Fid Capability
          */
-	unsigned int              od_fl_capa:1,
-				  od_is_md:1; /* set in ->ldo_prepare */
+	unsigned int              od_fl_capa:1;
         unsigned long             od_capa_timeout;
         __u32                     od_capa_alg;
         struct lustre_capa_key   *od_capa_keys;
@@ -287,7 +287,10 @@ struct osd_device {
         __u32                     od_iop_mode;
 
         struct fsfilt_operations *od_fsops;
+        int                       od_connects;
+        struct lu_site            od_site;
 
+        char                      od_mntdev[128];
         /*
          * mapping for legacy OST objids
          */
@@ -368,7 +371,7 @@ struct osd_thandle {
         unsigned char           ot_declare_delete;
 #endif
 
-#if OSD_THANDLE_STATS
+#ifdef OSD_THANDLE_STATS
         /** time when this handle was allocated */
         cfs_time_t oth_alloced;
 
@@ -410,7 +413,7 @@ enum {
         LPROC_OSD_CACHE_HIT     = 5,
         LPROC_OSD_CACHE_MISS    = 6,
 
-#if OSD_THANDLE_STATS
+#ifdef OSD_THANDLE_STATS
         LPROC_OSD_THANDLE_STARTING,
         LPROC_OSD_THANDLE_OPEN,
         LPROC_OSD_THANDLE_CLOSING,
@@ -593,7 +596,7 @@ struct osd_thread_info {
 #ifdef HAVE_QUOTA_SUPPORT
         struct osd_ctxt        oti_ctxt;
 #endif
-        struct lu_env          oti_obj_delete_tx_env;
+
 #define OSD_FID_REC_SZ 32
         char                   oti_ldp[OSD_FID_REC_SZ];
         char                   oti_ldp2[OSD_FID_REC_SZ];
@@ -612,9 +615,6 @@ extern int ldiskfs_pdo;
 void lprocfs_osd_init_vars(struct lprocfs_static_vars *lvars);
 int osd_procfs_init(struct osd_device *osd, const char *name);
 int osd_procfs_fini(struct osd_device *osd);
-void osd_lprocfs_time_start(const struct lu_env *env);
-void osd_lprocfs_time_end(const struct lu_env *env,
-                          struct osd_device *osd, int op);
 void osd_brw_stats_update(struct osd_device *osd, struct osd_iobuf *iobuf);
 
 #endif
@@ -648,6 +648,17 @@ int osd_compat_spec_insert(struct osd_thread_info *info,
                            struct osd_device *osd,
                            const struct lu_fid *fid,
                            const struct osd_inode_id *id, struct thandle *th);
+
+extern struct inode *ldiskfs_create_inode(handle_t *handle,
+                                          struct inode * dir, int mode);
+extern int iam_lvar_create(struct inode *obj, int keysize, int ptrsize,
+                           int recsize, handle_t *handle);
+extern int iam_lfix_create(struct inode *obj, int keysize, int ptrsize,
+                           int recsize, handle_t *handle);
+extern int ldiskfs_delete_entry(handle_t *handle,
+                                struct inode * dir,
+                                struct ldiskfs_dir_entry_2 * de_del,
+                                struct buffer_head * bh);
 
 void osd_scrub_file_reset(struct osd_scrub *scrub, __u8 *uuid, __u64 flags);
 int osd_scrub_file_store(struct osd_scrub *scrub);
@@ -697,6 +708,8 @@ static inline int osd_invariant(const struct osd_object *obj)
 #define osd_invariant(obj) (1)
 #endif
 
+#define OSD_MAX_CACHE_SIZE OBD_OBJECT_EOF
+
 extern const struct dt_index_operations osd_otable_ops;
 
 static inline int osd_oi_fid2idx(struct osd_device *dev,
@@ -742,7 +755,7 @@ static inline struct osd_device *osd_obj2dev(const struct osd_object *o)
 
 static inline struct super_block *osd_sb(const struct osd_device *dev)
 {
-        return dev->od_mount->lmi_mnt->mnt_sb;
+        return dev->od_mnt->mnt_sb;
 }
 
 static inline int osd_object_is_root(const struct osd_object *obj)
@@ -888,4 +901,8 @@ static inline loff_t ldiskfs_get_htree_eof(struct file *filp)
 }
 
 #endif /* __KERNEL__ */
+
+#ifdef LPROCFS
+void osd_quota_procfs_init(struct osd_device *osd);
+#endif
 #endif /* _OSD_INTERNAL_H */

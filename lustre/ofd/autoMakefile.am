@@ -35,7 +35,8 @@
 #
 
 if MODULES
-modulefs_DATA = ofd$(KMODEXT)
+modulefs_DATA = obdfilter$(KMODEXT)
 endif
 
-MOSTLYCLEANFILES := @MOSTLYCLEANFILES@
+MOSTLYCLEANFILES := @MOSTLYCLEANFILES@ 
+EXTRA_DIST = $(obdfilter-objs:%.o=%.c) ofd_internal.h

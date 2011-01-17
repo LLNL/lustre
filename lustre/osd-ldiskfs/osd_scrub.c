@@ -998,6 +998,7 @@ int osd_scrub_setup(const struct lu_env *env, struct osd_device *dev)
 	struct osd_inode_id	   *id     = &scrub->os_oic.oic_lid;
 	struct super_block	   *sb     = osd_sb(dev);
 	struct ldiskfs_super_block *es     = LDISKFS_SB(sb)->s_es;
+	struct lustre_sb_info	   *lsi;
 	struct inode		   *inode;
 	struct lvfs_run_ctxt	    saved;
 	struct file		   *filp;
@@ -1016,7 +1017,10 @@ int osd_scrub_setup(const struct lu_env *env, struct osd_device *dev)
 	cfs_init_rwsem(&scrub->os_rwsem);
 	cfs_spin_lock_init(&scrub->os_lock);
 	CFS_INIT_LIST_HEAD(&scrub->os_inconsistent_items);
-	if (get_mount_flags(dev->od_mount->lmi_sb) & LMD_FLG_NOSCRUB)
+	lsi = server_get_mount(dev->od_svname);
+	if (lsi == NULL)
+		RETURN(-ENODEV);
+	if (lsi->lsi_lmd->lmd_flags & LMD_FLG_NOSCRUB)
 		scrub->os_no_scrub = 1;
 
 	push_ctxt(&saved, ctxt, NULL);

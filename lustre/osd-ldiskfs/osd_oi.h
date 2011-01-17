@@ -89,6 +89,13 @@ struct osd_idmap_cache {
 	struct osd_inode_id	oic_lid;
 };
 
+/* FID is supposed to have name idmap able */
+static inline int fid_has_name(const struct lu_fid *fid)
+{
+	return (fid_is_norm(fid) || FID_SEQ_LOCAL_NAME == fid_seq(fid) ||
+		FID_SEQ_DOT_LUSTRE == fid_seq(fid));
+}
+
 static inline void osd_id_pack(struct osd_inode_id *tgt,
 			       const struct osd_inode_id *src)
 {

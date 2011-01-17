@@ -59,7 +59,7 @@ void fatal(void)
         fprintf(stderr, "\n%s FATAL: ", progname);
 }
 
-int run_command(char *cmd, int cmdsz)
+int run_command_err(char *cmd, int cmdsz, char *error_msg)
 {
         char log[] = "/tmp/run_command_logXXXXXX";
         int fd = -1, rc;
@@ -71,33 +71,58 @@ int run_command(char *cmd, int cmdsz)
                 return ENOMEM;
         }
 
-        if (verbose > 1) {
+        if (verbose > 1)
                 printf("cmd: %s\n", cmd);
-        } else {
-                if ((fd = mkstemp(log)) >= 0) {
-                        close(fd);
-                        strcat(cmd, " >");
-                        strcat(cmd, log);
-                }
+
+        if ((fd = mkstemp(log)) >= 0) {
+                close(fd);
+                strcat(cmd, " >");
+                strcat(cmd, log);
         }
         strcat(cmd, " 2>&1");
 
         /* Can't use popen because we need the rv of the command */
         rc = system(cmd);
         if (rc && (fd >= 0)) {
-                char buf[128];
+                char buf[256];
+
+                if (error_msg != NULL) {
+                        if (snprintf(buf, sizeof(buf), "grep -q \"%s\" %s",
+                                     error_msg, log) >= sizeof(buf)) {
+                                fatal();
+                                buf[sizeof(buf) - 1] = '\0';
+                                fprintf(stderr, "grep command buf overflow: "
+                                        "'%s'\n", buf);
+                                return ENOMEM;
+                        }
+                        if (system(buf) == 0) {
+                                /* The command had the expected error */
+                                rc = -2;
+                                goto out;
+                        }
+                }
+
                 FILE *fp;
                 fp = fopen(log, "r");
                 if (fp) {
-                        while (fgets(buf, sizeof(buf), fp) != NULL) {
+                        if (verbose <= 1)
+                                printf("cmd: %s\n", cmd);
+
+                        while (fgets(buf, sizeof(buf), fp) != NULL)
                                 printf("   %s", buf);
-                        }
+
                         fclose(fp);
                 }
         }
+out:
         if (fd >= 0)
                 remove(log);
         return rc;
+}
+
+int run_command(char *cmd, int cmdsz)
+{
+        return run_command_err(cmd, cmdsz, NULL);
 }
 
 int add_param(char *buf, char *key, char *val)
@@ -626,3 +651,51 @@ int file_create(char *path, int size)
 
 	return 0;
 }
+
+/* Convert symbolic hostnames to ipaddrs, since we can't do this lookup in the
+ * kernel. */
+#define MAXNIDSTR 1024
+char *convert_hostnames(char *s1)
+{
+        char *converted, *s2 = 0, *c, *end, sep;
+        int left = MAXNIDSTR;
+        lnet_nid_t nid;
+
+        converted = malloc(left);
+        if (converted == NULL) {
+                return NULL;
+        }
+
+        end = s1 + strlen(s1);
+        c = converted;
+        while ((left > 0) && (s1 < end)) {
+                s2 = strpbrk(s1, ",:");
+                if (!s2)
+                        s2 = end;
+                sep = *s2;
+                *s2 = '\0';
+                nid = libcfs_str2nid(s1);
+
+                if (nid == LNET_NID_ANY) {
+                        fprintf(stderr, "%s: Can't parse NID '%s'\n", progname, s1);
+                        free(converted);
+                        return NULL;
+                }
+                if (strncmp(libcfs_nid2str(nid), "127.0.0.1",
+                            strlen("127.0.0.1")) == 0) {
+                        fprintf(stderr, "%s: The NID '%s' resolves to the "
+                                "loopback address '%s'.  Lustre requires a "
+                                "non-loopback address.\n",
+                                progname, s1, libcfs_nid2str(nid));
+                        free(converted);
+                        return NULL;
+                }
+
+                c += snprintf(c, left, "%s%c", libcfs_nid2str(nid), sep);
+                left = converted + MAXNIDSTR - c;
+                s1 = s2 + 1;
+        }
+        return converted;
+}
+
+

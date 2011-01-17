@@ -86,7 +86,7 @@
 
 extern char *progname;
 
-#define L_BLOCK_SIZE 4096
+#define L_BLOCK_SIZE            4096
 /* keep it less than LL_FID_NAMELEN */
 #define DUMMY_FILE_NAME_LEN             25
 #define EXT3_DIRENT_SIZE                DUMMY_FILE_NAME_LEN
@@ -944,7 +944,7 @@ set_params:
 		for (i = 0; rc == 0 && i < glob_info.gl_pathc; i++){
 			slave = basename(glob_info.gl_pathv[i]);
 			snprintf(real_path, sizeof(real_path), "/dev/%s", slave);
-			rc = set_blockdev_tunables(real_path, mop, 0);
+			rc = __ldiskfs_tune_lustre(real_path, mop, 0);
 		}
 
 		if (rc == GLOB_NOMATCH) {

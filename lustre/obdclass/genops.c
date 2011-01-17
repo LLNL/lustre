@@ -566,11 +566,16 @@ EXPORT_SYMBOL(class_devices_in_group);
  */
 int class_notify_sptlrpc_conf(const char *fsname, int namelen)
 {
+        struct lu_env       env;
         struct obd_device  *obd;
         const char         *type;
         int                 i, rc = 0, rc2;
 
         LASSERT(namelen > 0);
+
+        rc = lu_env_init(&env, LCT_LOCAL);
+        if (rc)
+                return rc;
 
         cfs_read_lock(&obd_dev_lock);
         for (i = 0; i < class_devno_max(); i++) {
@@ -600,6 +605,8 @@ int class_notify_sptlrpc_conf(const char *fsname, int namelen)
                 cfs_read_lock(&obd_dev_lock);
         }
         cfs_read_unlock(&obd_dev_lock);
+
+        lu_env_fini(&env);
         return rc;
 }
 EXPORT_SYMBOL(class_notify_sptlrpc_conf);

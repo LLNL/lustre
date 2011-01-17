@@ -896,11 +896,80 @@ static struct dt_index_operations osd_index_ops = {
 	}
 };
 
+static struct dt_it *osd_otable_it_init(const struct lu_env *env,
+				       struct dt_object *dt, __u32 attr,
+				       struct lustre_capa *capa)
+{
+	return ERR_PTR(-ENOSYS);
+}
+
+static void osd_otable_it_fini(const struct lu_env *env, struct dt_it *di)
+{
+}
+
+static void osd_otable_it_put(const struct lu_env *env, struct dt_it *di)
+{
+}
+
+static int osd_otable_it_get(const struct lu_env *env,
+			     struct dt_it *di, const struct dt_key *key)
+{
+	return -ENOSYS;
+}
+
+static int osd_otable_it_next(const struct lu_env *env, struct dt_it *di)
+{
+	return -ENOSYS;
+}
+
+static struct dt_key *osd_otable_it_key(const struct lu_env *env,
+					const struct dt_it *di)
+{
+	return ERR_PTR(-ENOSYS);
+}
+
+static int osd_otable_it_key_size(const struct lu_env *env,
+				  const struct dt_it *di)
+{
+	return -ENOSYS;
+}
+
+static int osd_otable_it_rec(const struct lu_env *env, const struct dt_it *di,
+			     struct dt_rec *rec, __u32 attr)
+{
+	return -ENOSYS;
+}
+
+static int osd_otable_it_load(const struct lu_env *env,
+			      const struct dt_it *di, __u64 hash)
+{
+	return -ENOSYS;
+}
+
+const struct dt_index_operations osd_otable_ops = {
+	.dio_it = {
+		.init     = osd_otable_it_init,
+		.fini     = osd_otable_it_fini,
+		.put	  = osd_otable_it_put,
+		.get      = osd_otable_it_get,
+		.next     = osd_otable_it_next,
+		.key      = osd_otable_it_key,
+		.key_size = osd_otable_it_key_size,
+		.rec      = osd_otable_it_rec,
+		.load     = osd_otable_it_load,
+	}
+};
+
 int osd_index_try(const struct lu_env *env, struct dt_object *dt,
 		const struct dt_index_features *feat)
 {
 	struct osd_object *obj = osd_dt_obj(dt);
 	ENTRY;
+
+	if (unlikely(feat == &dt_otable_features)) {
+		dt->do_index_ops = &osd_otable_ops;
+		RETURN(0);
+	}
 
 	LASSERT(obj->oo_db != NULL);
 

@@ -144,10 +144,8 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
 		return PTR_ERR(jh);
 
 	inode = ldiskfs_create_inode(jh, dir, (S_IFREG | S_IRUGO | S_IWUSR));
-	if (IS_ERR(inode)) {
-		ldiskfs_journal_stop(jh);
-		return PTR_ERR(inode);
-	}
+	if (IS_ERR(inode))
+		GOTO(out_jh, rc = PTR_ERR(inode));
 
 	if (feat->dif_flags & DT_IND_VARKEY)
 		rc = iam_lvar_create(inode, feat->dif_keysize_max,
@@ -159,6 +157,7 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
 				     jh);
 	dentry = osd_child_dentry_by_inode(env, dir, name, strlen(name));
 	rc = osd_ldiskfs_add_entry(jh, dentry, inode, NULL);
+out_jh:
 	ldiskfs_journal_stop(jh);
 	iput(inode);
 	return rc;
@@ -215,7 +214,6 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
  * Open an OI(Ojbect Index) container.
  *
  * \param       name    Name of OI container
- * \param       objp    Pointer of returned OI
  *
  * \retval      0       success
  * \retval      -ve     failure
@@ -265,7 +263,6 @@ out_inode:
         iput(inode);
         return rc;
 }
-
 /**
  * Open OI(Object Index) table.
  * If \a oi_count is zero, which means caller doesn't know how many OIs there
@@ -401,8 +398,7 @@ create:
 	rc = osd_oi_table_open(info, osd, oi, osd_oi_count, true);
 	LASSERT(ergo(rc >= 0, rc == osd_oi_count));
 
-	GOTO(out, rc);
-
+	EXIT;
 out:
 	if (rc < 0) {
 		OBD_FREE(oi, sizeof(*oi) * OSD_OI_FID_NR_MAX);
@@ -439,7 +435,6 @@ static int osd_oi_iam_lookup(struct osd_thread_info *oti,
 {
         struct iam_container  *bag;
         struct iam_iterator   *it = &oti->oti_idx_it;
-        struct iam_rec        *iam_rec;
         struct iam_path_descr *ipd;
         int                    rc;
         ENTRY;
@@ -456,17 +451,9 @@ static int osd_oi_iam_lookup(struct osd_thread_info *oti,
         iam_it_init(it, bag, 0, ipd);
 
         rc = iam_it_get(it, (struct iam_key *)key);
-        if (rc >= 0) {
-                if (S_ISDIR(oi->oi_inode->i_mode))
-                        iam_rec = (struct iam_rec *)oti->oti_ldp;
-                else
-                        iam_rec = (struct iam_rec *)rec;
+        if (rc >= 0)
+                iam_reccpy(&it->ii_path.ip_leaf, (struct iam_rec *)rec);
 
-                iam_reccpy(&it->ii_path.ip_leaf, (struct iam_rec *)iam_rec);
-                if (S_ISDIR(oi->oi_inode->i_mode))
-                        osd_fid_unpack((struct lu_fid *)rec,
-                                       (struct osd_fid_pack *)iam_rec);
-        }
         iam_it_put(it);
         iam_it_fini(it);
         osd_ipd_put(oti->oti_env, bag, ipd);
@@ -497,7 +484,7 @@ int __osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
 int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
                   const struct lu_fid *fid, struct osd_inode_id *id)
 {
-        int                  rc = 0;
+	int rc = 0;
 
         if (fid_is_idif(fid) || fid_seq(fid) == FID_SEQ_LLOG) {
                 /* old OSD obj id */
@@ -513,7 +500,6 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
 
 		if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE))
 			return osd_compat_spec_lookup(info, osd, fid, id);
-
 		rc = __osd_oi_lookup(info, osd, fid, id);
         }
         return rc;
@@ -524,7 +510,6 @@ static int osd_oi_iam_insert(struct osd_thread_info *oti, struct osd_oi *oi,
 			     struct thandle *th)
 {
         struct iam_container  *bag;
-        struct iam_rec        *iam_rec = (struct iam_rec *)oti->oti_ldp;
         struct iam_path_descr *ipd;
         struct osd_thandle    *oh;
         int                    rc;
@@ -547,13 +532,8 @@ static int osd_oi_iam_insert(struct osd_thread_info *oti, struct osd_oi *oi,
 #ifdef HAVE_QUOTA_SUPPORT
 	cfs_cap_raise(CFS_CAP_SYS_RESOURCE);
 #endif
-        if (S_ISDIR(oi->oi_inode->i_mode))
-                osd_fid_pack((struct osd_fid_pack *)iam_rec, rec,
-                             &oti->oti_fid);
-        else
-                iam_rec = (struct iam_rec *) rec;
         rc = iam_insert(oh->ot_handle, bag, (const struct iam_key *)key,
-                        iam_rec, ipd);
+                        (struct iam_rec *)rec, ipd);
 #ifdef HAVE_QUOTA_SUPPORT
         cfs_curproc_cap_unpack(save);
 #endif
@@ -569,7 +549,9 @@ int osd_oi_insert(struct osd_thread_info *info, struct osd_device *osd,
 	struct lu_fid	    *oi_fid = &info->oti_fid2;
 	struct osd_inode_id *oi_id = &info->oti_id2;
 
-	if (fid_is_igif(fid) || unlikely(fid_seq(fid) == FID_SEQ_DOT_LUSTRE))
+	if (fid_is_igif(fid) ||
+	    unlikely(fid_seq(fid) == FID_SEQ_DOT_LUSTRE) ||
+	    unlikely(fid_seq(fid) == FID_SEQ_LOCAL_NAME))
 		return 0;
 
 	if (fid_is_idif(fid) || fid_seq(fid) == FID_SEQ_LLOG)

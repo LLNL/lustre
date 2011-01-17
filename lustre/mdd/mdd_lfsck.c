@@ -48,7 +48,7 @@ static inline char *mdd_lfsck2name(struct md_lfsck *lfsck)
 	struct mdd_device *mdd;
 
 	mdd = container_of0(lfsck, struct mdd_device, mdd_lfsck);
-	return mdd->mdd_obd_dev->obd_name;
+	return mdd2obd_dev(mdd)->obd_name;
 }
 
 void mdd_lfsck_set_speed(struct md_lfsck *lfsck, __u32 limit)
@@ -319,7 +319,7 @@ int mdd_lfsck_setup(const struct lu_env *env, struct mdd_device *mdd)
 	}
 
 	lfsck->ml_it_obj = obj;
-
+	
 	return 0;
 }
 

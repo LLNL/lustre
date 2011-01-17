@@ -190,7 +190,7 @@ int lprocfs_job_stats_log(struct obd_device *obd, char *jobid,
 
 	LASSERT(stats && stats->ojs_hash);
 
-	if (!jobid || !strlen(jobid))
+	if (jobid == NULL || strlen(jobid) == 0)
 		RETURN(-EINVAL);
 
 	if (strlen(jobid) >= JOBSTATS_JOBID_SIZE) {

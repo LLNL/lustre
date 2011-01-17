@@ -88,9 +88,9 @@ EXPORT_SYMBOL(class_find_param);
  * On return \a params is set to next parameter or to NULL if last
  * parameter is returned.
  *
- * \retval 0 if parameter is returned in \a copy
- * \retval 1 otherwise
- * \retval -EINVAL if unbalanced quota is found
+ * @retval 0 if parameter is returned in \a copy
+ * @retval 1 otherwise
+ * @retval -EINVAL if unbalanced quota is found
  */
 int class_get_next_param(char **params, char *copy)
 {
@@ -130,7 +130,7 @@ int class_get_next_param(char **params, char *copy)
                 str = q1 + 1;
                 q2 = strchr(str, *q1);
                 if (q2 == NULL) {
-                        CERROR("Unbalanced quota in parameters: \"%s\"\n",
+                        CERROR("Unbalanced quote in parameters: \"%s\"\n",
                                *params);
                         return -EINVAL;
                 }
@@ -160,7 +160,7 @@ int class_match_param(char *buf, char *key, char **valp)
 }
 EXPORT_SYMBOL(class_match_param);
 
-static int parse_nid(char *buf, void *value)
+static int parse_nid(char *buf, void *value, int quiet)
 {
         lnet_nid_t *nid = (lnet_nid_t *)value;
 
@@ -168,7 +168,8 @@ static int parse_nid(char *buf, void *value)
         if (*nid != LNET_NID_ANY)
                 return 0;
 
-        LCONSOLE_ERROR_MSG(0x159, "Can't parse NID '%s'\n", buf);
+        if (!quiet)
+                LCONSOLE_ERROR_MSG(0x159, "Can't parse NID '%s'\n", buf);
         return -EINVAL;
 }
 
@@ -190,7 +191,8 @@ enum {
    1 not found
    < 0 error
    endh is set to next separator */
-static int class_parse_value(char *buf, int opc, void *value, char **endh)
+static int class_parse_value(char *buf, int opc, void *value, char **endh,
+                             int quiet)
 {
         char *endp;
         char  tmp;
@@ -214,7 +216,7 @@ static int class_parse_value(char *buf, int opc, void *value, char **endh)
         default:
                 LBUG();
         case CLASS_PARSE_NID:
-                rc = parse_nid(buf, value);
+                rc = parse_nid(buf, value, quiet);
                 break;
         case CLASS_PARSE_NET:
                 rc = parse_net(buf, value);
@@ -230,13 +232,19 @@ static int class_parse_value(char *buf, int opc, void *value, char **endh)
 
 int class_parse_nid(char *buf, lnet_nid_t *nid, char **endh)
 {
-        return class_parse_value(buf, CLASS_PARSE_NID, (void *)nid, endh);
+        return class_parse_value(buf, CLASS_PARSE_NID, (void *)nid, endh, 0);
 }
 EXPORT_SYMBOL(class_parse_nid);
 
+int class_parse_nid_quiet(char *buf, lnet_nid_t *nid, char **endh)
+{
+        return class_parse_value(buf, CLASS_PARSE_NID, (void *)nid, endh, 1);
+}
+EXPORT_SYMBOL(class_parse_nid_quiet);
+
 int class_parse_net(char *buf, __u32 *net, char **endh)
 {
-        return class_parse_value(buf, CLASS_PARSE_NET, (void *)net, endh);
+        return class_parse_value(buf, CLASS_PARSE_NET, (void *)net, endh, 0);
 }
 EXPORT_SYMBOL(class_parse_net);
 
@@ -1110,6 +1118,10 @@ int class_process_config(struct lustre_cfg *lcfg)
                         CERROR("no device for: %s\n",
                                lustre_cfg_string(lcfg, 0));
 
+                /* XXX: fix mgs_llog.c */
+                if (lcfg->lcfg_command == LCFG_PARAM)
+                        GOTO(out, err = 0);
+
                 GOTO(out, err = -EINVAL);
         }
 
@@ -1260,11 +1272,11 @@ int class_process_proc_param(char *prefix, struct lprocfs_vars *lvars,
 }
 EXPORT_SYMBOL(class_process_proc_param);
 
-int class_config_dump_handler(struct llog_handle * handle,
+int class_config_dump_handler(const struct lu_env *env, struct llog_handle * handle,
                               struct llog_rec_hdr *rec, void *data);
 
 #ifdef __KERNEL__
-extern int lustre_check_exclusion(struct super_block *sb, char *svname);
+extern int lustre_check_exclusion(struct lustre_sb_info *lsi, char *svname);
 #else
 #define lustre_check_exclusion(a,b)  0
 #endif
@@ -1274,7 +1286,8 @@ extern int lustre_check_exclusion(struct super_block *sb, char *svname);
  * records, change uuids, etc), then class_process_config() resulting
  * net records.
  */
-static int class_config_llog_handler(struct llog_handle * handle,
+static int class_config_llog_handler(const struct lu_env *env,
+                                     struct llog_handle * handle,
                                      struct llog_rec_hdr *rec, void *data)
 {
         struct config_llog_instance *clli = data;
@@ -1318,8 +1331,8 @@ static int class_config_llog_handler(struct llog_handle * handle,
                                         CDEBUG(D_CONFIG, "SKIP #%d\n",
                                                marker->cm_step);
                                 } else if ((marker->cm_flags & CM_EXCLUDE) ||
-                                           (clli->cfg_sb &&
-                                            lustre_check_exclusion(clli->cfg_sb,
+                                           (clli->cfg_lsi &&
+                                            lustre_check_exclusion(clli->cfg_lsi,
                                                          marker->cm_tgtname))) {
                                         clli->cfg_flags |= CFG_F_EXCLUDE;
                                         CDEBUG(D_CONFIG, "EXCLUDE %d\n",
@@ -1455,7 +1468,7 @@ static int class_config_llog_handler(struct llog_handle * handle,
 out:
         if (rc) {
                 CERROR("Err %d on cfg command:\n", rc);
-                class_config_dump_handler(handle, rec, data);
+                class_config_dump_handler(env, handle, rec, data);
         }
         RETURN(rc);
 }
@@ -1499,7 +1512,7 @@ parse_out:
 }
 EXPORT_SYMBOL(class_config_parse_llog);
 
-int class_config_dump_handler(struct llog_handle * handle,
+int class_config_dump_handler(const struct lu_env *env, struct llog_handle * handle,
                               struct llog_rec_hdr *rec, void *data)
 {
         int cfg_len = rec->lrh_len;
@@ -1594,8 +1607,8 @@ EXPORT_SYMBOL(class_config_dump_llog);
 int class_manual_cleanup(struct obd_device *obd)
 {
         char                    flags[3] = "";
-        struct lustre_cfg      *lcfg;
-        struct lustre_cfg_bufs  bufs;
+        struct lustre_cfg      *lcfg = NULL;
+        struct lustre_cfg_bufs *bufs = NULL;
         int                     rc;
         ENTRY;
 
@@ -1603,6 +1616,10 @@ int class_manual_cleanup(struct obd_device *obd)
                 CERROR("empty cleanup\n");
                 RETURN(-EALREADY);
         }
+
+        OBD_ALLOC_PTR(bufs);
+        if (bufs == NULL)
+                GOTO(out, rc = -ENOMEM);
 
         if (obd->obd_force)
                 strcat(flags, "F");
@@ -1612,11 +1629,11 @@ int class_manual_cleanup(struct obd_device *obd)
         CDEBUG(D_CONFIG, "Manual cleanup of %s (flags='%s')\n",
                obd->obd_name, flags);
 
-        lustre_cfg_bufs_reset(&bufs, obd->obd_name);
-        lustre_cfg_bufs_set_string(&bufs, 1, flags);
-        lcfg = lustre_cfg_new(LCFG_CLEANUP, &bufs);
+        lustre_cfg_bufs_reset(bufs, obd->obd_name);
+        lustre_cfg_bufs_set_string(bufs, 1, flags);
+        lcfg = lustre_cfg_new(LCFG_CLEANUP, bufs);
         if (!lcfg)
-                RETURN(-ENOMEM);
+                GOTO(out, rc = -ENOMEM);
 
         rc = class_process_config(lcfg);
         if (rc) {
@@ -1630,7 +1647,10 @@ int class_manual_cleanup(struct obd_device *obd)
         if (rc)
                 CERROR("detach failed %d: %s\n", rc, obd->obd_name);
 out:
-        lustre_cfg_free(lcfg);
+        if (lcfg)
+                lustre_cfg_free(lcfg);
+        if (bufs)
+                OBD_FREE_PTR(bufs);
         RETURN(rc);
 }
 EXPORT_SYMBOL(class_manual_cleanup);

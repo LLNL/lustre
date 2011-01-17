@@ -53,17 +53,43 @@ extern int failover;
 #define MO_FAILOVER		0x04
 #define MO_DRYRUN		0x08
 
+#define LDD_MAGIC 0x1dd00001
+
+/* On-disk configuration file. In host-endian order. */
+struct lustre_disk_data {
+        __u32      ldd_magic;
+        __u32      ldd_feature_compat;  /* compatible feature flags */
+        __u32      ldd_feature_rocompat;/* read-only compatible feature flags */
+        __u32      ldd_feature_incompat;/* incompatible feature flags */
+
+        __u32      ldd_config_ver;      /* config rewrite count - not used */
+        __u32      ldd_flags;           /* LDD_SV_TYPE */
+        __u32      ldd_svindex;         /* server index (0001), must match
+                                           svname */
+        __u32      ldd_mount_type;      /* target fs type LDD_MT_* */
+        char       ldd_fsname[64];      /* filesystem this server is part of,
+                                           MTI_NAME_MAXLEN */
+        char       ldd_svname[64];      /* this server's name (lustre-mdt0001)*/
+        __u8       ldd_uuid[40];        /* server UUID (COMPAT_146) */
+
+/*200*/ char       ldd_userdata[1024 - 200]; /* arbitrary user string */
+/*1024*/__u8       ldd_padding[4096 - 1024];
+/*4096*/char       ldd_mount_opts[4096]; /* target fs mount opts */
+/*8192*/char       ldd_params[4096];     /* key=value pairs */
+};
+
 #define MAX_LOOP_DEVICES	16
 #define INDEX_UNASSIGNED	0xFFFF
 
 /* used to describe the options to format the lustre disk, not persistent */
 struct mkfs_opts {
 	struct lustre_disk_data	mo_ldd; /* to be written in MOUNT_DATA_FILE */
-	char	mo_device[128];   /* disk device name */
+	char	mo_device[256];   /* disk device name or ZFS objset name */
 	char	**mo_pool_vdevs;  /* list of pool vdevs */
 	char	mo_loopdev[128];  /* in case a loop dev is needed */
 	char	mo_mkfsopts[512]; /* options to the backing-store mkfs */
 	__u64	mo_device_sz;     /* in KB */
+	__u64 mo_vdev_sz;         /* in KB */
 	int	mo_stripe_count;
 	int	mo_flags;
 	int	mo_mgs_failnodes;
@@ -84,7 +110,16 @@ struct mount_opts {
 	int	 mo_md_stripe_cache_size;
 };
 
-int get_mountdata(char *, struct lustre_disk_data *);
+#define MT_STR(data)   mt_str((data)->ldd_mount_type)
+
+#undef IS_MDT
+#define IS_MDT(data)   ((data)->ldd_flags & LDD_F_SV_TYPE_MDT)
+#undef IS_OST
+#define IS_OST(data)   ((data)->ldd_flags & LDD_F_SV_TYPE_OST)
+#undef IS_MGS
+#define IS_MGS(data)  ((data)->ldd_flags & LDD_F_SV_TYPE_MGS)
+
+char *convert_hostnames(char *s1);
 
 /* mkfs/mount helper functions */
 void fatal(void);

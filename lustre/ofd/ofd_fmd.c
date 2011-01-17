@@ -112,8 +112,7 @@ static struct ofd_mod_data *ofd_fmd_find_nolock(struct obd_export *exp,
 	struct filter_export_data	*fed = &exp->exp_filter_data;
 	struct ofd_mod_data		*found = NULL, *fmd;
 	struct ofd_device		*ofd = ofd_exp(exp);
-
-	cfs_time_t now = cfs_time_current();
+	cfs_time_t			 now = cfs_time_current();
 
 	LASSERT_SPIN_LOCKED(&fed->fed_lock);
 
@@ -158,8 +157,7 @@ struct ofd_mod_data *ofd_fmd_get(struct obd_export *exp, struct lu_fid *fid)
 	struct filter_export_data	*fed = &exp->exp_filter_data;
 	struct ofd_device		*ofd = ofd_exp(exp);
 	struct ofd_mod_data		*found = NULL, *fmd_new = NULL;
-
-	cfs_time_t now = cfs_time_current();
+	cfs_time_t			 now = cfs_time_current();
 
 	OBD_SLAB_ALLOC_PTR(fmd_new, ll_fmd_cachep);
 

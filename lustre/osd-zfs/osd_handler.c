@@ -500,34 +500,23 @@ static int osd_shutdown(const struct lu_env *env, struct osd_device *o)
 static int osd_mount(const struct lu_env *env,
 		     struct osd_device *o, struct lustre_cfg *cfg)
 {
-	char				*dev  = lustre_cfg_string(cfg, 0);
-	struct lustre_mount_info	*lmi;
-	struct lustre_sb_info		*lsi;
-	dmu_buf_t			*rootdb;
-	char				*label;
-	int				 rc;
+	char		*dev  = lustre_cfg_string(cfg, 1);
+	dmu_buf_t	*rootdb;
+	int		 rc;
+
 	ENTRY;
 
 	if (o->od_objset.os != NULL)
 		RETURN(0);
-
-	lmi = server_get_mount(dev);
-	if (lmi == NULL) {
-		CERROR("Unknown mount point: '%s'\n", dev);
-		RETURN(-ENODEV);
-	}
-
-	lsi = s2lsi(lmi->lmi_sb);
-	dev = lsi->lsi_lmd->lmd_dev;
 
 	if (strlen(dev) >= sizeof(o->od_mntdev))
 		RETURN(-E2BIG);
 
 	strcpy(o->od_mntdev, dev);
 
-	rc = -udmu_objset_open(o->od_mntdev, &o->od_objset);
+	rc = -udmu_objset_open(dev, &o->od_objset);
 	if (rc) {
-		CERROR("can't open objset %s: %d\n", o->od_mntdev, rc);
+		CERROR("can't open objset %s: %d\n", dev, rc);
 		RETURN(rc);
 	}
 
@@ -542,27 +531,10 @@ static int osd_mount(const struct lu_env *env,
 	o->od_root = rootdb->db_object;
 	sa_buf_rele(rootdb, root_tag);
 
-	/* 1. initialize oi before any file create or file open */
-	rc = osd_oi_init(env, o);
-	if (rc)
-		GOTO(err, rc);
-
-	label = osd_label_get(env, &o->od_dt_dev);
-	if (label == NULL)
-		GOTO(err, rc = -ENODEV);
-
-	/* Use our own ZAP for inode accounting by default, this can be changed
-	 * via procfs to estimate the inode usage from the block usage */
-	o->od_quota_iused_est = 0;
-
-	rc = osd_procfs_init(o, label);
-	if (rc)
-		GOTO(err, rc);
-
-	o->arc_prune_cb = arc_add_prune_callback(arc_prune_func, o);
-
-err:
-	RETURN(rc);
+	RETURN(0);
+out_objset:
+	udmu_objset_close(&o->od_objset);
+	return rc;
 }
 
 static void osd_umount(const struct lu_env *env, struct osd_device *o)
@@ -579,10 +551,19 @@ static void osd_umount(const struct lu_env *env, struct osd_device *o)
 		CERROR("%s: lost %d pinned dbuf(s)\n", o->od_svname,
 		       cfs_atomic_read(&o->od_zerocopy_pin));
 
-	if (o->od_objset.os != NULL)
+	if (o->od_objset.os != NULL) {
 		udmu_objset_close(&o->od_objset);
+		o->od_objset.os = NULL;
+	}
 
 	EXIT;
+}
+
+static void osd_xattr_changed_cb(void *arg, uint64_t newval)
+{
+	struct osd_device *o = arg;
+
+	o->od_xattr_in_sa = (newval == ZFS_XATTR_SA);
 }
 
 static int osd_device_init0(const struct lu_env *env,
@@ -590,6 +571,8 @@ static int osd_device_init0(const struct lu_env *env,
 			    struct lustre_cfg *cfg)
 {
 	struct lu_device	*l = osd2lu_dev(o);
+	struct dsl_dataset	*ds;
+	char			*label;
 	int			 rc;
 
 	/* if the module was re-loaded, env can loose its keys */
@@ -604,8 +587,53 @@ static int osd_device_init0(const struct lu_env *env,
 	if (o->od_capa_hash == NULL)
 		GOTO(out, rc = -ENOMEM);
 
+	rc = osd_mount(env, o, cfg);
+	if (rc)
+		GOTO(out_capa, rc);
+
+	ds = dmu_objset_ds(o->od_objset.os);
+	rc = dsl_prop_register(ds, "xattr", osd_xattr_changed_cb, o);
+	if (rc)
+		GOTO(out_mnt, rc);
+
+	/* 1. initialize oi before any file create or file open */
+	rc = osd_oi_init(env, o);
+	if (rc)
+		GOTO(out_unreg, rc);
+
+	rc = lu_site_init(&o->od_site, l);
+	if (rc)
+		GOTO(out_oi, rc);
+	o->od_site.ls_bottom_dev = l;
+
+	rc = lu_site_init_finish(&o->od_site);
+	if (rc)
+		GOTO(out_oi, rc);
+
+	label = osd_label_get(env, &o->od_dt_dev);
+	if (label == NULL)
+		GOTO(out_oi, rc = -ENODEV);
+
+	/* Use our own ZAP for inode accounting by default, this can be changed
+	 * via procfs to estimate the inode usage from the block usage */
+	o->od_quota_iused_est = 0;
+
+	rc = osd_procfs_init(o, label);
+	if (rc)
+		GOTO(out_oi, rc);
+
+	o->arc_prune_cb = arc_add_prune_callback(arc_prune_func, o);
+	RETURN(0);
+out_oi:
+	osd_oi_fini(env, o);
+out_unreg:
+	dsl_prop_unregister(ds, "xattr", osd_xattr_changed_cb, o);
+out_mnt:
+	osd_umount(env, o);
+out_capa:
+	cleanup_capa_hash(o->od_capa_hash);
 out:
-	RETURN(rc);
+	return rc;
 }
 
 static struct lu_device *osd_device_alloc(const struct lu_env *env,
@@ -640,9 +668,9 @@ static struct lu_device *osd_device_free(const struct lu_env *env,
 
 	cleanup_capa_hash(o->od_capa_hash);
 	/* XXX: make osd top device in order to release reference */
-	/*d->ld_site->ls_top_dev = d;
+	d->ld_site->ls_top_dev = d;
 	lu_site_purge(env, d->ld_site, -1);
-	lu_site_fini(&o->od_site);*/
+	lu_site_fini(&o->od_site);
 	dt_device_fini(&o->od_dt_dev);
 	OBD_FREE_PTR(o);
 
@@ -652,17 +680,18 @@ static struct lu_device *osd_device_free(const struct lu_env *env,
 static struct lu_device *osd_device_fini(const struct lu_env *env,
 					 struct lu_device *d)
 {
-	struct osd_device	 *o = osd_dev(d);
-	struct lustre_mount_info *lmi;
-	int rc;
+	struct osd_device	*o = osd_dev(d);
+	struct dsl_dataset	*ds;
+	int			 rc;
+
 	ENTRY;
 
+	arc_remove_prune_callback(o->arc_prune_cb);
+	o->arc_prune_cb = NULL;
 
 	osd_oi_fini(env, o);
 
 	if (o->od_objset.os) {
-		arc_remove_prune_callback(o->arc_prune_cb);
-		o->arc_prune_cb = NULL;
 		osd_sync(env, lu2dt_dev(d));
 		txg_wait_callbacks(spa_get_dsl(dmu_objset_spa(o->od_objset.os)));
 	}
@@ -676,17 +705,7 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
 	if (o->od_objset.os)
 		osd_umount(env, o);
 
-	lmi = server_get_mount_2(o->od_svname);
-	LASSERT(lmi);
-	server_put_mount(lmi->lmi_name, lmi->lmi_mnt);
-
 	RETURN(NULL);
-}
-
-static int osd_device_init(const struct lu_env *env, struct lu_device *d,
-                           const char *name, struct lu_device *next)
-{
-	return 0;
 }
 
 /*
@@ -720,22 +739,62 @@ static int osd_recovery_complete(const struct lu_env *env, struct lu_device *d)
 	RETURN(0);
 }
 
+/*
+ * we use exports to track all osd users
+ */
+static int osd_obd_connect(const struct lu_env *env, struct obd_export **exp,
+			   struct obd_device *obd, struct obd_uuid *cluuid,
+			   struct obd_connect_data *data, void *localdata)
+{
+	struct osd_device	*osd = osd_dev(obd->obd_lu_dev);
+	struct lustre_handle	 conn;
+	int			 rc;
+
+	ENTRY;
+
+	CDEBUG(D_CONFIG, "connect #%d\n", osd->od_connects);
+
+	rc = class_connect(&conn, obd, cluuid);
+	if (rc)
+		RETURN(rc);
+
+	*exp = class_conn2export(&conn);
+
+	/* XXX: locking ? */
+	osd->od_connects++;
+
+	RETURN(0);
+}
+
+/*
+ * once last export (we don't count self-export) disappeared
+ * osd can be released
+ */
+static int osd_obd_disconnect(struct obd_export *exp)
+{
+	struct obd_device	*obd = exp->exp_obd;
+	struct osd_device	*osd = osd_dev(obd->obd_lu_dev);
+	int			 rc, release = 0;
+
+	ENTRY;
+
+	/* Only disconnect the underlying layers on the final disconnect. */
+	/* XXX: locking ? */
+	osd->od_connects--;
+	if (osd->od_connects == 0)
+		release = 1;
+
+	rc = class_disconnect(exp); /* bz 9811 */
+
+	if (rc == 0 && release)
+		class_manual_cleanup(obd);
+	RETURN(rc);
+}
+
 static int osd_prepare(const struct lu_env *env, struct lu_device *pdev,
 		       struct lu_device *dev)
 {
-	struct osd_device	*osd = osd_dev(dev);
-	int			 rc = 0;
-	ENTRY;
-
-	/* initialize quota slave instance */
-	osd->od_quota_slave = qsd_init(env, osd->od_svname, &osd->od_dt_dev,
-				       osd->od_proc_entry);
-	if (IS_ERR(osd->od_quota_slave)) {
-		rc = PTR_ERR(osd->od_quota_slave);
-		osd->od_quota_slave = NULL;
-	}
-
-	RETURN(rc);
+	return 0;
 }
 
 struct lu_device_operations osd_lu_ops = {
@@ -763,7 +822,7 @@ static struct lu_device_type_operations osd_device_type_ops = {
 	.ldto_device_alloc	= osd_device_alloc,
 	.ldto_device_free	= osd_device_free,
 
-	.ldto_device_init	= osd_device_init,
+	.ldto_device_init	= NULL,
 	.ldto_device_fini	= osd_device_fini
 };
 
@@ -776,7 +835,9 @@ static struct lu_device_type osd_device_type = {
 
 
 static struct obd_ops osd_obd_device_ops = {
-	.o_owner       = THIS_MODULE,
+	.o_owner	= THIS_MODULE,
+	.o_connect	= osd_obd_connect,
+	.o_disconnect	= osd_obd_disconnect,
 };
 
 int __init osd_init(void)

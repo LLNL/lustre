@@ -666,7 +666,7 @@ int __osd_xattr_del(const struct lu_env *env, struct osd_object *obj,
 		return rc;
 
 	if (obj->oo_xattr == ZFS_NO_OBJECT)
-		return rc;
+		return 0;
 
 	rc = -zap_lookup(uos->os, obj->oo_xattr, name, sizeof(uint64_t), 1,
 			&xa_data_obj);
@@ -712,7 +712,7 @@ int osd_xattr_del(const struct lu_env *env, struct dt_object *dt,
 
 static int
 osd_sa_xattr_list(const struct lu_env *env, struct osd_object *obj,
-		struct lu_buf *lb)
+		  struct lu_buf *lb)
 {
 	nvpair_t *nvp = NULL;
 	int       len, counted = 0, remain = lb->lb_len;
@@ -728,21 +728,23 @@ osd_sa_xattr_list(const struct lu_env *env, struct osd_object *obj,
 
 	while ((nvp = nvlist_next_nvpair(obj->oo_sa_xattr, nvp)) != NULL) {
 		len = strlen(nvpair_name(nvp));
-		if (len >= remain)
-			return -ERANGE;
+		if (lb->lb_buf != NULL) {
+			if (len + 1 > remain)
+				return -ERANGE;
 
-		memcpy(lb->lb_buf, nvpair_name(nvp), len);
-		lb->lb_buf += len;
-		*((char *)lb->lb_buf) = '\0';
-		lb->lb_buf++;
-		remain -= len + 1;
+			memcpy(lb->lb_buf, nvpair_name(nvp), len);
+			lb->lb_buf += len;
+			*((char *)lb->lb_buf) = '\0';
+			lb->lb_buf++;
+			remain -= len + 1;
+		}
 		counted += len + 1;
 	}
 	return counted;
 }
 
 int osd_xattr_list(const struct lu_env *env, struct dt_object *dt,
-		struct lu_buf *lb, struct lustre_capa *capa)
+		   struct lu_buf *lb, struct lustre_capa *capa)
 {
 	struct osd_thread_info *oti = osd_oti_get(env);
 	struct osd_object      *obj = osd_dt_obj(dt);
@@ -775,14 +777,16 @@ int osd_xattr_list(const struct lu_env *env, struct dt_object *dt,
 	while ((rc = -udmu_zap_cursor_retrieve_key(env, zc, oti->oti_key,
 						MAXNAMELEN)) == 0) {
 		rc = strlen(oti->oti_key);
-		if (rc >= remain)
-			GOTO(out_fini, rc = -ERANGE);
+		if (lb->lb_buf != NULL) {
+			if (rc + 1 > remain)
+				RETURN(-ERANGE);
 
-		memcpy(lb->lb_buf, oti->oti_key, rc);
-		lb->lb_buf += rc;
-		*((char *)lb->lb_buf) = '\0';
-		lb->lb_buf++;
-		remain -= rc + 1;
+			memcpy(lb->lb_buf, oti->oti_key, rc);
+			lb->lb_buf += rc;
+			*((char *)lb->lb_buf) = '\0';
+			lb->lb_buf++;
+			remain -= rc + 1;
+		}
 		counted += rc + 1;
 
 		zap_cursor_advance(zc);
@@ -798,5 +802,3 @@ out:
 	RETURN(rc);
 
 }
-
-

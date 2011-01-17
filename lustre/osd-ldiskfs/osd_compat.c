@@ -97,7 +97,7 @@ void osd_compat_seq_fini(struct osd_device *osd, int seq)
         ENTRY;
 
         grp = &map->groups[seq];
-        if (grp->groot ==NULL)
+        if (grp->groot == NULL)
                 RETURN_EXIT;
         LASSERT(grp->dirs);
 
@@ -345,7 +345,7 @@ int osd_compat_add_entry(struct osd_thread_info *info, struct osd_device *osd,
         inode->i_sb = osd_sb(osd);
 	osd_id_to_inode(inode, id);
 
-        child = &info->oti_child_dentry;
+	child = &info->oti_child_dentry;
         child->d_name.hash = 0;
         child->d_name.name = name;
         child->d_name.len = strlen(name);
@@ -547,17 +547,33 @@ int osd_compat_spec_lookup(struct osd_thread_info *info,
 			   struct osd_device *osd, const struct lu_fid *fid,
 			   struct osd_inode_id *id)
 {
-	struct dentry *dentry;
-	struct inode  *inode;
-	char	      *name;
-	int	       rc = -ENOENT;
+	struct dentry	*root;
+	struct dentry	*dentry;
+	struct inode	*inode;
+	char		*name;
+	int		 rc = -ENOENT;
+
 	ENTRY;
 
-	name = oid2name(fid_oid(fid));
-	if (name == NULL || strlen(name) == 0)
-		RETURN(-ENOENT);
+	if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
+	    fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
+		struct osd_compat_objid	*map = osd->od_ost_map;
+		int			 seq;
 
-	dentry = ll_lookup_one_len(name, osd_sb(osd)->s_root, strlen(name));
+		LASSERT(map);
+		seq = fid_oid(fid) - OFD_GROUP0_LAST_OID;
+		LASSERT(seq < MAX_OBJID_GROUP);
+		LASSERT(map->groups[seq].groot);
+		root = map->groups[seq].groot;
+		name = "LAST_ID";
+	} else {
+		root = osd_sb(osd)->s_root;
+		name = oid2name(fid_oid(fid));
+		if (name == NULL || strlen(name) == 0)
+			RETURN(-ENOENT);
+	}
+
+	dentry = ll_lookup_one_len(name, root, strlen(name));
 	if (!IS_ERR(dentry)) {
 		inode = dentry->d_inode;
 		if (inode) {
@@ -569,6 +585,9 @@ int osd_compat_spec_lookup(struct osd_thread_info *info,
 				rc = 0;
 			}
 		}
+		/* if dentry is accessible after osd_compat_spec_insert it
+		 * will still contain NULL inode, so don't keep it in cache */
+		d_invalidate(dentry);
 		dput(dentry);
 	}
 

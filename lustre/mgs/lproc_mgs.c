@@ -45,19 +45,6 @@
 
 #ifdef LPROCFS
 
-static int lprocfs_mgs_rd_mntdev(char *page, char **start, off_t off, int count,
-                                 int *eof, void *data)
-{
-	struct obd_device *obd = (struct obd_device *)data;
-
-	LASSERT(obd != NULL);
-	LASSERT(mnt_get_devname(obd->u.mgs.mgs_vfsmnt));
-	*eof = 1;
-
-	return snprintf(page, count, "%s\n",
-			mnt_get_devname(obd->u.mgs.mgs_vfsmnt));
-}
-
 static int mgs_fs_seq_show(struct seq_file *seq, void *v)
 {
         struct obd_device *obd = seq->private;
@@ -265,7 +252,6 @@ int lproc_mgs_del_live(struct obd_device *obd, struct fs_db *fsdb)
 struct lprocfs_vars lprocfs_mgs_obd_vars[] = {
         { "uuid",            lprocfs_rd_uuid,        0, 0 },
         { "fstype",          lprocfs_rd_fstype,      0, 0 },
-        { "mntdev",          lprocfs_mgs_rd_mntdev,  0, 0 },
         { "num_exports",     lprocfs_rd_num_exports, 0, 0 },
         { "hash_stats",      lprocfs_obd_rd_hash,    0, 0 },
         { "evict_client",    0, lprocfs_wr_evict_client, 0 },

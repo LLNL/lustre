@@ -14,7 +14,7 @@ export GSS=false
 export GSS_KRB5=false
 export GSS_PIPEFS=false
 export IDENTITY_UPCALL=default
-export QUOTA_AUTO=1
+export QUOTA_AUTO=0
 
 # LOAD_LLOOP: LU-409: only load llite_lloop module if kernel < 2.6.32 or
 #             LOAD_LLOOP is true. LOAD_LLOOP is false by default.
@@ -232,14 +232,15 @@ init_test_env() {
             ;;
     esac
     export LOAD_MODULES_REMOTE=${LOAD_MODULES_REMOTE:-false}
+    export USE_QUOTA=${USE_QUOTA:-no}
 
     # Paths on remote nodes, if different
     export RLUSTRE=${RLUSTRE:-$LUSTRE}
     export RPWD=${RPWD:-$PWD}
     export I_MOUNTED=${I_MOUNTED:-"no"}
-    if [ ! -f /lib/modules/$(uname -r)/kernel/fs/lustre/mds.ko -a \
-        ! -f /lib/modules/$(uname -r)/updates/kernel/fs/lustre/mds.ko -a \
-        ! -f `dirname $0`/../mds/mds.ko ]; then
+    if [ ! -f /lib/modules/$(uname -r)/kernel/fs/lustre/mdd.ko -a \
+        ! -f /lib/modules/$(uname -r)/updates/kernel/fs/lustre/mdd.ko -a \
+        ! -f `dirname $0`/../mdd/mdd.ko ]; then
         export CLIENTMODSONLY=yes
     fi
 
@@ -304,7 +305,7 @@ load_module() {
     EXT=".ko"
     module=$1
     shift
-    BASE=`basename $module $EXT`
+    BASE=`basename $module $EXT | tr '-' '_'`
 
     module_loaded ${BASE} && return
 
@@ -368,22 +369,6 @@ llite_lloop_enabled() {
 }
 
 load_modules_local() {
-	if [ "$USE_OFD" == yes ]; then
-		if module_loaded obdfilter; then
-			if ! $LUSTRE_RMMOD ldiskfs; then
-				echo "$HOSTNAME may still be using obdfilter.ko"
-				return 1
-			fi
-		fi
-	else
-		if module_loaded ofd; then
-			if ! $LUSTRE_RMMOD ldiskfs; then
-				echo "$HOSTNAME may still be using ofd.ko"
-				return 1
-			fi
-		fi
-	fi
-
 	if [ -n "$MODPROBE" ]; then
 		# use modprobe
 		echo "Using modprobe to load modules"
@@ -421,8 +406,7 @@ load_modules_local() {
 		echo "libcfs will create CPU partition based on online CPUs"
 	fi
 
-	load_module ../libcfs/libcfs/libcfs cpu_npartitions=$ncpts
-
+	load_module ../libcfs/libcfs/libcfs cpu_npartitions=$ncpts libcfs_panic_on_lbug=0
     [ "$PTLDEBUG" ] && lctl set_param debug="$PTLDEBUG"
     [ "$SUBSYSTEM" ] && lctl set_param subsystem_debug="${SUBSYSTEM# }"
     load_module ../lnet/lnet/lnet
@@ -450,7 +434,6 @@ load_modules_local() {
 			load_module osd-zfs/osd_zfs
 		fi
 		load_module mgs/mgs
-		load_module mds/mds
 		load_module mdd/mdd
 		if [[ $(node_fstypes $HOSTNAME) == *ldiskfs* ]]; then
 			#
@@ -466,11 +449,9 @@ load_modules_local() {
 		load_module mdt/mdt
 		load_module cmm/cmm
 		load_module ost/ost
-		if [ "$USE_OFD" == yes ]; then
-			load_module ofd/ofd
-		else
-			load_module obdfilter/obdfilter
-		fi
+		load_module ofd/obdfilter
+		load_module lod/lod
+		load_module osp/osp
     fi
 
 
@@ -866,7 +847,7 @@ mount_facet() {
 	local dev=$(facet_active $facet)_dev
 	local opt=${facet}_opt
 	local mntpt=$(facet_mntpt $facet)
-	local opts="${!opt} $@"
+	local opts="${!opt} $WRITECONF $@"
 
 	if [ $(facet_fstype $facet) == ldiskfs ] &&
 	   ! do_facet $facet test -b ${!dev}; then
@@ -879,7 +860,7 @@ mount_facet() {
 		RC=2
 	else
 		do_facet ${facet} "mkdir -p $mntpt; mount -t lustre $opts \
-		                   ${!dev} $mntpt"
+				   ${!dev} $mntpt"
 		RC=${PIPESTATUS[0]}
 	fi
 	if [ $RC -ne 0 ]; then
@@ -2660,15 +2641,17 @@ formatall() {
 
 		for num in `seq $MDSCOUNT`; do
 			echo "Format mds$num: $(mdsdevname $num)"
-			add mds$num $(mkfs_opts mds$num) --reformat \
-			$(mdsdevname $num) $(mdsvdevname $num) \
+			index=$((num-1))
+			add mds$num $(mkfs_opts mds$num) --index $index \
+			--reformat $(mdsdevname $num) $(mdsvdevname $num) \
 			${quiet:+>/dev/null} || exit 10
 		done
 
 		for num in `seq $OSTCOUNT`; do
 			echo "Format ost$num: $(ostdevname $num)"
-			add ost$num $(mkfs_opts ost$num) --reformat \
-			$(ostdevname $num) $(ostvdevname ${num}) \
+			index=$((num-1))
+			add ost$num $(mkfs_opts ost$num) --index $index \
+			--reformat $(ostdevname $num) $(ostvdevname ${num}) \
 			${quiet:+>/dev/null} || exit 10
 		done
 }
@@ -4490,7 +4473,7 @@ get_mdtosc_proc_path() {
        mds_on_old_device $mds_facet; then
         echo "${ost_label}-osc"
     else
-        echo "${ost_label}-osc-${mdt_index}"
+        echo "${ost_label}-os[cp]-${mdt_index}"
     fi
 }
 
@@ -5020,7 +5003,7 @@ flvr_cnt_mdt2ost()
         mdtosc=$(get_mdtosc_proc_path mds$num)
         mdtosc=${mdtosc/-MDT*/-MDT\*}
         output=$(do_facet mds$num lctl get_param -n \
-            osc.$mdtosc.$PROC_CLI 2>/dev/null)
+            os[cp].$mdtosc.$PROC_CLI 2>/dev/null)
         tmpcnt=`count_flvr "$output" $flavor`
         cnt=$((cnt + tmpcnt))
     done
@@ -5126,7 +5109,11 @@ set_flavor_all()
     # and remove global vars
     local cnt_all2all=$(calc_connection_cnt all2all)
 
+    echo $(get_mdtosc_proc_path mds1)
+    echo  "1" `flvr_cnt_mdt2ost $flavor`
+
     local res=$(do_check_flavor all2all $flavor)
+    echo "$res ?= $cnt_all2all"
     if [ $res -eq $cnt_all2all ]; then
         echo "already have total $res $flavor connections"
         return

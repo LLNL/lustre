@@ -865,7 +865,7 @@ test_24a() {
 
 	# test 8-char fsname as well
 	local FSNAME2=test1234
-	add fs2mds $(mkfs_opts mds1) --nomgs --mgsnode=$MGSNID \
+	add fs2mds $(mkfs_opts mds1 | sed -e 's/--mgs//') --mgsnode=$MGSNID \
 		--fsname=${FSNAME2} --reformat $fs2mdsdev $fs2mdsvdev || exit 10
 
 	add fs2ost $(mkfs_opts ost1) --fsname=${FSNAME2} --reformat \

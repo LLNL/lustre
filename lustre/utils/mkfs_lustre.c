@@ -79,6 +79,8 @@
 #include <lustre_ver.h>
 #include "mount_utils.h"
 
+#define MT_STR(data)   mt_str((data)->ldd_mount_type)
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
@@ -187,14 +189,17 @@ void print_ldd(char *str, struct lustre_disk_data *ldd)
                IS_MDT(ldd) ? "MDT ":"",
                IS_OST(ldd) ? "OST ":"",
                IS_MGS(ldd) ? "MGS ":"",
+               /* should never happen */
                ldd->ldd_flags & LDD_F_NEED_INDEX ? "needs_index ":"",
                ldd->ldd_flags & LDD_F_VIRGIN     ? "first_time ":"",
                ldd->ldd_flags & LDD_F_UPDATE     ? "update ":"",
                ldd->ldd_flags & LDD_F_WRITECONF  ? "writeconf ":"",
                ldd->ldd_flags & LDD_F_IAM_DIR  ? "IAM_dir_format ":"",
                ldd->ldd_flags & LDD_F_NO_PRIMNODE? "no_primnode ":"",
+               /* should never happen */
                ldd->ldd_flags & LDD_F_UPGRADE14  ? "upgrade1.4 ":"");
         printf("Persistent mount opts: %s\n", ldd->ldd_mount_opts);
+        /* No longer passed */
         printf("Parameters:%s\n", ldd->ldd_params);
         if (ldd->ldd_userdata[0])
                 printf("Comment: %s\n", ldd->ldd_userdata);
@@ -222,53 +227,6 @@ static inline void badopt(const char *opt, char *type)
         usage(stderr);
 }
 
-/* from mount_lustre */
-/* Get rid of symbolic hostnames for tcp, since kernel can't do lookups */
-#define MAXNIDSTR 1024
-static char *convert_hostnames(char *s1)
-{
-        char *converted, *s2 = 0, *c, *end, sep;
-        int left = MAXNIDSTR;
-        lnet_nid_t nid;
-
-        converted = malloc(left);
-        if (converted == NULL) {
-                return NULL;
-        }
-
-        end = s1 + strlen(s1);
-        c = converted;
-        while ((left > 0) && (s1 < end)) {
-                s2 = strpbrk(s1, ",:");
-                if (!s2)
-                        s2 = end;
-                sep = *s2;
-                *s2 = '\0';
-                nid = libcfs_str2nid(s1);
-
-                if (nid == LNET_NID_ANY) {
-                        fprintf(stderr, "%s: Can't parse NID '%s'\n",
-                                progname, s1);
-                        free(converted);
-                        return NULL;
-                }
-                if (strncmp(libcfs_nid2str(nid), "127.0.0.1",
-                            strlen("127.0.0.1")) == 0) {
-                        fprintf(stderr, "%s: The NID '%s' resolves to the "
-                                "loopback address '%s'.  Lustre requires a "
-                                "non-loopback address.\n",
-                                progname, s1, libcfs_nid2str(nid));
-                        free(converted);
-                        return NULL;
-                }
-
-                c += snprintf(c, left, "%s%c", libcfs_nid2str(nid), sep);
-                left = converted + MAXNIDSTR - c;
-                s1 = s2 + 1;
-        }
-        return converted;
-}
-
 int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                char **mountopts)
 {
@@ -277,7 +235,6 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                 {"backfstype", 1, 0, 'b'},
                 {"stripe-count-hint", 1, 0, 'c'},
                 {"comment", 1, 0, 'u'},
-                {"configdev", 1, 0, 'C'},
                 {"device-size", 1, 0, 'd'},
                 {"dryrun", 0, 0, 'n'},
                 {"erase-params", 0, 0, 'e'},
@@ -349,10 +306,6 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                                 return 1;
                         }
                         break;
-                case 'C': /* Configdev */
-                        //FIXME
-                        printf("Configdev not implemented\n");
-                        return 1;
                 case 'd':
                         mop->mo_device_sz = atol(optarg);
                         break;
@@ -616,11 +569,15 @@ int main(int argc, char *const argv[])
                 goto out;
         }
 
-        if ((mop.mo_ldd.ldd_flags & (LDD_F_NEED_INDEX | LDD_F_UPGRADE14)) ==
-            (LDD_F_NEED_INDEX | LDD_F_UPGRADE14)) {
+        if (IS_MGS(ldd) && !IS_MDT(ldd)) {
+                mop.mo_ldd.ldd_flags &= ~LDD_F_NEED_INDEX;
+                mop.mo_ldd.ldd_svindex = 0;
+        }
+
+        if (mop.mo_ldd.ldd_flags & LDD_F_NEED_INDEX) {
                 fatal();
-                fprintf(stderr, "Can't find the target index, "
-                        "specify with --index\n");
+                fprintf(stderr, "The target index must be specified with "
+                        "--index\n");
                 ret = EINVAL;
                 goto out;
         }
