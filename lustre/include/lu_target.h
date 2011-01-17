@@ -72,6 +72,8 @@ int lut_last_commit_cb_add(struct thandle *th, struct lu_target *lut,
 int lut_new_client_cb_add(struct thandle *th, struct obd_export *exp);
 int lut_init(const struct lu_env *, struct lu_target *,
              struct obd_device *, struct dt_device *);
+int lut_init2(const struct lu_env *, struct lu_target *,
+             struct obd_device *, struct dt_device *, struct lu_fid *);
 void lut_fini(const struct lu_env *, struct lu_target *);
 int lut_client_alloc(struct obd_export *);
 void lut_client_free(struct obd_export *);

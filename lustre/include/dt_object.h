@@ -81,18 +81,11 @@ struct dt_device_param {
         unsigned           ddp_max_name_len;
         unsigned           ddp_max_nlink;
         unsigned           ddp_block_shift;
-        mntopt_t           ddp_mntopts;
-        unsigned           ddp_max_ea_size;
         void              *ddp_mnt; /* XXX: old code can retrieve mnt -bzzz */
         int                ddp_mount_type;
         unsigned long long ddp_maxbytes;
-        /* percentage of available space to reserve for grant error margin */
-        int                ddp_grant_reserved;
-        /* per-inode space consumption */
-        short              ddp_inodespace;
-        /* per-fragment grant overhead to be used by client for grant
-         * calculation */
-        int                ddp_grant_frag;
+        mntopt_t           ddp_mntopts;
+        unsigned           ddp_max_ea_size;
 };
 
 /**
@@ -118,7 +111,7 @@ struct dt_device_operations {
          * Return device-wide statistics.
          */
         int   (*dt_statfs)(const struct lu_env *env,
-                           struct dt_device *dev, cfs_kstatfs_t *osfs);
+                           struct dt_device *dev, struct obd_statfs *osfs);
         /**
          * Create transaction, described by \a param.
          */
@@ -172,12 +165,25 @@ struct dt_device_operations {
                                    struct dt_device *dev,
                                    int mode, unsigned long timeout,
                                    __u32 alg, struct lustre_capa_key *keys);
+
         /**
-         * Initialize quota context.
+         * Get disk label
          */
-        void (*dt_init_quota_ctxt)(const struct lu_env *env,
-                                   struct dt_device *dev,
-                                   struct dt_quota_ctxt *ctxt, void *data);
+        char *(*dt_label_get)(const struct lu_env *env,
+                              const struct dt_device *dev);
+
+        /**
+         * Set disk label
+         */
+        int   (*dt_label_set)(const struct lu_env *,
+                              const struct dt_device *, char *);
+
+        struct dt_quota_operations {
+                int (*dt_setup)(const struct lu_env *env,
+                                struct dt_device *dev, void *data);
+                void (*dt_cleanup)(const struct lu_env *env,
+                                   struct dt_device *dev);
+        } dt_quota;
 };
 
 struct dt_index_features {
@@ -245,6 +251,7 @@ struct dt_object_format {
         enum dt_format_type dof_type;
         union {
                 struct dof_regular {
+                        int striped;
                 } dof_reg;
                 struct dof_dir {
                 } dof_dir;
@@ -311,6 +318,15 @@ struct dt_object_operations {
                              struct thandle *handle,
                              struct lustre_capa *capa);
         /**
+         * Punch object's content
+         * precondition: regular object, not index
+         */
+        int   (*do_declare_punch)(const struct lu_env *, struct dt_object *,
+                                  __u64, __u64, struct thandle *th);
+        int   (*do_punch)(const struct lu_env *env, struct dt_object *dt,
+                          __u64 start, __u64 end, struct thandle *th,
+                          struct lustre_capa *capa);
+        /**
          * Return a value of an extended attribute.
          *
          * precondition: dt_object_exists(dt);
@@ -365,6 +381,7 @@ struct dt_object_operations {
         void  (*do_ah_init)(const struct lu_env *env,
                             struct dt_allocation_hint *ah,
                             struct dt_object *parent,
+                            struct dt_object *child,
                             cfs_umode_t child_mode);
         /**
          * Create new object on this device.
@@ -734,6 +751,12 @@ struct dt_object *dt_store_open(const struct lu_env *env,
                                 const char *filename,
                                 struct lu_fid *fid);
 
+struct dt_object *dt_find_or_create(const struct lu_env *env,
+                                    struct dt_device *dt,
+                                    const struct lu_fid *fid,
+                                    struct dt_object_format *dof,
+                                    struct lu_attr *attr);
+
 struct dt_object *dt_locate(const struct lu_env *env,
                             struct dt_device *dev,
                             const struct lu_fid *fid);
@@ -799,6 +822,8 @@ static inline int dt_declare_record_write(const struct lu_env *env,
 
         LASSERTF(dt != NULL, "dt is NULL when we want to write record\n");
         LASSERT(th != NULL);
+        LASSERT(dt->do_body_ops);
+        LASSERT(dt->do_body_ops->dbo_declare_write);
         rc = dt->do_body_ops->dbo_declare_write(env, dt, size, pos, th);
         return rc;
 }
@@ -1063,7 +1088,7 @@ static inline int dt_fiemap_get(const struct lu_env *env, struct dt_object *d,
 }
 
 static inline int dt_statfs(const struct lu_env *env, struct dt_device *dev,
-                            cfs_kstatfs_t *osfs)
+                            struct obd_statfs *osfs)
 {
         LASSERT(dev);
         LASSERT(dev->dd_ops);
@@ -1249,4 +1274,7 @@ static inline int dt_lookup(const struct lu_env *env,
                 ret = -ENOENT;
         return ret;
 }
+
+#define LU221_BAD_TIME (0x80000000U + 24 * 3600)
+
 #endif /* __LUSTRE_DT_OBJECT_H */

@@ -75,7 +75,7 @@ MKFSOPT=""
 [ "x$L_GETIDENTITY" != "x" ] &&
     MDSOPT=$MDSOPT" --param mdt.identity_upcall=$L_GETIDENTITY"
 
-MDS_MKFS_OPTS="--mdt --fsname=$FSNAME --device-size=$MDSSIZE --param sys.timeout=$TIMEOUT $MKFSOPT $MDSOPT $MDS_MKFS_OPTS"
+MDS_MKFS_OPTS="--mdt --fsname=$FSNAME --device-size=$MDSSIZE $MKFSOPT $MDSOPT $MDS_MKFS_OPTS"
 if [[ $mds1_HOST == $mgs_HOST ]] && [[ $MDSDEV1 == $MGSDEV ]]; then
     MDS_MKFS_OPTS="--mgs $MDS_MKFS_OPTS"
 else
@@ -94,11 +94,23 @@ MKFSOPT=""
     MKFSOPT=$MKFSOPT" --param ost.capa=$OSSCAPA"
 [ "x$ostfailover_HOST" != "x" ] &&
     OSTOPT=$OSTOPT" --failnode=`h2$NETTYPE $ostfailover_HOST`"
-OST_MKFS_OPTS="--ost --fsname=$FSNAME --device-size=$OSTSIZE --mgsnode=$MGSNID --param sys.timeout=$TIMEOUT $MKFSOPT $OSTOPT $OST_MKFS_OPTS"
+OST_MKFS_OPTS="--ost --fsname=$FSNAME --device-size=$OSTSIZE --mgsnode=$MGSNID $MKFSOPT $OSTOPT $OST_MKFS_OPTS"
 
-MDS_MOUNT_OPTS=${MDS_MOUNT_OPTS:-"-o loop,user_xattr,acl"}
-OST_MOUNT_OPTS=${OST_MOUNT_OPTS:-"-o loop"}
-MGS_MOUNT_OPTS=${MGS_MOUNT_OPTS:-$MDS_MOUNT_OPTS}
+OSTFSTYPE=${OSTFSTYPE:-$FSTYPE}
+if [ "$OSTFSTYPE" == "ldiskfs" ]; then
+OST_MOUNT_OPTS=${OST_MOUNT_OPTS:-"-o loop,user_xattr"}
+fi
+
+MDSFSTYPE=${MDSFSTYPE:-$FSTYPE}
+if [ "$MDSFSTYPE" == "ldiskfs" ]; then
+MDS_MOUNT_OPTS=${MDS_MOUNT_OPTS:-"-o loop,user_xattr"}
+fi
+
+if [ "$MDSDEV1" != "$MGSDEV" ]; then
+    MGS_MOUNT_OPTS="-o loop"
+else
+    MGS_MOUNT_OPTS=${MGS_MOUNT_OPTS:-$MDS_MOUNT_OPTS}
+fi
 
 #client
 MOUNT=${MOUNT:-/mnt/${FSNAME}}

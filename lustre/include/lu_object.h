@@ -631,6 +631,10 @@ struct lu_site {
          */
         struct lu_device         *ls_top_dev;
         /**
+         * Bottom-level device for this stack
+         */
+        struct lu_device         *ls_bottom_dev;
+        /**
          * Linkage into global list of sites.
          */
         cfs_list_t                ls_linkage;
@@ -646,6 +650,10 @@ struct lu_site {
          */
         struct lprocfs_stats     *ls_stats;
         struct lprocfs_stats     *ls_time_stats;
+        /**
+         * XXX: a hack! fld has to find md_site via site, remove ASAP!
+         */
+        struct md_site           *ld_md_site;
 };
 
 static inline struct lu_site_bkt_data *
@@ -1019,6 +1027,11 @@ enum lu_context_tag {
         LCT_SESSION   = 1 << 4,
 
         /**
+         * This is per-request 
+         */
+        LCT_OSP_THREAD = 1 << 5,
+
+        /**
          * Set when at least one of keys, having values in this context has
          * non-NULL lu_context_key::lct_exit() method. This is used to
          * optimize lu_context_exit() call.
@@ -1336,6 +1349,13 @@ struct lu_kmem_descr {
 
 int  lu_kmem_init(struct lu_kmem_descr *caches);
 void lu_kmem_fini(struct lu_kmem_descr *caches);
+
+struct lu_object *lu_object_anon(const struct lu_env *env,
+                                 struct lu_device *dev,
+                                 const struct lu_object_conf *conf);
+void lu_object_assign_fid(const struct lu_env *env,
+                          struct lu_object *o,
+                          const struct lu_fid *fid);
 
 /** @} lu */
 #endif /* __LUSTRE_LU_OBJECT_H */

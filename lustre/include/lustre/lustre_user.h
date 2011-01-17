@@ -88,17 +88,17 @@ enum obd_statfs_state {
 };
 
 struct obd_statfs {
-        __u64           os_type;
-        __u64           os_blocks;
-        __u64           os_bfree;
-        __u64           os_bavail;
-        __u64           os_files;
-        __u64           os_ffree;
-        __u8            os_fsid[40];
-        __u32           os_bsize;
-        __u32           os_namelen;
-        __u64           os_maxbytes;
-        __u32           os_state;       /**< obd_statfs_state OS_STATE_* flag */
+        __u64           os_type;     /**< magic type of backing target */
+        __u64           os_blocks;   /**< total number of blocks in target */
+        __u64           os_bfree;    /**< number of free blocks in target */
+        __u64           os_bavail;   /**< free blocks avail to non-root user */
+        __u64           os_files;    /**< total number of files (free+used) */
+        __u64           os_ffree;    /**< number of files that can be created */
+        __u8            os_fsid[40]; /**< unique identifier for target */
+        __u32           os_bsize;    /**< bytes per os_{blocks,bfree,bavail} */
+        __u32           os_namelen;  /**< maximum length of a filename */
+        __u64           os_maxbytes; /**< maximum size of a single object */
+        __u32           os_state;    /**< obd_statfs_state OS_STATE_* flag */
         __u32           os_spare1;
         __u32           os_spare2;
         __u32           os_spare3;

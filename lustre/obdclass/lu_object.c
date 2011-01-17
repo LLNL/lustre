@@ -81,10 +81,31 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
         struct lu_site          *site;
         struct lu_object        *orig;
         cfs_hash_bd_t            bd;
+        const struct lu_fid     *fid;
 
         top  = o->lo_header;
         site = o->lo_dev->ld_site;
         orig = o;
+
+        /*
+         * till we have full fids-on-OST implemented anonymous objects
+         * are possible in OSP. such an object isn't listed in the site
+         * so we should not remove it from the site.
+         */
+        fid = lu_object_fid(o);
+        if (fid_is_zero(fid)) {
+                LASSERT(top->loh_hash.next == NULL
+                                && top->loh_hash.pprev == NULL);
+                LASSERT(cfs_list_empty(&top->loh_lru));
+                if (!cfs_atomic_dec_and_test(&top->loh_ref))
+                        return;
+                cfs_list_for_each_entry_reverse(o, &top->loh_layers, lo_linkage) {
+                        if (o->lo_ops->loo_object_release != NULL)
+                                o->lo_ops->loo_object_release(env, o);
+                }
+                lu_object_free(env, orig);
+                return;
+        }
 
         cfs_hash_bd_get(site->ls_obj_hash, &top->loh_fid, &bd);
         bkt = cfs_hash_bd_extra_get(site->ls_obj_hash, &bd);
@@ -169,7 +190,7 @@ static struct lu_object *lu_object_alloc(const struct lu_env *env,
          * This is the only place where object fid is assigned. It's constant
          * after this point.
          */
-        LASSERT(fid_is_igif(f) || fid_ver(f) == 0);
+        LASSERT(fid_is_igif(f) || fid_is_idif(f) || fid_ver(f) == 0);
         top->lo_header->loh_fid = *f;
         layers = &top->lo_header->loh_layers;
         do {
@@ -1215,15 +1236,7 @@ void lu_stack_fini(const struct lu_env *env, struct lu_device *top)
         }
 
         for (scan = top; scan != NULL; scan = next) {
-                const struct lu_device_type *ldt = scan->ld_type;
-                struct obd_type             *type;
-
-                next = ldt->ldt_ops->ldto_device_free(env, scan);
-                type = ldt->ldt_obd_type;
-                if (type != NULL) {
-                        type->typ_refcnt--;
-                        class_put_type(type);
-                }
+                next = scan->ld_type->ldt_ops->ldto_device_free(env, scan);
         }
 }
 EXPORT_SYMBOL(lu_stack_fini);
@@ -2039,3 +2052,55 @@ void lu_kmem_fini(struct lu_kmem_descr *caches)
         }
 }
 EXPORT_SYMBOL(lu_kmem_fini);
+
+/**
+ * allocates object with 0 (non-assiged) fid
+ * XXX: temporary solution to be able to assign fid in ->do_create()
+ *      till we have fully-functional OST fids
+ */
+struct lu_object *lu_object_anon(const struct lu_env *env,
+                                 struct lu_device *dev,
+                                 const struct lu_object_conf *conf)
+{
+        struct lu_fid     fid;
+        struct lu_object *o;
+
+        fid_zero(&fid);
+        o = lu_object_alloc(env, dev, &fid, conf);
+
+        return o;
+}
+EXPORT_SYMBOL(lu_object_anon);
+
+/**
+ * XXX: temporary solution to be able to assign fid in ->do_create()
+ *      till we have fully-functional OST fids
+ */
+void lu_object_assign_fid(const struct lu_env *env, struct lu_object *o,
+                          const struct lu_fid *fid)
+{
+        struct lu_site          *s = o->lo_dev->ld_site;
+        struct lu_fid           *old = &o->lo_header->loh_fid;
+        struct lu_site_bkt_data *bkt;
+        struct lu_object        *shadow;
+        cfs_waitlink_t           waiter;
+        cfs_hash_t              *hs;
+        cfs_hash_bd_t            bd;
+        __u64                    version = 0;
+
+        LASSERT(fid_is_zero(old));
+
+        hs = s->ls_obj_hash;
+        cfs_hash_bd_get_and_lock(hs, (void *)fid, &bd, 1);
+        shadow = htable_lookup(s, &bd, fid, &waiter, &version);
+        /* supposed to be unique */
+        LASSERT(shadow == NULL);
+        *old = *fid;
+        bkt = cfs_hash_bd_extra_get(hs, &bd);
+        cfs_hash_bd_add_locked(hs, &bd, &o->lo_header->loh_hash);
+        bkt->lsb_busy++;
+        cfs_hash_bd_unlock(hs, &bd, 1);
+
+}
+EXPORT_SYMBOL(lu_object_assign_fid);
+

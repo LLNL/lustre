@@ -46,22 +46,12 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <linux/module.h>
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs_jbd2.h>
-#else
-#include <linux/jbd.h>
-#endif
 #include <obd.h>
 #include <obd_class.h>
 #include <lustre_ver.h>
 #include <obd_support.h>
 #include <lprocfs_status.h>
 
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs.h>
-#else
-#include <linux/ldiskfs_fs.h>
-#endif
 #include <lustre_mds.h>
 #include <lustre/lustre_idl.h>
 
@@ -100,7 +90,7 @@ int mdd_def_acl_get(const struct lu_env *env, struct mdd_object *mdd_obj,
  * Hold write_lock for o.
  */
 int mdd_acl_chmod(const struct lu_env *env, struct mdd_object *o, __u32 mode,
-                  struct thandle *handle)
+                  struct mdd_thandle *handle)
 {
         struct lu_buf           *buf;
         posix_acl_xattr_header  *head;
@@ -109,6 +99,8 @@ int mdd_acl_chmod(const struct lu_env *env, struct mdd_object *o, __u32 mode,
         int                      rc;
 
         ENTRY;
+
+        LASSERT(handle);
 
         buf = mdd_buf_get(env, mdd_env_info(env)->mti_xattr_buf,
                           sizeof(mdd_env_info(env)->mti_xattr_buf));
@@ -129,7 +121,7 @@ int mdd_acl_chmod(const struct lu_env *env, struct mdd_object *o, __u32 mode,
 
         rc = lustre_posix_acl_chmod_masq(entry, mode, entry_count);
         if (rc)
-                RETURN(rc);
+                RETURN(0);
 
         rc = mdo_xattr_set(env, o, buf, XATTR_NAME_ACL_ACCESS,
                            0, handle, BYPASS_CAPA);
@@ -169,6 +161,7 @@ int __mdd_acl_init(const struct lu_env *env, struct mdd_object *obj,
 
         rc = mdo_xattr_set(env, obj, buf, XATTR_NAME_ACL_ACCESS, 0, handle,
                            BYPASS_CAPA);
+
         RETURN(rc);
 }
 #endif

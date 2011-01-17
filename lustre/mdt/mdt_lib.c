@@ -628,30 +628,10 @@ int mdt_handle_last_unlink(struct mdt_thread_info *info, struct mdt_object *mo,
                 mdt_pack_attr2body(info, repbody, la, mdt_object_fid(mo));
 
         if (ma->ma_valid & MA_LOV) {
-                __u32 mode;
-
-                if (mdt_object_exists(mo) < 0)
-                        /* If it is a remote object, and we do not retrieve
-                         * EA back unlink reg file*/
-                        mode = S_IFREG;
-                else
-                        mode = lu_object_attr(&mo->mot_obj.mo_lu);
-
-                LASSERT(ma->ma_lmm_size);
-                mdt_dump_lmm(D_INFO, ma->ma_lmm);
-                repbody->eadatasize = ma->ma_lmm_size;
-                if (S_ISREG(mode))
-                        repbody->valid |= OBD_MD_FLEASIZE;
-                else if (S_ISDIR(mode))
-                        repbody->valid |= OBD_MD_FLDIREA;
-                else
-                        LBUG();
+                CERROR("No need in LOV EA upon unlink\n");
+                dump_stack();
         }
-
-        if (ma->ma_cookie_size && (ma->ma_valid & MA_COOKIE)) {
-                repbody->aclsize = ma->ma_cookie_size;
-                repbody->valid |= OBD_MD_FLCOOKIE;
-        }
+        repbody->eadatasize = 0;
 
         if (info->mti_mdt->mdt_opts.mo_oss_capa &&
             info->mti_exp->exp_connect_flags & OBD_CONNECT_OSS_CAPA &&
@@ -851,13 +831,6 @@ static int mdt_setattr_unpack(struct mdt_thread_info *info)
         if (ma->ma_lmm_size) {
                 ma->ma_lmm = req_capsule_client_get(pill, &RMF_EADATA);
                 ma->ma_valid |= MA_LOV;
-        }
-
-        ma->ma_cookie_size = req_capsule_get_size(pill, &RMF_LOGCOOKIES,
-                                                  RCL_CLIENT);
-        if (ma->ma_cookie_size) {
-                ma->ma_cookie = req_capsule_client_get(pill, &RMF_LOGCOOKIES);
-                ma->ma_valid |= MA_COOKIE;
         }
 
         rc = mdt_dlmreq_unpack(info);
@@ -1145,6 +1118,30 @@ static int mdt_rename_unpack(struct mdt_thread_info *info)
         RETURN(rc);
 }
 
+/*
+ * please see comment above LOV_MAGIC_V1_DEF
+ */
+static void mdt_fix_lov_magic(struct mdt_thread_info *info)
+{
+        struct md_op_spec       *sp   = &info->mti_spec;
+        struct lov_user_md_v1   *v1;
+
+        v1 = (void *) sp->u.sp_ea.eadata;
+        LASSERT(v1);
+
+        if (unlikely(req_is_replay(mdt_info_req(info)))) {
+                if (v1->lmm_magic == LOV_USER_MAGIC_V1) {
+                        v1->lmm_magic = LOV_MAGIC_V1_DEF;
+                } else if (v1->lmm_magic == __swab32(LOV_USER_MAGIC_V1)) {
+                        v1->lmm_magic = __swab32(LOV_MAGIC_V1_DEF);
+                } else if (v1->lmm_magic == LOV_USER_MAGIC_V3) {
+                        v1->lmm_magic = LOV_MAGIC_V3_DEF;
+                } else if (v1->lmm_magic == __swab32(LOV_USER_MAGIC_V3)) {
+                        v1->lmm_magic = __swab32(LOV_MAGIC_V3_DEF);
+                }
+        }
+}
+
 static int mdt_open_unpack(struct mdt_thread_info *info)
 {
         struct md_ucred         *uc = mdt_ucred(info);
@@ -1217,6 +1214,7 @@ static int mdt_open_unpack(struct mdt_thread_info *info)
         if (sp->u.sp_ea.eadatalen) {
                 sp->u.sp_ea.eadata = req_capsule_client_get(pill, &RMF_EADATA);
                 sp->no_create = !!req_is_replay(req);
+                mdt_fix_lov_magic(info);
         }
 
         RETURN(0);

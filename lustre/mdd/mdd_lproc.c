@@ -70,7 +70,7 @@ int mdd_procfs_init(struct mdd_device *mdd, const char *name)
         int                  rc;
         ENTRY;
 
-        type = ld->ld_type->ldt_obd_type;
+        type = ld->ld_obd->obd_type;
 
         LASSERT(name != NULL);
         LASSERT(type != NULL);
@@ -154,6 +154,7 @@ static int lprocfs_rd_atime_diff(char *page, char **start, off_t off,
 }
 
 
+#ifdef XXX_MDD_CHANGELOG
 /**** changelogs ****/
 static int lprocfs_rd_changelog_mask(char *page, char **start, off_t off,
                                      int count, int *eof, void *data)
@@ -257,6 +258,7 @@ static int lprocfs_rd_changelog_users(char *page, char **start, off_t off,
         llog_ctxt_put(ctxt);
         return cucb.idx;
 }
+#endif
 
 #ifdef HAVE_QUOTA_SUPPORT
 static int mdd_lprocfs_quota_rd_type(char *page, char **start, off_t off,
@@ -301,9 +303,11 @@ static int lprocfs_wr_sync_perm(struct file *file, const char *buffer,
 
 static struct lprocfs_vars lprocfs_mdd_obd_vars[] = {
         { "atime_diff",      lprocfs_rd_atime_diff, lprocfs_wr_atime_diff, 0 },
+#ifdef XXX_MDD_CHANGELOG
         { "changelog_mask",  lprocfs_rd_changelog_mask,
                              lprocfs_wr_changelog_mask, 0 },
         { "changelog_users", lprocfs_rd_changelog_users, 0, 0},
+#endif
 #ifdef HAVE_QUOTA_SUPPORT
         { "quota_type",      mdd_lprocfs_quota_rd_type,
                              mdd_lprocfs_quota_wr_type, 0 },

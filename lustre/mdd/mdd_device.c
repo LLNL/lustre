@@ -49,11 +49,6 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <linux/module.h>
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs_jbd2.h>
-#else
-#include <linux/jbd.h>
-#endif
 #include <obd.h>
 #include <obd_class.h>
 #include <lustre_ver.h>
@@ -62,11 +57,6 @@
 
 #include <lustre_disk.h>
 #include <lustre_fid.h>
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs.h>
-#else
-#include <linux/ldiskfs_fs.h>
-#endif
 #include <lustre_mds.h>
 #include <lustre/lustre_idl.h>
 #include <lustre_disk.h>      /* for changelogs */
@@ -81,28 +71,101 @@ static struct lu_device_type mdd_device_type;
 static const char mdd_root_dir_name[] = "ROOT";
 static const char mdd_obf_dir_name[] = "fid";
 
-static int mdd_device_init(const struct lu_env *env, struct lu_device *d,
-                           const char *name, struct lu_device *next)
+static int mdd_connect_to_next(const struct lu_env *env, struct mdd_device *m,
+                               const char *nextdev)
 {
-        struct mdd_device *mdd = lu2mdd_dev(d);
+        struct obd_connect_data *data = NULL;
+        struct obd_device       *obd;
+        int                      rc;
+        ENTRY;
+
+        LASSERT(m->mdd_child_exp == NULL);
+
+        OBD_ALLOC(data, sizeof(*data));
+        if (data == NULL)
+                GOTO(out, rc = -ENOMEM);
+
+        obd = class_name2obd(nextdev);
+        if (obd == NULL) {
+                CERROR("can't locate next device: %s\n", nextdev);
+                GOTO(out, rc = -ENOTCONN);
+        }
+
+        /* XXX: which flags we need on MDS? */
+#if 0
+        data->ocd_connect_flags = OBD_CONNECT_VERSION   | OBD_CONNECT_INDEX   |
+                                  OBD_CONNECT_REQPORTAL | OBD_CONNECT_QUOTA64 |
+                                  OBD_CONNECT_OSS_CAPA  | OBD_CONNECT_FID     |
+                                  OBD_CONNECT_BRW_SIZE  | OBD_CONNECT_CKSUM   |
+                                  OBD_CONNECT_CHANGE_QS | OBD_CONNECT_AT      |
+                                  OBD_CONNECT_MDS | OBD_CONNECT_SKIP_ORPHAN   |
+                                  OBD_CONNECT_SOM;
+#ifdef HAVE_LRU_RESIZE_SUPPORT
+        data->ocd_connect_flags |= OBD_CONNECT_LRU_RESIZE;
+#endif
+        data->ocd_group = mdt_to_obd_objgrp(mds->mds_id);
+#endif
+        data->ocd_version = LUSTRE_VERSION_CODE;
+
+        rc = obd_connect(NULL, &m->mdd_child_exp, obd, &obd->obd_uuid, data, NULL);
+        if (rc) {
+                CERROR("cannot connect to next dev %s (%d)\n", nextdev, rc);
+                GOTO(out, rc);
+        }
+
+        m->mdd_md_dev.md_lu_dev.ld_site =
+                m->mdd_child_exp->exp_obd->obd_lu_dev->ld_site;
+        LASSERT(m->mdd_md_dev.md_lu_dev.ld_site);
+        m->mdd_child = lu2dt_dev(m->mdd_child_exp->exp_obd->obd_lu_dev);
+
+out:
+        if (data)
+                OBD_FREE(data, sizeof(*data));
+        RETURN(rc);
+}
+
+static int mdd_init0(const struct lu_env *env, struct mdd_device *mdd,
+                     struct lu_device_type *t, struct lustre_cfg *lcfg)
+{
+        struct obd_type           *obdtype = NULL;
         int rc;
         ENTRY;
 
-        mdd->mdd_child = lu2dt_dev(next);
+        md_device_init(&mdd->mdd_md_dev, t);
 
-        /* Prepare transactions callbacks. */
-        mdd->mdd_txn_cb.dtc_txn_start = NULL;
-        mdd->mdd_txn_cb.dtc_txn_stop = mdd_txn_stop_cb;
-        mdd->mdd_txn_cb.dtc_txn_commit = NULL;
-        mdd->mdd_txn_cb.dtc_cookie = mdd;
-        mdd->mdd_txn_cb.dtc_tag = LCT_MD_THREAD;
-        CFS_INIT_LIST_HEAD(&mdd->mdd_txn_cb.dtc_linkage);
+        rc = mdd_connect_to_next(env, mdd, lustre_cfg_string(lcfg, 3));
+        if (rc)
+                RETURN(rc);
+
         mdd->mdd_atime_diff = MAX_ATIME_DIFF;
         /* sync permission changes */
         mdd->mdd_sync_permission = 1;
 
-        rc = mdd_procfs_init(mdd, name);
+        mdd->mdd_child->dd_ops->dt_conf_get(env, mdd->mdd_child, &mdd->mdd_dt_conf);
+#ifdef XXX_MDD_CHANGELOG
+        if (rc == 0)
+                mdd_changelog_init(env, mdd);
+#endif
+        if (rc && obdtype)
+                class_put_type(obdtype);
+
         RETURN(rc);
+}
+
+static void mdd_device_shutdown(const struct lu_env *env,
+                                struct mdd_device *m, struct lustre_cfg *cfg)
+{
+        ENTRY;
+#ifdef XXX_MDD_CHANGELOG
+        mdd_changelog_fini(env, m);
+#endif
+        orph_index_fini(env, m);
+        if (m->mdd_dot_lustre_objs.mdd_obf)
+                mdd_object_put(env, m->mdd_dot_lustre_objs.mdd_obf);
+        if (m->mdd_dot_lustre)
+                mdd_object_put(env, m->mdd_dot_lustre);
+        lu_site_purge(env, mdd2lu_dev(m)->ld_site, ~0);
+        EXIT;
 }
 
 static struct lu_device *mdd_device_fini(const struct lu_env *env,
@@ -117,34 +180,13 @@ static struct lu_device *mdd_device_fini(const struct lu_env *env,
                 CERROR("proc fini error %d \n", rc);
                 return ERR_PTR(rc);
         }
+
+        obd_disconnect(mdd->mdd_child_exp);
+
         return next;
 }
 
-static void mdd_changelog_fini(const struct lu_env *env,
-                               struct mdd_device *mdd);
-
-static void mdd_device_shutdown(const struct lu_env *env,
-                                struct mdd_device *m, struct lustre_cfg *cfg)
-{
-        ENTRY;
-        mdd_changelog_fini(env, m);
-        dt_txn_callback_del(m->mdd_child, &m->mdd_txn_cb);
-        if (m->mdd_dot_lustre_objs.mdd_obf)
-                mdd_object_put(env, m->mdd_dot_lustre_objs.mdd_obf);
-        if (m->mdd_dot_lustre)
-                mdd_object_put(env, m->mdd_dot_lustre);
-        if (m->mdd_obd_dev)
-                mdd_fini_obd(env, m, cfg);
-        orph_index_fini(env, m);
-        if (m->mdd_capa != NULL) {
-                lu_object_put(env, &m->mdd_capa->do_lu);
-                m->mdd_capa = NULL;
-        }
-        /* remove upcall device*/
-        md_upcall_fini(&m->mdd_md_dev);
-        EXIT;
-}
-
+#ifdef XXX_MDD_CHANGELOG
 static int changelog_init_cb(struct llog_handle *llh, struct llog_rec_hdr *hdr,
                              void *data)
 {
@@ -187,17 +229,18 @@ static int changelog_user_init_cb(struct llog_handle *llh,
         RETURN(LLOG_PROC_BREAK);
 }
 
-
 static int mdd_changelog_llog_init(struct mdd_device *mdd)
 {
         struct obd_device *obd = mdd2obd_dev(mdd);
         struct llog_ctxt *ctxt;
         int rc;
 
+        if (obd == NULL)
+                RETURN(-ENODEV);
+
         /* Find last changelog entry number */
         ctxt = llog_get_context(obd, LLOG_CHANGELOG_ORIG_CTXT);
         if (ctxt == NULL) {
-                CERROR("no changelog context\n");
                 return -EINVAL;
         }
         if (!ctxt->loc_handle) {
@@ -248,6 +291,7 @@ static int mdd_changelog_init(const struct lu_env *env, struct mdd_device *mdd)
 
         mdd->mdd_cl.mc_index = 0;
         cfs_spin_lock_init(&mdd->mdd_cl.mc_lock);
+        cfs_waitq_init(&mdd->mdd_cl.mc_waitq);
         mdd->mdd_cl.mc_starttime = cfs_time_current_64();
         mdd->mdd_cl.mc_flags = 0; /* off by default */
         mdd->mdd_cl.mc_mask = CHANGELOG_DEFMASK;
@@ -256,10 +300,8 @@ static int mdd_changelog_init(const struct lu_env *env, struct mdd_device *mdd)
 
         rc = mdd_changelog_llog_init(mdd);
         if (rc) {
-                CERROR("Changelog setup during init failed %d\n", rc);
                 mdd->mdd_cl.mc_flags |= CLM_ERR;
         }
-
         return rc;
 }
 
@@ -333,8 +375,10 @@ int mdd_changelog_llog_write(struct mdd_device         *mdd,
                 return -ENXIO;
 
         /* nested journal transaction */
-        rc = llog_add(ctxt, &rec->cr_hdr, NULL, NULL, 0);
+        rc = llog_add_2(ctxt, &rec->cr_hdr, NULL, NULL, 0, handle);
         llog_ctxt_put(ctxt);
+
+        cfs_waitq_signal(&mdd->mdd_cl.mc_waitq);
 
         return rc;
 }
@@ -425,7 +469,7 @@ int mdd_changelog_write_header(struct mdd_device *mdd, int markerflags)
         OBD_FREE(rec, reclen);
         RETURN(rc);
 }
-
+#endif
 /**
  * Create ".lustre" directory.
  */
@@ -747,6 +791,8 @@ static int obf_attr_get(const struct lu_env *env, struct md_object *obj,
                       S_ISDIR(mdd_object_type(mdd_obj))))
                         return 0;
 
+#if 0
+                /* XXX: mdd can't access striping information directly */
                 if (ma->ma_need & MA_LOV_DEF) {
                         rc = mdd_get_default_md(mdd_obj, ma->ma_lmm);
                         if (rc > 0) {
@@ -755,6 +801,7 @@ static int obf_attr_get(const struct lu_env *env, struct md_object *obj,
                                 rc = 0;
                         }
                 }
+#endif
         }
 
         return rc;
@@ -984,13 +1031,9 @@ static int mdd_process_config(const struct lu_env *env,
                         GOTO(out, rc);
                 dt->dd_ops->dt_conf_get(env, dt, &m->mdd_dt_conf);
 
-                rc = mdd_init_obd(env, m, cfg);
-                if (rc) {
-                        CERROR("lov init error %d\n", rc);
-                        GOTO(out, rc);
-                }
-
+#ifdef XXX_MDD_CHANGELOG
                 mdd_changelog_init(env, m);
+#endif
                 break;
         case LCFG_CLEANUP:
                 mdd_device_shutdown(env, m, cfg);
@@ -1031,38 +1074,8 @@ static int mdd_recovery_complete(const struct lu_env *env,
 {
         struct mdd_device *mdd = lu2mdd_dev(d);
         struct lu_device *next = &mdd->mdd_child->dd_lu_dev;
-        struct obd_device *obd = mdd2obd_dev(mdd);
         int rc;
         ENTRY;
-
-        LASSERT(mdd != NULL);
-        LASSERT(obd != NULL);
-#if 0
-        /* XXX: Do we need this in new stack? */
-        rc = mdd_lov_set_nextid(env, mdd);
-        if (rc) {
-                CERROR("mdd_lov_set_nextid() failed %d\n",
-                       rc);
-                RETURN(rc);
-        }
-
-        /* XXX: cleanup unlink. */
-        rc = mdd_cleanup_unlink_llog(env, mdd);
-        if (rc) {
-                CERROR("mdd_cleanup_unlink_llog() failed %d\n",
-                       rc);
-                RETURN(rc);
-        }
-#endif
-        /* Call that with obd_recovering = 1 just to update objids */
-        obd_notify(obd->u.mds.mds_lov_obd, NULL, (obd->obd_async_recov ?
-                    OBD_NOTIFY_SYNC_NONBLOCK : OBD_NOTIFY_SYNC), NULL);
-
-        /* Drop obd_recovering to 0 and call o_postrecov to recover mds_lov */
-        cfs_spin_lock(&obd->obd_dev_lock);
-        obd->obd_recovering = 0;
-        cfs_spin_unlock(&obd->obd_dev_lock);
-        obd->obd_type->typ_dt_ops->o_postrecov(obd);
 
         /* XXX: orphans handling. */
         __mdd_orphan_cleanup(env, mdd);
@@ -1086,7 +1099,6 @@ static int mdd_prepare(const struct lu_env *env,
         if (rc)
                 GOTO(out, rc);
 
-        dt_txn_callback_add(mdd->mdd_child, &mdd->mdd_txn_cb);
         root = dt_store_open(env, mdd->mdd_child, "", mdd_root_dir_name,
                              &mdd->mdd_root_fid);
         if (!IS_ERR(root)) {
@@ -1105,13 +1117,9 @@ static int mdd_prepare(const struct lu_env *env,
                 GOTO(out, rc);
         }
 
-        /* we use capa file to declare llog changes,
-         * will be fixed with new llog in 2.3 */
-        root = dt_store_open(env, mdd->mdd_child, "", CAPA_KEYS, &fid);
-        if (!IS_ERR(root))
-                mdd->mdd_capa = root;
-        else
-                rc = PTR_ERR(root);
+        LASSERT(cdev->ld_obd);
+        rc = mdd_procfs_init(mdd, cdev->ld_obd->obd_name);
+        LASSERT(rc == 0);
 
 out:
         RETURN(rc);
@@ -1141,14 +1149,14 @@ static int mdd_root_get(const struct lu_env *env,
  * No permission check is needed.
  */
 static int mdd_statfs(const struct lu_env *env, struct md_device *m,
-                      cfs_kstatfs_t *sfs)
+                      struct obd_statfs *osfs)
 {
         struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
         int rc;
 
         ENTRY;
 
-        rc = mdd_child_ops(mdd)->dt_statfs(env, mdd->mdd_child, sfs);
+        rc = mdd_child_ops(mdd)->dt_statfs(env, mdd->mdd_child, osfs);
 
         RETURN(rc);
 }
@@ -1156,31 +1164,13 @@ static int mdd_statfs(const struct lu_env *env, struct md_device *m,
 /*
  * No permission check is needed.
  */
-static int mdd_maxsize_get(const struct lu_env *env, struct md_device *m,
-                           int *md_size, int *cookie_size)
-{
-        struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
-        ENTRY;
-
-        *md_size = mdd_lov_mdsize(env, mdd);
-        *cookie_size = mdd_lov_cookiesize(env, mdd);
-
-        RETURN(0);
-}
-
 static int mdd_init_capa_ctxt(const struct lu_env *env, struct md_device *m,
                               int mode, unsigned long timeout, __u32 alg,
                               struct lustre_capa_key *keys)
 {
         struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
-        struct mds_obd    *mds = &mdd2obd_dev(mdd)->u.mds;
         int rc;
         ENTRY;
-
-        /* need barrier for mds_capa_keys access. */
-        cfs_down_write(&mds->mds_notify_lock);
-        mds->mds_capa_keys = keys;
-        cfs_up_write(&mds->mds_notify_lock);
 
         rc = mdd_child_ops(mdd)->dt_init_capa_ctxt(env, mdd->mdd_child, mode,
                                                    timeout, alg, keys);
@@ -1191,24 +1181,8 @@ static int mdd_update_capa_key(const struct lu_env *env,
                                struct md_device *m,
                                struct lustre_capa_key *key)
 {
-        struct mds_capa_info info = { .uuid = NULL, .capa = key };
-        struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
-        struct obd_export *lov_exp = mdd2obd_dev(mdd)->u.mds.mds_lov_exp;
-        int rc;
-        ENTRY;
-
-        rc = obd_set_info_async(lov_exp, sizeof(KEY_CAPA_KEY), KEY_CAPA_KEY,
-                                sizeof(info), &info, NULL);
-        RETURN(rc);
-}
-
-static int mdd_llog_ctxt_get(const struct lu_env *env, struct md_device *m,
-                             int idx, void **h)
-{
-        struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
-
-        *h = llog_group_get_ctxt(&mdd2obd_dev(mdd)->obd_olg, idx);
-        return (*h == NULL ? -ENOENT : 0);
+        /* XXX: update capa keys in lod/osp? */
+        return 0;
 }
 
 static struct lu_device *mdd_device_alloc(const struct lu_env *env,
@@ -1222,11 +1196,10 @@ static struct lu_device *mdd_device_alloc(const struct lu_env *env,
         if (m == NULL) {
                 l = ERR_PTR(-ENOMEM);
         } else {
-                md_device_init(&m->mdd_md_dev, t);
+                mdd_init0(env, m, t, lcfg);
                 l = mdd2lu_dev(m);
                 l->ld_ops = &mdd_lu_ops;
                 m->mdd_md_dev.md_ops = &mdd_ops;
-                md_upcall_init(&m->mdd_md_dev, NULL);
         }
 
         return l;
@@ -1245,8 +1218,81 @@ static struct lu_device *mdd_device_free(const struct lu_env *env,
         RETURN(next);
 }
 
+/*
+ * we use exports to track all mdd users
+ */
+static int mdd_obd_connect(const struct lu_env *env, struct obd_export **exp,
+                           struct obd_device *obd, struct obd_uuid *cluuid,
+                           struct obd_connect_data *data, void *localdata)
+{
+        struct mdd_device    *mdd = lu2mdd_dev(obd->obd_lu_dev);
+        struct lustre_handle  conn;
+        int                   rc;
+        ENTRY;
+
+        CDEBUG(D_CONFIG, "connect #%d\n", mdd->mdd_connects);
+
+        rc = class_connect(&conn, obd, cluuid);
+        if (rc)
+                RETURN(rc);
+
+        *exp = class_conn2export(&conn);
+
+        /* Why should there ever be more than 1 connect? */
+        /* XXX: locking ? */
+        mdd->mdd_connects++;
+        LASSERT(mdd->mdd_connects == 1);
+
+        RETURN(0);
+}
+
+/*
+ * once last export (we don't count self-export) disappeared
+ * mdd can be released
+ */
+static int mdd_obd_disconnect(struct obd_export *exp)
+{
+        struct obd_device *obd = exp->exp_obd;
+        struct mdd_device *mdd = lu2mdd_dev(obd->obd_lu_dev);
+        int                rc, release = 0;
+        ENTRY;
+
+        /* Only disconnect the underlying layers on the final disconnect. */
+        /* XXX: locking ? */
+        mdd->mdd_connects--;
+        if (mdd->mdd_connects != 0) {
+                /* why should there be more than 1 connect? */
+                CERROR("disconnect #%d\n", mdd->mdd_connects);
+                goto out;
+        }
+
+        /* XXX: the last user of lod has gone, let's release the device */
+        release = 1;
+
+out:
+        rc = class_disconnect(exp); /* bz 9811 */
+
+        if (rc == 0 && release)
+                class_manual_cleanup(obd);
+        RETURN(rc);
+}
+
+static int mdd_obd_health_check(struct obd_device *obd)
+{
+        struct mdd_device *mdd = lu2mdd_dev(obd->obd_lu_dev);
+        int                rc;
+        ENTRY;
+
+        LASSERT(mdd);
+        rc = obd_health_check(mdd->mdd_child_exp->exp_obd);
+        RETURN(rc);
+}
+
 static struct obd_ops mdd_obd_device_ops = {
-        .o_owner = THIS_MODULE
+        .o_owner        = THIS_MODULE,
+        .o_connect      = mdd_obd_connect,
+        .o_disconnect   = mdd_obd_disconnect,
+        .o_health_check = mdd_obd_health_check
 };
 
 /* context key constructor/destructor: mdd_ucred_key_init, mdd_ucred_key_fini */
@@ -1305,6 +1351,7 @@ struct md_quota *md_quota(const struct lu_env *env)
 }
 EXPORT_SYMBOL(md_quota);
 
+#ifdef XXX_MDD_CHANGELOG
 static int mdd_changelog_user_register(struct mdd_device *mdd, int *id)
 {
         struct llog_ctxt *ctxt;
@@ -1339,42 +1386,13 @@ static int mdd_changelog_user_register(struct mdd_device *mdd, int *id)
         rec->cur_endrec = mdd->mdd_cl.mc_index;
         cfs_spin_unlock(&mdd->mdd_cl.mc_user_lock);
 
-        rc = llog_add(ctxt, &rec->cur_hdr, NULL, NULL, 0);
+        rc = llog_add_2(ctxt, &rec->cur_hdr, NULL, NULL, 0, NULL);
 
         CDEBUG(D_IOCTL, "Registered changelog user %d\n", *id);
 out:
         OBD_FREE_PTR(rec);
         llog_ctxt_put(ctxt);
         RETURN(rc);
-}
-
-int mdd_declare_llog_cancel(const struct lu_env *env, struct mdd_device *mdd,
-                            struct thandle *handle)
-{
-        int rc;
-
-
-        /* XXX: this is a temporary solution to declare llog changes
-         *      will be fixed in 2.3 with new llog implementation */
-
-        LASSERT(mdd->mdd_capa);
-
-        /* the llog record could be canceled either by modifying
-         * the plain llog's header or by destroying the llog itself
-         * when this record is the last one in it, it can't be known
-         * here, but the catlog's header will also be modified for
-         * the second case, then the first case can be covered and
-         * is no need to declare it */
-
-        /* destroy empty plain log */
-        rc = dt_declare_destroy(env, mdd->mdd_capa, handle);
-        if (rc)
-                return rc;
-
-        /* record the catlog's header if an empty plain log was destroyed */
-        rc = dt_declare_record_write(env, mdd->mdd_capa,
-                                     sizeof(struct llog_logid_rec), 0, handle);
-        return rc;
 }
 
 struct mdd_changelog_user_data {
@@ -1530,7 +1548,7 @@ static int mdd_changelog_user_purge(const struct lu_env *env,
 
         RETURN (rc);
 }
-
+#endif
 /** mdd_iocontrol
  * May be called remotely from mdt_iocontrol_handle or locally from
  * mdt_iocontrol. Data may be freeform - remote handling doesn't enforce
@@ -1543,25 +1561,19 @@ static int mdd_iocontrol(const struct lu_env *env, struct md_device *m,
                          unsigned int cmd, int len, void *karg)
 {
         struct mdd_device *mdd;
-        struct obd_ioctl_data *data = karg;
-        int rc;
+        /* struct obd_ioctl_data *data = karg; */
+        int rc = 0;
         ENTRY;
 
         mdd = lu2mdd_dev(&m->md_lu_dev);
 
         /* Doesn't use obd_ioctl_data */
-        switch (cmd) {
-        case OBD_IOC_CHANGELOG_CLEAR: {
+#ifdef XXX_MDD_CHANGELOG
+        if (cmd == OBD_IOC_CHANGELOG_CLEAR) {
                 struct changelog_setinfo *cs = karg;
                 rc = mdd_changelog_user_purge(env, mdd, cs->cs_id,
                                               cs->cs_recno);
                 RETURN(rc);
-        }
-        case OBD_IOC_GET_MNTOPT: {
-                mntopt_t *mntopts = (mntopt_t *)karg;
-                *mntopts = mdd->mdd_dt_conf.ddp_mntopts;
-                RETURN(0);
-        }
         }
 
         /* Below ioctls use obd_ioctl_data */
@@ -1586,7 +1598,7 @@ static int mdd_iocontrol(const struct lu_env *env, struct md_device *m,
         default:
                 rc = -ENOTTY;
         }
-
+#endif
         RETURN (rc);
 }
 
@@ -1597,10 +1609,11 @@ LU_TYPE_INIT_FINI(mdd, &mdd_thread_key, &mdd_ucred_key, &mdd_capainfo_key,
 const struct md_device_operations mdd_ops = {
         .mdo_statfs         = mdd_statfs,
         .mdo_root_get       = mdd_root_get,
-        .mdo_maxsize_get    = mdd_maxsize_get,
         .mdo_init_capa_ctxt = mdd_init_capa_ctxt,
         .mdo_update_capa_key= mdd_update_capa_key,
+#if 0
         .mdo_llog_ctxt_get  = mdd_llog_ctxt_get,
+#endif
         .mdo_iocontrol      = mdd_iocontrol,
 #ifdef HAVE_QUOTA_SUPPORT
         .mdo_quota          = {
@@ -1633,7 +1646,6 @@ static struct lu_device_type_operations mdd_device_type_ops = {
         .ldto_device_alloc = mdd_device_alloc,
         .ldto_device_free  = mdd_device_free,
 
-        .ldto_device_init    = mdd_device_init,
         .ldto_device_fini    = mdd_device_fini
 };
 
@@ -1651,10 +1663,6 @@ static void mdd_key_fini(const struct lu_context *ctx,
                          struct lu_context_key *key, void *data)
 {
         struct mdd_thread_info *info = data;
-        if (info->mti_max_lmm != NULL)
-                OBD_FREE(info->mti_max_lmm, info->mti_max_lmm_size);
-        if (info->mti_max_cookie != NULL)
-                OBD_FREE(info->mti_max_cookie, info->mti_max_cookie_size);
         mdd_buf_put(&info->mti_big_buf);
 
         OBD_FREE_PTR(info);

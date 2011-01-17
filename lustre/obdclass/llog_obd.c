@@ -172,6 +172,7 @@ int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
         ctxt = llog_new_ctxt(obd);
         if (!ctxt)
                 RETURN(-ENOMEM);
+        ctxt->loc_flags = LLOG_CTXT_FLAG_UNINITIALIZED;
 
         ctxt->loc_obd = obd;
         ctxt->loc_olg = olg;
@@ -179,7 +180,6 @@ int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
         ctxt->loc_logops = op;
         cfs_sema_init(&ctxt->loc_sem, 1);
         ctxt->loc_exp = class_export_get(disk_obd->obd_self_export);
-        ctxt->loc_flags = LLOG_CTXT_FLAG_UNINITIALIZED;
 
         rc = llog_group_set_ctxt(olg, ctxt, index);
         if (rc) {
@@ -214,8 +214,8 @@ int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
         }
 
         if (rc) {
-                CERROR("obd %s ctxt %d lop_setup=%p failed %d\n",
-                       obd->obd_name, index, op->lop_setup, rc);
+                /*CERROR("obd %s ctxt %d lop_setup=%p failed %d\n",
+                       obd->obd_name, index, op->lop_setup, rc);*/
                 llog_ctxt_put(ctxt);
         } else {
                 CDEBUG(D_CONFIG, "obd %s ctxt %d is initialized\n",
@@ -258,7 +258,7 @@ int llog_add(struct llog_ctxt *ctxt, struct llog_rec_hdr *rec,
         ENTRY;
 
         if (!ctxt) {
-                CERROR("No ctxt\n");
+                //CERROR("No ctxt\n");
                 RETURN(-ENODEV);
         }
 
@@ -284,7 +284,7 @@ int llog_cancel(struct llog_ctxt *ctxt, struct lov_stripe_md *lsm,
         ENTRY;
 
         if (!ctxt) {
-                CERROR("No ctxt\n");
+                //CERROR("No ctxt\n");
                 RETURN(-ENODEV);
         }
 
@@ -295,7 +295,7 @@ int llog_cancel(struct llog_ctxt *ctxt, struct lov_stripe_md *lsm,
 EXPORT_SYMBOL(llog_cancel);
 
 /* callback func for llog_process in llog_obd_origin_setup */
-static int cat_cancel_cb(struct llog_handle *cathandle,
+static int cat_cancel_cb(const struct lu_env *env, struct llog_handle *cathandle,
                           struct llog_rec_hdr *rec, void *data)
 {
         struct llog_logid_rec *lir = (struct llog_logid_rec *)rec;
@@ -312,7 +312,7 @@ static int cat_cancel_cb(struct llog_handle *cathandle,
                LPX64"\n", lir->lid_id.lgl_oid, lir->lid_id.lgl_ogen,
                rec->lrh_index, cathandle->lgh_id.lgl_oid);
 
-        rc = llog_cat_id2handle(cathandle, &loghandle, &lir->lid_id);
+        rc = llog_cat_id2handle(env, cathandle, &loghandle, &lir->lid_id);
         if (rc) {
                 CERROR("Cannot find handle for log "LPX64"\n",
                        lir->lid_id.lgl_oid);
@@ -326,7 +326,7 @@ static int cat_cancel_cb(struct llog_handle *cathandle,
         llh = loghandle->lgh_hdr;
         if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
             (llh->llh_count == 1)) {
-                rc = llog_destroy(loghandle);
+                rc = llog_destroy(env, loghandle);
                 if (rc)
                         CERROR("failure destroying log in postsetup: %d\n", rc);
 
@@ -336,7 +336,7 @@ static int cat_cancel_cb(struct llog_handle *cathandle,
 cat_cleanup:
                 LASSERT(index);
                 llog_cat_set_first_idx(cathandle, index);
-                rc = llog_cancel_rec(cathandle, index);
+                rc = llog_cancel_rec(env, cathandle, index);
                 if (rc == 0)
                         CDEBUG(D_HA, "cancel log "LPX64":%x at index %u of catalog "
                               LPX64"\n", lir->lid_id.lgl_oid,
@@ -355,7 +355,6 @@ int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
 {
         struct llog_ctxt *ctxt;
         struct llog_handle *handle;
-        struct lvfs_run_ctxt saved;
         int rc;
         ENTRY;
 
@@ -380,9 +379,7 @@ int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
                 GOTO(out, rc);
 
         ctxt->loc_handle = handle;
-        push_ctxt(&saved, &disk_obd->obd_lvfs_ctxt, NULL);
         rc = llog_init_handle(handle, LLOG_F_IS_CAT, NULL);
-        pop_ctxt(&saved, &disk_obd->obd_lvfs_ctxt, NULL);
         if (rc)
                 GOTO(out, rc);
 
@@ -400,11 +397,22 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
 {
         struct llog_handle *cathandle, *n, *loghandle;
         struct llog_log_hdr *llh;
+        struct dt_device    *dt;
+        struct lu_env        env;
         int rc, index;
         ENTRY;
 
         if (!ctxt)
                 RETURN(0);
+
+        dt = ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
+        LASSERT(dt);
+
+        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        if (rc) {
+                CERROR("can't initialize env: %d\n", rc);
+                RETURN(rc);
+        }
 
         cathandle = ctxt->loc_handle;
         if (cathandle) {
@@ -412,10 +420,14 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
                                              &cathandle->u.chd.chd_head,
                                              u.phd.phd_entry) {
                         llh = loghandle->lgh_hdr;
+                        if (llh == NULL) {
+                                /* open but not created llog (new api) */
+                                continue;
+                        }
                         if ((llh->llh_flags &
                                 LLOG_F_ZAP_WHEN_EMPTY) &&
                             (llh->llh_count == 1)) {
-                                rc = llog_destroy(loghandle);
+                                rc = llog_destroy(&env, loghandle);
                                 if (rc)
                                         CERROR("failure destroying log during "
                                                "cleanup: %d\n", rc);
@@ -425,7 +437,7 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
 
                                 LASSERT(index);
                                 llog_cat_set_first_idx(cathandle, index);
-                                rc = llog_cancel_rec(cathandle, index);
+                                rc = llog_cancel_rec(&env, cathandle, index);
                                 if (rc == 0)
                                         CDEBUG(D_RPCTRACE, "cancel plain log at"
                                                "index %u of catalog "LPX64"\n",
@@ -434,6 +446,7 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
                 }
                 llog_cat_put(ctxt->loc_handle);
         }
+        lu_env_fini(&env);
         RETURN(0);
 }
 EXPORT_SYMBOL(llog_obd_origin_cleanup);
@@ -455,6 +468,40 @@ int llog_obd_origin_add(struct llog_ctxt *ctxt,
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_obd_origin_add);
+
+int llog_obd_origin_add_2(const struct lu_env *env, struct llog_ctxt *ctxt,
+                          struct llog_rec_hdr *rec, struct lov_stripe_md *lsm,
+                          struct llog_cookie *logcookies, int numcookies,
+                          struct thandle *th)
+{
+        struct llog_handle *cathandle;
+        int rc;
+        ENTRY;
+
+        cathandle = ctxt->loc_handle;
+        LASSERT(cathandle != NULL);
+        rc = llog_cat_add_rec_2(env, cathandle, rec, logcookies, NULL, th);
+        if (rc != 0 && rc != 1)
+                CERROR("write one catalog record failed: %d\n", rc);
+        RETURN(rc);
+}
+EXPORT_SYMBOL(llog_obd_origin_add_2);
+
+int llog_obd_origin_declare_add(const struct lu_env *env, struct llog_ctxt *ctxt,
+                                struct llog_rec_hdr *rec, struct lov_stripe_md *lsm,
+                                struct thandle *th)
+{
+        struct llog_handle *cathandle;
+        int rc;
+        ENTRY;
+
+        LASSERT(ctxt);
+        cathandle = ctxt->loc_handle;
+        LASSERT(cathandle != NULL);
+        rc = llog_cat_declare_add_rec(env, cathandle, rec, th);
+        RETURN(rc);
+}
+EXPORT_SYMBOL(llog_obd_origin_declare_add);
 
 int obd_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
                   struct obd_device *disk_obd, int *index)

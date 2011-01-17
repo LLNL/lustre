@@ -330,49 +330,13 @@ int osc_quota_poll_check(struct obd_export *exp, struct if_quotacheck *qchk)
         int rc;
         ENTRY;
 
-        qchk->obd_uuid = cli->cl_target_uuid;
-        memcpy(qchk->obd_type, LUSTRE_OST_NAME, strlen(LUSTRE_OST_NAME));
-
         rc = cli->cl_qchk_stat;
         /* the client is not the previous one */
         if (rc == CL_NOT_QUOTACHECKED)
                 rc = -EINTR;
-        RETURN(rc);
-}
 
-int osc_quota_adjust_qunit(struct obd_export *exp,
-                           struct quota_adjust_qunit *oqaq,
-                           struct lustre_quota_ctxt *qctxt,
-                           struct ptlrpc_request_set *rqset)
-{
-        struct ptlrpc_request     *req;
-        struct quota_adjust_qunit *oqa;
-        int                        rc = 0;
-        ENTRY;
+        qchk->obd_uuid = cli->cl_target_uuid;
+        memcpy(qchk->obd_type, LUSTRE_OST_NAME, strlen(LUSTRE_OST_NAME));
 
-        /* client don't support this kind of operation, abort it */
-        if (!(exp->exp_connect_flags & OBD_CONNECT_CHANGE_QS)) {
-                CDEBUG(D_QUOTA, "osc: %s don't support change qunit size\n",
-                       exp->exp_obd->obd_name);
-                RETURN(rc);
-        }
-        if (strcmp(exp->exp_obd->obd_type->typ_name, LUSTRE_OSC_NAME))
-                RETURN(-EINVAL);
-
-        LASSERT(rqset);
-
-        req = ptlrpc_request_alloc_pack(class_exp2cliimp(exp),
-                                        &RQF_OST_QUOTA_ADJUST_QUNIT,
-                                        LUSTRE_OST_VERSION,
-                                        OST_QUOTA_ADJUST_QUNIT);
-        if (req == NULL)
-                RETURN(-ENOMEM);
-
-        oqa = req_capsule_client_get(&req->rq_pill, &RMF_QUOTA_ADJUST_QUNIT);
-        *oqa = *oqaq;
-
-        ptlrpc_request_set_replen(req);
-
-        ptlrpc_set_add_req(rqset, req);
         RETURN(rc);
 }

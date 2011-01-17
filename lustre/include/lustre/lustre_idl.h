@@ -422,6 +422,7 @@ enum fid_seq {
         FID_SEQ_START      = 0x200000000ULL,
         FID_SEQ_LOCAL_FILE = 0x200000001ULL,
         FID_SEQ_DOT_LUSTRE = 0x200000002ULL,
+        FID_SEQ_LLOG_OBJ   = 0x200000003ULL,
         FID_SEQ_NORMAL     = 0x200000400ULL,
         FID_SEQ_LOV_DEFAULT= 0xffffffffffffffffULL
 };
@@ -517,6 +518,13 @@ static inline obd_id fid_idif_id(obd_seq seq, __u32 oid, __u32 ver)
         return ((__u64)ver << 48) | ((seq & 0xffff) << 32) | oid;
 }
 
+/* extract ost index from IDIF FID */
+static inline __u32 fid_idif_ost_idx(const struct lu_fid *fid)
+{
+        LASSERT(fid_is_idif(fid));
+        return (fid_seq(fid) >> 16) & 0xffff;
+}
+
 /* unpack an ostid (id/seq) from a wire/disk structure into an IDIF FID */
 static inline void ostid_idif_unpack(struct ost_id *ostid,
                                      struct lu_fid *fid, __u32 ost_idx)
@@ -596,21 +604,21 @@ static inline int fid_ostid_unpack(struct lu_fid *fid, struct ost_id *ostid,
 }
 
 /* pack an IDIF FID into an ostid (id/seq) for the wire/disk */
-static inline void ostid_idif_pack(struct lu_fid *fid, struct ost_id *ostid)
+static inline void ostid_idif_pack(const struct lu_fid *fid, struct ost_id *ostid)
 {
         ostid->oi_seq = FID_SEQ_OST_MDT0;
         ostid->oi_id  = fid_idif_id(fid->f_seq, fid->f_oid, fid->f_ver);
 }
 
 /* pack a non-IDIF FID into an ostid (id/seq) for the wire/disk */
-static inline void ostid_fid_pack(struct lu_fid *fid, struct ost_id *ostid)
+static inline void ostid_fid_pack(const struct lu_fid *fid, struct ost_id *ostid)
 {
         ostid->oi_seq = fid_seq(fid);
         ostid->oi_id  = fid_ver_oid(fid);
 }
 
 /* pack any OST FID into an ostid (id/seq) for the wire/disk */
-static inline int fid_ostid_pack(struct lu_fid *fid, struct ost_id *ostid)
+static inline int fid_ostid_pack(const struct lu_fid *fid, struct ost_id *ostid)
 {
         if (unlikely(fid_seq_is_igif(fid->f_seq))) {
                 CERROR("bad IGIF, "DFID"\n", PFID(fid));
@@ -763,8 +771,10 @@ static inline int lu_fid_eq(const struct lu_fid *f0,
         /* Check that there is no alignment padding. */
         CLASSERT(sizeof *f0 ==
                  sizeof f0->f_seq + sizeof f0->f_oid + sizeof f0->f_ver);
-        LASSERTF(fid_is_igif(f0) || fid_ver(f0) == 0, DFID, PFID(f0));
-        LASSERTF(fid_is_igif(f1) || fid_ver(f1) == 0, DFID, PFID(f1));
+        LASSERTF((fid_is_igif(f0) || fid_is_idif(f0)) || fid_ver(f0) == 0,
+                 DFID, PFID(f0));
+        LASSERTF((fid_is_igif(f1) || fid_is_idif(f1)) || fid_ver(f1) == 0,
+                 DFID, PFID(f1));
         return memcmp(f0, f1, sizeof *f0) == 0;
 }
 
@@ -1311,6 +1321,21 @@ enum obdo_flags {
 #define LOV_MAGIC_JOIN_V1 0x0BD20BD0
 #define LOV_MAGIC_V3      0x0BD30BD0
 
+/*
+ * magic for fully defined striping
+ * the idea is that we should have different magics for striping "hints"
+ * (struct lov_user_md_v[13]) and defined ready-to-use striping (struct
+ * lov_mds_md_v[13]). at the moment the magics are used in wire protocol,
+ * we can't just change it w/o long way preparation, but we still need a
+ * mechanism to allow LOD to differentiate hint versus ready striping.
+ * so, at the moment we do a trick: MDT knows what to expect from request
+ * depending on the case (replay uses ready striping, non-replay req uses
+ * hints), so MDT replaces magic with appropriate one and now LOD can
+ * easily understand what's inside -bzzz
+ */
+#define LOV_MAGIC_V1_DEF  0x0CD10BD0
+#define LOV_MAGIC_V3_DEF  0x0CD30BD0
+
 #define LOV_PATTERN_RAID0 0x001   /* stripes are used round-robin */
 #define LOV_PATTERN_RAID1 0x002   /* stripes are mirrors of each other */
 #define LOV_PATTERN_FIRST 0x100   /* first stripe is not in round-robin */
@@ -1353,8 +1378,8 @@ struct lov_mds_md_v1 {            /* LOV EA mds/wire data (little-endian) */
 #define XATTR_NAME_LMA          "trusted.lma"
 #define XATTR_NAME_LMV          "trusted.lmv"
 #define XATTR_NAME_LINK         "trusted.link"
+#define XATTR_NAME_FID          "trusted.fid"
 #define XATTR_NAME_VERSION      "trusted.version"
-
 
 struct lov_mds_md_v3 {            /* LOV EA mds/wire data (little-endian) */
         __u32 lmm_magic;          /* magic number = LOV_MAGIC_V3 */
@@ -1903,9 +1928,8 @@ enum {
         MDS_PERM_BYPASS   = 1 << 3,
         MDS_SOM           = 1 << 4,
         MDS_QUOTA_IGNORE  = 1 << 5,
-        MDS_CLOSE_CLEANUP = 1 << 6,
-        MDS_KEEP_ORPHAN   = 1 << 7,
-        MDS_RECOV_OPEN    = 1 << 8,
+        MDS_KEEP_ORPHAN   = 1 << 6,
+        MDS_RECOV_OPEN    = 1 << 7,
 };
 
 /* instance of mdt_reint_rec */
@@ -2516,7 +2540,7 @@ struct llog_rec_hdr {
         __u32                   lrh_len;
         __u32                   lrh_index;
         __u32                   lrh_type;
-        __u32                   lrh_padding;
+        __u32                   lrh_id;
 };
 
 struct llog_rec_tail {

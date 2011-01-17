@@ -984,7 +984,7 @@ static int quotactl_ioctl(struct ll_sb_info *sbi, struct if_quotactl *qctl)
                  * space usage from OSSs by itself */
                 if (cmd == Q_GETQUOTA &&
                     !(oqctl->qc_dqblk.dqb_valid & QIF_SPACE) &&
-                    !oqctl->qc_dqblk.dqb_curspace) {
+                    oqctl->qc_dqblk.dqb_curspace == 0) {
                         struct obd_quotactl *oqctl_tmp;
 
                         OBD_ALLOC_PTR(oqctl_tmp);
