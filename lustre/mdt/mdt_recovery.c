@@ -175,6 +175,45 @@ err_client:
         RETURN(rc);
 }
 
+static int mdt_truncate_last_rcvd(const struct lu_env *env,
+                                  struct mdt_device *mdt,
+                                  loff_t size)
+{
+        struct dt_object *dt = mdt->mdt_lut.lut_last_rcvd;
+        struct thandle   *th;
+        struct lu_attr    attr;
+        int               rc;
+        ENTRY;
+
+        attr.la_size = size;
+        attr.la_valid = LA_SIZE;
+
+        th = dt_trans_create(env, mdt->mdt_bottom);
+        if (IS_ERR(th))
+                RETURN(PTR_ERR(th));
+
+        rc = dt_declare_punch(env, dt, size, OBD_OBJECT_EOF, th);
+        if (rc)
+                GOTO(cleanup, rc);
+
+        rc = dt_declare_attr_set(env, dt, &attr, th);
+        if (rc)
+                GOTO(cleanup, rc);
+
+        rc = dt_trans_start(env, mdt->mdt_bottom, th);
+        if (rc)
+                GOTO(cleanup, rc);
+
+        rc = dt_punch(env, dt, size, OBD_OBJECT_EOF, th, BYPASS_CAPA);
+        if (rc == 0)
+                rc = dt_attr_set(env, dt, &attr, th, BYPASS_CAPA);
+
+cleanup:
+        dt_trans_stop(env, mdt->mdt_bottom, th);
+
+        RETURN(rc);
+}
+
 static int mdt_server_data_init(const struct lu_env *env,
                                 struct mdt_device *mdt,
                                 struct lustre_sb_info *lsi)
@@ -270,8 +309,16 @@ static int mdt_server_data_init(const struct lu_env *env,
                 /** set 2.0 flag to upgrade/downgrade between 1.8 and 2.0 */
                 lsd->lsd_feature_compat |= OBD_COMPAT_20;
         }
+        if (mdt->mdt_opts.mo_abort_recov) {
+                LCONSOLE_WARN("%s: abort recovery: remove all clients\n",
+                              obd->obd_name);
+                rc = mdt_truncate_last_rcvd(env, mdt, lsd->lsd_client_start);
+                if (rc)
+                        GOTO(out, rc);
+                last_rcvd_size = lsd->lsd_client_start;
+        }
 
-	if (lsi->lsi_ldd->ldd_flags & LDD_F_IAM_DIR)
+	if (lsi->lsi_flags & LDD_F_IAM_DIR)
                 lsd->lsd_feature_incompat |= OBD_INCOMPAT_IAM_DIR;
 
         lsd->lsd_feature_incompat |= OBD_INCOMPAT_FID;
@@ -523,6 +570,7 @@ static int mdt_txn_stop_cb(const struct lu_env *env,
 
         req->rq_transno = mti->mti_transno;
         lustre_msg_set_transno(req->rq_repmsg, mti->mti_transno);
+
         /* if can't add callback, do sync write */
         txn->th_sync |= !!lut_last_commit_cb_add(txn, &mdt->mdt_lut,
                                                  mti->mti_exp,

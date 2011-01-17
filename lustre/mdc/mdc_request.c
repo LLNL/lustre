@@ -1224,7 +1224,9 @@ struct changelog_show {
         struct obd_device *cs_obd;
 };
 
-static int changelog_show_cb(struct llog_handle *llh, struct llog_rec_hdr *hdr,
+static int changelog_show_cb(const struct lu_env *env,
+                             struct llog_handle *llh,
+                             struct llog_rec_hdr *hdr,
                              void *data)
 {
         struct changelog_show *cs = data;
@@ -1303,7 +1305,8 @@ static int mdc_changelog_send_thread(void *csdata)
                 GOTO(out, rc);
         }
 
-        rc = llog_cat_process_flags(llh, changelog_show_cb, cs, 0, 0, 0);
+        /* We need the pipe fd open, so llog_process can't daemonize */
+        rc = __llog_cat_process(NULL, llh, changelog_show_cb, cs, 0, 0, 0);
 
         /* Send EOF no matter what our result */
         if ((kuch = changelog_kuc_hdr(cs->cs_buf, sizeof(*kuch),
@@ -1359,6 +1362,23 @@ static int mdc_ioc_changelog_send(struct obd_device *obd,
 static int mdc_ioc_hsm_ct_start(struct obd_export *exp,
                                 struct lustre_kernelcomm *lk);
 
+static int mdc_quota_poll_check(struct obd_export *exp,
+                                struct if_quotacheck *qchk)
+{
+        struct client_obd *cli = &exp->exp_obd->u.cli;
+        int rc;
+        ENTRY;
+
+        qchk->obd_uuid = cli->cl_target_uuid;
+        memcpy(qchk->obd_type, LUSTRE_MDS_NAME, strlen(LUSTRE_MDS_NAME));
+
+        rc = cli->cl_qchk_stat;
+        /* the client is not the previous one */
+        if (rc == CL_NOT_QUOTACHECKED)
+                rc = -EINTR;
+        RETURN(rc);
+}
+
 static int mdc_quotacheck(struct obd_device *unused, struct obd_export *exp,
                           struct obd_quotactl *oqctl)
 {
@@ -1386,23 +1406,6 @@ static int mdc_quotacheck(struct obd_device *unused, struct obd_export *exp,
         if (rc)
                 cli->cl_qchk_stat = rc;
         ptlrpc_req_finished(req);
-        RETURN(rc);
-}
-
-static int mdc_quota_poll_check(struct obd_export *exp,
-                                struct if_quotacheck *qchk)
-{
-        struct client_obd *cli = &exp->exp_obd->u.cli;
-        int rc;
-        ENTRY;
-
-        qchk->obd_uuid = cli->cl_target_uuid;
-        memcpy(qchk->obd_type, LUSTRE_MDS_NAME, strlen(LUSTRE_MDS_NAME));
-
-        rc = cli->cl_qchk_stat;
-        /* the client is not the previous one */
-        if (rc == CL_NOT_QUOTACHECKED)
-                rc = -EINTR;
         RETURN(rc);
 }
 

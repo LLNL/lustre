@@ -37,6 +37,8 @@
 
 #include <lustre_quota.h>
 
+#ifdef HAVE_QUOTA_SUPPORT
+
 /* QUSG covnert bytes to blocks when counting block quota */
 #define QUSG(count, isblk)      (isblk ? toqb(count) : count)
 
@@ -188,5 +190,7 @@ extern cfs_proc_dir_entry_t *lquota_type_proc_dir;
 
 /* the return status of quota operation */
 #define QUOTA_REQ_RETURNED 1
+
+#endif
 
 #endif

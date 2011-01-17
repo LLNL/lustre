@@ -1,6 +1,7 @@
 MODULES := obdclass llog_test
 
-obdclass-linux-objs := linux-module.o linux-obdo.o linux-sysctl.o
+obdclass-linux-objs := linux-module.o linux-obdo.o linux-obd_mount.o
+obdclass-linux-objs += linux-sysctl.o
 obdclass-linux-objs := $(addprefix linux/,$(obdclass-linux-objs))
 
 default: all
@@ -9,6 +10,7 @@ sources:
 
 obdclass-all-objs := llog.o llog_cat.o llog_lvfs.o llog_obd.o llog_swab.o
 obdclass-all-objs += class_obd.o debug.o genops.o uuid.o llog_ioctl.o
+obdclass-all-objs += llog_osd.o
 obdclass-all-objs += lprocfs_status.o lustre_handles.o lustre_peer.o
 obdclass-all-objs += statfs_pack.o obdo.o obd_config.o obd_mount.o mea.o
 obdclass-all-objs += lu_object.o dt_object.o capa.o lu_time.o

@@ -98,6 +98,7 @@ struct mdt_file_data {
 struct mdt_device {
         /* super-class */
         struct md_device           mdt_md_dev;
+        struct md_site             mdt_mite;
         struct ptlrpc_service     *mdt_regular_service;
         struct ptlrpc_service     *mdt_readpage_service;
         struct ptlrpc_service     *mdt_xmds_service;
@@ -111,6 +112,8 @@ struct mdt_device {
         /* ptlrpc handle for MDS->client connections (for lock ASTs). */
         struct ptlrpc_client      *mdt_ldlm_client;
         /* underlying device */
+        /* reference to the next dev in the stack */
+        struct obd_export         *mdt_child_exp;
         struct md_device          *mdt_child;
         struct dt_device          *mdt_bottom;
         /** target device */
@@ -124,7 +127,8 @@ struct mdt_device {
                                    mo_compat_resname:1,
                                    mo_mds_capa   :1,
                                    mo_oss_capa   :1,
-                                   mo_cos        :1;
+                                   mo_cos        :1,
+                                   mo_abort_recov:1;
         } mdt_opts;
         /* mdt state flags */
         unsigned long              mdt_state;
@@ -135,12 +139,10 @@ struct mdt_device {
         /* transaction callbacks */
         struct dt_txn_callback     mdt_txn_cb;
 
-        /* these values should be updated from lov if necessary.
-         * or should be placed somewhere else. */
+        /* This is cached value of maximum seen mdsize */
         int                        mdt_max_mdsize;
-        int                        mdt_max_cookiesize;
 
-        struct upcall_cache        *mdt_identity_cache;
+        struct upcall_cache       *mdt_identity_cache;
 
         /* sptlrpc rules */
         cfs_rwlock_t               mdt_sptlrpc_lock;
@@ -277,7 +279,7 @@ struct mdt_thread_info {
 
         /* although we have export in req, there are cases when it is not
          * available, e.g. closing files upon export destroy */
-        struct obd_export          *mti_exp;
+        struct obd_export         *mti_exp;
         /*
          * A couple of lock handles.
          */
@@ -369,7 +371,7 @@ struct mdt_thread_info {
                 struct obd_uuid    uuid[2];       /* for mdt_seq_init_cli()  */
                 char               ns_name[48];   /* for mdt_init0()         */
                 struct lustre_cfg_bufs bufs;      /* for mdt_stack_fini()    */
-                cfs_kstatfs_t      ksfs;          /* for mdt_statfs()        */
+                struct obd_statfs  osfs;          /* for mdt_statfs()        */
                 struct {
                         /* for mdt_readpage()      */
                         struct lu_rdpg     mti_rdpg;
@@ -460,9 +462,9 @@ static inline struct lu_site *mdt_lu_site(const struct mdt_device *mdt)
         return mdt->mdt_md_dev.md_lu_dev.ld_site;
 }
 
-static inline struct md_site *mdt_md_site(const struct mdt_device *mdt)
+static inline struct md_site *mdt_md_site(struct mdt_device *mdt)
 {
-        return lu_site2md(mdt_lu_site(mdt));
+        return &mdt->mdt_mite;
 }
 
 static inline void mdt_export_evict(struct obd_export *exp)
