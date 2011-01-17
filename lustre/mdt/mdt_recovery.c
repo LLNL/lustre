@@ -80,54 +80,68 @@ const struct lu_buf *mdt_buf_const(const struct lu_env *env,
         return buf;
 }
 
-static inline int mdt_trans_credit_get(const struct lu_env *env,
-                                       struct mdt_device *mdt,
-                                       enum mdt_txn_op op)
+int mdt_record_read(const struct lu_env *env,
+                    struct dt_object *dt, struct lu_buf *buf, loff_t *pos)
 {
-        struct dt_device *dev = mdt->mdt_bottom;
-        int cr;
-        switch (op) {
-                case MDT_TXN_CAPA_KEYS_WRITE_OP:
-                case MDT_TXN_LAST_RCVD_WRITE_OP:
-                        cr = dev->dd_ops->dt_credit_get(env,
-                                                        dev,
-                                                        DTO_WRITE_BLOCK);
-                break;
-                default:
-                        LBUG();
-        }
-        return cr;
+        int rc;
+
+        LASSERTF(dt != NULL, "dt is NULL when we want to read record\n");
+
+        rc = dt->do_body_ops->dbo_read(env, dt, buf, pos, BYPASS_CAPA);
+
+        if (rc == buf->lb_len)
+                rc = 0;
+        else if (rc >= 0)
+                rc = -EFAULT;
+        return rc;
 }
 
-void mdt_trans_credit_init(const struct lu_env *env,
-                           struct mdt_device *mdt,
-                           enum mdt_txn_op op)
+int mdt_declare_record_write(const struct lu_env *env,
+                             struct dt_object *dt, const loff_t size,
+                             loff_t pos, struct thandle *th)
 {
-        struct mdt_thread_info *mti;
-        struct txn_param *p;
-        int cr;
+        int rc;
 
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        p = &mti->mti_txn_param;
-
-        cr = mdt_trans_credit_get(env, mdt, op);
-        txn_param_init(p, cr);
+        LASSERTF(dt != NULL, "dt is NULL when we want to write record\n");
+        LASSERT(th != NULL);
+        rc = dt->do_body_ops->dbo_declare_write(env, dt, size, pos, th);
+        return rc;
 }
 
-struct thandle* mdt_trans_start(const struct lu_env *env,
+int mdt_record_write(const struct lu_env *env,
+                     struct dt_object *dt, const struct lu_buf *buf,
+                     loff_t *pos, struct thandle *th)
+{
+        int rc;
+
+        LASSERTF(dt != NULL, "dt is NULL when we want to write record\n");
+        LASSERT(th != NULL);
+        rc = dt->do_body_ops->dbo_write(env, dt, buf, pos, th, BYPASS_CAPA, 1);
+        if (rc == buf->lb_len)
+                rc = 0;
+        else if (rc >= 0)
+                rc = -EFAULT;
+        return rc;
+}
+
+struct thandle* mdt_trans_create(const struct lu_env *env,
                                 struct mdt_device *mdt)
 {
-        struct mdt_thread_info *mti;
-        struct txn_param *p;
+        return mdt->mdt_bottom->dd_ops->dt_trans_create(env, mdt->mdt_bottom);
+}
 
+int mdt_trans_start(const struct lu_env *env,
+                                struct mdt_device *mdt, struct thandle *th)
+{
+
+        struct mdt_thread_info *mti;
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        p = &mti->mti_txn_param;
 
         /* export can require sync operations */
         if (mti->mti_exp != NULL)
-                p->tp_sync = mti->mti_exp->exp_need_sync;
+                th->th_sync = mti->mti_exp->exp_need_sync;
 
-        return mdt->mdt_bottom->dd_ops->dt_trans_start(env, mdt->mdt_bottom, p);
+        return mdt->mdt_bottom->dd_ops->dt_trans_start(env, mdt->mdt_bottom, th);
 }
 
 void mdt_trans_stop(const struct lu_env *env,
@@ -334,6 +348,41 @@ err_client:
         RETURN(rc);
 }
 
+static int mdt_truncate_last_rcvd(const struct lu_env *env,
+                                  struct mdt_device *mdt,
+                                  loff_t size)
+{
+        struct dt_object *dt = mdt->mdt_lut.lut_last_rcvd;
+        struct thandle   *th;
+        struct lu_attr    attr;
+        int               rc;
+        ENTRY;
+
+        attr.la_size = size;
+        attr.la_valid = LA_SIZE;
+
+        th = mdt_trans_create(env, mdt);
+        if (IS_ERR(th))
+                RETURN(PTR_ERR(th));
+        rc = dt_declare_punch(env, dt, size, OBD_OBJECT_EOF, th);
+        if (rc)
+                GOTO(cleanup, rc);
+        rc = dt_declare_attr_set(env, dt, &attr, th);
+        LASSERT(rc == 0);
+        rc = mdt_trans_start(env, mdt, th);
+        if (rc)
+                GOTO(cleanup, rc);
+
+        rc = dt_punch(env, dt, size, OBD_OBJECT_EOF, th, BYPASS_CAPA);
+        if (rc == 0)
+                rc = dt_attr_set(env, dt, &attr, th, BYPASS_CAPA);
+
+cleanup:
+        mdt_trans_stop(env, mdt, th);
+
+        RETURN(rc);
+}
+
 static int mdt_server_data_init(const struct lu_env *env,
                                 struct mdt_device *mdt,
                                 struct lustre_sb_info *lsi)
@@ -344,7 +393,6 @@ static int mdt_server_data_init(const struct lu_env *env,
         struct mdt_thread_info *mti;
         struct dt_object       *obj;
         struct lu_attr         *la;
-        struct lustre_disk_data  *ldd;
         unsigned long last_rcvd_size;
         __u64 mount_count;
         int rc;
@@ -401,8 +449,6 @@ static int mdt_server_data_init(const struct lu_env *env,
         }
         mount_count = lsd->lsd_mount_count;
 
-        ldd = lsi->lsi_ldd;
-
         if (lsd->lsd_feature_incompat & ~MDT_INCOMPAT_SUPP) {
                 CERROR("%s: unsupported incompat filesystem feature(s) %x\n",
                        obd->obd_name,
@@ -422,16 +468,26 @@ static int mdt_server_data_init(const struct lu_env *env,
                         LCONSOLE_WARN("Mounting %s at first time on 1.8 FS, "
                                       "remove all clients for interop needs\n",
                                       obd->obd_name);
-                        simple_truncate(lsi->lsi_srv_mnt->mnt_sb->s_root,
-                                        lsi->lsi_srv_mnt, LAST_RCVD,
-                                        lsd->lsd_client_start);
+                        rc = mdt_truncate_last_rcvd(env, mdt,
+                                                    lsd->lsd_client_start);
+                        if (rc)
+                                GOTO(out, rc);
                         last_rcvd_size = lsd->lsd_client_start;
                 }
                 /** set 2.0 flag to upgrade/downgrade between 1.8 and 2.0 */
                 lsd->lsd_feature_compat |= OBD_COMPAT_20;
         }
+        if (mdt->mdt_opts.mo_abort_recov) {
+                LCONSOLE_WARN("%s: abort recovery: remove all clients\n",
+                              obd->obd_name);
+                rc = mdt_truncate_last_rcvd(env, mdt, lsd->lsd_client_start);
+                if (rc)
+                        GOTO(out, rc);
+                last_rcvd_size = lsd->lsd_client_start;
+        }
 
-        if (ldd->ldd_flags & LDD_F_IAM_DIR)
+        /* XXX: how to pass lsi? */
+        if (lsi->lsi_flags & LDD_F_IAM_DIR)
                 lsd->lsd_feature_incompat |= OBD_INCOMPAT_IAM_DIR;
 
         lsd->lsd_feature_incompat |= OBD_INCOMPAT_FID;
@@ -500,10 +556,16 @@ static int mdt_server_data_update(const struct lu_env *env,
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
 
-        mdt_trans_credit_init(env, mdt, MDT_TXN_LAST_RCVD_WRITE_OP);
-        th = mdt_trans_start(env, mdt);
+        th = mdt_trans_create(env, mdt);
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
+        rc = mdt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
+                        sizeof(mti->mti_lsd), mti->mti_off, th);
+        if (rc)
+                GOTO(out, rc);
+        rc = mdt_trans_start(env, mdt, th);
+        if (rc)
+                GOTO(out, rc);
 
         CDEBUG(D_SUPER, "MDS mount_count is "LPU64", last_transno is "LPU64"\n",
                mdt->mdt_lut.lut_obd->u.obt.obt_mount_count,
@@ -514,6 +576,8 @@ static int mdt_server_data_update(const struct lu_env *env,
         cfs_spin_unlock(&mdt->mdt_lut.lut_translock);
 
         rc = mdt_last_rcvd_header_write(env, mdt, th);
+
+out:
         mdt_trans_stop(env, mdt, th);
         return rc;
 }
@@ -572,11 +636,17 @@ int mdt_client_new(const struct lu_env *env, struct mdt_device *mdt)
         if (OBD_FAIL_CHECK(OBD_FAIL_TGT_CLIENT_ADD))
                 RETURN(-ENOSPC);
 
-        mdt_trans_credit_init(env, mdt, MDT_TXN_LAST_RCVD_WRITE_OP);
-
-        th = mdt_trans_start(env, mdt);
+        th = mdt_trans_create(env, mdt);
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
+
+        rc = mdt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
+                                      sizeof(*ted->ted_lcd), off, th);
+        if (rc)
+                GOTO(cleanup, rc);
+        rc = mdt_trans_start(env, mdt, th);
+        if (rc)
+                GOTO(cleanup, rc);
 
         /*
          * Until this operations will be committed the sync is needed
@@ -592,6 +662,7 @@ int mdt_client_new(const struct lu_env *env, struct mdt_device *mdt)
         rc = mdt_last_rcvd_write(env, mdt, ted->ted_lcd, &off, th);
         CDEBUG(D_INFO, "wrote client lcd at idx %u off %llu (len %u)\n",
                cl_idx, ted->ted_lr_off, (int)sizeof(*(ted->ted_lcd)));
+cleanup:
         mdt_trans_stop(env, mdt, th);
 
         RETURN(rc);
@@ -654,7 +725,7 @@ int mdt_client_del(const struct lu_env *env, struct mdt_device *mdt)
         struct tg_export_data  *ted;
         struct obd_device      *obd = mdt2obd_dev(mdt);
         struct obd_export      *exp;
-        struct thandle         *th;
+        struct thandle         *th = NULL;
         loff_t                  off;
         int                     rc = 0;
         ENTRY;
@@ -701,15 +772,22 @@ int mdt_client_del(const struct lu_env *env, struct mdt_device *mdt)
          * be in server data or in client data in case of failure */
         mdt_server_data_update(env, mdt);
 
-        mdt_trans_credit_init(env, mdt, MDT_TXN_LAST_RCVD_WRITE_OP);
-        th = mdt_trans_start(env, mdt);
+        th = mdt_trans_create(env, mdt);
         if (IS_ERR(th))
                 GOTO(free, rc = PTR_ERR(th));
+        rc = mdt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
+                                      sizeof(*ted->ted_lcd), off, th);
+        if (rc)
+                GOTO(trans_stop, rc);
+        rc = mdt_trans_start(env, mdt, th);
+        if (rc)
+                GOTO(trans_stop, rc);
 
         cfs_mutex_down(&ted->ted_lcd_lock);
         memset(ted->ted_lcd->lcd_uuid, 0, sizeof ted->ted_lcd->lcd_uuid);
         rc = mdt_last_rcvd_write(env, mdt, ted->ted_lcd, &off, th);
         cfs_mutex_up(&ted->ted_lcd_lock);
+trans_stop:
         mdt_trans_stop(env, mdt, th);
 
         CDEBUG(rc == 0 ? D_INFO : D_ERROR, "Zeroing out client idx %u in "
@@ -823,13 +901,23 @@ extern struct lu_context_key mdt_thread_key;
 
 /* add credits for last_rcvd update */
 static int mdt_txn_start_cb(const struct lu_env *env,
-                            struct txn_param *param, void *cookie)
+                            struct thandle *th, void *cookie)
 {
         struct mdt_device *mdt = cookie;
+        struct mdt_thread_info *mti;
+        loff_t off;
+        int rc;
 
-        param->tp_credits += mdt_trans_credit_get(env, mdt,
-                                                  MDT_TXN_LAST_RCVD_WRITE_OP);
-        return 0;
+        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
+
+        LASSERT(mdt->mdt_lut.lut_last_rcvd);
+        off = mti->mti_exp ?
+                mti->mti_exp->exp_mdt_data.med_ted.ted_lr_off : 0;
+        rc = mdt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
+                                      sizeof(struct lsd_client_data), off, th);
+        rc = mdt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
+                                      sizeof(mti->mti_lsd), 0, th);
+        return rc;
 }
 
 /* Set new object versions */
@@ -917,7 +1005,14 @@ static int mdt_txn_commit_cb(const struct lu_env *env,
         struct mdt_txn_info *txi;
         int i;
 
+        LASSERT(txn);
+        LASSERT(mdt);
+
         txi = lu_context_key_get(&txn->th_ctx, &mdt_txn_key);
+        /* there is a race window between creation of new context in tx handle
+         * and mdt registering commit context since OSD is started before MDT */
+        if (unlikely(txi == NULL))
+                return 0;
 
         /* iterate through all additional callbacks */
         for (i = 0; i < txi->txi_cb_count; i++) {

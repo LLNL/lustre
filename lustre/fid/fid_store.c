@@ -73,25 +73,27 @@ static struct lu_buf *seq_store_buf(struct seq_thread_info *info)
         return buf;
 }
 
-struct thandle *seq_store_trans_start(struct lu_server_seq *seq,
-                                      const struct lu_env *env, int credit,
-                                      int sync)
+struct thandle * seq_store_trans_create(struct lu_server_seq *seq,
+                                        const struct lu_env *env)
 {
-        struct seq_thread_info *info;
         struct dt_device *dt_dev;
         struct thandle *th;
         ENTRY;
 
         dt_dev = lu2dt_dev(seq->lss_obj->do_lu.lo_dev);
-        info = lu_context_key_get(&env->le_ctx, &seq_thread_key);
-        LASSERT(info != NULL);
-
-        txn_param_init(&info->sti_txn, credit);
-        if (sync)
-                txn_param_sync(&info->sti_txn);
-
-        th = dt_dev->dd_ops->dt_trans_start(env, dt_dev, &info->sti_txn);
+        th = dt_dev->dd_ops->dt_trans_create(env, dt_dev);
         return th;
+}
+
+int seq_store_trans_start(struct lu_server_seq *seq, const struct lu_env *env,
+                          struct thandle *th)
+{
+        struct dt_device *dt_dev;
+        ENTRY;
+
+        dt_dev = lu2dt_dev(seq->lss_obj->do_lu.lo_dev);
+
+        return dt_dev->dd_ops->dt_trans_start(env, dt_dev, th);
 }
 
 void seq_store_trans_stop(struct lu_server_seq *seq,
@@ -104,6 +106,20 @@ void seq_store_trans_stop(struct lu_server_seq *seq,
         dt_dev = lu2dt_dev(seq->lss_obj->do_lu.lo_dev);
 
         dt_dev->dd_ops->dt_trans_stop(env, th);
+}
+
+int seq_declare_store_write(struct lu_server_seq *seq,
+                            const struct lu_env *env,
+                            struct thandle *th)
+{
+        struct dt_object *dt_obj = seq->lss_obj;
+        int rc;
+        ENTRY;
+
+        rc = dt_obj->do_body_ops->dbo_declare_write(env, dt_obj,
+                                                    sizeof(struct lu_seq_range),
+                                                    0, th);
+        return rc;
 }
 
 /* This function implies that caller takes care about locking. */
@@ -145,14 +161,27 @@ int seq_store_update(const struct lu_env *env, struct lu_server_seq *seq,
 {
         struct thandle *th;
         int rc;
-        int credits = SEQ_TXN_STORE_CREDITS;
 
-        if (out != NULL)
-                credits += FLD_TXN_INDEX_INSERT_CREDITS;
-
-        th = seq_store_trans_start(seq, env, credits, sync);
+        th = seq_store_trans_create(seq, env);
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
+
+        th->th_sync = sync;
+
+        rc = seq_declare_store_write(seq, env, th);
+        if (rc)
+                GOTO(out, rc);
+
+        if (out != NULL) {
+                rc = fld_declare_server_create(seq->lss_site->ms_server_fld,
+                                               env, th);
+                if (rc)
+                        GOTO(out, rc);
+        }
+
+        rc = seq_store_trans_start(seq, env, th);
+        if (rc)
+                GOTO(out, rc);
 
         rc = seq_store_write(seq, env, th);
         if (rc) {
@@ -161,12 +190,11 @@ int seq_store_update(const struct lu_env *env, struct lu_server_seq *seq,
         } else if (out != NULL) {
                 rc = fld_server_create(seq->lss_site->ms_server_fld,
                                        env, out, th);
-                if (rc) {
+                if (rc)
                         CERROR("%s: Can't Update fld database, rc %d\n",
                                seq->lss_name, rc);
-                }
         }
-
+out:
         seq_store_trans_stop(seq, env, th);
         return rc;
 }

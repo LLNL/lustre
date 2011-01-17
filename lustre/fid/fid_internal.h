@@ -48,7 +48,6 @@
 #ifdef __KERNEL__
 struct seq_thread_info {
         struct req_capsule     *sti_pill;
-        struct txn_param        sti_txn;
         struct lu_seq_range     sti_space;
         struct lu_buf           sti_buf;
 };

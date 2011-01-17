@@ -43,7 +43,6 @@
 
 #include <lustre_acl.h>
 #include <lustre_eacl.h>
-#include <obd.h>
 #include <md_object.h>
 #include <dt_object.h>
 #include <linux/sched.h>
@@ -52,7 +51,9 @@
 #ifdef HAVE_QUOTA_SUPPORT
 # include <lustre_quota.h>
 #endif
-#include <lustre_fsfilt.h>
+#include <lustre_capa.h>
+#include <lprocfs_status.h>
+//#include <lustre_fsfilt.h>
 
 #ifdef HAVE_QUOTA_SUPPORT
 /* quota stuff */
@@ -103,8 +104,10 @@ struct mdd_txn_op_descr {
 /** some changelog records purged */
 #define CLM_PURGE 0x40000
 
+#ifdef XXX_MDD_CHANGELOG
 struct mdd_changelog {
         cfs_spinlock_t                   mc_lock;    /* for index */
+        cfs_waitq_t                      mc_waitq;
         int                              mc_flags;
         int                              mc_mask;
         __u64                            mc_index;
@@ -112,7 +115,7 @@ struct mdd_changelog {
         cfs_spinlock_t                   mc_user_lock;
         int                              mc_lastuser;
 };
-
+#endif
 /** Objects in .lustre dir */
 struct mdd_dot_lustre_objs {
         struct mdd_object *mdd_obf;
@@ -120,20 +123,24 @@ struct mdd_dot_lustre_objs {
 
 struct mdd_device {
         struct md_device                 mdd_md_dev;
+        struct obd_export               *mdd_child_exp;
         struct dt_device                *mdd_child;
-        struct obd_device               *mdd_obd_dev;
         struct lu_fid                    mdd_root_fid;
         struct dt_device_param           mdd_dt_conf;
-        struct dt_object                *mdd_orphans;
+        struct mdd_object               *mdd_orphans;
         struct dt_txn_callback           mdd_txn_cb;
         cfs_proc_dir_entry_t            *mdd_proc_entry;
         struct lprocfs_stats            *mdd_stats;
         struct mdd_txn_op_descr          mdd_tod[MDD_TXN_LAST_OP];
+#ifdef XXX_MDD_CHANGELOG
         struct mdd_changelog             mdd_cl;
+#endif
         unsigned long                    mdd_atime_diff;
         struct mdd_object               *mdd_dot_lustre;
         struct mdd_dot_lustre_objs       mdd_dot_lustre_objs;
         unsigned int                     mdd_sync_permission;
+        struct dt_object                *mdd_objid;
+        int                              mdd_connects;
 };
 
 enum mod_flags {
@@ -144,10 +151,6 @@ enum mod_flags {
         ORPHAN_OBJ = 1 << 3,
         MNLINK_OBJ = 1 << 4
 };
-
-#define LUSTRE_APPEND_FL LDISKFS_APPEND_FL
-#define LUSTRE_IMMUTABLE_FL LDISKFS_IMMUTABLE_FL
-#define LUSTRE_DIRSYNC_FL LDISKFS_DIRSYNC_FL
 
 enum mdd_object_role {
         MOR_SRC_PARENT,
@@ -171,68 +174,85 @@ struct mdd_object {
 #endif
 };
 
+#define MDD_TX_SANITY_CHECK
+
+struct mdd_tx_arg;
+
+typedef int (*mdd_tx_exec_func_t)(const struct lu_env *env, struct thandle *,
+                                  struct mdd_tx_arg *);
+
+struct mdd_tx_arg {
+        mdd_tx_exec_func_t                          exec_fn;
+        mdd_tx_exec_func_t                          undo_fn;
+        struct mdd_object                          *object;
+        char                                       *file;
+        int                                         line;
+        union {
+                struct {
+                        const struct dt_rec        *rec;
+                        const struct dt_key        *key;
+                } insert;
+                struct {
+                } ref;
+                struct {
+                        struct lu_attr              attr;
+                } attr_set;
+                struct {
+                        struct lu_buf               buf;
+                        const char                 *name;
+                        int                         flags;
+                        __u32                       csum;
+                } xattr_set;
+                struct {
+                        struct lu_attr              attr;
+                        struct dt_allocation_hint   hint;
+                        struct dt_object_format     dof;
+                } create;
+                struct {
+                        struct lu_buf               buf;
+                        loff_t                      pos;
+                } write;
+        } u;
+};
+
+#define MDD_TX_MAX_OPS          16
+
+struct mdd_thandle {
+        struct thandle    *mtx_handle;
+        struct mdd_device *mtx_dev;
+        int                mtx_err;
+        struct mdd_tx_arg  mtx_args[MDD_TX_MAX_OPS];
+        int                mtx_argno;   /* used args */
+};
+
+
 struct mdd_thread_info {
-        struct txn_param          mti_param;
         struct lu_fid             mti_fid;
         struct lu_fid             mti_fid2; /* used for be & cpu converting */
         struct lu_attr            mti_la;
         struct lu_attr            mti_la_for_fix;
         struct md_attr            mti_ma;
-        struct obd_info           mti_oi;
         char                      mti_orph_key[NAME_MAX + 1];
-        struct obd_trans_info     mti_oti;
         struct lu_buf             mti_buf;
         struct lu_buf             mti_big_buf; /* biggish persistent buf */
         struct lu_name            mti_name;
-        struct obdo               mti_oa;
         char                      mti_xattr_buf[LUSTRE_POSIX_ACL_MAX_SIZE];
         struct dt_allocation_hint mti_hint;
-        struct lov_mds_md        *mti_max_lmm;
-        int                       mti_max_lmm_size;
-        struct llog_cookie       *mti_max_cookie;
-        int                       mti_max_cookie_size;
         struct dt_object_format   mti_dof;
         struct obd_quotactl       mti_oqctl;
+        struct mdd_thandle        mti_thandle;
 };
 
 extern const char orph_index_name[];
 
 extern const struct dt_index_features orph_index_features;
 
-struct lov_mds_md *mdd_max_lmm_get(const struct lu_env *env,
-                                   struct mdd_device *mdd);
-
-struct llog_cookie *mdd_max_cookie_get(const struct lu_env *env,
-                                       struct mdd_device *mdd);
-
-int mdd_init_obd(const struct lu_env *env, struct mdd_device *mdd,
-                 struct lustre_cfg *cfg);
-int mdd_fini_obd(const struct lu_env *env, struct mdd_device *mdd,
-                 struct lustre_cfg *lcfg);
-int __mdd_xattr_set(const struct lu_env *env, struct mdd_object *obj,
-                    const struct lu_buf *buf, const char *name,
-                    int fl, struct thandle *handle);
+void __mdd_xattr_set(const struct lu_env *env, struct mdd_object *obj,
+                     const struct lu_buf *buf, const char *name,
+                     int fl, struct mdd_thandle *handle);
 int mdd_xattr_set_txn(const struct lu_env *env, struct mdd_object *obj,
                       const struct lu_buf *buf, const char *name, int fl,
-                      struct thandle *txn);
-int mdd_lsm_sanity_check(const struct lu_env *env, struct mdd_object *obj);
-int mdd_lov_set_md(const struct lu_env *env, struct mdd_object *pobj,
-                   struct mdd_object *child, struct lov_mds_md *lmm,
-                   int lmm_size, struct thandle *handle, int set_stripe);
-int mdd_lov_create(const struct lu_env *env, struct mdd_device *mdd,
-                   struct mdd_object *parent, struct mdd_object *child,
-                   struct lov_mds_md **lmm, int *lmm_size,
-                   const struct md_op_spec *spec, struct lu_attr *la);
-int mdd_lov_objid_prepare(struct mdd_device *mdd, struct lov_mds_md *lmm);
-void mdd_lov_objid_update(struct mdd_device *mdd, struct lov_mds_md *lmm);
-void mdd_lov_create_finish(const struct lu_env *env, struct mdd_device *mdd,
-                           struct lov_mds_md *lmm, int lmm_size,
-                           const struct md_op_spec *spec);
-int mdd_file_lock(const struct lu_env *env, struct md_object *obj,
-                  struct lov_mds_md *lmm, struct ldlm_extent *extent,
-                  struct lustre_handle *lockh);
-int mdd_file_unlock(const struct lu_env *env, struct md_object *obj,
-                    struct lov_mds_md *lmm, struct lustre_handle *lockh);
+                      struct mdd_thandle *txn);
 int mdd_get_md(const struct lu_env *env, struct mdd_object *obj,
                void *md, int *md_size, const char *name);
 int mdd_get_md_locked(const struct lu_env *env, struct mdd_object *obj,
@@ -240,18 +260,18 @@ int mdd_get_md_locked(const struct lu_env *env, struct mdd_object *obj,
 int mdd_data_get(const struct lu_env *env, struct mdd_object *obj, void **data);
 int mdd_la_get(const struct lu_env *env, struct mdd_object *obj,
                struct lu_attr *la, struct lustre_capa *capa);
-int mdd_attr_set_internal(const struct lu_env *env,
-                          struct mdd_object *obj,
-                          struct lu_attr *attr,
-                          struct thandle *handle,
-                          int needacl);
-int mdd_attr_check_set_internal(const struct lu_env *env,
-                                struct mdd_object *obj,
-                                struct lu_attr *attr,
-                                struct thandle *handle,
-                                int needacl);
+void mdd_attr_set_internal(const struct lu_env *env,
+                           struct mdd_object *obj,
+                           struct lu_attr *attr,
+                           struct mdd_thandle *handle,
+                           int needacl);
+void mdd_attr_check_set_internal(const struct lu_env *env,
+                                 struct mdd_object *obj,
+                                 struct lu_attr *attr,
+                                 struct mdd_thandle *handle,
+                                 int needacl);
 int mdd_object_kill(const struct lu_env *env, struct mdd_object *obj,
-                    struct md_attr *ma);
+                    struct md_attr *ma, struct mdd_thandle *th);
 int mdd_iattr_get(const struct lu_env *env, struct mdd_object *mdd_obj,
                   struct md_attr *ma);
 int mdd_attr_get_internal(const struct lu_env *env, struct mdd_object *mdd_obj,
@@ -259,15 +279,15 @@ int mdd_attr_get_internal(const struct lu_env *env, struct mdd_object *mdd_obj,
 int mdd_attr_get_internal_locked(const struct lu_env *env,
                                  struct mdd_object *mdd_obj,
                                  struct md_attr *ma);
-int mdd_object_create_internal(const struct lu_env *env, struct mdd_object *p,
-                               struct mdd_object *c, struct md_attr *ma,
-                               struct thandle *handle,
-                               const struct md_op_spec *spec);
-int mdd_attr_check_set_internal_locked(const struct lu_env *env,
-                                       struct mdd_object *obj,
-                                       struct lu_attr *attr,
-                                       struct thandle *handle,
-                                       int needacl);
+void mdd_object_create_internal(const struct lu_env *env, struct mdd_object *p,
+                                struct mdd_object *c, struct md_attr *ma,
+                                struct mdd_thandle *handle,
+                                const struct md_op_spec *spec);
+void mdd_attr_check_set_internal_locked(const struct lu_env *env,
+                                        struct mdd_object *obj,
+                                        struct lu_attr *attr,
+                                        struct mdd_thandle *handle,
+                                        int needacl);
 int mdd_lmm_get_locked(const struct lu_env *env, struct mdd_object *mdd_obj,
                        struct md_attr *ma);
 
@@ -298,9 +318,9 @@ void mdd_pdo_read_unlock(const struct lu_env *env, struct mdd_object *obj,
 int mdd_is_subdir(const struct lu_env *env, struct md_object *mo,
                   const struct lu_fid *fid, struct lu_fid *sfid);
 void __mdd_ref_add(const struct lu_env *env, struct mdd_object *obj,
-                   struct thandle *handle);
+                   struct mdd_thandle *handle);
 void __mdd_ref_del(const struct lu_env *env, struct mdd_object *obj,
-                   struct thandle *handle, int is_dot);
+                   struct mdd_thandle *handle, int is_dot);
 int mdd_may_create(const struct lu_env *env, struct mdd_object *pobj,
                    struct mdd_object *cobj, int check_perm, int check_nlink);
 int mdd_may_unlink(const struct lu_env *env, struct mdd_object *pobj,
@@ -310,12 +330,15 @@ int mdd_may_delete(const struct lu_env *env, struct mdd_object *pobj,
                    int check_perm, int check_empty);
 int mdd_unlink_sanity_check(const struct lu_env *env, struct mdd_object *pobj,
                             struct mdd_object *cobj, struct md_attr *ma);
-int mdd_finish_unlink(const struct lu_env *env, struct mdd_object *obj,
-                      struct md_attr *ma, struct thandle *th);
-int mdd_object_initialize(const struct lu_env *env, const struct lu_fid *pfid,
-                          const struct lu_name *lname, struct mdd_object *child,
-                          struct md_attr *ma, struct thandle *handle,
-                          const struct md_op_spec *spec);
+int mdd_declare_finish_unlink(const struct lu_env *env,
+                              struct mdd_object *obj, struct md_attr *ma,
+                              struct mdd_thandle *th);
+void mdd_finish_unlink(const struct lu_env *env, struct mdd_object *obj,
+                      struct md_attr *ma, struct mdd_thandle *th);
+void mdd_object_initialize(const struct lu_env *env, const struct lu_fid *pfid,
+                           const struct lu_name *lname, struct mdd_object *child,
+                           struct md_attr *ma, struct mdd_thandle *handle,
+                           const struct md_op_spec *spec);
 int mdd_link_sanity_check(const struct lu_env *env, struct mdd_object *tgt_obj,
                           const struct lu_name *lname, struct mdd_object *src_obj);
 int mdd_is_root(struct mdd_device *mdd, const struct lu_fid *fid);
@@ -328,20 +351,10 @@ void mdd_lee_unpack(const struct link_ea_entry *lee, int *reclen,
                     struct lu_name *lname, struct lu_fid *pfid);
 
 /* mdd_lov.c */
-int mdd_unlink_log(const struct lu_env *env, struct mdd_device *mdd,
-                   struct mdd_object *mdd_cobj, struct md_attr *ma);
-
-int mdd_setattr_log(const struct lu_env *env, struct mdd_device *mdd,
-                    const struct md_attr *ma,
-                    struct lov_mds_md *lmm, int lmm_size,
-                    struct llog_cookie *logcookies, int cookies_size);
-
-int mdd_get_cookie_size(const struct lu_env *env, struct mdd_device *mdd,
-                        struct lov_mds_md *lmm);
-
-int mdd_lov_setattr_async(const struct lu_env *env, struct mdd_object *obj,
-                          struct lov_mds_md *lmm, int lmm_size,
-                          struct llog_cookie *logcookies);
+int mdd_lsm_sanity_check(const struct lu_env *env,  struct mdd_object *obj);
+int mdd_lov_set_md(const struct lu_env *env, struct mdd_object *pobj,
+                   struct mdd_object *child, struct lov_mds_md *lmmp,
+                   int lmm_size, struct mdd_thandle *handle, int set_stripe);
 
 struct mdd_thread_info *mdd_env_info(const struct lu_env *env);
 
@@ -350,10 +363,10 @@ const struct lu_buf *mdd_buf_get_const(const struct lu_env *env,
                                        const void *area, ssize_t len);
 
 int __mdd_orphan_cleanup(const struct lu_env *env, struct mdd_device *d);
-int __mdd_orphan_add(const struct lu_env *, struct mdd_object *,
-                     struct thandle *);
-int __mdd_orphan_del(const struct lu_env *, struct mdd_object *,
-                     struct thandle *);
+void __mdd_orphan_add(const struct lu_env *, struct mdd_object *,
+                      struct mdd_thandle *);
+void __mdd_orphan_del(const struct lu_env *, struct mdd_object *,
+                      struct mdd_thandle *);
 int orph_index_init(const struct lu_env *env, struct mdd_device *mdd);
 void orph_index_fini(const struct lu_env *env, struct mdd_device *mdd);
 int mdd_txn_init_credits(const struct lu_env *env, struct mdd_device *mdd);
@@ -385,9 +398,14 @@ struct mdd_object *mdd_object_find(const struct lu_env *env,
 int mdd_get_default_md(struct mdd_object *mdd_obj, struct lov_mds_md *lmm);
 int mdd_readpage(const struct lu_env *env, struct md_object *obj,
                  const struct lu_rdpg *rdpg);
-int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
-                  int flags, struct md_object *obj);
+void mdd_object_make_hint(const struct lu_env *env, struct mdd_object *parent,
+                          struct mdd_object *child, struct lu_attr *attr);
+
 /* mdd_quota.c*/
+int mdd_quota_setup(const struct lu_env *env, struct md_device *m,
+                    void *data);
+int mdd_quota_cleanup(const struct lu_env *env, struct md_device *m);
+
 #ifdef HAVE_QUOTA_SUPPORT
 int mdd_quota_notify(const struct lu_env *env, struct md_device *m);
 int mdd_quota_setup(const struct lu_env *env, struct md_device *m,
@@ -426,22 +444,22 @@ int mdd_log_txn_param_build(const struct lu_env *env, struct md_object *obj,
 int mdd_setattr_txn_param_build(const struct lu_env *env, struct md_object *obj,
                                 struct md_attr *ma, enum mdd_txn_op);
 
-int mdd_lov_destroy(const struct lu_env *env, struct mdd_device *mdd,
-                    struct mdd_object *obj, struct lu_attr *la);
-
 static inline void mdd_object_put(const struct lu_env *env,
                                   struct mdd_object *o)
 {
         lu_object_put(env, &o->mod_obj.mo_lu);
 }
 
-struct thandle* mdd_trans_start(const struct lu_env *env,
+struct thandle* mdd_trans_create(const struct lu_env *env,
                                        struct mdd_device *);
+
+int mdd_trans_start(const struct lu_env *env,
+                                       struct mdd_device *, struct thandle *th);
 
 void mdd_trans_stop(const struct lu_env *env, struct mdd_device *mdd,
                     int rc, struct thandle *handle);
 
-int mdd_txn_start_cb(const struct lu_env *env, struct txn_param *param,
+int mdd_txn_start_cb(const struct lu_env *env, struct thandle *th,
                      void *cookie);
 
 int mdd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
@@ -449,18 +467,82 @@ int mdd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
 
 int mdd_txn_commit_cb(const struct lu_env *env, struct thandle *txn,
                       void *cookie);
+
+struct mdd_thandle *mdd_tx_start(const struct lu_env *env, struct mdd_device *mdd);
+int mdd_tx_end(const struct lu_env *env, struct mdd_thandle *th);
+
+void __mdd_tx_destroy(const struct lu_env *, struct mdd_object *,
+                      struct mdd_thandle *, char *, int);
+#define mdd_tx_destroy(env,obj,th) \
+        __mdd_tx_destroy(env,obj,th,__FILE__,__LINE__)
+
+void __mdd_tx_create(const struct lu_env *, struct mdd_object *,
+                     struct lu_attr *, struct dt_allocation_hint *,
+                     struct dt_object_format *, struct mdd_thandle *,
+                     char *, int);
+#define mdd_tx_create(env,obj,attr,hint,dof,th) \
+        __mdd_tx_create(env,obj,attr,hint,dof,th,__FILE__,__LINE__)
+
+void __mdd_tx_write(const struct lu_env *, struct mdd_object *,
+                    const struct lu_buf *, loff_t, struct mdd_thandle *,
+                    char *, int);
+#define mdd_tx_write(env,obj,buf,pos,th) \
+        __mdd_tx_write(env,obj,buf,pos,th,__FILE__,__LINE__)
+
+void __mdd_tx_xattr_set(const struct lu_env *, struct mdd_object *,
+                        const struct lu_buf *, const char *, int,
+                        struct mdd_thandle *, char *, int);
+#define mdd_tx_xattr_set(env,obj,buf,name,fl,th) \
+        __mdd_tx_xattr_set(env,obj,buf,name,fl,th,__FILE__,__LINE__)
+
+void __mdd_tx_xattr_del(const struct lu_env *, struct mdd_object *,
+                        const char *, struct mdd_thandle *, char *, int);
+#define mdd_tx_xattr_del(env,obj,name,th) \
+        __mdd_tx_xattr_del(env,obj,name,th,__FILE__,__LINE__)
+
+void __mdd_tx_attr_set(const struct lu_env *, struct mdd_object *,
+                       const struct lu_attr *, struct mdd_thandle *,
+                       char *, int);
+#define mdd_tx_attr_set(env,obj,attr,th) \
+        __mdd_tx_attr_set(env,obj,attr,th,__FILE__,__LINE__)
+
+void __mdd_tx_ref_del(const struct lu_env *, struct mdd_object *,
+                      struct mdd_thandle *, char *, int);
+#define mdd_tx_ref_del(env,obj,th) \
+        __mdd_tx_ref_del(env,obj,th,__FILE__,__LINE__)
+
+void __mdd_tx_ref_add(const struct lu_env *, struct mdd_object *,
+                      struct mdd_thandle *, char *, int);
+#define mdd_tx_ref_add(env,obj,th) \
+        __mdd_tx_ref_add(env,obj,th,__FILE__,__LINE__)
+
+void __mdd_tx_idx_delete(const struct lu_env *, struct mdd_object *,
+                         const char *, struct mdd_thandle *, char *, int);
+#define mdd_tx_idx_delete(env,obj,name,th) \
+        __mdd_tx_idx_delete(env,obj,name,th,__FILE__,__LINE__)
+
+void __mdd_tx_idx_insert(const struct lu_env *, struct mdd_object *,
+                         const struct lu_fid *, const char *,
+                         struct mdd_thandle *, char *, int);
+#define mdd_tx_idx_insert(env,obj,fid,name,th) \
+        __mdd_tx_idx_insert(env,obj,fid,name,th,__FILE__,__LINE__)
+
+void mdd_tx_set_error(struct mdd_thandle *, int);
+
+
 /* mdd_device.c */
 struct lu_object *mdd_object_alloc(const struct lu_env *env,
                                    const struct lu_object_header *hdr,
                                    struct lu_device *d);
+#ifdef XXX_MDD_CHANGELOG
 struct llog_changelog_rec;
 int mdd_changelog_llog_write(struct mdd_device         *mdd,
                              struct llog_changelog_rec *rec,
-                             struct thandle            *handle);
+                             struct mdd_thandle        *handle);
 int mdd_changelog_llog_cancel(struct mdd_device *mdd, long long endrec);
 int mdd_changelog_write_header(struct mdd_device *mdd, int markerflags);
 int mdd_changelog_on(struct mdd_device *mdd, int on);
-
+#endif
 /* mdd_permission.c */
 #define mdd_cap_t(x) (x)
 
@@ -478,10 +560,10 @@ static inline int mdd_capable(struct md_ucred *uc, cfs_cap_t cap)
 
 int mdd_def_acl_get(const struct lu_env *env, struct mdd_object *mdd_obj,
                     struct md_attr *ma);
-int mdd_acl_chmod(const struct lu_env *env, struct mdd_object *o, __u32 mode,
-                  struct thandle *handle);
+void mdd_acl_chmod(const struct lu_env *env, struct mdd_object *o, __u32 mode,
+                   struct mdd_thandle *handle);
 int __mdd_acl_init(const struct lu_env *env, struct mdd_object *obj,
-                   struct lu_buf *buf, __u32 *mode, struct thandle *handle);
+                   struct lu_buf *buf, __u32 *mode, struct mdd_thandle *handle);
 int __mdd_permission_internal(const struct lu_env *env, struct mdd_object *obj,
                               struct lu_attr *la, int mask, int role);
 int mdd_permission(const struct lu_env *env,
@@ -539,11 +621,6 @@ static inline struct dt_object* mdd_object_child(struct mdd_object *o)
                              struct dt_object, do_lu);
 }
 
-static inline struct obd_device *mdd2obd_dev(struct mdd_device *mdd)
-{
-        return mdd->mdd_obd_dev;
-}
-
 static inline struct mdd_device *mdd_obj2mdd_dev(struct mdd_object *obj)
 {
         return mdo2mdd(&obj->mod_obj);
@@ -557,20 +634,6 @@ static inline const struct lu_fid *mdo2fid(const struct mdd_object *obj)
 static inline cfs_umode_t mdd_object_type(const struct mdd_object *obj)
 {
         return lu_object_attr(&obj->mod_obj.mo_lu);
-}
-
-static inline int mdd_lov_mdsize(const struct lu_env *env,
-                                 struct mdd_device *mdd)
-{
-        struct obd_device *obd = mdd2obd_dev(mdd);
-        return obd->u.mds.mds_max_mdsize;
-}
-
-static inline int mdd_lov_cookiesize(const struct lu_env *env,
-                                     struct mdd_device *mdd)
-{
-        struct obd_device *obd = mdd2obd_dev(mdd);
-        return obd->u.mds.mds_max_cookiesize;
 }
 
 static inline int mdd_is_immutable(struct mdd_object *obj)
@@ -696,8 +759,7 @@ static inline int mdo_xattr_set(const struct lu_env *env,struct mdd_object *obj,
 {
         struct dt_object *next = mdd_object_child(obj);
         LASSERT(mdd_object_exists(obj));
-        return next->do_ops->do_xattr_set(env, next, buf, name, fl, handle,
-                                          capa);
+        return next->do_ops->do_xattr_set(env, next, buf, name, fl, handle, capa);
 }
 
 static inline int mdo_xattr_del(const struct lu_env *env,struct mdd_object *obj,
@@ -724,33 +786,6 @@ int mdo_index_try(const struct lu_env *env, struct mdd_object *obj,
 {
         struct dt_object *next = mdd_object_child(obj);
         return next->do_ops->do_index_try(env, next, feat);
-}
-
-static inline void mdo_ref_add(const struct lu_env *env, struct mdd_object *obj,
-                               struct thandle *handle)
-{
-        struct dt_object *next = mdd_object_child(obj);
-        LASSERT(mdd_object_exists(obj));
-        return next->do_ops->do_ref_add(env, next, handle);
-}
-
-static inline void mdo_ref_del(const struct lu_env *env, struct mdd_object *obj,
-                               struct thandle *handle)
-{
-        struct dt_object *next = mdd_object_child(obj);
-        LASSERT(mdd_object_exists(obj));
-        return next->do_ops->do_ref_del(env, next, handle);
-}
-
-static inline
-int mdo_create_obj(const struct lu_env *env, struct mdd_object *o,
-                   struct lu_attr *attr,
-                   struct dt_allocation_hint *hint,
-                   struct dt_object_format *dof,
-                   struct thandle *handle)
-{
-        struct dt_object *next = mdd_object_child(o);
-        return next->do_ops->do_create(env, next, attr, hint, dof, handle);
 }
 
 static inline struct obd_capa *mdo_capa_get(const struct lu_env *env,

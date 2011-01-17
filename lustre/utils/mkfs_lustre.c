@@ -82,6 +82,8 @@
 #include <lustre_ver.h>
 #include "mount_utils.h"
 
+#define MT_STR(data)   mt_str((data)->ldd_mount_type)
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
@@ -925,14 +927,17 @@ void print_ldd(char *str, struct lustre_disk_data *ldd)
                IS_MDT(ldd) ? "MDT ":"",
                IS_OST(ldd) ? "OST ":"",
                IS_MGS(ldd) ? "MGS ":"",
+               /* should never happen */
                ldd->ldd_flags & LDD_F_NEED_INDEX ? "needs_index ":"",
                ldd->ldd_flags & LDD_F_VIRGIN     ? "first_time ":"",
                ldd->ldd_flags & LDD_F_UPDATE     ? "update ":"",
                ldd->ldd_flags & LDD_F_WRITECONF  ? "writeconf ":"",
                ldd->ldd_flags & LDD_F_IAM_DIR  ? "IAM_dir_format ":"",
                ldd->ldd_flags & LDD_F_NO_PRIMNODE? "no_primnode ":"",
+               /* should never happen */
                ldd->ldd_flags & LDD_F_UPGRADE14  ? "upgrade1.4 ":"");
         printf("Persistent mount opts: %s\n", ldd->ldd_mount_opts);
+        /* No longer passed */
         printf("Parameters:%s\n", ldd->ldd_params);
         if (ldd->ldd_userdata[0])
                 printf("Comment: %s\n", ldd->ldd_userdata);
@@ -1062,66 +1067,6 @@ int write_local_files(struct mkfs_opts *mop)
                 goto out_umnt;
         }
         fclose(filep);
-        /* COMPAT_146 */
-#ifdef TUNEFS
-        /* Check for upgrade */
-        if ((mop->mo_ldd.ldd_flags & (LDD_F_UPGRADE14 | LDD_F_SV_TYPE_MGS))
-            == (LDD_F_UPGRADE14 | LDD_F_SV_TYPE_MGS)) {
-                char cmd[128];
-                char *term;
-                int cmdsz = sizeof(cmd);
-                vprint("Copying old logs\n");
-
-                /* Copy the old client log to fsname-client */
-                sprintf(filepnm, "%s/%s/%s-client",
-                        mntpt, MOUNT_CONFIGS_DIR, mop->mo_ldd.ldd_fsname);
-                snprintf(cmd, cmdsz, "cp %s/%s/client %s", mntpt, MDT_LOGS_DIR,
-                         filepnm);
-                ret = run_command(cmd, cmdsz);
-                if (ret) {
-                        fprintf(stderr, "%s: Can't copy 1.4 config %s/client "
-                                "(%d)\n", progname, MDT_LOGS_DIR, ret);
-                        fprintf(stderr, "mount -t ldiskfs %s somewhere, "
-                                "find the client log for fs %s and "
-                                "copy it manually into %s/%s-client, "
-                                "then umount.\n",
-                                mop->mo_device,
-                                mop->mo_ldd.ldd_fsname, MOUNT_CONFIGS_DIR,
-                                mop->mo_ldd.ldd_fsname);
-                        goto out_umnt;
-                }
-
-                /* We need to use the old mdt log because otherwise mdt won't
-                   have complete lov if old clients connect before all
-                   servers upgrade. */
-                /* Copy the old mdt log to fsname-MDT0000 (get old
-                   name from mdt_UUID) */
-                ret = 1;
-                strscpy(filepnm, (char *)mop->mo_ldd.ldd_uuid, sizeof(filepnm));
-                term = strstr(filepnm, "_UUID");
-                if (term) {
-                        *term = '\0';
-                        snprintf(cmd, cmdsz, "cp %s/%s/%s %s/%s/%s",
-                                 mntpt, MDT_LOGS_DIR, filepnm,
-                                 mntpt, MOUNT_CONFIGS_DIR,
-                                 mop->mo_ldd.ldd_svname);
-                        ret = run_command(cmd, cmdsz);
-                }
-                if (ret) {
-                        fprintf(stderr, "%s: Can't copy 1.4 config %s/%s "
-                                "(%d)\n", progname, MDT_LOGS_DIR, filepnm, ret);
-                        fprintf(stderr, "mount -t ext3 %s somewhere, "
-                                "find the MDT log for fs %s and "
-                                "copy it manually into %s/%s, "
-                                "then umount.\n",
-                                mop->mo_device,
-                                mop->mo_ldd.ldd_fsname, MOUNT_CONFIGS_DIR,
-                                mop->mo_ldd.ldd_svname);
-                        goto out_umnt;
-                }
-        }
-#endif
-        /* end COMPAT_146 */
 
 out_umnt:
         umount(mntpt);
@@ -1129,157 +1074,6 @@ out_rmdir:
         rmdir(mntpt);
         return ret;
 }
-
-int read_local_files(struct mkfs_opts *mop)
-{
-        char tmpdir[] = "/tmp/dirXXXXXX";
-        char cmd[PATH_MAX];
-        char filepnm[128];
-        char *dev;
-        FILE *filep;
-        int ret = 0;
-        int cmdsz = sizeof(cmd);
-
-        /* Make a temporary directory to hold Lustre data files. */
-        if (!mkdtemp(tmpdir)) {
-                fprintf(stderr, "%s: Can't create temporary directory %s: %s\n",
-                        progname, tmpdir, strerror(errno));
-                return errno;
-        }
-
-        dev = mop->mo_device;
-
-        /* TODO: it's worth observing the get_mountdata() function that is
-                 in mount_utils.c for getting the mountdata out of the
-                 filesystem */
-
-        /* Construct debugfs command line. */
-        snprintf(cmd, cmdsz, "%s -c -R 'dump /%s %s/mountdata' '%s'",
-                 DEBUGFS, MOUNT_DATA_FILE, tmpdir, dev);
-
-        ret = run_command(cmd, cmdsz);
-        if (ret)
-                verrprint("%s: Unable to dump %s dir (%d)\n",
-                          progname, MOUNT_CONFIGS_DIR, ret);
-
-        sprintf(filepnm, "%s/mountdata", tmpdir);
-        filep = fopen(filepnm, "r");
-        if (filep) {
-                size_t num_read;
-                vprint("Reading %s\n", MOUNT_DATA_FILE);
-                num_read = fread(&mop->mo_ldd, sizeof(mop->mo_ldd), 1, filep);
-                if (num_read < 1 && ferror(filep)) {
-                        fprintf(stderr, "%s: Unable to read from file %s: %s\n",
-                                progname, filepnm, strerror(errno));
-                        goto out_close;
-                }
-        } else {
-                /* COMPAT_146 */
-                /* Try to read pre-1.6 config from last_rcvd */
-                struct lr_server_data lsd;
-                verrprint("%s: Unable to read %d.%d config %s.\n",
-                          progname, LUSTRE_MAJOR, LUSTRE_MINOR, filepnm);
-
-                verrprint("Trying 1.4 config from last_rcvd\n");
-                sprintf(filepnm, "%s/%s", tmpdir, LAST_RCVD);
-
-                /* Construct debugfs command line. */
-                snprintf(cmd, cmdsz, "%s -c -R 'dump /%s %s' %s",
-                         DEBUGFS, LAST_RCVD, filepnm, dev);
-
-                ret = run_command(cmd, cmdsz);
-                if (ret) {
-                        fprintf(stderr, "%s: Unable to dump %s file (%d)\n",
-                                progname, LAST_RCVD, ret);
-                        goto out_rmdir;
-                }
-
-                filep = fopen(filepnm, "r");
-                if (!filep) {
-                        fprintf(stderr, "%s: Unable to open %s: %s\n",
-                                progname, filepnm, strerror(errno));
-                        ret = errno;
-                        verrprint("Contents of %s:\n", tmpdir);
-                        verbose+=2;
-                        snprintf(cmd, cmdsz, "ls -l %s/", tmpdir);
-                        run_command(cmd, cmdsz);
-                        verrprint("Contents of disk:\n");
-                        snprintf(cmd, cmdsz, "%s -c -R 'ls -l /' %s",
-                                 DEBUGFS, dev);
-                        run_command(cmd, cmdsz);
-
-                        goto out_rmdir;
-                }
-                vprint("Reading %s\n", LAST_RCVD);
-                ret = fread(&lsd, 1, sizeof(lsd), filep);
-                if (ret < sizeof(lsd)) {
-                        fprintf(stderr, "%s: Short read (%d of %d)\n",
-                                progname, ret, (int)sizeof(lsd));
-                        ret = ferror(filep);
-                        if (ret)
-                                goto out_close;
-                }
-                vprint("Feature compat=%x, incompat=%x\n",
-                       lsd.lsd_feature_compat, lsd.lsd_feature_incompat);
-
-                if ((lsd.lsd_feature_compat & OBD_COMPAT_OST) ||
-                    (lsd.lsd_feature_incompat & OBD_INCOMPAT_OST)) {
-                        mop->mo_ldd.ldd_flags = LDD_F_SV_TYPE_OST;
-                        mop->mo_ldd.ldd_svindex = lsd.lsd_ost_index;
-                } else if ((lsd.lsd_feature_compat & OBD_COMPAT_MDT) ||
-                           (lsd.lsd_feature_incompat & OBD_INCOMPAT_MDT)) {
-                        /* We must co-locate so mgs can see old logs.
-                           If user doesn't want this, they can copy the old
-                           logs manually and re-tunefs. */
-                        mop->mo_ldd.ldd_flags =
-                                LDD_F_SV_TYPE_MDT | LDD_F_SV_TYPE_MGS;
-                        mop->mo_ldd.ldd_svindex = lsd.lsd_mdt_index;
-                } else  {
-                        /* If neither is set, we're pre-1.4.6, make a guess. */
-                        /* Construct debugfs command line. */
-                        snprintf(cmd, cmdsz, "%s -c -R 'rdump /%s %s' %s",
-                                 DEBUGFS, MDT_LOGS_DIR, tmpdir, dev);
-                        run_command(cmd, cmdsz);
-
-                        sprintf(filepnm, "%s/%s", tmpdir, MDT_LOGS_DIR);
-                        if (lsd.lsd_ost_index > 0) {
-                                mop->mo_ldd.ldd_flags = LDD_F_SV_TYPE_OST;
-                                mop->mo_ldd.ldd_svindex = lsd.lsd_ost_index;
-                        } else {
-                                /* If there's a LOGS dir, it's an MDT */
-                                if ((ret = access(filepnm, F_OK)) == 0) {
-                                        mop->mo_ldd.ldd_flags =
-                                        LDD_F_SV_TYPE_MDT |
-                                        LDD_F_SV_TYPE_MGS;
-                                        /* Old MDT's are always index 0
-                                           (pre CMD) */
-                                        mop->mo_ldd.ldd_svindex = 0;
-                                } else {
-                                        /* The index may not be correct */
-                                        mop->mo_ldd.ldd_flags =
-                                        LDD_F_SV_TYPE_OST | LDD_F_NEED_INDEX;
-                                        verrprint("OST with unknown index\n");
-                                }
-                        }
-                }
-
-                ret = 0;
-                memcpy(mop->mo_ldd.ldd_uuid, lsd.lsd_uuid,
-                       sizeof(mop->mo_ldd.ldd_uuid));
-                mop->mo_ldd.ldd_flags |= LDD_F_UPGRADE14;
-        }
-        /* end COMPAT_146 */
-out_close:
-        fclose(filep);
-
-out_rmdir:
-        snprintf(cmd, cmdsz, "rm -rf %s", tmpdir);
-        run_command(cmd, cmdsz);
-        if (ret)
-                verrprint("Failed to read old data (%d)\n", ret);
-        return ret;
-}
-
 
 void set_defaults(struct mkfs_opts *mop)
 {
@@ -1319,53 +1113,6 @@ static int add_param(char *buf, char *key, char *val)
         return 0;
 }
 
-/* from mount_lustre */
-/* Get rid of symbolic hostnames for tcp, since kernel can't do lookups */
-#define MAXNIDSTR 1024
-static char *convert_hostnames(char *s1)
-{
-        char *converted, *s2 = 0, *c, *end, sep;
-        int left = MAXNIDSTR;
-        lnet_nid_t nid;
-
-        converted = malloc(left);
-        if (converted == NULL) {
-                return NULL;
-        }
-
-        end = s1 + strlen(s1);
-        c = converted;
-        while ((left > 0) && (s1 < end)) {
-                s2 = strpbrk(s1, ",:");
-                if (!s2)
-                        s2 = end;
-                sep = *s2;
-                *s2 = '\0';
-                nid = libcfs_str2nid(s1);
-
-                if (nid == LNET_NID_ANY) {
-                        fprintf(stderr, "%s: Can't parse NID '%s'\n",
-                                progname, s1);
-                        free(converted);
-                        return NULL;
-                }
-                if (strncmp(libcfs_nid2str(nid), "127.0.0.1",
-                            strlen("127.0.0.1")) == 0) {
-                        fprintf(stderr, "%s: The NID '%s' resolves to the "
-                                "loopback address '%s'.  Lustre requires a "
-                                "non-loopback address.\n",
-                                progname, s1, libcfs_nid2str(nid));
-                        free(converted);
-                        return NULL;
-                }
-
-                c += snprintf(c, left, "%s%c", libcfs_nid2str(nid), sep);
-                left = converted + MAXNIDSTR - c;
-                s1 = s2 + 1;
-        }
-        return converted;
-}
-
 int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                char **mountopts)
 {
@@ -1374,7 +1121,6 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                 {"backfstype", 1, 0, 'b'},
                 {"stripe-count-hint", 1, 0, 'c'},
                 {"comment", 1, 0, 'u'},
-                {"configdev", 1, 0, 'C'},
                 {"device-size", 1, 0, 'd'},
                 {"dryrun", 0, 0, 'n'},
                 {"erase-params", 0, 0, 'e'},
@@ -1441,10 +1187,6 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                                 return 1;
                         }
                         break;
-                case 'C': /* Configdev */
-                        //FIXME
-                        printf("Configdev not implemented\n");
-                        return 1;
                 case 'd':
                         mop->mo_device_sz = atol(optarg);
                         break;
@@ -1721,13 +1463,6 @@ int main(int argc, char *const argv[])
         /* device is last arg */
         strscpy(mop.mo_device, argv[argc - 1], sizeof(mop.mo_device));
 
-        /* Are we using a loop device? */
-        ret = is_block(mop.mo_device);
-        if (ret < 0)
-                goto out;
-        if (ret == 0)
-                mop.mo_flags |= MO_IS_LOOP;
-
 #ifdef TUNEFS
         /* For tunefs, we must read in the old values before parsing any
            new ones. */
@@ -1742,7 +1477,7 @@ int main(int argc, char *const argv[])
                 goto out;
         }
 
-        ret = read_local_files(&mop);
+        ret = get_mountdata(mop.mo_device, &mop.mo_ldd);
         if (ret) {
                 fatal();
                 fprintf(stderr, "Failed to read previous Lustre data from %s "
@@ -1776,11 +1511,15 @@ int main(int argc, char *const argv[])
                 goto out;
         }
 
-        if ((mop.mo_ldd.ldd_flags & (LDD_F_NEED_INDEX | LDD_F_UPGRADE14)) ==
-            (LDD_F_NEED_INDEX | LDD_F_UPGRADE14)) {
+        if (IS_MGS(ldd) && !IS_MDT(ldd)) {
+                mop.mo_ldd.ldd_flags &= ~LDD_F_NEED_INDEX;
+                mop.mo_ldd.ldd_svindex = 0;
+        }
+
+        if (mop.mo_ldd.ldd_flags & LDD_F_NEED_INDEX) {
                 fatal();
-                fprintf(stderr, "Can't find the target index, "
-                        "specify with --index\n");
+                fprintf(stderr, "The target index must be specified with "
+                        "--index\n");
                 ret = EINVAL;
                 goto out;
         }
@@ -1810,6 +1549,13 @@ int main(int argc, char *const argv[])
         case LDD_MT_EXT3:
         case LDD_MT_LDISKFS:
         case LDD_MT_LDISKFS2:
+                /* Are we using a loop device? */
+                ret = is_block(mop.mo_device);
+                if (ret < 0)
+                        goto out;
+                if (ret == 0)
+                        mop.mo_flags |= MO_IS_LOOP;
+
                 strscat(default_mountopts, ",errors=remount-ro",
                         sizeof(default_mountopts));
                 if (IS_MDT(ldd) || IS_MGS(ldd))

@@ -184,7 +184,6 @@ static int mdc_req2attr_update(const struct lu_env *env,
         struct ptlrpc_request *req;
         struct mdt_body *body;
         struct lov_mds_md *md;
-        struct llog_cookie *cookie;
         void *acl;
 
         ENTRY;
@@ -221,30 +220,6 @@ static int mdc_req2attr_update(const struct lu_env *env,
                 ma->ma_lmm_size = body->eadatasize;
                 memcpy(ma->ma_lmm, md, ma->ma_lmm_size);
                 ma->ma_valid |= MA_LOV;
-        }
-
-        if (body->valid & OBD_MD_FLCOOKIE) {
-                /*
-                 * ACL and cookie share the same body->aclsize, we need
-                 * to make sure that they both never come here.
-                 */
-                LASSERT(!(body->valid & OBD_MD_FLACL));
-
-                if (body->aclsize == 0) {
-                        CERROR("No size defined for cookie field\n");
-                        RETURN(-EPROTO);
-                }
-
-                cookie = req_capsule_server_sized_get(&req->rq_pill,
-                                                      &RMF_LOGCOOKIES,
-                                                      body->aclsize);
-                if (cookie == NULL)
-                        RETURN(-EPROTO);
-
-                LASSERT(ma->ma_cookie != NULL);
-                LASSERT(ma->ma_cookie_size == body->aclsize);
-                memcpy(ma->ma_cookie, cookie, ma->ma_cookie_size);
-                ma->ma_valid |= MA_COOKIE;
         }
 
 #ifdef CONFIG_FS_POSIX_ACL

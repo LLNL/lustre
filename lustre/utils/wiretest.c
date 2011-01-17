@@ -1995,10 +1995,10 @@ void lustre_assert_wire_constants(void)
                  (long long)(int)offsetof(struct llog_rec_hdr, lrh_type));
         LASSERTF((int)sizeof(((struct llog_rec_hdr *)0)->lrh_type) == 4, " found %lld\n",
                  (long long)(int)sizeof(((struct llog_rec_hdr *)0)->lrh_type));
-        LASSERTF((int)offsetof(struct llog_rec_hdr, padding) == 12, " found %lld\n",
-                 (long long)(int)offsetof(struct llog_rec_hdr, padding));
-        LASSERTF((int)sizeof(((struct llog_rec_hdr *)0)->padding) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct llog_rec_hdr *)0)->padding));
+        LASSERTF((int)offsetof(struct llog_rec_hdr, lrh_id) == 12, " found %lld\n",
+                 (long long)(int)offsetof(struct llog_rec_hdr, lrh_id));
+        LASSERTF((int)sizeof(((struct llog_rec_hdr *)0)->lrh_id) == 4, " found %lld\n",
+                 (long long)(int)sizeof(((struct llog_rec_hdr *)0)->lrh_id));
 
         /* Checks for struct llog_rec_tail */
         LASSERTF((int)sizeof(struct llog_rec_tail) == 8, " found %lld\n",
@@ -2516,66 +2516,6 @@ void lustre_assert_wire_constants(void)
                  (long long)(int)offsetof(struct mgs_target_info, mti_params));
         LASSERTF((int)sizeof(((struct mgs_target_info *)0)->mti_params) == 4096, " found %lld\n",
                  (long long)(int)sizeof(((struct mgs_target_info *)0)->mti_params));
-
-        /* Checks for struct lustre_disk_data */
-        LASSERTF((int)sizeof(struct lustre_disk_data) == 12288, " found %lld\n",
-                 (long long)(int)sizeof(struct lustre_disk_data));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_magic) == 0, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_magic));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_magic) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_magic));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_feature_compat) == 4, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_feature_compat));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_feature_compat) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_feature_compat));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_feature_rocompat) == 8, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_feature_rocompat));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_feature_rocompat) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_feature_rocompat));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_feature_incompat) == 12, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_feature_incompat));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_feature_incompat) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_feature_incompat));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_config_ver) == 16, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_config_ver));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_config_ver) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_config_ver));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_flags) == 20, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_flags));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_flags) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_flags));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_svindex) == 24, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_svindex));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_svindex) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_svindex));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_mount_type) == 28, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_mount_type));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_mount_type) == 4, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_mount_type));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_fsname) == 32, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_fsname));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_fsname) == 64, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_fsname));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_svname) == 96, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_svname));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_svname) == 64, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_svname));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_uuid) == 160, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_uuid));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_uuid) == 40, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_uuid));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_userdata) == 200, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_userdata));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_userdata) == 824, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_userdata));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_mount_opts) == 4096, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_mount_opts));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_mount_opts) == 4096, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_mount_opts));
-        LASSERTF((int)offsetof(struct lustre_disk_data, ldd_params) == 8192, " found %lld\n",
-                 (long long)(int)offsetof(struct lustre_disk_data, ldd_params));
-        LASSERTF((int)sizeof(((struct lustre_disk_data *)0)->ldd_params) == 4096, " found %lld\n",
-                 (long long)(int)sizeof(((struct lustre_disk_data *)0)->ldd_params));
 
         /* Checks for struct ll_user_fiemap */
         LASSERTF((int)sizeof(struct ll_user_fiemap) == 32, " found %lld\n",

@@ -798,77 +798,6 @@ ptlrpc_prep_req(struct obd_import *imp, __u32 version, int opcode, int count,
 }
 
 /**
- * Allocate "fake" request that would not be sent anywhere in the end.
- * Only used as a hack because we have no other way of performing
- * async actions in lustre between layers.
- * Used on MDS to request object preallocations from more than one OST at a
- * time.
- */
-struct ptlrpc_request *ptlrpc_prep_fakereq(struct obd_import *imp,
-                                           unsigned int timeout,
-                                           ptlrpc_interpterer_t interpreter)
-{
-        struct ptlrpc_request *request = NULL;
-        ENTRY;
-
-        OBD_ALLOC(request, sizeof(*request));
-        if (!request) {
-                CERROR("request allocation out of memory\n");
-                RETURN(NULL);
-        }
-
-        request->rq_send_state = LUSTRE_IMP_FULL;
-        request->rq_type = PTL_RPC_MSG_REQUEST;
-        request->rq_import = class_import_get(imp);
-        request->rq_export = NULL;
-        request->rq_import_generation = imp->imp_generation;
-
-        request->rq_timeout = timeout;
-        request->rq_sent = cfs_time_current_sec();
-        request->rq_deadline = request->rq_sent + timeout;
-        request->rq_reply_deadline = request->rq_deadline;
-        request->rq_interpret_reply = interpreter;
-        request->rq_phase = RQ_PHASE_RPC;
-        request->rq_next_phase = RQ_PHASE_INTERPRET;
-        /* don't want reply */
-        request->rq_receiving_reply = 0;
-        request->rq_must_unlink = 0;
-        request->rq_no_delay = request->rq_no_resend = 1;
-        request->rq_fake = 1;
-
-        cfs_spin_lock_init(&request->rq_lock);
-        CFS_INIT_LIST_HEAD(&request->rq_list);
-        CFS_INIT_LIST_HEAD(&request->rq_replay_list);
-        CFS_INIT_LIST_HEAD(&request->rq_set_chain);
-        CFS_INIT_LIST_HEAD(&request->rq_history_list);
-        CFS_INIT_LIST_HEAD(&request->rq_exp_list);
-        cfs_waitq_init(&request->rq_reply_waitq);
-        cfs_waitq_init(&request->rq_set_waitq);
-
-        request->rq_xid = ptlrpc_next_xid();
-        cfs_atomic_set(&request->rq_refcount, 1);
-
-        RETURN(request);
-}
-
-/**
- * Indicate that processing of "fake" request is finished.
- */
-void ptlrpc_fakereq_finished(struct ptlrpc_request *req)
-{
-        /* if we kill request before timeout - need adjust counter */
-        if (req->rq_phase == RQ_PHASE_RPC) {
-                struct ptlrpc_request_set *set = req->rq_set;
-
-                if (set)
-                        cfs_atomic_dec(&set->set_remaining);
-        }
-
-        ptlrpc_rqphase_move(req, RQ_PHASE_COMPLETE);
-        cfs_list_del_init(&req->rq_list);
-}
-
-/**
  * Allocate and initialize new request set structure.
  * Returns a pointer to the newly allocated set structure or NULL on error.
  */
@@ -1762,7 +1691,7 @@ int ptlrpc_expire_one_request(struct ptlrpc_request *req, int async_unlink)
         req->rq_timedout = 1;
         cfs_spin_unlock(&req->rq_lock);
 
-        DEBUG_REQ(req->rq_fake ? D_INFO : D_WARNING, req, "Request x"LPU64
+        DEBUG_REQ(D_WARNING, req, "Request x"LPU64
                   " sent from %s to NID %s has %s: [sent "CFS_DURATION_T"] "
                   "[real_sent "CFS_DURATION_T"] [current "CFS_DURATION_T"] "
                   "[deadline "CFS_DURATION_T"s] [delay "CFS_DURATION_T"s]",
@@ -1790,9 +1719,6 @@ int ptlrpc_expire_one_request(struct ptlrpc_request *req, int async_unlink)
                 DEBUG_REQ(D_HA, req, "NULL import: already cleaned up?");
                 RETURN(1);
         }
-
-        if (req->rq_fake)
-               RETURN(1);
 
         cfs_atomic_inc(&imp->imp_timeouts);
 
@@ -2087,7 +2013,7 @@ static void __ptlrpc_free_req(struct ptlrpc_request *request, int locked)
         LASSERTF(cfs_list_empty(&request->rq_set_chain), "req %p\n", request);
         LASSERTF(cfs_list_empty(&request->rq_exp_list), "req %p\n", request);
         LASSERTF(!request->rq_replay, "req %p\n", request);
-        LASSERT(request->rq_cli_ctx || request->rq_fake);
+        LASSERT(request->rq_cli_ctx);
 
         req_capsule_fini(&request->rq_pill);
 

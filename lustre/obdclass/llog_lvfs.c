@@ -61,6 +61,7 @@
 #include <lvfs.h>
 #include <lustre_fsfilt.h>
 #include <lustre_disk.h>
+#include <lustre_fid.h>
 #include "llog_internal.h"
 
 #if defined(__KERNEL__) && defined(LLOG_LVFS)
@@ -404,8 +405,8 @@ static void llog_skip_over(__u64 *off, int curr, int goal)
  *  - cur_idx to the log index preceeding cur_offset
  * returns -EIO/-EINVAL on error
  */
-static int llog_lvfs_next_block(struct llog_handle *loghandle, int *cur_idx,
-                                int next_idx, __u64 *cur_offset, void *buf,
+static int llog_lvfs_next_block(const struct lu_env *env, struct llog_handle *loghandle,
+                                int *cur_idx, int next_idx, __u64 *cur_offset, void *buf,
                                 int len)
 {
         int rc;
@@ -488,7 +489,7 @@ static int llog_lvfs_next_block(struct llog_handle *loghandle, int *cur_idx,
         RETURN(-EIO);
 }
 
-static int llog_lvfs_prev_block(struct llog_handle *loghandle,
+static int llog_lvfs_prev_block(const struct lu_env *env, struct llog_handle *loghandle,
                                 int prev_idx, void *buf, int len)
 {
         __u64 cur_offset;
@@ -702,7 +703,7 @@ static int llog_lvfs_close(struct llog_handle *handle)
         RETURN(rc);
 }
 
-static int llog_lvfs_destroy(struct llog_handle *handle)
+static int llog_lvfs_destroy(const struct lu_env *env, struct llog_handle *handle)
 {
         struct dentry *fdentry;
         struct obdo *oa;
@@ -767,107 +768,6 @@ static int llog_lvfs_destroy(struct llog_handle *handle)
         RETURN(rc);
 }
 
-/* reads the catalog list */
-int llog_get_cat_list(struct obd_device *disk_obd,
-                      char *name, int idx, int count, struct llog_catid *idarray)
-{
-        struct lvfs_run_ctxt saved;
-        struct l_file *file;
-        int rc, rc1 = 0;
-        int size = sizeof(*idarray) * count;
-        loff_t off = idx *  sizeof(*idarray);
-        ENTRY;
-
-        if (!count)
-                RETURN(0);
-
-        push_ctxt(&saved, &disk_obd->obd_lvfs_ctxt, NULL);
-        file = filp_open(name, O_RDWR | O_CREAT | O_LARGEFILE, 0700);
-        if (!file || IS_ERR(file)) {
-                rc = PTR_ERR(file);
-                CERROR("OBD filter: cannot open/create %s: rc = %d\n",
-                       name, rc);
-                GOTO(out, rc);
-        }
-
-        if (!S_ISREG(file->f_dentry->d_inode->i_mode)) {
-                CERROR("%s is not a regular file!: mode = %o\n", name,
-                       file->f_dentry->d_inode->i_mode);
-                GOTO(out, rc = -ENOENT);
-        }
-
-        CDEBUG(D_CONFIG, "cat list: disk size=%d, read=%d\n",
-               (int)i_size_read(file->f_dentry->d_inode), size);
-
-        /* read for new ost index or for empty file */
-        memset(idarray, 0, size);
-        if (i_size_read(file->f_dentry->d_inode) < off)
-                GOTO(out, rc = 0);
-
-        rc = fsfilt_read_record(disk_obd, file, idarray, size, &off);
-        if (rc) {
-                CERROR("OBD filter: error reading %s: rc %d\n", name, rc);
-                GOTO(out, rc);
-        }
-
-        EXIT;
- out:
-        pop_ctxt(&saved, &disk_obd->obd_lvfs_ctxt, NULL);
-        if (file && !IS_ERR(file))
-                rc1 = filp_close(file, 0);
-        if (rc == 0)
-                rc = rc1;
-        return rc;
-}
-EXPORT_SYMBOL(llog_get_cat_list);
-
-/* writes the cat list */
-int llog_put_cat_list(struct obd_device *disk_obd,
-                      char *name, int idx, int count, struct llog_catid *idarray)
-{
-        struct lvfs_run_ctxt saved;
-        struct l_file *file;
-        int rc, rc1 = 0;
-        int size = sizeof(*idarray) * count;
-        loff_t off = idx * sizeof(*idarray);
-
-        if (!count)
-                GOTO(out1, rc = 0);
-
-        push_ctxt(&saved, &disk_obd->obd_lvfs_ctxt, NULL);
-        file = filp_open(name, O_RDWR | O_CREAT | O_LARGEFILE, 0700);
-        if (!file || IS_ERR(file)) {
-                rc = PTR_ERR(file);
-                CERROR("OBD filter: cannot open/create %s: rc = %d\n",
-                       name, rc);
-                GOTO(out, rc);
-        }
-
-        if (!S_ISREG(file->f_dentry->d_inode->i_mode)) {
-                CERROR("%s is not a regular file!: mode = %o\n", name,
-                       file->f_dentry->d_inode->i_mode);
-                GOTO(out, rc = -ENOENT);
-        }
-
-        rc = fsfilt_write_record(disk_obd, file, idarray, size, &off, 1);
-        if (rc) {
-                CDEBUG(D_INODE,"OBD filter: error writeing %s: rc %d\n",
-                       name, rc);
-                GOTO(out, rc);
-        }
-
-out:
-        pop_ctxt(&saved, &disk_obd->obd_lvfs_ctxt, NULL);
-        if (file && !IS_ERR(file))
-                rc1 = filp_close(file, 0);
-
-        if (rc == 0)
-                rc = rc1;
-out1:
-        RETURN(rc);
-}
-EXPORT_SYMBOL(llog_put_cat_list);
-
 struct llog_operations llog_lvfs_ops = {
         lop_write_rec:   llog_lvfs_write_rec,
         lop_next_block:  llog_lvfs_next_block,
@@ -892,7 +792,7 @@ static int llog_lvfs_read_header(struct llog_handle *handle)
 static int llog_lvfs_write_rec(struct llog_handle *loghandle,
                                struct llog_rec_hdr *rec,
                                struct llog_cookie *reccookie, int cookiecount,
-                               void *buf, int idx)
+                               void *buf, int idx, struct thandle *th)
 {
         LBUG();
         return 0;

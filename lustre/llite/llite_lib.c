@@ -945,7 +945,7 @@ int ll_fill_super(struct super_block *sb, struct vfsmount *mnt)
         cfg->cfg_uuid = lsi->lsi_llsbi->ll_sb_uuid;
 
         /* set up client obds */
-        err = lustre_process_log(sb, profilenm, cfg);
+        err = lustre_log_process(lsi, profilenm, cfg);
         if (err < 0) {
                 CERROR("Unable to process log: %d\n", err);
                 GOTO(out_free, err);
@@ -1007,7 +1007,7 @@ void ll_put_super(struct super_block *sb)
         ll_print_capa_stat(sbi);
 
         cfg.cfg_instance = sb;
-        lustre_end_log(sb, profilenm, &cfg);
+        lustre_log_end(lsi, profilenm, &cfg);
 
         if (sbi->ll_md_exp) {
                 obd = class_exp2obd(sbi->ll_md_exp);
@@ -1046,7 +1046,7 @@ void ll_put_super(struct super_block *sb)
         ll_free_sbi(sb);
         lsi->lsi_llsbi = NULL;
 
-        lustre_common_put_super(sb);
+        lustre_common_umount(lsi);
 
         cl_env_cache_purge(~0);
 
@@ -1937,7 +1937,7 @@ void ll_umount_begin(struct super_block *sb)
 #endif
 
         /* Tell the MGC we got umount -f */
-        lsi->lsi_flags |= LSI_UMOUNT_FORCE;
+        lsi->lsi_flags &= ~LSI_UMOUNT_FAILOVER;
 
         CDEBUG(D_VFSTRACE, "VFS Op: superblock %p count %d active %d\n", sb,
                sb->s_count, atomic_read(&sb->s_active));

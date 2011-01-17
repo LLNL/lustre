@@ -284,9 +284,9 @@ struct filter_obd {
         const char          *fo_fstype;
 
         int                  fo_group_count;
-        cfs_dentry_t        *fo_dentry_O;
-        cfs_dentry_t       **fo_dentry_O_groups;
-        struct filter_subdirs   *fo_dentry_O_sub;
+        //cfs_dentry_t        *fo_dentry_O;
+        //cfs_dentry_t       **fo_dentry_O_groups;
+        ///struct filter_subdirs   *fo_dentry_O_sub;
         cfs_semaphore_t      fo_init_lock;      /* group initialization lock */
         int                  fo_committed_group;
 
@@ -313,7 +313,7 @@ struct filter_obd {
         struct obd_import   *fo_mdc_imp;
         struct obd_uuid      fo_mdc_uuid;
         struct lustre_handle fo_mdc_conn;
-        struct file        **fo_last_objid_files;
+        //struct file        **fo_last_objid_files;
         __u64               *fo_last_objids; /* last created objid for groups,
                                               * protected by fo_objidlock */
 
@@ -465,7 +465,6 @@ struct client_obd {
         struct mdc_rpc_lock     *cl_rpc_lock;
         struct mdc_rpc_lock     *cl_setattr_lock;
         struct mdc_rpc_lock     *cl_close_lock;
-        struct osc_creator       cl_oscc;
 
         /* mgc datastruct */
         cfs_semaphore_t          cl_mgc_sem;
@@ -505,73 +504,12 @@ struct mgs_obd {
         cfs_list_t                       mgs_fs_db_list;
         cfs_semaphore_t                  mgs_sem;
         cfs_proc_dir_entry_t            *mgs_proc_live;
+        struct dt_device                *mgs_osd;
+        struct obd_export               *mgs_osd_exp;
 };
 
-struct mds_obd {
-        /* NB this field MUST be first */
-        struct obd_device_target         mds_obt;
-        struct ptlrpc_service           *mds_service;
-        struct ptlrpc_service           *mds_setattr_service;
-        struct ptlrpc_service           *mds_readpage_service;
-        int                              mds_max_mdsize;
-        int                              mds_max_cookiesize;
-        __u64                            mds_io_epoch;
-        unsigned long                    mds_atime_diff;
-        cfs_semaphore_t                  mds_epoch_sem;
-        struct ll_fid                    mds_rootfid;
-        cfs_dentry_t                    *mds_pending_dir;
-        cfs_dentry_t                    *mds_logs_dir;
-        cfs_dentry_t                    *mds_objects_dir;
-        struct llog_handle              *mds_cfg_llh;
-        struct obd_device               *mds_lov_obd;
-        struct obd_uuid                  mds_lov_uuid;
-        char                            *mds_profile;
-        struct obd_export               *mds_lov_exp;
-        struct lov_desc                  mds_lov_desc;
-        __u32                            mds_id;
-
-        /* mark pages dirty for write. */
-        cfs_bitmap_t                    *mds_lov_page_dirty;
-        /* array for store pages with obd_id */
-        void                           **mds_lov_page_array;
-        /* file for store objid */
-        struct file                     *mds_lov_objid_filp;
-        __u32                            mds_lov_objid_count;
-        __u32                            mds_lov_objid_max_index;
-        __u32                            mds_lov_objid_lastpage;
-        __u32                            mds_lov_objid_lastidx;
-
-
-        struct lustre_quota_info         mds_quota_info;
-        cfs_rw_semaphore_t               mds_qonoff_sem;
-        cfs_semaphore_t                  mds_health_sem;
-        unsigned long                    mds_fl_user_xattr:1,
-                                         mds_fl_acl:1,
-                                         mds_evict_ost_nids:1,
-                                         mds_fl_cfglog:1,
-                                         mds_fl_synced:1,
-                                         mds_quota:1,
-                                         mds_fl_target:1; /* mds have one or
-                                                           * more targets */
-
-        struct upcall_cache             *mds_identity_cache;
-
-        /* for capability keys update */
-        struct lustre_capa_key          *mds_capa_keys;
-        cfs_rw_semaphore_t               mds_notify_lock;
-};
-
-/* lov objid */
-extern __u32 mds_max_ost_index;
-
-#define MDS_LOV_ALLOC_SIZE (CFS_PAGE_SIZE)
-
-#define OBJID_PER_PAGE() (MDS_LOV_ALLOC_SIZE / sizeof(obd_id))
-
-#define MDS_LOV_OBJID_PAGES_COUNT (mds_max_ost_index/OBJID_PER_PAGE())
-
-extern int mds_lov_init_objids(struct obd_device *obd);
-extern void mds_lov_destroy_objids(struct obd_device *obd);
+struct dt_object;
+struct dt_device;
 
 struct obd_id_info {
         __u32   idx;
@@ -679,6 +617,7 @@ struct lov_tgt_desc {
         unsigned long       ltd_active:1,/* is this target up for requests */
                             ltd_activate:1,/* should  target be activated */
                             ltd_reap:1;  /* should this target be deleted */
+        struct obd_statfs   ltd_statfs;
 };
 
 /* Pool metadata */
@@ -764,13 +703,15 @@ struct lmv_obd {
 };
 
 struct niobuf_local {
-        __u64 offset;
-        __u32 len;
-        __u32 flags;
-        cfs_page_t    *page;
-        cfs_dentry_t  *dentry;
-        int lnb_grant_used;
-        int rc;
+        __u64           file_offset;
+        __u32           page_offset;
+        __u32           len;
+        __u32           flags;
+        cfs_page_t     *page;
+        void           *obj;
+        int             lnb_grant_used;
+        unsigned long   bytes;
+        int             rc;
 };
 
 #define LUSTRE_FLD_NAME         "fld"
@@ -783,6 +724,8 @@ struct niobuf_local {
 #define LUSTRE_LMV_NAME         "lmv"
 #define LUSTRE_CMM_MDC_NAME     "cmm-mdc"
 #define LUSTRE_SLP_NAME         "slp"
+#define LUSTRE_LOD_NAME         "lod"
+#define LUSTRE_OSP_NAME         "osp"
 
 /* obd device type names */
  /* FIXME all the references to LUSTRE_MDS_NAME should be swapped with LUSTRE_MDT_NAME */
@@ -795,13 +738,11 @@ struct niobuf_local {
 #define LUSTRE_LOV_NAME         "lov"
 #define LUSTRE_MGS_NAME         "mgs"
 #define LUSTRE_MGC_NAME         "mgc"
-
 #define LUSTRE_CACHEOBD_NAME    "cobd"
 #define LUSTRE_ECHO_NAME        "obdecho"
 #define LUSTRE_ECHO_CLIENT_NAME "echo_client"
 
 /* Constant obd names (post-rename) */
-#define LUSTRE_MDS_OBDNAME "MDS"
 #define LUSTRE_OSS_OBDNAME "OSS"
 #define LUSTRE_MGS_OBDNAME "MGS"
 #define LUSTRE_MGC_OBDNAME "MGC"
@@ -821,6 +762,8 @@ struct obd_trans_info {
         struct llog_cookie       oti_onecookie;
         struct llog_cookie      *oti_logcookies;
         int                      oti_numcookies;
+        /** synchronous write is needed */
+        long                     oti_sync_write:1;
 
         /* initial thread handling transaction */
         struct ptlrpc_thread *   oti_thread;
@@ -1084,7 +1027,6 @@ struct obd_device {
         union {
                 struct obd_device_target obt;
                 struct filter_obd filter;
-                struct mds_obd mds;
                 struct client_obd cli;
                 struct ost_obd ost;
                 struct echo_client_obd echo_client;
@@ -1139,7 +1081,6 @@ enum obd_cleanup_stage {
 #define KEY_CHANGELOG_CLEAR     "changelog_clear"
 #define KEY_FID2PATH            "fid2path"
 #define KEY_CHECKSUM            "checksum"
-#define KEY_CLEAR_FS            "clear_fs"
 #define KEY_CONN_DATA           "conn_data"
 #define KEY_EVICT_BY_NID        "evict_by_nid"
 #define KEY_FIEMAP              "fiemap"
@@ -1160,7 +1101,6 @@ enum obd_cleanup_stage {
 #define KEY_READ_ONLY           "read-only"
 #define KEY_REGISTER_TARGET     "register_target"
 #define KEY_REVIMP_UPD          "revimp_update"
-#define KEY_SET_FS              "set_fs"
 #define KEY_TGT_COUNT           "tgt_count"
 /*      KEY_SET_INFO in lustre_idl.h */
 #define KEY_SPTLRPC_CONF        "sptlrpc_conf"

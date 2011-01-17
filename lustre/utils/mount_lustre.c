@@ -52,7 +52,9 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/mount.h>
+#ifndef BLKGETSIZE64
 #include <linux/fs.h>
+#endif
 #include <mntent.h>
 #include <getopt.h>
 #include "obdctl.h"
@@ -61,17 +63,20 @@
 #include <ctype.h>
 #include <limits.h>
 #include "mount_utils.h"
+#include <lustre_param.h>
 
 #define MAX_HW_SECTORS_KB_PATH  "queue/max_hw_sectors_kb"
 #define MAX_SECTORS_KB_PATH     "queue/max_sectors_kb"
 #define STRIPE_CACHE_SIZE       "md/stripe_cache_size"
 #define MAX_RETRIES 99
+#define MAXOPT 4096
 
 int          verbose = 0;
 int          nomtab = 0;
 int          fake = 0;
 int          force = 0;
 int          retry = 0;
+int          have_mgsnid = 0;
 int          md_stripe_cache_size = 16384;
 char         *progname = NULL;
 
@@ -84,7 +89,7 @@ void usage(FILE *out)
                 progname);
         fprintf(out,
                 "\t<device>: the disk device, or for a client:\n"
-                "\t\t<mgmtnid>[:<altmgtnid>...]:/<filesystem>-client\n"
+                "\t\t<mgmtnid>[:<altmgt>...]:/<filesystem>\n"
                 "\t<filesystem>: name of the Lustre filesystem (e.g. lustre1)\n"
                 "\t<mountpt>: filesystem mountpoint (e.g. /mnt/lustre)\n"
                 "\t-f|--fake: fake mount (updates /etc/mtab)\n"
@@ -95,8 +100,10 @@ void usage(FILE *out)
                 "\t<mntopt>: one or more comma separated of:\n"
                 "\t\t(no)flock,(no)user_xattr,(no)acl\n"
                 "\t\tabort_recov: abort server recovery handling\n"
-                "\t\tnosvc: only start MGC/MGS obds\n"
-                "\t\tnomgs: only start target obds, using existing MGS\n"
+                "\t\tmgs: start a Management Server with this MDT (MDT only)\n"
+                "\t\tnomgs: do not start the MGS with this MDT\n"
+                "\t\tnosvc: with the 'mgs' option, start only the MGS and not "
+                "this MDT\n"
                 "\t\texclude=<ostname>[:<ostname>] : colon-separated list of "
                 "inactive OSTs (e.g. lustre-OST0001)\n"
                 "\t\tretry=<num>: number of times mount is retried by client\n"
@@ -159,44 +166,6 @@ update_mtab_entry(char *spec, char *mtpt, char *type, char *opts,
         }
 
         return rc;
-}
-
-/* Get rid of symbolic hostnames for tcp, since kernel can't do lookups */
-#define MAXNIDSTR 1024
-static char *convert_hostnames(char *s1)
-{
-        char *converted, *s2 = 0, *c;
-        char sep;
-        int left = MAXNIDSTR;
-        lnet_nid_t nid;
-
-        converted = malloc(left);
-        if (converted == NULL) {
-                fprintf(stderr, "out of memory: needed %d bytes\n",
-                        MAXNIDSTR);
-                return NULL;
-        }
-        c = converted;
-        while ((left > 0) && (*s1 != '/')) {
-                s2 = strpbrk(s1, ",:");
-                if (!s2)
-                        goto out_free;
-                sep = *s2;
-                *s2 = '\0';
-                nid = libcfs_str2nid(s1);
-                *s2 = sep;                      /* back to original string */
-                if (nid == LNET_NID_ANY)
-                        goto out_free;
-                c += snprintf(c, left, "%s%c", libcfs_nid2str(nid), sep);
-                left = converted + MAXNIDSTR - c;
-                s1 = s2 + 1;
-        }
-        snprintf(c, left, "%s", s1);
-        return converted;
-out_free:
-        fprintf(stderr, "%s: Can't parse NID '%s'\n", progname, s1);
-        free(converted);
-        return NULL;
 }
 
 /*****************************************************************************
@@ -280,13 +249,28 @@ static void append_option(char *options, const char *one)
         strcat(options, one);
 }
 
+static void append_mgsnid(char *options, const char *val)
+{
+        char *resolved;
+
+        append_option(options, PARAM_MGSNODE);
+        resolved = convert_hostnames((char *)val);
+        if (resolved) {
+                strcat(options, resolved);
+                free(resolved);
+        } else {
+                strcat(options, val);
+        }
+        have_mgsnid++;
+}
+
 /* Replace options with subset of Lustre-specific options, and
    fill in mount flags */
 int parse_options(char *orig_options, int *flagp)
 {
         char *options, *opt, *nextopt, *arg, *val;
 
-        options = calloc(strlen(orig_options) + 1, 1);
+        options = calloc(MAXOPT, 1);
         *flagp = 0;
         nextopt = orig_options;
         while ((opt = strsep(&nextopt, ","))) {
@@ -298,9 +282,9 @@ int parse_options(char *orig_options, int *flagp)
                  * manner */
                 arg = opt;
                 val = strchr(opt, '=');
-                /* please note that some ldiskfs mount options are also in the form
-                 * of param=value. We should pay attention not to remove those
-                 * mount options, see bug 22097. */
+                /* please note that some ldiskfs mount options are also in the
+                 * form of param=value. We should pay attention not to remove
+                 * those mount options, see bug 22097. */
                 if (val && strncmp(arg, "md_stripe_cache_size", 20) == 0) {
                         md_stripe_cache_size = atoi(val + 1);
                 } else if (val && strncmp(arg, "retry", 5) == 0) {
@@ -309,6 +293,10 @@ int parse_options(char *orig_options, int *flagp)
                                 retry = MAX_RETRIES;
                         else if (retry < 0)
                                 retry = 0;
+                } else if (val && strncmp(arg, PARAM_MGSNODE,
+                                           sizeof(PARAM_MGSNODE) - 1) == 0) {
+                        /* mgs*=val (no val for plain "mgs" option) */
+                        append_mgsnid(options, val + 1);
                 } else if (val && strncmp(arg, "mgssec", 6) == 0) {
                         append_option(options, opt);
                 } else if (strcmp(opt, "force") == 0) {
@@ -321,11 +309,12 @@ int parse_options(char *orig_options, int *flagp)
                 }
         }
 #ifdef MS_STRICTATIME
-                /* set strictatime to default if NOATIME or RELATIME
-                   not given explicit */
+        /* set strictatime to default if NOATIME or RELATIME
+         * not given explicit */
         if (!(*flagp & (MS_NOATIME | MS_RELATIME)))
                 *flagp |= MS_STRICTATIME;
 #endif
+        fflush(stdout);
         strcpy(orig_options, options);
         free(options);
         return 0;
@@ -550,17 +539,122 @@ set_params:
         return rc;
 }
 
+/* Add mgsnids from ldd params */
+static int add_mgsnids(char *options, const char *params)
+{
+        char *ptr = (char *)params;
+        char tmp, *sep;
+
+        while ((ptr = strstr(ptr, PARAM_MGSNODE)) != NULL) {
+                sep = strchr(ptr, ' ');
+                if (sep != NULL) {
+                        tmp = *sep;
+                        *sep = '\0';
+                }
+                append_option(options, ptr);
+                have_mgsnid++;
+                if (sep) {
+                        *sep = tmp;
+                        ptr = sep;
+                } else {
+                        break;
+                }
+        }
+
+        return 0;
+}
+
+/* Glean any data we can from the disk */
+static int parse_ldd(char *source, struct lustre_disk_data *ldd,
+                     char *options)
+{
+        int rc;
+
+        /* We no longer read the MOUNT_DATA_FILE from within Lustre.
+         * We only read it here, and convert critical info into mount
+         * options. */
+        rc = get_mountdata(source, ldd);
+        if (rc) {
+                fprintf(stderr, "%s: %s failed to read permanent mount"
+                        " data: %s\n", progname, source, strerror(rc));
+                return rc;
+        }
+
+        if (ldd->ldd_flags & LDD_F_NEED_INDEX) {
+                fprintf(stderr, "%s: %s has no index assigned "
+                        "(probably formatted with old mkfs)\n",
+                        progname, source);
+                return EINVAL;
+        }
+
+        if (ldd->ldd_flags & LDD_F_WRITECONF) {
+                fprintf(stderr, "%s: writeconf may no longer be specified "
+                        "with tunefs.  Use the temporary mount option '-o "
+                        "writeconf' instead.\n", progname);
+                return EINVAL;
+        }
+
+        if (ldd->ldd_flags & LDD_F_UPGRADE14) {
+                fprintf(stderr, "%s: we cannot upgrade %s from this (very old) "
+                        "Lustre version\n", progname, source);
+                return EINVAL;
+        }
+
+        /* Since we never rewrite ldd, ignore temp flags */
+        ldd->ldd_flags &= ~(LDD_F_VIRGIN | LDD_F_UPDATE);
+
+        /* svname of the form lustre:OST1234 means never registered */
+        rc = strlen(ldd->ldd_svname);
+        if (ldd->ldd_svname[rc - 8] == ':') {
+                ldd->ldd_svname[rc - 8] = '-';
+                ldd->ldd_flags |= LDD_F_VIRGIN;
+        }
+
+        append_option(options, ldd->ldd_mount_opts);
+
+        if (!have_mgsnid) {
+                /* Only use disk data if mount -o mgsnode=nid wasn't
+                 * specified */
+                if (ldd->ldd_flags & LDD_F_SV_TYPE_MGS) {
+                        append_option(options, "mgs");
+                        have_mgsnid++;
+                } else {
+                        add_mgsnids(options, ldd->ldd_params);
+                }
+        }
+        /* Better have an mgsnid by now */
+        if (!have_mgsnid) {
+                fprintf(stderr, "%s: missing option mgsnode=<nid>\n",
+                        progname);
+                return EINVAL;
+        }
+
+        if (ldd->ldd_flags & LDD_F_VIRGIN)
+                append_option(options, "writeconf");
+        if (ldd->ldd_flags & LDD_F_IAM_DIR)
+                append_option(options, "iam");
+        if (ldd->ldd_flags & LDD_F_NO_PRIMNODE)
+                append_option(options, "noprimnode");
+
+        /* svname must be last option */
+        append_option(options, "svname=");
+        strcat(options, ldd->ldd_svname);
+
+        return 0;
+}
+
 int main(int argc, char *const argv[])
 {
+        struct lustre_disk_data ldd = {};
         char default_options[] = "";
-        char *usource, *source, *ptr;
-        char target[PATH_MAX] = {'\0'};
-        char real_path[PATH_MAX] = {'\0'};
-        char path[256], name[256];
-        FILE *f;
-        size_t sz;
-        char *options, *optcopy, *orig_options = default_options;
-        int i, nargs = 3, opt, rc, flags, optlen;
+        char *usource = NULL; /* user-specified mount device */
+        char *source = NULL; /* our mount device name (which we may modify) */
+        char target[PATH_MAX] = {'\0'}; /* dir to mount at */
+        char *ptr;
+        char *options, *orig_options = default_options;
+        int i, nargs = 3, opt, rc, flags;
+        int is_client = 0;
+
         static struct option long_opt[] = {
                 {"fake", 0, 0, 'f'},
                 {"force", 0, 0, 1},
@@ -570,6 +664,9 @@ int main(int argc, char *const argv[])
                 {"verbose", 0, 0, 'v'},
                 {0, 0, 0, 0}
         };
+
+        /* XXX: how do we do this? */
+        setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin", 0);
 
         progname = strrchr(argv[0], '/');
         progname = progname ? progname + 1 : argv[0];
@@ -621,30 +718,22 @@ int main(int argc, char *const argv[])
                 usage(stderr);
         }
 
-        /**
-         * Try to get the real path to the device, in case it is a
-         * symbolic link for instance
-         */
-        if (realpath(usource, real_path) != NULL) {
-                usource = real_path;
+        if ((ptr = devname_is_client(usource)) != NULL) {
+                char tmp, *nids;
 
-                ptr = strrchr(real_path, '/');
-                if (ptr && strncmp(ptr, "/dm-", 4) == 0 && isdigit(*(ptr + 4))) {
-                        snprintf(path, sizeof(path), "/sys/block/%s/dm/name", ptr+1);
-                        if ((f = fopen(path, "r"))) {
-                                /* read "<name>\n" from sysfs */
-                                if (fgets(name, sizeof(name), f) && (sz = strlen(name)) > 1) {
-                                        name[sz - 1] = '\0';
-                                        snprintf(real_path, sizeof(real_path), "/dev/mapper/%s", name);
-                                }
-                                fclose(f);
-                        }
-                }
-        }
+                ++is_client;
 
-        source = convert_hostnames(usource);
-        if (!source) {
-                usage(stderr);
+                /* convert nids part, but not fsname part */
+                tmp = *ptr;
+                *ptr = '\0';
+                nids = convert_hostnames(usource);
+                if (!nids)
+                        usage(stderr);
+                *ptr = tmp;
+                source = malloc(strlen(nids) + strlen(ptr) + 1);
+                sprintf(source, "%s%s", nids, ptr);
+        } else {
+                source = strdup(usource);
         }
 
         if (realpath(argv[optind + 1], target) == NULL) {
@@ -662,10 +751,10 @@ int main(int argc, char *const argv[])
                 printf("options = %s\n", orig_options);
         }
 
-        options = malloc(strlen(orig_options) + 1);
+        options = malloc(MAXOPT);
         if (options == NULL) {
                 fprintf(stderr, "can't allocate memory for options\n");
-                return -1;
+                return (ENOMEM);
         }
         strcpy(options, orig_options);
         rc = parse_options(options, &flags);
@@ -693,6 +782,7 @@ int main(int argc, char *const argv[])
         if (flags & MS_REMOUNT)
                 nomtab++;
 
+        /* Make sure we have a mount point */
         rc = access(target, F_OK);
         if (rc) {
                 rc = errno;
@@ -701,25 +791,22 @@ int main(int argc, char *const argv[])
                 return rc;
         }
 
+        if (!is_client) {
+                rc = parse_ldd(source, &ldd, options);
+                if (rc)
+                        return rc;
+        }
+
         /* In Linux 2.4, the target device doesn't get passed to any of our
            functions.  So we'll stick it on the end of the options. */
-        optlen = strlen(options) + strlen(",device=") + strlen(source) + 1;
-        optcopy = malloc(optlen);
-        if (optcopy == NULL) {
-                fprintf(stderr, "can't allocate memory to optcopy\n");
-                return -1;
-        }
-        strcpy(optcopy, options);
-        if (*optcopy)
-                strcat(optcopy, ",");
-        strcat(optcopy, "device=");
-        strcat(optcopy, source);
+        append_option(options, "device=");
+        strcat(options, source);
 
         if (verbose)
                 printf("mounting device %s at %s, flags=%#x options=%s\n",
-                       source, target, flags, optcopy);
+                       source, target, flags, options);
 
-        if (!strstr(usource, ":/") && set_blockdev_tunables(source, 1)) {
+        if (!is_client && set_blockdev_tunables(source, 1)) {
                 if (verbose)
                         fprintf(stderr, "%s: unable to set tunables for %s"
                                 " (may cause reduced IO performance)\n",
@@ -732,29 +819,39 @@ int main(int argc, char *const argv[])
                 /* flags and target get to lustre_get_sb, but not
                    lustre_fill_super.  Lustre ignores the flags, but mount
                    does not. */
-                for (i = 0, rc = -EAGAIN; i <= retry && rc != 0; i++) {
+                for (i = 0, rc = -EAGAIN; i <= retry; i++) {
                         rc = mount(source, target, "lustre", flags,
-                                   (void *)optcopy);
-                        if (rc) {
-                                if (verbose) {
-                                        fprintf(stderr, "%s: mount %s at %s "
-                                                "failed: %s retries left: "
-                                                "%d\n", basename(progname),
-                                                usource, target,
-                                                strerror(errno), retry-i);
-                                }
+                                   (void *)options);
+                        if ((rc == 0) || (retry == 0))
+                                break;
 
-                                if (retry) {
-                                        sleep(1 << max((i/2), 5));
-                                }
-                                else {
-                                        rc = errno;
-                                }
+                        if (verbose) {
+                                fprintf(stderr, "%s: mount %s at %s "
+                                        "failed: %s retries left: %d\n",
+                                        basename(progname), usource, target,
+                                        strerror(errno), retry-i);
                         }
+
+                        sleep(1 << max((i/2), 5));
                 }
         }
 
-        if (rc) {
+        if (rc == 0) {
+                if (!nomtab)
+                        rc = update_mtab_entry(usource, target, "lustre",
+                                               orig_options, 0,0,0);
+                if (ldd.ldd_flags & LDD_F_VIRGIN) {
+                        char cmd[100] = "";
+
+                        snprintf(cmd, sizeof(cmd), E2LABEL" %s %s",
+                                        source, ldd.ldd_svname);
+                        if (verbose)
+                                printf("setting label to '%s'\n",
+                                       ldd.ldd_svname);
+
+                        rc = run_command(cmd, sizeof(cmd));
+                }
+        } else {
                 char *cli;
 
                 rc = errno;
@@ -787,7 +884,7 @@ int main(int argc, char *const argv[])
                                 " (%s)\n", usource);
                 if (errno == ENXIO)
                         fprintf(stderr, "The target service failed to start "
-                                "(bad config log?) (%s).  "
+                                "(needs -o writeconf?  bad config log?) (%s)."
                                 "See /var/log/messages.\n", usource);
                 if (errno == EIO)
                         fprintf(stderr, "Is the MGS running?\n");
@@ -813,13 +910,9 @@ int main(int argc, char *const argv[])
                         else if (ret > 0)
                                 rc = WEXITSTATUS(ret);
                 }
-
-        } else if (!nomtab) {
-                rc = update_mtab_entry(usource, target, "lustre", orig_options,
-                                       0,0,0);
         }
 
-        free(optcopy);
+        free(options);
         free(source);
         return rc;
 }

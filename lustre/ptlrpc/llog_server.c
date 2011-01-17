@@ -159,7 +159,7 @@ int llog_origin_handle_destroy(struct ptlrpc_request *req)
         rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
-        rc = llog_destroy(loghandle);
+        rc = llog_destroy(req->rq_svc_thread->t_env, loghandle);
         if (rc)
                 GOTO(out_close, rc);
         llog_free_handle(loghandle);
@@ -213,7 +213,8 @@ int llog_origin_handle_next_block(struct ptlrpc_request *req)
                 GOTO(out_close, rc);
 
         memset(buf, 0, LLOG_CHUNK_SIZE);
-        rc = llog_next_block(loghandle, &body->lgd_saved_index,
+        rc = llog_next_block(req->rq_svc_thread->t_env,
+                             loghandle, &body->lgd_saved_index,
                              body->lgd_index,
                              &body->lgd_cur_offset, buf, LLOG_CHUNK_SIZE);
         if (rc)
@@ -284,8 +285,8 @@ int llog_origin_handle_prev_block(struct ptlrpc_request *req)
                 GOTO(out_close, rc);
 
         memset(buf, 0, LLOG_CHUNK_SIZE);
-        rc = llog_prev_block(loghandle, body->lgd_index,
-                             buf, LLOG_CHUNK_SIZE);
+        rc = llog_prev_block(req->rq_svc_thread->t_env, loghandle,
+                             body->lgd_index, buf, LLOG_CHUNK_SIZE);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -457,6 +458,7 @@ pop_ctxt:
 }
 EXPORT_SYMBOL(llog_origin_handle_cancel);
 
+#if 0
 static int llog_catinfo_config(struct obd_device *obd, char *buf, int buf_len,
                                char *client)
 {
@@ -657,6 +659,19 @@ release_ctxt:
         llog_ctxt_put(ctxt);
         return rc;
 }
+#else
+static int llog_catinfo_config(struct obd_device *obd, char *buf, int buf_len,
+                               char *client)
+{
+        return 0;
+}
+
+static int llog_catinfo_deletions(struct obd_device *obd, char *buf,
+                                  int buf_len)
+{
+        return 0;
+}
+#endif
 
 int llog_catinfo(struct ptlrpc_request *req)
 {
