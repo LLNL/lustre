@@ -209,6 +209,9 @@ struct echo_thread_info {
         struct lov_user_md_v3   eti_lum;
         struct md_attr          eti_ma;
         struct lu_name          eti_lname;
+        /* per-thread values, can be re-used */
+        void                   *eti_big_lmm;
+        int                     eti_big_lmmsize;
         char                    eti_name[20];
         struct lu_buf           eti_buf;
         char                    eti_xattr_buf[LUSTRE_POSIX_ACL_MAX_SIZE];
@@ -639,7 +642,7 @@ static void echo_site_fini(const struct lu_env *env, struct echo_device *ed)
 }
 
 static void *echo_thread_key_init(const struct lu_context *ctx,
-                          struct lu_context_key *key)
+                                  struct lu_context_key *key)
 {
         struct echo_thread_info *info;
 
@@ -650,7 +653,7 @@ static void *echo_thread_key_init(const struct lu_context *ctx,
 }
 
 static void echo_thread_key_fini(const struct lu_context *ctx,
-                         struct lu_context_key *key, void *data)
+                                 struct lu_context_key *key, void *data)
 {
         struct echo_thread_info *info = data;
         OBD_SLAB_FREE_PTR(info, echo_thread_kmem);
@@ -1360,8 +1363,8 @@ out:
 
 static obd_id last_object_id;
 
-static int
-echo_copyout_lsm (struct lov_stripe_md *lsm, void *_ulsm, int ulsm_nob)
+static int echo_copyout_lsm(struct lov_stripe_md *lsm, void *_ulsm,
+                            int ulsm_nob)
 {
         struct lov_stripe_md *ulsm = _ulsm;
         int nob, i;
@@ -1381,9 +1384,8 @@ echo_copyout_lsm (struct lov_stripe_md *lsm, void *_ulsm, int ulsm_nob)
         return 0;
 }
 
-static int
-echo_copyin_lsm (struct echo_device *ed, struct lov_stripe_md *lsm,
-                 void *ulsm, int ulsm_nob)
+static int echo_copyin_lsm(struct echo_device *ed, struct lov_stripe_md *lsm,
+                           void *ulsm, int ulsm_nob)
 {
         struct echo_client_obd *ec = ed->ed_ec;
         int                     i;
@@ -1419,6 +1421,117 @@ static inline void echo_md_build_name(struct lu_name *lname, char *name,
         lname->ln_namelen = strlen(name);
 }
 
+/* similar to mdt_attr_get_complex */
+static int echo_big_lmm_get(const struct lu_env *env, struct md_object *o,
+                            struct md_attr *ma)
+{
+        struct echo_thread_info *info = echo_env_info(env);
+        int rc;
+        ENTRY;
+
+        LASSERT(ma->ma_lmm_size > 0);
+
+        rc = mo_xattr_get(env, o, &LU_BUF_NULL, XATTR_NAME_LOV);
+        if (rc < 0)
+                RETURN(rc);
+
+        /* big_lmm may need to be grown */
+        if (info->eti_big_lmmsize < rc) {
+                int size = size_roundup_power2(rc);
+
+                if (info->eti_big_lmmsize > 0) {
+                        /* free old buffer */
+                        LASSERT(info->eti_big_lmm);
+                        OBD_FREE_LARGE(info->eti_big_lmm,
+                                       info->eti_big_lmmsize);
+                        info->eti_big_lmm = NULL;
+                        info->eti_big_lmmsize = 0;
+                }
+
+                OBD_ALLOC_LARGE(info->eti_big_lmm, size);
+                if (info->eti_big_lmm == NULL)
+                        RETURN(-ENOMEM);
+                info->eti_big_lmmsize = size;
+        }
+        LASSERT(info->eti_big_lmmsize >= rc);
+
+        info->eti_buf.lb_buf = info->eti_big_lmm;
+        info->eti_buf.lb_len = info->eti_big_lmmsize;
+        rc = mo_xattr_get(env, o, &info->eti_buf, XATTR_NAME_LOV);
+        if (rc < 0)
+                RETURN(rc);
+
+        ma->ma_valid |= MA_LOV;
+        ma->ma_lmm = info->eti_big_lmm;
+        ma->ma_lmm_size = rc;
+
+        RETURN(0);
+}
+
+int echo_attr_get_complex(const struct lu_env *env, struct md_object *next,
+                          struct md_attr *ma)
+{
+        struct echo_thread_info *info = echo_env_info(env);
+        struct lu_buf *buf = &info->eti_buf;
+        cfs_umode_t mode = lu_object_attr(&next->mo_lu);
+        int need = ma->ma_need;
+        int rc = 0, rc2;
+        ENTRY;
+
+        ma->ma_valid = 0;
+
+        if (need & MA_INODE) {
+                ma->ma_need = MA_INODE;
+                rc = mo_attr_get(env, next, ma);
+                if (rc)
+                        GOTO(out, rc);
+                ma->ma_valid |= MA_INODE;
+        }
+
+        if (need & MA_LOV) {
+                if (S_ISREG(mode) || S_ISDIR(mode)) {
+                        LASSERT(ma->ma_lmm_size > 0);
+                        buf->lb_buf = ma->ma_lmm;
+                        buf->lb_len = ma->ma_lmm_size;
+                        rc2 = mo_xattr_get(env, next, buf, XATTR_NAME_LOV);
+                        if (rc2 > 0) {
+                                ma->ma_lmm_size = rc2;
+                                ma->ma_valid |= MA_LOV;
+                        } else if (rc2 == -ENODATA) {
+                                /* no LOV EA */
+                                ma->ma_lmm_size = 0;
+                        } else if (rc2 == -ERANGE) {
+                                rc2 = echo_big_lmm_get(env, next, ma);
+                                if (rc2 < 0)
+                                        GOTO(out, rc = rc2);
+                        } else {
+                                GOTO(out, rc = rc2);
+                        }
+                }
+        }
+
+#ifdef CONFIG_FS_POSIX_ACL
+        if (need & MA_ACL_DEF && S_ISDIR(mode)) {
+                buf->lb_buf = ma->ma_acl;
+                buf->lb_len = ma->ma_acl_size;
+                rc2 = mo_xattr_get(env, next, buf, XATTR_NAME_ACL_DEFAULT);
+                if (rc2 > 0) {
+                        ma->ma_acl_size = rc2;
+                        ma->ma_valid |= MA_ACL_DEF;
+                } else if (rc2 == -ENODATA) {
+                        /* no ACLs */
+                        ma->ma_acl_size = 0;
+                } else
+                        GOTO(out, rc = rc2);
+        }
+#endif
+out:
+        ma->ma_need = need;
+        CDEBUG(D_INODE, "after getattr rc = %d, ma_valid = "LPX64" ma_lmm=%p\n",
+               rc, ma->ma_valid, ma->ma_lmm);
+        RETURN(rc);
+}
+
 static int echo_md_create_internal(const struct lu_env *env,
                                    struct echo_device *ed,
                                    struct md_object *parent,
@@ -1427,9 +1540,9 @@ static int echo_md_create_internal(const struct lu_env *env,
                                    struct md_op_spec *spec,
                                    struct md_attr *ma)
 {
-        struct lu_object        *ec_child, *child;
-        struct lu_device        *ld = ed->ed_next;
-        int                      rc;
+        struct lu_object *ec_child, *child;
+        struct lu_device *ld = ed->ed_next;
+        int               rc;
 
         ec_child = lu_object_find_at(env, &ed->ed_cl.cd_lu_dev,
                                      fid, NULL);
@@ -1453,6 +1566,7 @@ static int echo_md_create_internal(const struct lu_env *env,
                 CERROR("Can not create child "DFID": rc = %d\n", PFID(fid), rc);
                 GOTO(out_put, rc);
         }
+
         CDEBUG(D_RPCTRACE, "End creating object "DFID" %s %p rc  = %d\n",
                PFID(lu_object_fid(&parent->mo_lu)), lname->ln_name, parent, rc);
 out_put:
@@ -1460,39 +1574,19 @@ out_put:
         return rc;
 }
 
-static int echo_set_lmm_size(const struct lu_env *env,
-                             struct lu_device *ld,
+static int echo_set_lmm_size(const struct lu_env *env, struct lu_device *ld,
                              struct md_attr *ma)
 {
-        struct md_device *md = lu2md_dev(ld);
-        int lmm_size, cookie_size, rc;
-        ENTRY;
+        struct echo_thread_info *info = echo_env_info(env);
 
-        md = lu2md_dev(ld);
-        rc = md->md_ops->mdo_maxsize_get(env, md,
-                                         &lmm_size, &cookie_size);
-        if (rc)
-                RETURN(rc);
-
-        ma->ma_lmm_size = lmm_size;
-        if (lmm_size > 0) {
-                OBD_ALLOC(ma->ma_lmm, lmm_size);
-                if (ma->ma_lmm == NULL) {
-                        ma->ma_lmm_size = 0;
-                        RETURN(-ENOMEM);
-                }
+        if (strcmp(ld->ld_type->ldt_name, LUSTRE_MDD_NAME)) {
+                ma->ma_lmm = (void *)&info->eti_lmm;
+                ma->ma_lmm_size = sizeof(info->eti_lmm);
+        } else {
+                ma->ma_lmm = info->eti_big_lmm;
+                ma->ma_lmm_size = info->eti_big_lmmsize;
         }
-
-        ma->ma_cookie_size = cookie_size;
-        if (cookie_size > 0) {
-                OBD_ALLOC(ma->ma_cookie, cookie_size);
-                if (ma->ma_cookie == NULL) {
-                        ma->ma_cookie_size = 0;
-                        RETURN(-ENOMEM);
-                }
-        }
-
-        RETURN(0);
+        return 0;
 }
 
 static int echo_create_md_object(const struct lu_env *env,
@@ -1512,6 +1606,8 @@ static int echo_create_md_object(const struct lu_env *env,
         int                      rc = 0;
         int                      i;
 
+        ENTRY;
+
         parent = lu_object_locate(ec_parent->lo_header, ld->ld_type);
         if (ec_parent == NULL) {
                 lu_object_put(env, ec_parent);
@@ -1522,11 +1618,12 @@ static int echo_create_md_object(const struct lu_env *env,
         memset(spec, 0, sizeof(*spec));
         if (stripe_count != 0) {
                 spec->sp_cr_flags |= FMODE_WRITE;
-                rc = echo_set_lmm_size(env, ld, ma);
-                if (rc)
-                        GOTO(out_free, rc);
+#if 0
+                echo_set_lmm_size(env, ld, ma);
+#endif
                 if (stripe_count != -1) {
                         struct lov_user_md_v3 *lum = &info->eti_lum;
+
                         lum->lmm_magic = LOV_USER_MAGIC_V3;
                         lum->lmm_stripe_count = stripe_count;
                         lum->lmm_stripe_offset = stripe_offset;
@@ -1537,8 +1634,8 @@ static int echo_create_md_object(const struct lu_env *env,
         }
 
         ma->ma_attr.la_mode = mode;
-        ma->ma_attr.la_valid = LA_CTIME;
         ma->ma_attr.la_ctime = cfs_time_current_64();
+        ma->ma_attr.la_valid = LA_CTIME | LA_MODE;
 
         if (name != NULL) {
                 lname->ln_name = name;
@@ -1546,7 +1643,7 @@ static int echo_create_md_object(const struct lu_env *env,
                 /* If name is specified, only create one object by name */
                 rc = echo_md_create_internal(env, ed, lu2md(parent), fid, lname,
                                              spec, ma);
-                GOTO(out_free, rc);
+                RETURN(rc);
         }
 
         /* Create multiple object sequenced by id */
@@ -1565,14 +1662,7 @@ static int echo_create_md_object(const struct lu_env *env,
                 id++;
                 fid->f_oid++;
         }
-
-out_free:
-        if (ma->ma_lmm_size > 0 && ma->ma_lmm != NULL)
-                OBD_FREE(ma->ma_lmm, ma->ma_lmm_size);
-        if (ma->ma_cookie_size > 0 && ma->ma_cookie != NULL)
-                OBD_FREE(ma->ma_cookie, ma->ma_cookie_size);
-
-        return rc;
+        RETURN(rc);
 }
 
 static struct lu_object *echo_md_lookup(const struct lu_env *env,
@@ -1613,14 +1703,14 @@ static int echo_setattr_object(const struct lu_env *env,
         int                      rc = 0;
         int                      i;
 
+        ENTRY;
+
         parent = lu_object_locate(ec_parent->lo_header, ld->ld_type);
         if (ec_parent == NULL) {
                 lu_object_put(env, ec_parent);
-                return PTR_ERR(parent);
+                RETURN(PTR_ERR(parent));
         }
 
-        buf->lb_buf = info->eti_xattr_buf;
-        buf->lb_len = sizeof(info->eti_xattr_buf);
         for (i = 0; i < count; i++) {
                 struct lu_object *ec_child, *child;
 
@@ -1644,10 +1734,13 @@ static int echo_setattr_object(const struct lu_env *env,
                 CDEBUG(D_RPCTRACE, "Start setattr object "DFID"\n",
                        PFID(lu_object_fid(child)));
 
+                buf->lb_buf = info->eti_xattr_buf;
+                buf->lb_len = sizeof(info->eti_xattr_buf);
+
                 sprintf(name, "%s.test1", XATTR_USER_PREFIX);
                 rc = mo_xattr_set(env, lu2md(child), buf, name,
                                   LU_XATTR_CREATE);
-                if (rc) {
+                if (rc < 0) {
                         CERROR("Can not setattr child "DFID": rc = %d\n",
                                 PFID(lu_object_fid(child)), rc);
                         lu_object_put(env, ec_child);
@@ -1658,7 +1751,7 @@ static int echo_setattr_object(const struct lu_env *env,
                 id++;
                 lu_object_put(env, ec_child);
         }
-        return rc;
+        RETURN(rc);
 }
 
 static int echo_getattr_object(const struct lu_env *env,
@@ -1675,17 +1768,16 @@ static int echo_getattr_object(const struct lu_env *env,
         int                      rc = 0;
         int                      i;
 
+        ENTRY;
+
         parent = lu_object_locate(ec_parent->lo_header, ld->ld_type);
         if (ec_parent == NULL) {
                 lu_object_put(env, ec_parent);
-                return PTR_ERR(parent);
+                RETURN(PTR_ERR(parent));
         }
 
         memset(ma, 0, sizeof(*ma));
-        rc = echo_set_lmm_size(env, ld, ma);
-        if (rc)
-                GOTO(out_free, rc);
-
+        echo_set_lmm_size(env, ld, ma);
         ma->ma_need |= MA_INODE | MA_LOV | MA_PFID | MA_HSM | MA_ACL_DEF;
         ma->ma_acl = info->eti_xattr_buf;
         ma->ma_acl_size = sizeof(info->eti_xattr_buf);
@@ -1707,30 +1799,24 @@ static int echo_getattr_object(const struct lu_env *env,
                 if (child == NULL) {
                         CERROR("Can not locate the child %s\n", lname->ln_name);
                         lu_object_put(env, ec_child);
-                        GOTO(out_free, rc = -EINVAL);
+                        RETURN(-EINVAL);
                 }
 
                 CDEBUG(D_RPCTRACE, "Start getattr object "DFID"\n",
                        PFID(lu_object_fid(child)));
-                rc = mo_attr_get(env, lu2md(child), ma);
+                rc = echo_attr_get_complex(env, lu2md(child), ma);
                 if (rc) {
                         CERROR("Can not getattr child "DFID": rc = %d\n",
                                 PFID(lu_object_fid(child)), rc);
                         lu_object_put(env, ec_child);
-                        break;
+                        RETURN(rc);
                 }
                 CDEBUG(D_RPCTRACE, "End getattr object "DFID"\n",
                        PFID(lu_object_fid(child)));
                 id++;
                 lu_object_put(env, ec_child);
         }
-
-out_free:
-        if (ma->ma_lmm_size > 0 && ma->ma_lmm != NULL)
-                OBD_FREE(ma->ma_lmm, ma->ma_lmm_size);
-        if (ma->ma_cookie_size > 0 && ma->ma_cookie != NULL)
-                OBD_FREE(ma->ma_cookie, ma->ma_cookie_size);
-        return rc;
+        RETURN(rc);
 }
 
 static int echo_lookup_object(const struct lu_env *env,
@@ -1800,14 +1886,6 @@ static int echo_md_destroy_internal(const struct lu_env *env,
         CDEBUG(D_RPCTRACE, "Start destroy object "DFID" %s %p\n",
                PFID(lu_object_fid(&parent->mo_lu)), lname->ln_name, parent);
 
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2,3,50,0)
-        /* After 2.4, MDT will send destroy RPC to OST directly, so no need
-         * this flag */
-        ma->ma_valid |= MA_FLAGS;
-        ma->ma_attr_flags |= MDS_UNLINK_DESTROY;
-#else
-#warning "Please remove this after 2.4 (LOD/OSP)"
-#endif
         rc = mdo_unlink(env, parent, lu2md(child), lname, ma);
         if (rc) {
                 CERROR("Can not unlink child %s: rc = %d\n",
@@ -1825,8 +1903,7 @@ static int echo_destroy_object(const struct lu_env *env,
                                struct echo_device *ed,
                                struct lu_object *ec_parent,
                                char *name, int namelen,
-                               __u64 id, __u32 mode,
-                               int count)
+                               __u64 id, __u32 mode, int count)
 {
         struct echo_thread_info *info = echo_env_info(env);
         struct lu_name          *lname = &info->eti_lname;
@@ -1842,28 +1919,21 @@ static int echo_destroy_object(const struct lu_env *env,
                 RETURN(-EINVAL);
 
         memset(ma, 0, sizeof(*ma));
-        ma->ma_attr.la_mode = mode;
-        ma->ma_attr.la_valid = LA_CTIME;
-        ma->ma_attr.la_ctime = cfs_time_current_64();
         ma->ma_need = MA_INODE;
         ma->ma_valid = 0;
 
-        rc = echo_set_lmm_size(env, ld, ma);
-        if (rc)
-                GOTO(out_free, rc);
         if (name != NULL) {
                 lname->ln_name = name;
                 lname->ln_namelen = namelen;
                 rc = echo_md_destroy_internal(env, ed, lu2md(parent), lname,
                                               ma);
-                GOTO(out_free, rc);
+                RETURN(rc);
         }
 
-        /*prepare the requests*/
+        /* prepare the requests */
         for (i = 0; i < count; i++) {
                 char *tmp_name = info->eti_name;
 
-                ma->ma_need |= MA_LOV;
                 ma->ma_valid = 0;
                 echo_md_build_name(lname, tmp_name, id);
 
@@ -1876,11 +1946,6 @@ static int echo_destroy_object(const struct lu_env *env,
                 id++;
         }
 
-out_free:
-        if (ma->ma_lmm_size > 0 && ma->ma_lmm != NULL)
-                OBD_FREE(ma->ma_lmm, ma->ma_lmm_size);
-        if (ma->ma_cookie_size > 0 && ma->ma_cookie != NULL)
-                OBD_FREE(ma->ma_cookie, ma->ma_cookie_size);
         RETURN(rc);
 }
 
@@ -1898,7 +1963,7 @@ struct lu_object *echo_resolve_path(const struct lu_env *env,
         int rc = 0;
         ENTRY;
 
-        /*Only support MDD layer right now*/
+        /* Only support MDD layer right now */
         rc = md->md_ops->mdo_root_get(env, md, fid);
         if (rc) {
                 CERROR("get root error: rc = %d\n", rc);
@@ -1960,6 +2025,7 @@ static int echo_md_handler(struct echo_device *ed, int command,
                            char *path, int path_len, int id, int count,
                            struct obd_ioctl_data *data)
 {
+        struct echo_thread_info *info;
         struct lu_device      *ld = ed->ed_next;
         struct lu_env         *env;
         int                    refcheck;
@@ -1989,28 +2055,33 @@ static int echo_md_handler(struct echo_device *ed, int command,
                 RETURN(rc);
         }
 
+        /* init big_lmm buffer */
+        info = echo_env_info(env);
+        LASSERT(info->eti_big_lmm == NULL);
+        OBD_ALLOC_LARGE(info->eti_big_lmm, MIN_MD_SIZE);
+        if (info->eti_big_lmm == NULL)
+                GOTO(out_env, rc = -ENOMEM);
+        info->eti_big_lmmsize = MIN_MD_SIZE;
+
         parent = echo_resolve_path(env, ed, path, path_len);
         if (IS_ERR(parent)) {
                 CERROR("Can not resolve the path %s: rc = %ld\n", path,
                         PTR_ERR(parent));
-                cl_env_put(env, &refcheck);
-                RETURN(PTR_ERR(parent));
+                GOTO(out_free, rc = PTR_ERR(parent));
         }
 
         if (namelen > 0) {
                 OBD_ALLOC(name, namelen + 1);
                 if (name == NULL)
-                        RETURN(-ENOMEM);
+                        GOTO(out_put, rc = -ENOMEM);
                 if (cfs_copy_from_user(name, data->ioc_pbuf2, namelen)) {
-                        OBD_FREE(name, namelen + 1);
-                        RETURN(-EFAULT);
+                        GOTO(out_name, -EFAULT);
                 }
         }
 
         switch (command) {
         case ECHO_MD_CREATE:
         case ECHO_MD_MKDIR: {
-                struct echo_thread_info *info = echo_env_info(env);
                 __u32 mode = data->ioc_obdo2.o_mode;
                 struct lu_fid *fid = &info->eti_fid;
                 int stripe_count = (int)data->ioc_obdo2.o_misc;
@@ -2046,9 +2117,17 @@ static int echo_md_handler(struct echo_device *ed, int command,
                 rc = -EINVAL;
                 break;
         }
+out_name:
         if (name != NULL)
                 OBD_FREE(name, namelen + 1);
+out_put:
         lu_object_put(env, parent);
+out_free:
+        LASSERT(info->eti_big_lmm);
+        OBD_FREE_LARGE(info->eti_big_lmm, info->eti_big_lmmsize);
+        info->eti_big_lmm = NULL;
+        info->eti_big_lmmsize = 0;
+out_env:
         cl_env_put(env, &refcheck);
         return rc;
 }
@@ -2856,7 +2935,7 @@ static int echo_client_setup(const struct lu_env *env,
                 cfs_spin_unlock(&tgt->obd_dev_lock);
         }
 
-        OBD_FREE(ocd, sizeof(*ocd));
+        OBD_FREE_PTR(ocd);
 
         if (rc != 0) {
                 CERROR("fail to connect to device %s\n",

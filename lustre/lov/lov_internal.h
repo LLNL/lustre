@@ -178,18 +178,6 @@ int lov_stripe_intersects(struct lov_stripe_md *lsm, int stripeno,
                           obd_off *obd_start, obd_off *obd_end);
 int lov_stripe_number(struct lov_stripe_md *lsm, obd_off lov_off);
 
-/* lov_qos.c */
-#define LOV_USES_ASSIGNED_STRIPE        0
-#define LOV_USES_DEFAULT_STRIPE         1
-int qos_add_tgt(struct obd_device *obd, __u32 index);
-int qos_del_tgt(struct obd_device *obd, struct lov_tgt_desc *tgt);
-void qos_shrink_lsm(struct lov_request_set *set);
-int qos_prep_create(struct obd_export *exp, struct lov_request_set *set);
-void qos_update(struct lov_obd *lov);
-void qos_statfs_done(struct lov_obd *lov);
-void qos_statfs_update(struct obd_device *obd, __u64 max_age, int wait);
-int qos_remedy_create(struct lov_request_set *set, struct lov_request *req);
-
 /* lov_request.c */
 void lov_set_add_req(struct lov_request *req, struct lov_request_set *set);
 int lov_finished_set(struct lov_request_set *set);
@@ -262,7 +250,6 @@ void lov_fix_desc(struct lov_desc *desc);
 void lov_fix_desc_stripe_size(__u64 *val);
 void lov_fix_desc_stripe_count(__u32 *val);
 void lov_fix_desc_pattern(__u32 *val);
-void lov_fix_desc_qos_maxage(__u32 *val);
 __u16 lov_get_stripecnt(struct lov_obd *lov, __u32 magic, __u16 stripe_count);
 int lov_connect_obd(struct obd_device *obd, __u32 index, int activate,
                     struct obd_connect_data *data);
@@ -271,11 +258,6 @@ int lov_process_config_base(struct obd_device *obd, struct lustre_cfg *lcfg,
                             __u32 *indexp, int *genp);
 int lov_del_target(struct obd_device *obd, __u32 index,
                    struct obd_uuid *uuidp, int gen);
-/* lov_log.c */
-int lov_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
-                  struct obd_device *tgt, int *idx);
-int lov_llog_finish(struct obd_device *obd, int count);
-
 /* lov_pack.c */
 int lov_packmd(struct obd_export *exp, struct lov_mds_md **lmm,
                struct lov_stripe_md *lsm);

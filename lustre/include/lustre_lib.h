@@ -560,10 +560,9 @@ static inline void obd_ioctl_freedata(char *buf, int len)
 #define OBD_IOC_GET_OBJ_VERSION        _IOR('f', 210, OBD_IOC_DATA_TYPE)
 
 /* <lustre/lustre_user.h> defines ioctl number 218 */
-#define OBD_IOC_GET_MNTOPT             _IOW('f', 220, mntopt_t)
-
 #define OBD_IOC_ECHO_MD                _IOR('f', 221, struct obd_ioctl_data)
 #define OBD_IOC_ECHO_ALLOC_SEQ         _IOWR('f', 222, struct obd_ioctl_data)
+
 /* XXX _IOWR('f', 250, long) has been defined in
  * libcfs/include/libcfs/libcfs_private.h for debug, don't use it
  */

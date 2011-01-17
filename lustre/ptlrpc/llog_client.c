@@ -154,7 +154,7 @@ err_free:
         goto out;
 }
 
-static int llog_client_destroy(struct llog_handle *loghandle)
+static int llog_client_destroy(const struct lu_env *env, struct llog_handle *loghandle)
 {
         struct obd_import     *imp;
         struct ptlrpc_request *req = NULL;
@@ -183,7 +183,8 @@ err_exit:
 }
 
 
-static int llog_client_next_block(struct llog_handle *loghandle,
+static int llog_client_next_block(const struct lu_env *env,
+                                  struct llog_handle *loghandle,
                                   int *cur_idx, int next_idx,
                                   __u64 *cur_offset, void *buf, int len)
 {
@@ -237,7 +238,8 @@ err_exit:
         return rc;
 }
 
-static int llog_client_prev_block(struct llog_handle *loghandle,
+static int llog_client_prev_block(const struct lu_env *env,
+                                  struct llog_handle *loghandle,
                                   int prev_idx, void *buf, int len)
 {
         struct obd_import     *imp;

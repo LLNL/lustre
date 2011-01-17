@@ -192,30 +192,6 @@ int main(int argc, char *const argv[])
                    If user doesn't want this, they can copy the old
                    logs manually and re-tunefs. */
                 printf("MDS, index %d\n", lsd.lsd_mdt_index);
-        } else  {
-                /* If neither is set, we're pre-1.4.6, make a guess. */
-                /* Construct debugfs command line. */
-                memset(cmd, 0, sizeof(cmd));
-                sprintf(cmd,
-                        "%s -c -R 'rdump /%s %s' %s",
-                        DEBUGFS, MDT_LOGS_DIR, tmpdir, dev);
-
-                run_command(cmd);
-
-                sprintf(filepnm, "%s/%s", tmpdir, MDT_LOGS_DIR);
-                if (lsd.lsd_ost_index > 0) {
-                        printf("non-flagged OST, index %d\n", 
-                               lsd.lsd_ost_index);
-                } else {
-                        /* If there's a LOGS dir, it's an MDT */
-                        if ((ret = access(filepnm, F_OK)) == 0) {
-                                /* Old MDT's are always index 0 
-                                   (pre CMD) */
-                                printf("non-flagged MDS, index 0\n");
-                        } else {
-                                printf("non-flagged OST, index unknown\n");
-                        }
-                }
         }
         
 out_close:        

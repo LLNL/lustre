@@ -56,6 +56,7 @@
 
 #include <ldiskfs/ldiskfs.h>
 #include <ldiskfs/ldiskfs_jbd2.h>
+#include <ldiskfs/ldiskfs_extents.h>
 #ifdef HAVE_LDISKFS_JOURNAL_CALLBACK_ADD
 # define journal_callback ldiskfs_journal_cb_entry
 # define osd_journal_callback_set(handle, func, jcb) \
@@ -73,8 +74,10 @@
 /* class_register_type(), class_unregister_type(), class_get_type() */
 #include <obd_class.h>
 #include <lustre_disk.h>
-#include <dt_object.h>
 
+#include <lustre_fsfilt.h>
+
+#include <dt_object.h>
 #include "osd_oi.h"
 #include "osd_iam.h"
 
@@ -84,15 +87,17 @@ struct inode;
 #define OSD_COUNTERS (0)
 
 /** Enable thandle usage statistics */
-#define OSD_THANDLE_STATS (0)
+#define OSD_THANDLE_STATS
 
 #ifdef HAVE_QUOTA_SUPPORT
 struct osd_ctxt {
         __u32 oc_uid;
         __u32 oc_gid;
-        cfs_kernel_cap_t oc_cap;
+        __u32 oc_cap;
 };
 #endif
+
+struct osd_compat_objid;
 
 struct osd_directory {
         struct iam_container od_container;
@@ -194,8 +199,6 @@ static inline void ldiskfs_htree_lock_free(struct htree_lock *lk)
 
 #endif /* HAVE_LDISKFS_PDO */
 
-extern const int osd_dto_credits_noquota[];
-
 /*
  * osd device.
  */
@@ -203,7 +206,6 @@ struct osd_device {
         /* super-class */
         struct dt_device          od_dt_dev;
         /* information about underlying file system */
-        struct lustre_mount_info *od_mount;
         struct vfsmount          *od_mnt;
         /* object index */
         struct osd_oi           **od_oi_table;
@@ -223,8 +225,8 @@ struct osd_device {
         /*
          * statfs optimization: we cache a bit.
          */
+        struct obd_statfs         od_osfs;
         cfs_time_t                od_osfs_age;
-        cfs_kstatfs_t             od_kstatfs;
         cfs_spinlock_t            od_osfs_lock;
 
         /**
@@ -234,6 +236,11 @@ struct osd_device {
         __u32                     od_iop_mode;
 
         struct fsfilt_operations *od_fsops;
+        int                       od_connects;
+        struct lu_site            od_site;
+
+        char                      od_mntdev[128];
+        char                      od_svname[128];
 
         /*
          * mapping for legacy OST objids
@@ -303,7 +310,7 @@ struct osd_thandle {
         unsigned char           ot_declare_delete;
 #endif
 
-#if OSD_THANDLE_STATS
+#ifdef OSD_THANDLE_STATS
         /** time when this handle was allocated */
         cfs_time_t oth_alloced;
 
@@ -345,7 +352,7 @@ enum {
         LPROC_OSD_CACHE_HIT     = 5,
         LPROC_OSD_CACHE_MISS    = 6,
 
-#if OSD_THANDLE_STATS
+#ifdef OSD_THANDLE_STATS
         LPROC_OSD_THANDLE_STARTING,
         LPROC_OSD_THANDLE_OPEN,
         LPROC_OSD_THANDLE_CLOSING,
@@ -508,7 +515,7 @@ struct osd_thread_info {
 #ifdef HAVE_QUOTA_SUPPORT
         struct osd_ctxt        oti_ctxt;
 #endif
-        struct lu_env          oti_obj_delete_tx_env;
+
 #define OSD_FID_REC_SZ 32
         char                   oti_ldp[OSD_FID_REC_SZ];
         char                   oti_ldp2[OSD_FID_REC_SZ];
@@ -521,14 +528,11 @@ extern int ldiskfs_pdo;
 void lprocfs_osd_init_vars(struct lprocfs_static_vars *lvars);
 int osd_procfs_init(struct osd_device *osd, const char *name);
 int osd_procfs_fini(struct osd_device *osd);
-void osd_lprocfs_time_start(const struct lu_env *env);
-void osd_lprocfs_time_end(const struct lu_env *env,
-                          struct osd_device *osd, int op);
 void osd_brw_stats_update(struct osd_device *osd, struct osd_iobuf *iobuf);
 
 #endif
 int osd_statfs(const struct lu_env *env, struct dt_device *dev,
-               cfs_kstatfs_t *sfs);
+               struct obd_statfs *osfs);
 int osd_object_auth(const struct lu_env *env, struct dt_object *dt,
                     struct lustre_capa *capa, __u64 opc);
 void osd_declare_qid(struct dt_object *dt, struct osd_thandle *oh,
@@ -557,6 +561,38 @@ int osd_compat_spec_insert(struct osd_thread_info *info,
                            const struct lu_fid *fid,
                            const struct osd_inode_id *id, struct thandle *th);
 
+extern struct inode *ldiskfs_create_inode(handle_t *handle,
+                                          struct inode * dir, int mode);
+extern int iam_lvar_create(struct inode *obj, int keysize, int ptrsize,
+                           int recsize, handle_t *handle);
+
+extern int iam_lfix_create(struct inode *obj, int keysize, int ptrsize,
+                           int recsize, handle_t *handle);
+extern int ldiskfs_delete_entry(handle_t *handle,
+                                struct inode * dir,
+                                struct ldiskfs_dir_entry_2 * de_del,
+                                struct buffer_head * bh);
+
+int osd_compat_init(struct osd_device *osd);
+void osd_compat_fini(struct osd_device *dev);
+int osd_compat_objid_lookup(struct osd_thread_info *info, struct osd_device *osd,
+                            const struct lu_fid *fid, struct osd_inode_id *id);
+int osd_compat_objid_insert(struct osd_thread_info *info, struct osd_device *osd,
+                            const struct lu_fid *fid, const struct osd_inode_id *id,
+                            struct thandle *th);
+int osd_compat_objid_delete(struct osd_thread_info *info, struct osd_device *osd,
+                            const struct lu_fid *fid, struct thandle *th);
+int osd_compat_spec_lookup(struct osd_thread_info *info, struct osd_device *osd,
+                           const struct lu_fid *fid, struct osd_inode_id *id);
+int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
+                           const struct lu_fid *fid, const struct osd_inode_id *id,
+                           struct thandle *th);
+struct inode *osd_iget(struct osd_thread_info *info, struct osd_device *dev,
+                       const struct osd_inode_id *id);
+
+void osd_declare_qid(struct dt_object *dt, struct osd_thandle *oh,
+                     int type, uid_t id, struct inode *inode);
+
 /*
  * Invariants, assertions.
  */
@@ -582,6 +618,8 @@ static inline int osd_invariant(const struct osd_object *obj)
 #else
 #define osd_invariant(obj) (1)
 #endif
+
+#define OSD_MAX_CACHE_SIZE OBD_OBJECT_EOF
 
 static inline struct osd_oi *osd_fid2oi(struct osd_device *osd,
                                         const struct lu_fid *fid)
@@ -620,7 +658,7 @@ static inline struct osd_device *osd_obj2dev(const struct osd_object *o)
 
 static inline struct super_block *osd_sb(const struct osd_device *dev)
 {
-        return dev->od_mount->lmi_mnt->mnt_sb;
+        return dev->od_mnt->mnt_sb;
 }
 
 static inline int osd_object_is_root(const struct osd_object *obj)
@@ -738,4 +776,8 @@ int osd_fid_unpack(struct lu_fid *fid, const struct osd_fid_pack *pack)
 }
 
 #endif /* __KERNEL__ */
+
+#ifdef LPROCFS
+void osd_quota_procfs_init(struct osd_device *osd);
+#endif
 #endif /* _OSD_INTERNAL_H */

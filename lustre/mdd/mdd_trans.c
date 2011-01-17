@@ -47,53 +47,23 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs_jbd2.h>
-#else
-#include <linux/jbd.h>
-#endif
-#include <obd.h>
-#include <obd_class.h>
-#include <lustre_ver.h>
-#include <obd_support.h>
-#include <lprocfs_status.h>
-
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs.h>
-#else
-#include <linux/ldiskfs_fs.h>
-#endif
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
-
 #include "mdd_internal.h"
-
-int mdd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
-                    void *cookie)
-{
-        struct mdd_device *mdd = cookie;
-        struct obd_device *obd = mdd2obd_dev(mdd);
-
-        LASSERT(obd);
-        return mds_lov_write_objids(obd);
-}
 
 struct thandle *mdd_trans_create(const struct lu_env *env,
                                  struct mdd_device *mdd)
 {
-        return mdd_child_ops(mdd)->dt_trans_create(env, mdd->mdd_child);
+        return dt_trans_create(env, mdd->mdd_child);
 }
 
 int mdd_trans_start(const struct lu_env *env, struct mdd_device *mdd,
                     struct thandle *th)
 {
-        return mdd_child_ops(mdd)->dt_trans_start(env, mdd->mdd_child, th);
+        return dt_trans_start(env, mdd->mdd_child, th);
 }
 
 void mdd_trans_stop(const struct lu_env *env, struct mdd_device *mdd,
-                    int result, struct thandle *handle)
+                    int result, struct thandle *th)
 {
-        handle->th_result = result;
-        mdd_child_ops(mdd)->dt_trans_stop(env, handle);
+        th->th_result = result;
+        dt_trans_stop(env, mdd->mdd_child, th);
 }

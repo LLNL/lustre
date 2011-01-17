@@ -2662,8 +2662,6 @@ lustre/mdc/Makefile
 lustre/mdc/autoMakefile
 lustre/lmv/Makefile
 lustre/lmv/autoMakefile
-lustre/mds/Makefile
-lustre/mds/autoMakefile
 lustre/mdt/Makefile
 lustre/mdt/autoMakefile
 lustre/cmm/Makefile
@@ -2677,8 +2675,8 @@ lustre/obdclass/autoMakefile
 lustre/obdclass/linux/Makefile
 lustre/obdecho/Makefile
 lustre/obdecho/autoMakefile
-lustre/obdfilter/Makefile
-lustre/obdfilter/autoMakefile
+lustre/ofd/Makefile
+lustre/ofd/autoMakefile
 lustre/osc/Makefile
 lustre/osc/autoMakefile
 lustre/ost/Makefile
@@ -2700,6 +2698,10 @@ lustre/tests/Makefile
 lustre/tests/mpi/Makefile
 lustre/utils/Makefile
 lustre/utils/gss/Makefile
+lustre/lod/Makefile
+lustre/lod/autoMakefile
+lustre/osp/Makefile
+lustre/osp/autoMakefile
 lustre/obdclass/darwin/Makefile
 ])
 ])

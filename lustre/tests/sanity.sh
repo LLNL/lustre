@@ -4201,8 +4201,7 @@ test_65k() { # bug11679
 
     echo "Check OST status: "
     local MDS_OSCS=`do_facet $SINGLEMDS lctl dl |
-              awk '/[oO][sS][cC].*md[ts]/ { print $4 }'`
-
+              awk '/[oO][sS][cCpP].*md[ts]/ { print $4 }'`
     for OSC in $MDS_OSCS; do
         echo $OSC "is activate"
         do_facet $SINGLEMDS lctl --device %$OSC activate

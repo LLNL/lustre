@@ -262,9 +262,6 @@ static inline struct cml_object *cmm2cml_obj(struct cmm_object *co)
 }
 /** @} */
 
-int cmm_upcall(const struct lu_env *env, struct md_device *md,
-               enum md_upcall_event ev, void *data);
-
 #ifdef HAVE_SPLIT_SUPPORT
 /**
  * \defgroup split split

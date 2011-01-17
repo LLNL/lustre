@@ -272,7 +272,13 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
                 cli->cl_sp_to = LUSTRE_SP_MGS;
                 cli->cl_flvr_mgc.sf_rpc = SPTLRPC_FLVR_INVALID;
                 ns_type = LDLM_NS_TYPE_MGC;
-
+        } else if (!strcmp(name, LUSTRE_OSP_NAME)) {
+                rq_portal = OST_REQUEST_PORTAL;
+                rp_portal = OSC_REPLY_PORTAL;
+                connect_op = OST_CONNECT;
+                cli->cl_sp_me = LUSTRE_SP_CLI;
+                cli->cl_sp_to = LUSTRE_SP_OST;
+                ns_type = LDLM_NS_TYPE_OSC;
         } else {
                 CERROR("unknown client OBD type \"%s\", can't setup\n",
                        name);
@@ -384,8 +390,10 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
         }
 
         cli->cl_import = imp;
-        /* cli->cl_max_mds_{easize,cookiesize} updated by mdc_init_ea_size() */
-        cli->cl_max_mds_easize = sizeof(struct lov_mds_md_v3);
+        /* cli->cl_max_mds_{easize,cookiesize} updated by mdc_init_ea_size()
+         * use single striped v3 LOV EA to start with */
+        cli->cl_max_mds_easize = sizeof(struct lov_mds_md_v3) +
+                                 sizeof(struct lov_ost_data);
         cli->cl_max_mds_cookiesize = sizeof(struct llog_cookie);
 
         if (LUSTRE_CFG_BUFLEN(lcfg, 3) > 0) {
@@ -651,21 +659,6 @@ static int target_handle_reconnect(struct lustre_handle *conn,
                cluuid->uuid, exp, conn->cookie);
         RETURN(0);
 }
-
-void target_client_add_cb(struct obd_device *obd, __u64 transno, void *cb_data,
-                          int error)
-{
-        struct obd_export *exp = cb_data;
-
-        CDEBUG(D_RPCTRACE, "%s: committing for initial connect of %s\n",
-               obd->obd_name, exp->exp_client_uuid.uuid);
-
-        cfs_spin_lock(&exp->exp_lock);
-        exp->exp_need_sync = 0;
-        cfs_spin_unlock(&exp->exp_lock);
-        class_export_cb_put(exp);
-}
-EXPORT_SYMBOL(target_client_add_cb);
 
 #ifdef __KERNEL__
 static void
@@ -1474,7 +1467,6 @@ check_and_start_recovery_timer(struct obd_device *obd,
                                int new_client)
 {
         int service_time = lustre_msg_get_service_time(req->rq_reqmsg);
-        struct obd_device_target *obt = &obd->u.obt;
         struct lustre_sb_info *lsi;
 
         if (!new_client && service_time)
@@ -1494,9 +1486,9 @@ check_and_start_recovery_timer(struct obd_device *obd,
          * connect attempts is SWITCH_MAX + SWITCH_INC + INITIAL */
         service_time += 2 * INITIAL_CONNECT_TIMEOUT;
 
-        LASSERT(obt->obt_magic == OBT_MAGIC);
-        lsi = s2lsi(obt->obt_sb);
-        if (!(lsi->lsi_flags | LSI_IR_CAPABLE))
+        LASSERT(obd->u.obt.obt_magic == OBT_MAGIC);
+        lsi = server_get_mount(obd->obd_name);
+        if (lsi == NULL || !(lsi->lsi_flags | LDD_F_IR_CAPABLE))
                 service_time += 2 * (CONNECTION_SWITCH_MAX +
                                      CONNECTION_SWITCH_INC);
         if (service_time > obd->obd_recovery_timeout && !new_client)
@@ -1539,11 +1531,10 @@ static int check_for_clients(struct obd_device *obd)
 
         if (obd->obd_abort_recovery || obd->obd_recovery_expired)
                 return 1;
+
         LASSERT(clnts <= obd->obd_max_recoverable_clients);
-        if (obd->obd_no_conn == 0 &&
-            clnts + obd->obd_stale_clients == obd->obd_max_recoverable_clients)
-                return 1;
-        return 0;
+        return (clnts + obd->obd_stale_clients ==
+                obd->obd_max_recoverable_clients);
 }
 
 static int check_for_next_transno(struct obd_device *obd)
@@ -1839,7 +1830,7 @@ static int target_recovery_thread(void *arg)
                 RETURN(-ENOMEM);
         }
 
-        rc = lu_context_init(&env->le_ctx, LCT_MD_THREAD);
+        rc = lu_context_init(&env->le_ctx, LCT_MD_THREAD | LCT_DT_THREAD);
         if (rc) {
                 OBD_FREE_PTR(thread);
                 OBD_FREE_PTR(env);
@@ -1962,10 +1953,9 @@ static int target_start_recovery_thread(struct lu_target *lut,
         cfs_init_completion(&trd->trd_finishing);
         trd->trd_recovery_handler = handler;
 
-        if (cfs_create_thread(target_recovery_thread, lut, 0) > 0) {
+        if (cfs_create_thread(target_recovery_thread, lut, 0) > 0)
                 cfs_wait_for_completion(&trd->trd_starting);
-                LASSERT(obd->obd_recovering != 0);
-        } else
+        else
                 rc = -ECHILD;
 
         return rc;
@@ -2011,11 +2001,6 @@ static void target_recovery_expired(unsigned long castmeharder)
 void target_recovery_init(struct lu_target *lut, svc_handler_t handler)
 {
         struct obd_device *obd = lut->lut_obd;
-        if (obd->obd_max_recoverable_clients == 0) {
-                /** Update server last boot epoch */
-                lut_boot_epoch_update(lut);
-                return;
-        }
 
         CWARN("RECOVERY: service %s, %d recoverable clients, "
               "last_transno "LPU64"\n", obd->obd_name,

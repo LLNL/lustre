@@ -169,27 +169,64 @@ static int mgs_llog_finish(struct obd_device *obd, int count)
         RETURN(rc);
 }
 
+static int mgs_connect_to_osd(struct mgs_obd *m, const char *nextdev)
+{
+        struct obd_connect_data *data = NULL;
+        struct obd_device       *obd;
+        int                      rc;
+        ENTRY;
+
+        OBD_ALLOC(data, sizeof(*data));
+        if (data == NULL)
+                GOTO(out, rc = -ENOMEM);
+
+        obd = class_name2obd(nextdev);
+        if (obd == NULL) {
+                CERROR("can't locate next device: %s\n", nextdev);
+                GOTO(out, rc = -ENOTCONN);
+        }
+
+        /* XXX: which flags we need on OST? */
+        data->ocd_version = LUSTRE_VERSION_CODE;
+
+        rc = obd_connect(NULL, &m->mgs_osd_exp, obd, &obd->obd_uuid, data, NULL);
+        if (rc) {
+                CERROR("cannot connect to next dev %s (%d)\n", nextdev, rc);
+                GOTO(out, rc);
+        }
+
+        m->mgs_osd = lu2dt_dev(m->mgs_osd_exp->exp_obd->obd_lu_dev);
+
+out:
+        if (data)
+                OBD_FREE(data, sizeof(*data));
+        RETURN(rc);
+}
+
+
 /* Start the MGS obd */
 static int mgs_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 {
         struct lprocfs_static_vars lvars;
         struct mgs_obd *mgs = &obd->u.mgs;
-        struct lustre_mount_info *lmi;
-        struct lustre_sb_info *lsi;
+        struct dt_device_param dt_param;
         struct vfsmount *mnt;
         int rc = 0;
         ENTRY;
 
         CDEBUG(D_CONFIG, "Starting MGS\n");
 
-        /* Find our disk */
-        lmi = server_get_mount(obd->obd_name);
-        if (!lmi)
-                RETURN(rc = -EINVAL);
+        rc = mgs_connect_to_osd(mgs, lustre_cfg_string(lcfg, 3));
+        if (rc) {
+                CERROR("can't connect to OSD: %d\n", rc);
+                RETURN(rc);
+        }
 
-        mnt = lmi->lmi_mnt;
-        lsi = s2lsi(lmi->lmi_sb);
-        obd->obd_fsops = fsfilt_get_ops(MT_STR(lsi->lsi_ldd));
+        mgs->mgs_osd->dd_ops->dt_conf_get(NULL, mgs->mgs_osd, &dt_param);
+        mnt = dt_param.ddp_mnt;
+        LASSERT(mnt);
+
+        obd->obd_fsops = fsfilt_get_ops(mt_str(dt_param.ddp_mount_type));
         if (IS_ERR(obd->obd_fsops))
                 GOTO(err_put, rc = PTR_ERR(obd->obd_fsops));
 
@@ -281,7 +318,8 @@ err_ns:
 err_ops:
         fsfilt_put_ops(obd->obd_fsops);
 err_put:
-        server_put_mount(obd->obd_name, mnt);
+        LBUG();
+        //server_put_mount(obd->obd_name);
         mgs->mgs_sb = 0;
         return rc;
 }
@@ -319,13 +357,12 @@ static int mgs_cleanup(struct obd_device *obd)
 
         mgs_fs_cleanup(obd);
 
-        server_put_mount(obd->obd_name, mgs->mgs_vfsmnt);
-        mgs->mgs_sb = NULL;
-
         ldlm_namespace_free(obd->obd_namespace, NULL, 1);
         obd->obd_namespace = NULL;
 
         fsfilt_put_ops(obd->obd_fsops);
+
+        obd_disconnect(mgs->mgs_osd_exp);
 
         LCONSOLE_INFO("%s has stopped.\n", obd->obd_name);
         RETURN(0);
@@ -427,15 +464,17 @@ static int mgs_check_target(struct obd_device *obd, struct mgs_target_info *mti)
         rc = mgs_check_index(obd, mti);
         if (rc == 0) {
                 LCONSOLE_ERROR_MSG(0x13b, "%s claims to have registered, but "
-                                   "this MGS does not know about it, preventing "
-                                   "registration.\n", mti->mti_svname);
+                                   "this MGS does not know about it.  Use '-o "
+                                   "writeconf' to re-register.\n",
+                                   mti->mti_svname);
                 rc = -ENOENT;
         } else if (rc == -1) {
-                LCONSOLE_ERROR_MSG(0x13c, "Client log %s-client has "
-                                   "disappeared! Regenerating all logs.\n",
+                /* Writeconf was not specified, but no client log. */
+                LCONSOLE_ERROR_MSG(0x13c, "Client log %s-client is "
+                                   "missing. All servers must be restarted "
+                                   "with '-o writeconf'.\n",
                                    mti->mti_fsname);
-                mti->mti_flags |= LDD_F_WRITECONF;
-                rc = 1;
+                rc = -ENOENT;
         } else {
                 /* Index is correctly marked as used */
 
@@ -456,7 +495,7 @@ static int mgs_check_failover_reg(struct mgs_target_info *mti)
 
         ptr = mti->mti_params;
         while (class_find_param(ptr, PARAM_FAILNODE, &ptr) == 0) {
-                while (class_parse_nid(ptr, &nid, &ptr) == 0) {
+                while (class_parse_nid_quiet(ptr, &nid, &ptr) == 0) {
                         for (i = 0; i < mti->mti_nid_count; i++) {
                                 if (nid == mti->mti_nids[i]) {
                                         LCONSOLE_WARN("Denying initial registra"
@@ -560,18 +599,10 @@ static int mgs_handle_target_reg(struct ptlrpc_request *req)
          * from where they left off.
          */
 
-        /* COMPAT_146 */
         if (mti->mti_flags & LDD_F_UPGRADE14) {
-                rc = mgs_upgrade_sv_14(obd, mti, fsdb);
-                if (rc) {
-                        CERROR("Can't upgrade from 1.4 (%d)\n", rc);
-                        GOTO(out, rc);
-                }
-
-                /* We're good to go */
-                mti->mti_flags |= LDD_F_UPDATE;
+                CERROR("Can't upgrade from 1.4 (%d)\n", rc);
+                GOTO(out, rc);
         }
-        /* end COMPAT_146 */
 
         if (mti->mti_flags & LDD_F_UPDATE) {
                 CDEBUG(D_MGS, "updating %s, index=%d\n", mti->mti_svname,
@@ -920,15 +951,17 @@ int mgs_handle(struct ptlrpc_request *req)
                 rc = llog_catinfo(req);
                 break;
         default:
-                req->rq_status = -ENOTSUPP;
-                rc = ptlrpc_error(req);
-                RETURN(rc);
+                rc = -ENOTSUPP;
         }
 
         LASSERT(current->journal_info == NULL);
 
-        if (rc)
-                CERROR("MGS handle cmd=%d rc=%d\n", opc, rc);
+        if (rc) {
+                CDEBUG(D_MGS, "MGS handle cmd=%d rc=%d\n", opc, rc);
+                req->rq_status = rc;
+                rc = ptlrpc_error(req);
+                RETURN(rc);
+        }
 
 out:
         target_send_reply(req, rc, fail);

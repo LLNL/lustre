@@ -421,7 +421,7 @@ enum fid_seq {
         FID_SEQ_START      = 0x200000000ULL,
         FID_SEQ_LOCAL_FILE = 0x200000001ULL,
         FID_SEQ_DOT_LUSTRE = 0x200000002ULL,
-        /* XXX 0x200000003ULL is reserved for FID_SEQ_LLOG_OBJ */
+        FID_SEQ_LLOG_OBJ   = 0x200000003ULL,
         FID_SEQ_SPECIAL    = 0x200000004ULL,
         FID_SEQ_NORMAL     = 0x200000400ULL,
         FID_SEQ_LOV_DEFAULT= 0xffffffffffffffffULL
@@ -527,6 +527,13 @@ static inline obd_seq fid_idif_seq(obd_id id, __u32 ost_idx)
 static inline obd_id fid_idif_id(obd_seq seq, __u32 oid, __u32 ver)
 {
         return ((__u64)ver << 48) | ((seq & 0xffff) << 32) | oid;
+}
+
+/* extract ost index from IDIF FID */
+static inline __u32 fid_idif_ost_idx(const struct lu_fid *fid)
+{
+        LASSERT(fid_is_idif(fid));
+        return (fid_seq(fid) >> 16) & 0xffff;
 }
 
 /* unpack an ostid (id/seq) from a wire/disk structure into an IDIF FID */
@@ -1338,6 +1345,21 @@ enum obdo_flags {
 #define LOV_MAGIC_JOIN_V1 0x0BD20BD0
 #define LOV_MAGIC_V3      0x0BD30BD0
 
+/*
+ * magic for fully defined striping
+ * the idea is that we should have different magics for striping "hints"
+ * (struct lov_user_md_v[13]) and defined ready-to-use striping (struct
+ * lov_mds_md_v[13]). at the moment the magics are used in wire protocol,
+ * we can't just change it w/o long way preparation, but we still need a
+ * mechanism to allow LOD to differentiate hint versus ready striping.
+ * so, at the moment we do a trick: MDT knows what to expect from request
+ * depending on the case (replay uses ready striping, non-replay req uses
+ * hints), so MDT replaces magic with appropriate one and now LOD can
+ * easily understand what's inside -bzzz
+ */
+#define LOV_MAGIC_V1_DEF  0x0CD10BD0
+#define LOV_MAGIC_V3_DEF  0x0CD30BD0
+
 #define LOV_PATTERN_RAID0 0x001   /* stripes are used round-robin */
 #define LOV_PATTERN_RAID1 0x002   /* stripes are mirrors of each other */
 #define LOV_PATTERN_FIRST 0x100   /* first stripe is not in round-robin */
@@ -1382,7 +1404,6 @@ struct lov_mds_md_v1 {            /* LOV EA mds/wire data (little-endian) */
 #define XATTR_NAME_LINK         "trusted.link"
 #define XATTR_NAME_FID          "trusted.fid"
 #define XATTR_NAME_VERSION      "trusted.version"
-
 
 struct lov_mds_md_v3 {            /* LOV EA mds/wire data (little-endian) */
         __u32 lmm_magic;          /* magic number = LOV_MAGIC_V3 */
@@ -1941,10 +1962,8 @@ enum {
         MDS_PERM_BYPASS   = 1 << 3,
         MDS_SOM           = 1 << 4,
         MDS_QUOTA_IGNORE  = 1 << 5,
-        MDS_CLOSE_CLEANUP = 1 << 6,
-        MDS_KEEP_ORPHAN   = 1 << 7,
-        MDS_RECOV_OPEN    = 1 << 8,
-        MDS_UNLINK_DESTROY = 1 << 9,  /* Destory ost object in mdd_unlink */
+        MDS_KEEP_ORPHAN   = 1 << 6,
+        MDS_RECOV_OPEN    = 1 << 7,
 };
 
 /* instance of mdt_reint_rec */
@@ -2555,7 +2574,7 @@ struct llog_rec_hdr {
         __u32                   lrh_len;
         __u32                   lrh_index;
         __u32                   lrh_type;
-        __u32                   lrh_padding;
+        __u32                   lrh_id;
 };
 
 struct llog_rec_tail {

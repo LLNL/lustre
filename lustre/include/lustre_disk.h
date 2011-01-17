@@ -55,11 +55,7 @@
 
 /****************** on-disk files *********************/
 
-#define MDT_LOGS_DIR      "LOGS"  /* COMPAT_146 */
 #define MOUNT_CONFIGS_DIR "CONFIGS"
-#define CONFIGS_FILE      "mountdata"
-/** Persistent mount data are stored on the disk in this file. */
-#define MOUNT_DATA_FILE    MOUNT_CONFIGS_DIR"/"CONFIGS_FILE
 #define LAST_RCVD         "last_rcvd"
 #define LOV_OBJID         "lov_objid"
 #define HEALTH_CHECK      "health_check"
@@ -69,6 +65,14 @@
 
 
 /****************** persistent mount data *********************/
+/* We read any persistent disk data in mount.lustre, then
+ * convert relevant info to mount line options.
+ * The flags are used in-kernel, but the old lustre_disk_data struct
+ * is only read by mount lustre and so is now defined in mount_utils.h
+ */
+
+/* LDD_* and LSI_* flags are shared */
+/* bz 17471 moves/renames these flags */
 
 #define LDD_F_SV_TYPE_MDT   0x0001
 #define LDD_F_SV_TYPE_OST   0x0002
@@ -108,6 +112,11 @@
 
 #define LDD_F_ONDISK_MASK  (LDD_F_SV_TYPE_MASK | LDD_F_IAM_DIR)
 
+#define LDD_F_MASK          0xFFFF
+
+#define LSI_UMOUNT_FAILOVER              0x00200000  /* FORCE/FAILOVER */
+#define LSI_BDI_INITIALIZED              0x00400000
+
 enum ldd_mount_type {
         LDD_MT_EXT3 = 0,
         LDD_MT_LDISKFS,
@@ -129,38 +138,11 @@ static inline char *mt_str(enum ldd_mount_type mt)
         return mount_type_string[mt];
 }
 
-#define LDD_INCOMPAT_SUPP 0
-#define LDD_ROCOMPAT_SUPP 0
-
-#define LDD_MAGIC 0x1dd00001
-
-/* On-disk configuration file. In host-endian order. */
-struct lustre_disk_data {
-        __u32      ldd_magic;
-        __u32      ldd_feature_compat;  /* compatible feature flags */
-        __u32      ldd_feature_rocompat;/* read-only compatible feature flags */
-        __u32      ldd_feature_incompat;/* incompatible feature flags */
-
-        __u32      ldd_config_ver;      /* config rewrite count - not used */
-        __u32      ldd_flags;           /* LDD_SV_TYPE */
-        __u32      ldd_svindex;         /* server index (0001), must match
-                                           svname */
-        __u32      ldd_mount_type;      /* target fs type LDD_MT_* */
-        char       ldd_fsname[64];      /* filesystem this server is part of,
-                                           MTI_NAME_MAXLEN */
-        char       ldd_svname[64];      /* this server's name (lustre-mdt0001)*/
-        __u8       ldd_uuid[40];        /* server UUID (COMPAT_146) */
-
-/*200*/ char       ldd_userdata[1024 - 200]; /* arbitrary user string */
-/*1024*/__u8       ldd_padding[4096 - 1024];
-/*4096*/char       ldd_mount_opts[4096]; /* target fs mount opts */
-/*8192*/char       ldd_params[4096];     /* key=value pairs */
-};
-
-#define IS_MDT(data)   ((data)->ldd_flags & LDD_F_SV_TYPE_MDT)
-#define IS_OST(data)   ((data)->ldd_flags & LDD_F_SV_TYPE_OST)
-#define IS_MGS(data)  ((data)->ldd_flags & LDD_F_SV_TYPE_MGS)
-#define MT_STR(data)   mt_str((data)->ldd_mount_type)
+#define IS_MDT(data)    ((data)->lsi_flags & LDD_F_SV_TYPE_MDT)
+#define IS_OST(data)    ((data)->lsi_flags & LDD_F_SV_TYPE_OST)
+#define IS_MGS(data)    ((data)->lsi_flags & LDD_F_SV_TYPE_MGS)
+#define IS_SERVER(data) ((data)->lsi_flags & (LDD_F_SV_TYPE_MGS | \
+       LDD_F_SV_TYPE_MDT | LDD_F_SV_TYPE_OST))
 
 /* Make the mdt/ost server obd name based on the filesystem name */
 static inline int server_make_name(__u32 flags, __u16 index, char *fs,
@@ -168,7 +150,8 @@ static inline int server_make_name(__u32 flags, __u16 index, char *fs,
 {
         if (flags & (LDD_F_SV_TYPE_MDT | LDD_F_SV_TYPE_OST)) {
                 if (!(flags & LDD_F_SV_ALL))
-                        sprintf(name, "%.8s-%s%04x", fs,
+                        sprintf(name, "%.8s%c%s%04x", fs,
+                                (flags & LDD_F_VIRGIN) ? ':' : '-',
                                 (flags & LDD_F_SV_TYPE_MDT) ? "MDT" : "OST",
                                 index);
         } else if (flags & LDD_F_SV_TYPE_MGS) {
@@ -205,19 +188,24 @@ struct lustre_mount_data {
         char      *lmd_opts;          /* lustre mount options (as opposed to
                                          _device_ mount options) */
         __u32     *lmd_exclude;       /* array of OSTs to ignore */
+        char      *lmd_mgs;           /* MGS nid */
 };
 
 #define LMD_FLG_SERVER       0x0001  /* Mounting a server */
 #define LMD_FLG_CLIENT       0x0002  /* Mounting a client */
 #define LMD_FLG_ABORT_RECOV  0x0008  /* Abort recovery */
-#define LMD_FLG_NOSVC        0x0010  /* Only start MGS/MGC for servers,
+#define LMD_FLG_NOSVC        0x0010  /* Only start MGS for servers,
                                         no other services */
-#define LMD_FLG_NOMGS        0x0020  /* Only start target for servers, reusing
-                                        existing MGS services */
+#define LMD_FLG_NOMGS        0x0020  /* Only start target for servers, not
+                                        MGS */
 #define LMD_FLG_WRITECONF    0x0040  /* Rewrite config log */
 #define LMD_FLG_NOIR         0x0080  /* NO imperative recovery */
+#define LMD_FLG_MGS          0x0100  /* Also start MGS along with server */
+#define LMD_FLG_IAM          0x0200  /* IAM dir */
+#define LMD_FLG_NO_PRIMNODE  0x0400  /* all nodes are service nodes */
 
 #define lmd_is_client(x) ((x)->lmd_flags & LMD_FLG_CLIENT)
+#define devname_is_client(devname) strstr(devname, ":/")
 
 
 /****************** last_rcvd file *********************/
@@ -460,53 +448,47 @@ struct lustre_sb_info {
         int                       lsi_flags;
         struct obd_device        *lsi_mgc;     /* mgc obd */
         struct lustre_mount_data *lsi_lmd;     /* mount command info */
-        struct lustre_disk_data  *lsi_ldd;     /* mount info on-disk */
         struct ll_sb_info        *lsi_llsbi;   /* add'l client sbi info */
-        struct vfsmount          *lsi_srv_mnt; /* the one server mount */
+        struct dt_device         *lsi_dt_dev;  /* dt device to access disk fs*/
+        void                     *lsi_vfsp;    /* ptr to OS specific vfs data*/
         cfs_atomic_t              lsi_mounts;  /* references to the srv_mnt */
+        cfs_list_t                lsi_list_chain;
+        char                      lsi_svname[MTI_NAME_MAXLEN];
+        char                      lsi_osd_obdname[64];
+        char                      lsi_osd_uuid[64];
+        char                     *lsi_osd_type;
         struct backing_dev_info   lsi_bdi;     /* each client mountpoint needs
                                                   own backing_dev_info */
 };
 
-#define LSI_SERVER                       0x00000001
-#define LSI_UMOUNT_FORCE                 0x00000010
-#define LSI_UMOUNT_FAILOVER              0x00000020
-#define LSI_BDI_INITIALIZED              0x00000040
-#define LSI_IR_CAPABLE                   0x00000080
-
+#if !defined(__sun__)
 #define     s2lsi(sb)        ((struct lustre_sb_info *)((sb)->s_fs_info))
-#define     s2lsi_nocast(sb) ((sb)->s_fs_info)
-
 #define     get_profile_name(sb)   (s2lsi(sb)->lsi_lmd->lmd_profile)
+#endif /* !__sun__ */
 
 #endif /* __KERNEL__ */
 
-/****************** mount lookup info *********************/
-
-struct lustre_mount_info {
-        char                 *lmi_name;
-        struct super_block   *lmi_sb;
-        struct vfsmount      *lmi_mnt;
-        cfs_list_t            lmi_list_chain;
-};
 
 /****************** prototypes *********************/
 
 #ifdef __KERNEL__
 
 /* obd_mount.c */
+
+#if !defined (__sun__)
 void lustre_register_client_fill_super(int (*cfs)(struct super_block *sb,
                                                   struct vfsmount *mnt));
 void lustre_register_kill_super_cb(void (*cfs)(struct super_block *sb));
+#endif /* !__sun__ */
 
+void lustre_server_umount(struct lustre_sb_info *lsi);
+int lustre_common_umount(struct lustre_sb_info *lsi);
+void lustre_umount_server_force_flag_set(struct lustre_sb_info *lsi);
+int lustre_server_statfs(struct lustre_sb_info *lsi, cfs_kstatfs_t *buf);
+int lustre_mount(void *osvfsp, void *osmnt, void *data, unsigned long mflags);
 
-int lustre_common_put_super(struct super_block *sb);
-struct lustre_mount_info *server_find_mount_locked(const char *name);
-struct lustre_mount_info *server_get_mount(const char *name);
-struct lustre_mount_info *server_get_mount_2(const char *name);
-int server_put_mount(const char *name, struct vfsmount *mnt);
-int server_put_mount_2(const char *name, struct vfsmount *mnt);
-int server_register_target(struct super_block *sb);
+struct lustre_sb_info *server_get_mount(const char *name);
+int server_put_mount(const char *name);
 struct mgs_target_info;
 int server_mti_print(char *title, struct mgs_target_info *mti);
 void server_calc_timeout(struct lustre_sb_info *lsi, struct obd_device *obd);

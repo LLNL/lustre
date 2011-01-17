@@ -1,0 +1,6 @@
+MODULES := lod
+lod-objs := lod_dev.o lod_object.o lod_lov.o lod_qos.o lod_pool.o lproc_lod.o
+
+EXTRA_DIST = $(lod-objs:.o=.c) lod_internal.h
+
+@INCLUDE_RULES@

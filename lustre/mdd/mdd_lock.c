@@ -199,6 +199,7 @@ void *mdd_pdo_read_lock(const struct lu_env *env, struct mdd_object *obj,
 void mdd_pdo_write_unlock(const struct lu_env *env, struct mdd_object *obj,
                           void *dlh)
 {
+        mdd_write_unlock(env, obj);
         mdd_lockdep_pd_release(obj);
         return dynlock_unlock(&obj->mod_pdlock, dlh);
 }

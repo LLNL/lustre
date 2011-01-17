@@ -91,7 +91,8 @@ static int write_capa_keys(const struct lu_env *env,
         int i, rc;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        th = mdt_trans_create(env, mdt);
+
+        th = dt_trans_create(env, mdt->mdt_bottom);
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
 
@@ -100,7 +101,7 @@ static int write_capa_keys(const struct lu_env *env,
         if (rc)
                 goto stop;
 
-        rc = mdt_trans_start(env, mdt, th);
+        rc = dt_trans_start(env, mdt->mdt_bottom, th);
         if (rc)
                 goto stop;
 
@@ -117,7 +118,7 @@ static int write_capa_keys(const struct lu_env *env,
         }
 
 stop:
-        mdt_trans_stop(env, mdt, th);
+        dt_trans_stop(env, mdt->mdt_bottom, th);
 
         CDEBUG(D_INFO, "write capability keys rc = %d:\n", rc);
         return rc;

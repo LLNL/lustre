@@ -151,7 +151,7 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
         LASSERT(!IS_ERR(jh));
 
         inode = ldiskfs_create_inode(jh, osd_sb(osd)->s_root->d_inode,
-                                     (S_IFREG | S_IRUGO | S_IWUSR));
+                                    (S_IFREG | S_IXUGO | S_IRUGO | S_IWUSR));
         LASSERT(!IS_ERR(inode));
 
         if (feat->dif_flags & DT_IND_VARKEY)
@@ -225,7 +225,6 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
  * Open an OI(Ojbect Index) container.
  *
  * \param       name    Name of OI container
- * \param       objp    Pointer of returned OI
  *
  * \retval      0       success
  * \retval      -ve     failure
@@ -275,7 +274,6 @@ out_inode:
         iput(inode);
         return rc;
 }
-
 /**
  * Open OI(Object Index) table.
  * If \a oi_count is zero, which means caller doesn't know how many OIs there
@@ -591,7 +589,7 @@ int osd_oi_delete(struct osd_thread_info *info,
         struct lu_fid       *oi_fid = &info->oti_fid;
         const struct dt_key *key;
 
-        if (!fid_is_norm(fid))
+        if (fid_is_igif(fid))
                 return 0;
 
         LASSERT(fid_seq(fid) != FID_SEQ_LOCAL_FILE);

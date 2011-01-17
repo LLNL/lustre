@@ -47,10 +47,11 @@ struct llog_process_info {
         int                 lpi_rc;
         int                 lpi_flags;
         cfs_completion_t    lpi_completion;
+        const struct lu_env *lpi_env;
 };
 
-int llog_cat_id2handle(struct llog_handle *cathandle, struct llog_handle **res,
-                       struct llog_logid *logid);
-int class_config_dump_handler(struct llog_handle * handle,
+int llog_cat_id2handle(const struct lu_env *, struct llog_handle *, struct llog_handle **,
+                       struct llog_logid *);
+int class_config_dump_handler(const struct lu_env *, struct llog_handle * handle,
                               struct llog_rec_hdr *rec, void *data);
 #endif

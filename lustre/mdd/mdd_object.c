@@ -54,7 +54,6 @@
 #include <lprocfs_status.h>
 /* fid_be_cpu(), fid_cpu_to_be(). */
 #include <lustre_fid.h>
-#include <obd_lov.h>
 
 #include <lustre_param.h>
 #include <lustre_mds.h>
@@ -67,18 +66,6 @@ static const struct lu_object_operations mdd_lu_obj_ops;
 static int mdd_xattr_get(const struct lu_env *env,
                          struct md_object *obj, struct lu_buf *buf,
                          const char *name);
-
-int mdd_data_get(const struct lu_env *env, struct mdd_object *obj,
-                 void **data)
-{
-        if (mdd_object_exists(obj) == 0) {
-                CERROR("%s: object "DFID" not found: rc = -2\n",
-                       mdd_obj_dev_name(obj), PFID(mdd_object_fid(obj)));
-                return -ENOENT;
-        }
-        mdo_data_get(env, obj, data);
-        return 0;
-}
 
 int mdd_la_get(const struct lu_env *env, struct mdd_object *obj,
                struct lu_attr *la, struct lustre_capa *capa)
@@ -102,45 +89,6 @@ static void mdd_flags_xlate(struct mdd_object *obj, __u32 flags)
                 obj->mod_flags |= IMMUTE_OBJ;
 }
 
-struct mdd_thread_info *mdd_env_info(const struct lu_env *env)
-{
-        struct mdd_thread_info *info;
-
-        info = lu_context_key_get(&env->le_ctx, &mdd_thread_key);
-        LASSERT(info != NULL);
-        return info;
-}
-
-struct lu_buf *mdd_buf_get(const struct lu_env *env, void *area, ssize_t len)
-{
-        struct lu_buf *buf;
-
-        buf = &mdd_env_info(env)->mti_buf;
-        buf->lb_buf = area;
-        buf->lb_len = len;
-        return buf;
-}
-
-void mdd_buf_put(struct lu_buf *buf)
-{
-        if (buf == NULL || buf->lb_buf == NULL)
-                return;
-        OBD_FREE_LARGE(buf->lb_buf, buf->lb_len);
-        buf->lb_buf = NULL;
-        buf->lb_len = 0;
-}
-
-const struct lu_buf *mdd_buf_get_const(const struct lu_env *env,
-                                       const void *area, ssize_t len)
-{
-        struct lu_buf *buf;
-
-        buf = &mdd_env_info(env)->mti_buf;
-        buf->lb_buf = (void *)area;
-        buf->lb_len = len;
-        return buf;
-}
-
 struct lu_buf *mdd_buf_alloc(const struct lu_env *env, ssize_t len)
 {
         struct lu_buf *buf = &mdd_env_info(env)->mti_big_buf;
@@ -156,6 +104,15 @@ struct lu_buf *mdd_buf_alloc(const struct lu_env *env, ssize_t len)
                         buf->lb_len = 0;
         }
         return buf;
+}
+
+void mdd_buf_put(struct lu_buf *buf)
+{
+        if (buf == NULL || buf->lb_buf == NULL)
+                return;
+        OBD_FREE_LARGE(buf->lb_buf, buf->lb_len);
+        buf->lb_buf = NULL;
+        buf->lb_len = 0;
 }
 
 /** Increase the size of the \a mti_big_buf.
@@ -182,51 +139,6 @@ int mdd_buf_grow(const struct lu_env *env, ssize_t len)
         memcpy(oldbuf, &buf, sizeof(buf));
 
         return 0;
-}
-
-struct llog_cookie *mdd_max_cookie_get(const struct lu_env *env,
-                                       struct mdd_device *mdd)
-{
-        struct mdd_thread_info *mti = mdd_env_info(env);
-        int                     max_cookie_size;
-
-        max_cookie_size = mdd_lov_cookiesize(env, mdd);
-        if (unlikely(mti->mti_max_cookie_size < max_cookie_size)) {
-                if (mti->mti_max_cookie)
-                        OBD_FREE_LARGE(mti->mti_max_cookie,
-                                       mti->mti_max_cookie_size);
-                mti->mti_max_cookie = NULL;
-                mti->mti_max_cookie_size = 0;
-        }
-        if (unlikely(mti->mti_max_cookie == NULL)) {
-                OBD_ALLOC_LARGE(mti->mti_max_cookie, max_cookie_size);
-                if (likely(mti->mti_max_cookie != NULL))
-                        mti->mti_max_cookie_size = max_cookie_size;
-        }
-        if (likely(mti->mti_max_cookie != NULL))
-                memset(mti->mti_max_cookie, 0, mti->mti_max_cookie_size);
-        return mti->mti_max_cookie;
-}
-
-struct lov_mds_md *mdd_max_lmm_get(const struct lu_env *env,
-                                   struct mdd_device *mdd)
-{
-        struct mdd_thread_info *mti = mdd_env_info(env);
-        int                     max_lmm_size;
-
-        max_lmm_size = mdd_lov_mdsize(env, mdd);
-        if (unlikely(mti->mti_max_lmm_size < max_lmm_size)) {
-                if (mti->mti_max_lmm)
-                        OBD_FREE_LARGE(mti->mti_max_lmm, mti->mti_max_lmm_size);
-                mti->mti_max_lmm = NULL;
-                mti->mti_max_lmm_size = 0;
-        }
-        if (unlikely(mti->mti_max_lmm == NULL)) {
-                OBD_ALLOC_LARGE(mti->mti_max_lmm, max_lmm_size);
-                if (likely(mti->mti_max_lmm != NULL))
-                        mti->mti_max_lmm_size = max_lmm_size;
-        }
-        return mti->mti_max_lmm;
 }
 
 struct lu_object *mdd_object_alloc(const struct lu_env *env,
@@ -465,12 +377,14 @@ static int mdd_path_current(const struct lu_env *env,
                 pli->pli_fids[pli->pli_fidcount] = *tmpfid;
         }
 
+#ifdef XXX_MDD_CHANGELOG
         /* Verify that our path hasn't changed since we started the lookup.
            Record the current index, and verify the path resolves to the
            same fid. If it does, then the path is correct as of this index. */
         cfs_spin_lock(&mdd->mdd_cl.mc_lock);
         pli->pli_currec = mdd->mdd_cl.mc_index;
         cfs_spin_unlock(&mdd->mdd_cl.mc_lock);
+#endif
         rc = mdd_path2fid(env, mdd, ptr, &pli->pli_fid);
         if (rc) {
                 CDEBUG(D_INFO, "mdd_path2fid(%s) failed %d\n", ptr, rc);
@@ -576,41 +490,10 @@ int mdd_iattr_get(const struct lu_env *env, struct mdd_object *mdd_obj,
                 RETURN(0);
 
         rc = mdd_la_get(env, mdd_obj, &ma->ma_attr,
-                          mdd_object_capa(env, mdd_obj));
+                        mdd_object_capa(env, mdd_obj));
         if (rc == 0)
                 ma->ma_valid |= MA_INODE;
         RETURN(rc);
-}
-
-int mdd_get_default_md(struct mdd_object *mdd_obj, struct lov_mds_md *lmm)
-{
-        struct lov_desc *ldesc;
-        struct mdd_device *mdd = mdo2mdd(&mdd_obj->mod_obj);
-        struct lov_user_md *lum = (struct lov_user_md*)lmm;
-        ENTRY;
-
-        if (!lum)
-                RETURN(0);
-
-        ldesc = &mdd->mdd_obd_dev->u.mds.mds_lov_desc;
-        LASSERT(ldesc != NULL);
-
-        lum->lmm_magic = LOV_MAGIC_V1;
-        lum->lmm_object_seq = FID_SEQ_LOV_DEFAULT;
-        lum->lmm_pattern = ldesc->ld_pattern;
-        lum->lmm_stripe_size = ldesc->ld_default_stripe_size;
-        lum->lmm_stripe_count = ldesc->ld_default_stripe_count;
-        lum->lmm_stripe_offset = ldesc->ld_default_stripe_offset;
-
-        RETURN(sizeof(*lum));
-}
-
-static int is_rootdir(struct mdd_object *mdd_obj)
-{
-        const struct mdd_device *mdd_dev = mdd_obj2mdd_dev(mdd_obj);
-        const struct lu_fid *fid = mdo2fid(mdd_obj);
-
-        return lu_fid_eq(&mdd_dev->mdd_root_fid, fid);
 }
 
 /* get lov EA only */
@@ -625,8 +508,6 @@ static int __mdd_lmm_get(const struct lu_env *env,
 
         rc = mdd_get_md(env, mdd_obj, ma->ma_lmm, &ma->ma_lmm_size,
                         XATTR_NAME_LOV);
-        if (rc == 0 && (ma->ma_need & MA_LOV_DEF) && is_rootdir(mdd_obj))
-                rc = mdd_get_default_md(mdd_obj, ma->ma_lmm);
         if (rc > 0) {
                 ma->ma_lmm_size = rc;
                 ma->ma_layout_gen = ma->ma_lmm->lmm_layout_gen;
@@ -886,7 +767,7 @@ static int mdd_xattr_list(const struct lu_env *env, struct md_object *obj,
 int mdd_declare_object_create_internal(const struct lu_env *env,
                                        struct mdd_object *p,
                                        struct mdd_object *c,
-                                       struct md_attr *ma,
+                                       struct lu_attr *attr,
                                        struct thandle *handle,
                                        const struct md_op_spec *spec)
 {
@@ -895,50 +776,36 @@ int mdd_declare_object_create_internal(const struct lu_env *env,
         int rc;
         ENTRY;
 
-        if (feat != &dt_directory_features && feat != NULL)
+        if (feat != &dt_directory_features && feat != NULL) {
                 dof->dof_type = DFT_INDEX;
-        else
-                dof->dof_type = dt_mode_to_dft(ma->ma_attr.la_mode);
+                dof->u.dof_idx.di_feat = feat;
+        } else {
+                dof->dof_type = dt_mode_to_dft(attr->la_mode);
+                if (dof->dof_type == DFT_REGULAR) {
+                        dof->u.dof_reg.striped = md_should_create(spec->sp_cr_flags);
+                        /* is this replay? */
+                        if (spec->no_create)
+                                dof->u.dof_reg.striped = 0;
+                }
+        }
 
-        dof->u.dof_idx.di_feat = feat;
-
-        rc = mdo_declare_create_obj(env, c, &ma->ma_attr, NULL, dof, handle);
+        rc = mdo_declare_create_obj(env, c, attr, NULL, dof, handle);
 
         RETURN(rc);
 }
 
-int mdd_object_create_internal(const struct lu_env *env, struct mdd_object *p,
-                               struct mdd_object *c, struct md_attr *ma,
-                               struct thandle *handle,
-                               const struct md_op_spec *spec)
+int mdd_object_create_internal(const struct lu_env *env, struct mdd_object *c,
+                               struct lu_attr *attr, struct thandle *handle)
 {
-        struct lu_attr *attr = &ma->ma_attr;
         struct dt_allocation_hint *hint = &mdd_env_info(env)->mti_hint;
         struct dt_object_format *dof = &mdd_env_info(env)->mti_dof;
-        const struct dt_index_features *feat = spec->sp_feat;
         int rc;
         ENTRY;
 
-        if (!mdd_object_exists(c)) {
-                struct dt_object *next = mdd_object_child(c);
-                LASSERT(next);
+        LASSERT(!mdd_object_exists(c));
 
-                if (feat != &dt_directory_features && feat != NULL)
-                        dof->dof_type = DFT_INDEX;
-                else
-                        dof->dof_type = dt_mode_to_dft(attr->la_mode);
-
-                dof->u.dof_idx.di_feat = feat;
-
-                /* @hint will be initialized by underlying device. */
-                next->do_ops->do_ah_init(env, hint,
-                                         p ? mdd_object_child(p) : NULL,
-                                         attr->la_mode & S_IFMT);
-
-                rc = mdo_create_obj(env, c, attr, hint, dof, handle);
-                LASSERT(ergo(rc == 0, mdd_object_exists(c)));
-        } else
-                rc = -EEXIST;
+        rc = mdo_create_obj(env, c, attr, hint, dof, handle);
+        LASSERT(ergo(rc == 0, mdd_object_exists(c)));
 
         RETURN(rc);
 }
@@ -968,10 +835,8 @@ static inline int mdd_attr_check(const struct lu_env *env,
         RETURN(0);
 }
 
-int mdd_attr_set_internal(const struct lu_env *env,
-                          struct mdd_object *obj,
-                          struct lu_attr *attr,
-                          struct thandle *handle,
+int mdd_attr_set_internal(const struct lu_env *env, struct mdd_object *obj,
+                          struct lu_attr *attr, struct thandle *handle,
                           int needacl)
 {
         int rc;
@@ -986,10 +851,8 @@ int mdd_attr_set_internal(const struct lu_env *env,
 }
 
 int mdd_attr_check_set_internal(const struct lu_env *env,
-                                struct mdd_object *obj,
-                                struct lu_attr *attr,
-                                struct thandle *handle,
-                                int needacl)
+                                struct mdd_object *obj, struct lu_attr *attr,
+                                struct thandle *handle, int needacl)
 {
         int rc;
         ENTRY;
@@ -1003,56 +866,23 @@ int mdd_attr_check_set_internal(const struct lu_env *env,
         RETURN(rc);
 }
 
-static int mdd_attr_set_internal_locked(const struct lu_env *env,
-                                        struct mdd_object *obj,
-                                        struct lu_attr *attr,
-                                        struct thandle *handle,
-                                        int needacl)
-{
-        int rc;
-        ENTRY;
-
-        needacl = needacl && (attr->la_valid & LA_MODE);
-        if (needacl)
-                mdd_write_lock(env, obj, MOR_TGT_CHILD);
-        rc = mdd_attr_set_internal(env, obj, attr, handle, needacl);
-        if (needacl)
-                mdd_write_unlock(env, obj);
-        RETURN(rc);
-}
-
-int mdd_attr_check_set_internal_locked(const struct lu_env *env,
-                                       struct mdd_object *obj,
-                                       struct lu_attr *attr,
-                                       struct thandle *handle,
-                                       int needacl)
-{
-        int rc;
-        ENTRY;
-
-        needacl = needacl && (attr->la_valid & LA_MODE);
-        if (needacl)
-                mdd_write_lock(env, obj, MOR_TGT_CHILD);
-        rc = mdd_attr_check_set_internal(env, obj, attr, handle, needacl);
-        if (needacl)
-                mdd_write_unlock(env, obj);
-        RETURN(rc);
-}
-
 int __mdd_xattr_set(const struct lu_env *env, struct mdd_object *obj,
                     const struct lu_buf *buf, const char *name,
                     int fl, struct thandle *handle)
 {
-        struct lustre_capa *capa = mdd_object_capa(env, obj);
-        int rc = -EINVAL;
+        int rc;
         ENTRY;
 
         if (buf->lb_buf && buf->lb_len > 0)
-                rc = mdo_xattr_set(env, obj, buf, name, 0, handle, capa);
+                rc = mdo_xattr_set(env, obj, buf, name, 0, handle,
+                                   mdd_object_capa(env, obj));
         else if (buf->lb_buf == NULL && buf->lb_len == 0)
-                rc = mdo_xattr_del(env, obj, name, handle, capa);
+                rc = mdo_xattr_del(env, obj, name, handle,
+                                   mdd_object_capa(env, obj));
+        else
+                rc = -EINVAL;
 
-        RETURN(rc);
+        EXIT;
 }
 
 /*
@@ -1061,6 +891,7 @@ int __mdd_xattr_set(const struct lu_env *env, struct mdd_object *obj,
  * chown_common and inode_setattr
  * utimes and inode_setattr
  * This API is ported from mds_fix_attr but remove some unnecesssary stuff.
+ * the object is supposed to be locked
  */
 static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
                         struct lu_attr *la, const struct md_attr *ma)
@@ -1146,9 +977,7 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
             !(la->la_valid & ~(LA_MTIME | LA_ATIME | LA_CTIME))) {
                 if ((uc->mu_fsuid != tmp_la->la_uid) &&
                     !mdd_capable(uc, CFS_CAP_FOWNER)) {
-                        rc = mdd_permission_internal_locked(env, obj, tmp_la,
-                                                            MAY_WRITE,
-                                                            MOR_TGT_CHILD);
+                        rc = mdd_permission_internal(env, obj, tmp_la, MAY_WRITE);
                         if (rc)
                                 RETURN(rc);
                 }
@@ -1270,9 +1099,8 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
                         if (!((ma->ma_attr_flags & MDS_OPEN_OWNEROVERRIDE) &&
                               (uc->mu_fsuid == tmp_la->la_uid)) &&
                             !(ma->ma_attr_flags & MDS_PERM_BYPASS)) {
-                                rc = mdd_permission_internal_locked(env, obj,
-                                                            tmp_la, MAY_WRITE,
-                                                            MOR_TGT_CHILD);
+                                rc = mdd_permission_internal(env, obj,
+                                                             tmp_la, MAY_WRITE);
                                 if (rc)
                                         RETURN(rc);
                         }
@@ -1295,13 +1123,13 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
  * \param mdd_obj - mdd_object of change
  * \param handle - transacion handle
  */
-static int mdd_changelog_data_store(const struct lu_env     *env,
-                                    struct mdd_device       *mdd,
+static int mdd_changelog_data_store(const struct lu_env *env,
+                                    struct mdd_device *mdd,
                                     enum changelog_rec_type type,
-                                    int                     flags,
-                                    struct mdd_object       *mdd_obj,
-                                    struct thandle          *handle)
+                                    int flags, struct mdd_object *mdd_obj,
+                                    struct thandle *handle)
 {
+#ifdef XXX_MDD_CHANGELOG
         const struct lu_fid *tfid = mdo2fid(mdd_obj);
         struct llog_changelog_rec *rec;
         struct thandle *th = NULL;
@@ -1348,22 +1176,31 @@ static int mdd_changelog_data_store(const struct lu_env     *env,
                        rc, type, PFID(tfid));
                 return -EFAULT;
         }
-
+#endif
         return 0;
 }
 
 int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
                   int flags, struct md_object *obj)
 {
+        int rc = -ENOTSUPP;
+#if 0
         struct thandle *handle;
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
         struct mdd_device *mdd = mdo2mdd(obj);
-        int rc;
         ENTRY;
 
         handle = mdd_trans_create(env, mdd);
         if (IS_ERR(handle))
-                return(PTR_ERR(handle));
+                RETURN(handle);
+
+        rc = mdd_declare_changelog(env, mdd_obj, ma, handle);
+        if (rc)
+                GOTO(out, rc);
+
+        rc = mdd_trans_start(env, mdd, handle);
+        if (rc)
+                GOTO(out, rc);
 
         rc = mdd_declare_changelog_store(env, mdd, NULL, handle);
         if (rc)
@@ -1377,16 +1214,20 @@ int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
                                       handle);
 
 stop:
-        mdd_trans_stop(env, mdd, rc, handle);
-
+#endif
         RETURN(rc);
 }
 
 /**
+ * Save LMA extended attributes with data from \a ma.
+ *
+ * HSM and Size-On-MDS data will be extracted from \ma if they are valid, if
+ * not, LMA EA will be first read from disk, modified and write back.
+ *
  * Should be called with write lock held.
  *
- * \see mdd_lma_set_locked().
  */
+
 static int __mdd_lma_set(const struct lu_env *env, struct mdd_object *mdd_obj,
                        const struct md_attr *ma, struct thandle *handle)
 {
@@ -1399,6 +1240,7 @@ static int __mdd_lma_set(const struct lu_env *env, struct mdd_object *mdd_obj,
 
         ENTRY;
 
+        LASSERT(mdd_write_locked(env, obj) != 0);
         /* Either HSM or SOM part is not valid, we need to read it before */
         if ((!ma->ma_valid) & (MA_HSM | MA_SOM)) {
                 rc = mdd_get_md(env, mdd_obj, lma, &lmasize, XATTR_NAME_LMA);
@@ -1440,25 +1282,6 @@ static int __mdd_lma_set(const struct lu_env *env, struct mdd_object *mdd_obj,
         RETURN(rc);
 }
 
-/**
- * Save LMA extended attributes with data from \a ma.
- *
- * HSM and Size-On-MDS data will be extracted from \ma if they are valid, if
- * not, LMA EA will be first read from disk, modified and write back.
- *
- */
-static int mdd_lma_set_locked(const struct lu_env *env,
-                              struct mdd_object *mdd_obj,
-                              const struct md_attr *ma, struct thandle *handle)
-{
-        int rc;
-
-        mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
-        rc = __mdd_lma_set(env, mdd_obj, ma, handle);
-        mdd_write_unlock(env, mdd_obj);
-        return rc;
-}
-
 /* Precedence for choosing record type when multiple
  * attributes change: setattr > mtime > ctime > atime
  * (ctime changes when mtime does, plus chmod/chown.
@@ -1474,7 +1297,9 @@ static int mdd_attr_set_changelog(const struct lu_env *env,
         bits |= (valid & LA_MTIME) ? 1 << CL_MTIME : 0;
         bits |= (valid & LA_CTIME) ? 1 << CL_CTIME : 0;
         bits |= (valid & LA_ATIME) ? 1 << CL_ATIME : 0;
+#ifdef XXX_MDD_CHANGELOG
         bits = bits & mdd->mdd_cl.mc_mask;
+#endif
         if (bits == 0)
                 return 0;
 
@@ -1493,21 +1318,17 @@ static int mdd_declare_attr_set(const struct lu_env *env,
                                 struct mdd_device *mdd,
                                 struct mdd_object *obj,
                                 const struct md_attr *ma,
-                                struct lov_mds_md *lmm,
                                 struct thandle *handle)
 {
-        struct lu_buf  *buf = &mdd_env_info(env)->mti_buf;
-        int             rc, i;
+        struct lu_buf *buf = &mdd_env_info(env)->mti_buf;
+        cfs_umode_t    mode = mdd_object_type(mdd_obj);
+        int            rc, stripe, i;
 
         rc = mdo_declare_attr_set(env, obj, &ma->ma_attr, handle);
         if (rc)
                 return rc;
 
-        rc = mdd_declare_changelog_store(env, mdd, NULL, handle);
-        if (rc)
-                return rc;
-
-        if (ma->ma_valid & MA_LOV) {
+        if (ma->ma_valid & MA_LOV && (S_ISREG(mode) || S_ISDIR(mode))) {
                 buf->lb_buf = NULL;
                 buf->lb_len = ma->ma_lmm_size;
                 rc = mdo_declare_xattr_set(env, obj, buf, XATTR_NAME_LOV,
@@ -1528,8 +1349,8 @@ static int mdd_declare_attr_set(const struct lu_env *env,
 #ifdef CONFIG_FS_POSIX_ACL
         if (ma->ma_attr.la_valid & LA_MODE) {
                 mdd_read_lock(env, obj, MOR_TGT_CHILD);
-                rc = mdo_xattr_get(env, obj, buf, XATTR_NAME_ACL_ACCESS,
-                                   BYPASS_CAPA);
+                rc = mdo_xattr_get(env, obj, &LU_BUF_NULL,
+                                   XATTR_NAME_ACL_ACCESS, BYPASS_CAPA);
                 mdd_read_unlock(env, obj);
                 if (rc == -EOPNOTSUPP || rc == -ENODATA)
                         rc = 0;
@@ -1548,37 +1369,7 @@ static int mdd_declare_attr_set(const struct lu_env *env,
         }
 #endif
 
-        /* basically the log is the same as in unlink case */
-        if (lmm) {
-                __u16 stripe;
-
-                if (le32_to_cpu(lmm->lmm_magic) != LOV_MAGIC_V1 &&
-                                le32_to_cpu(lmm->lmm_magic) != LOV_MAGIC_V3) {
-                        CERROR("%s: invalid LOV_MAGIC %08x on object "DFID"\n",
-                               mdd->mdd_obd_dev->obd_name,
-                               le32_to_cpu(lmm->lmm_magic),
-                               PFID(lu_object_fid(&obj->mod_obj.mo_lu)));
-                        return -EINVAL;
-                }
-
-                stripe = le16_to_cpu(lmm->lmm_stripe_count);
-                if (stripe == LOV_ALL_STRIPES) {
-                        struct lov_desc *ldesc;
-
-                        ldesc = &mdd->mdd_obd_dev->u.mds.mds_lov_desc;
-                        LASSERT(ldesc != NULL);
-                        stripe = ldesc->ld_tgt_count;
-                }
-
-                for (i = 0; i < stripe; i++) {
-                        rc = mdd_declare_llog_record(env, mdd,
-                                        sizeof(struct llog_unlink_rec),
-                                        handle);
-                        if (rc)
-                                return rc;
-                }
-        }
-
+        rc = mdd_declare_changelog_store(env, mdd, NULL, handle);
         return rc;
 }
 
@@ -1589,13 +1380,12 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
         struct mdd_device *mdd = mdo2mdd(obj);
         struct thandle *handle;
-        struct lov_mds_md *lmm = NULL;
-        struct llog_cookie *logcookies = NULL;
-        int  rc, lmm_size = 0, cookie_size = 0;
         struct lu_attr *la_copy = &mdd_env_info(env)->mti_la_for_fix;
+        cfs_umode_t mode = mdd_object_type(mdd_obj);
+        int  rc;
+#ifdef HAVE_QUOTA_SUPPORT
         struct obd_device *obd = mdd->mdd_obd_dev;
         struct mds_obd *mds = &obd->u.mds;
-#ifdef HAVE_QUOTA_SUPPORT
         unsigned int qnids[MAXQUOTAS] = { 0, 0 };
         unsigned int qoids[MAXQUOTAS] = { 0, 0 };
         int quota_opc = 0, block_count = 0;
@@ -1614,17 +1404,9 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
             ma->ma_attr.la_valid == LA_ATIME && la_copy->la_valid == 0)
                 RETURN(0);
 
-        if (S_ISREG(mdd_object_type(mdd_obj)) &&
-            ma->ma_attr.la_valid & (LA_UID | LA_GID)) {
-                lmm_size = mdd_lov_mdsize(env, mdd);
-                lmm = mdd_max_lmm_get(env, mdd);
-                if (lmm == NULL)
-                        RETURN(-ENOMEM);
-
-                rc = mdd_get_md_locked(env, mdd_obj, lmm, &lmm_size,
-                                XATTR_NAME_LOV);
-
-                if (rc < 0)
+        if ((ma->ma_valid & MA_LOV) && (S_ISREG(mode) || S_ISDIR(mode))) {
+                rc = mdd_lsm_sanity_check(env, mdd_obj);
+                if (rc)
                         RETURN(rc);
         }
 
@@ -1632,21 +1414,18 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
         if (IS_ERR(handle))
                 RETURN(PTR_ERR(handle));
 
-        rc = mdd_declare_attr_set(env, mdd, mdd_obj, ma,
-                                  lmm_size > 0 ? lmm : NULL, handle);
+        rc = mdd_declare_attr_set(env, mdd, mdd_obj, ma, handle);
         if (rc)
                 GOTO(stop, rc);
-
-        /* permission changes may require sync operation */
-        if (ma->ma_attr.la_valid & (LA_MODE|LA_UID|LA_GID))
-                handle->th_sync = !!mdd->mdd_sync_permission;
 
         rc = mdd_trans_start(env, mdd, handle);
         if (rc)
                 GOTO(stop, rc);
 
+        mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
+
         /* permission changes may require sync operation */
-        if (ma->ma_attr.la_valid & (LA_MODE|LA_UID|LA_GID))
+        if (ma->ma_attr.la_valid & (LA_MODE | LA_UID | LA_GID))
                 handle->th_sync |= mdd->mdd_sync_permission;
 
         if (ma->ma_attr.la_valid & (LA_MTIME | LA_CTIME))
@@ -1682,59 +1461,36 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
 #endif
 
         if (la_copy->la_valid & LA_FLAGS) {
-                rc = mdd_attr_set_internal_locked(env, mdd_obj, la_copy,
-                                                  handle, 1);
-                if (rc == 0)
-                        mdd_flags_xlate(mdd_obj, la_copy->la_flags);
-        } else if (la_copy->la_valid) {            /* setattr */
-                rc = mdd_attr_set_internal_locked(env, mdd_obj, la_copy,
-                                                  handle, 1);
-                /* journal chown/chgrp in llog, just like unlink */
-                if (rc == 0 && lmm_size){
-                        cookie_size = mdd_lov_cookiesize(env, mdd);
-                        logcookies = mdd_max_cookie_get(env, mdd);
-                        if (logcookies == NULL)
-                                GOTO(cleanup, rc = -ENOMEM);
-
-                        if (mdd_setattr_log(env, mdd, ma, lmm, lmm_size,
-                                            logcookies, cookie_size) <= 0)
-                                logcookies = NULL;
-                }
+                rc = mdd_attr_set_internal(env, mdd_obj, la_copy, handle, 1);
+                if (rc)
+                        GOTO(unlock, rc);
+                mdd_flags_xlate(mdd_obj, la_copy->la_flags);
+        } else if (la_copy->la_valid) { /* setattr */
+                rc = mdd_attr_set_internal(env, mdd_obj, la_copy, handle, 1);
+                if (rc)
+                        GOTO(unlock, rc);
         }
 
-        if (rc == 0 && ma->ma_valid & MA_LOV) {
-                cfs_umode_t mode;
+        if ((ma->ma_valid & MA_LOV) && (S_ISREG(mode) || S_ISDIR(mode))) {
+                struct lu_buf *buf;
 
-                mode = mdd_object_type(mdd_obj);
-                if (S_ISREG(mode) || S_ISDIR(mode)) {
-                        rc = mdd_lsm_sanity_check(env, mdd_obj);
-                        if (rc)
-                                GOTO(cleanup, rc);
-
-                        rc = mdd_lov_set_md(env, NULL, mdd_obj, ma->ma_lmm,
-                                            ma->ma_lmm_size, handle, 1);
-                }
-
+                buf = mdd_buf_get(env, ma->ma_lmm, ma->ma_lmm_size);
+                rc = __mdd_xattr_set(env, mdd_obj, buf, XATTR_NAME_LOV, 0,
+                                     handle);
+                if (rc)
+                        GOTO(unlock, rc);
         }
-        if (rc == 0 && ma->ma_valid & (MA_HSM | MA_SOM)) {
-                cfs_umode_t mode;
 
-                mode = mdd_object_type(mdd_obj);
-                if (S_ISREG(mode))
-                        rc = mdd_lma_set_locked(env, mdd_obj, ma, handle);
+        if ((ma->ma_valid & (MA_HSM | MA_SOM)) && S_ISREG(mode))
+                rc = mdd_lma_set(env, mdd_obj, ma, handle);
 
-        }
-cleanup:
+unlock:
+        mdd_write_unlock(env, mdd_obj);
         if (rc == 0)
                 rc = mdd_attr_set_changelog(env, obj, handle,
                                             ma->ma_attr.la_valid);
 stop:
         mdd_trans_stop(env, mdd, rc, handle);
-        if (rc == 0 && (lmm != NULL && lmm_size > 0 )) {
-                /*set obd attr, if needed*/
-                rc = mdd_lov_setattr_async(env, mdd_obj, lmm, lmm_size,
-                                           logcookies);
-        }
 #ifdef HAVE_QUOTA_SUPPORT
         if (quota_opc) {
                 lquota_pending_commit(mds_quota_interface_ref, obd, qnids,
@@ -1748,20 +1504,6 @@ stop:
                               quota_opc);
         }
 #endif
-        RETURN(rc);
-}
-
-int mdd_xattr_set_txn(const struct lu_env *env, struct mdd_object *obj,
-                      const struct lu_buf *buf, const char *name, int fl,
-                      struct thandle *handle)
-{
-        int  rc;
-        ENTRY;
-
-        mdd_write_lock(env, obj, MOR_TGT_CHILD);
-        rc = __mdd_xattr_set(env, obj, buf, name, fl, handle);
-        mdd_write_unlock(env, obj);
-
         RETURN(rc);
 }
 
@@ -1793,7 +1535,6 @@ static int mdd_declare_xattr_set(const struct lu_env *env,
                                  const struct lu_buf *buf,
                                  const char *name,
                                  struct thandle *handle)
-
 {
         int rc;
 
@@ -1818,7 +1559,7 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
 {
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
         struct mdd_device *mdd = mdo2mdd(obj);
-        struct thandle *handle;
+        struct thandle    *handle;
         int  rc;
         ENTRY;
 
@@ -1830,11 +1571,6 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
         if (IS_ERR(handle))
                 RETURN(PTR_ERR(handle));
 
-        /* security-replated changes may require sync */
-        if (!strcmp(name, XATTR_NAME_ACL_ACCESS) &&
-            mdd->mdd_sync_permission == 1)
-                handle->th_sync = 1;
-
         rc = mdd_declare_xattr_set(env, mdd, mdd_obj, buf, name, handle);
         if (rc)
                 GOTO(stop, rc);
@@ -1843,25 +1579,28 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
         if (rc)
                 GOTO(stop, rc);
 
-        /* security-replated changes may require sync */
+        /* security-related changes may require sync */
         if (!strcmp(name, XATTR_NAME_ACL_ACCESS))
                 handle->th_sync |= mdd->mdd_sync_permission;
 
-        rc = mdd_xattr_set_txn(env, mdd_obj, buf, name, fl, handle);
+        mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
+        rc = __mdd_xattr_set(env, mdd_obj, buf, name, fl, handle);
+        mdd_write_unlock(env, mdd_obj);
+        if (rc)
+                GOTO(stop, rc);
 
         /* Only record system & user xattr changes */
-        if ((rc == 0) && (strncmp(XATTR_USER_PREFIX, name,
-                                  sizeof(XATTR_USER_PREFIX) - 1) == 0 ||
-                          strncmp(POSIX_ACL_XATTR_ACCESS, name,
-                                  sizeof(POSIX_ACL_XATTR_ACCESS) - 1) == 0 ||
-                          strncmp(POSIX_ACL_XATTR_DEFAULT, name,
-                                  sizeof(POSIX_ACL_XATTR_DEFAULT) - 1) == 0))
+        if (strncmp(XATTR_USER_PREFIX, name,
+                    sizeof(XATTR_USER_PREFIX) - 1) == 0 ||
+            strncmp(POSIX_ACL_XATTR_ACCESS, name,
+                    sizeof(POSIX_ACL_XATTR_ACCESS) - 1) == 0 ||
+            strncmp(POSIX_ACL_XATTR_DEFAULT, name,
+                    sizeof(POSIX_ACL_XATTR_DEFAULT) - 1) == 0)
                 rc = mdd_changelog_data_store(env, mdd, CL_XATTR, 0, mdd_obj,
                                               handle);
 
 stop:
         mdd_trans_stop(env, mdd, rc, handle);
-
         RETURN(rc);
 }
 
@@ -1893,7 +1632,7 @@ int mdd_xattr_del(const struct lu_env *env, struct md_object *obj,
 {
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
         struct mdd_device *mdd = mdo2mdd(obj);
-        struct thandle *handle;
+        struct thandle    *handle;
         int  rc;
         ENTRY;
 
@@ -1917,297 +1656,33 @@ int mdd_xattr_del(const struct lu_env *env, struct md_object *obj,
         rc = mdo_xattr_del(env, mdd_obj, name, handle,
                            mdd_object_capa(env, mdd_obj));
         mdd_write_unlock(env, mdd_obj);
+        if (rc)
+                GOTO(stop, rc);
 
         /* Only record system & user xattr changes */
-        if ((rc == 0) && (strncmp(XATTR_USER_PREFIX, name,
-                                  sizeof(XATTR_USER_PREFIX) - 1) == 0 ||
-                          strncmp(POSIX_ACL_XATTR_ACCESS, name,
-                                  sizeof(POSIX_ACL_XATTR_ACCESS) - 1) == 0 ||
-                          strncmp(POSIX_ACL_XATTR_DEFAULT, name,
-                                  sizeof(POSIX_ACL_XATTR_DEFAULT) - 1) == 0))
+        if (strncmp(XATTR_USER_PREFIX, name,
+                    sizeof(XATTR_USER_PREFIX) - 1) == 0 ||
+            strncmp(POSIX_ACL_XATTR_ACCESS, name,
+                    sizeof(POSIX_ACL_XATTR_ACCESS) - 1) == 0 ||
+            strncmp(POSIX_ACL_XATTR_DEFAULT, name,
+                    sizeof(POSIX_ACL_XATTR_DEFAULT) - 1) == 0)
                 rc = mdd_changelog_data_store(env, mdd, CL_XATTR, 0, mdd_obj,
                                               handle);
-
 stop:
         mdd_trans_stop(env, mdd, rc, handle);
 
         RETURN(rc);
 }
 
-/* partial unlink */
-static int mdd_ref_del(const struct lu_env *env, struct md_object *obj,
-                       struct md_attr *ma)
+void mdd_object_make_hint(const struct lu_env *env, struct mdd_object *parent,
+                          struct mdd_object *child, struct lu_attr *attr)
 {
-        struct lu_attr *la_copy = &mdd_env_info(env)->mti_la_for_fix;
-        struct mdd_object *mdd_obj = md2mdd_obj(obj);
-        struct mdd_device *mdd = mdo2mdd(obj);
-        struct thandle *handle;
-#ifdef HAVE_QUOTA_SUPPORT
-        struct obd_device *obd = mdd->mdd_obd_dev;
-        struct mds_obd *mds = &obd->u.mds;
-        unsigned int qids[MAXQUOTAS] = { 0, 0 };
-        int quota_opc = 0;
-#endif
-        int rc;
-        ENTRY;
+        struct dt_allocation_hint *hint = &mdd_env_info(env)->mti_hint;
+        struct dt_object *np = parent ? mdd_object_child(parent) : NULL;
+        struct dt_object *nc = mdd_object_child(child);
 
-        /* XXX: this code won't be used ever:
-         * DNE uses slightly different approach */
-        LBUG();
-
-        /*
-         * Check -ENOENT early here because we need to get object type
-         * to calculate credits before transaction start
-         */
-        if (mdd_object_exists(mdd_obj) == 0) {
-                CERROR("%s: object "DFID" not found: rc = -2\n",
-                       mdd_obj_dev_name(mdd_obj),PFID(mdd_object_fid(mdd_obj)));
-                RETURN(-ENOENT);
-        }
-
-        LASSERT(mdd_object_exists(mdd_obj) > 0);
-
-        handle = mdd_trans_create(env, mdd);
-        if (IS_ERR(handle))
-                RETURN(-ENOMEM);
-
-        rc = mdd_trans_start(env, mdd, handle);
-
-        mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
-
-        rc = mdd_unlink_sanity_check(env, NULL, mdd_obj, ma);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        mdo_ref_del(env, mdd_obj, handle);
-
-        if (S_ISDIR(lu_object_attr(&obj->mo_lu))) {
-                /* unlink dot */
-                mdo_ref_del(env, mdd_obj, handle);
-        }
-
-        LASSERT(ma->ma_attr.la_valid & LA_CTIME);
-        la_copy->la_ctime = ma->ma_attr.la_ctime;
-
-        la_copy->la_valid = LA_CTIME;
-        rc = mdd_attr_check_set_internal(env, mdd_obj, la_copy, handle, 0);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = mdd_finish_unlink(env, mdd_obj, ma, handle);
-#ifdef HAVE_QUOTA_SUPPORT
-        if (mds->mds_quota && ma->ma_valid & MA_INODE &&
-            ma->ma_attr.la_nlink == 0 && mdd_obj->mod_count == 0) {
-                quota_opc = FSFILT_OP_UNLINK_PARTIAL_CHILD;
-                mdd_quota_wrapper(&ma->ma_attr, qids);
-        }
-#endif
-
-
-        EXIT;
-cleanup:
-        mdd_write_unlock(env, mdd_obj);
-        mdd_trans_stop(env, mdd, rc, handle);
-#ifdef HAVE_QUOTA_SUPPORT
-        if (quota_opc)
-                /* Trigger dqrel on the owner of child. If failed,
-                 * the next call for lquota_chkquota will process it */
-                lquota_adjust(mds_quota_interface_ref, obd, qids, 0, rc,
-                              quota_opc);
-#endif
-        return rc;
-}
-
-/* partial operation */
-static int mdd_oc_sanity_check(const struct lu_env *env,
-                               struct mdd_object *obj,
-                               struct md_attr *ma)
-{
-        int rc;
-        ENTRY;
-
-        switch (ma->ma_attr.la_mode & S_IFMT) {
-        case S_IFREG:
-        case S_IFDIR:
-        case S_IFLNK:
-        case S_IFCHR:
-        case S_IFBLK:
-        case S_IFIFO:
-        case S_IFSOCK:
-                rc = 0;
-                break;
-        default:
-                rc = -EINVAL;
-                break;
-        }
-        RETURN(rc);
-}
-
-static int mdd_object_create(const struct lu_env *env,
-                             struct md_object *obj,
-                             const struct md_op_spec *spec,
-                             struct md_attr *ma)
-{
-
-        struct mdd_device *mdd = mdo2mdd(obj);
-        struct mdd_object *mdd_obj = md2mdd_obj(obj);
-        const struct lu_fid *pfid = spec->u.sp_pfid;
-        struct thandle *handle;
-#ifdef HAVE_QUOTA_SUPPORT
-        struct obd_device *obd = mdd->mdd_obd_dev;
-        struct obd_export *exp = md_quota(env)->mq_exp;
-        struct mds_obd *mds = &obd->u.mds;
-        unsigned int qids[MAXQUOTAS] = { 0, 0 };
-        int quota_opc = 0, block_count = 0;
-        int inode_pending[MAXQUOTAS] = { 0, 0 };
-        int block_pending[MAXQUOTAS] = { 0, 0 };
-#endif
-        int rc = 0;
-        ENTRY;
-
-        /* XXX: this code won't be used ever:
-         * DNE uses slightly different approach */
-        LBUG();
-
-#ifdef HAVE_QUOTA_SUPPORT
-        if (mds->mds_quota) {
-                quota_opc = FSFILT_OP_CREATE_PARTIAL_CHILD;
-                mdd_quota_wrapper(&ma->ma_attr, qids);
-                /* get file quota for child */
-                lquota_chkquota(mds_quota_interface_ref, obd, exp,
-                                qids, inode_pending, 1, NULL, 0,
-                                NULL, 0);
-                switch (ma->ma_attr.la_mode & S_IFMT) {
-                case S_IFLNK:
-                case S_IFDIR:
-                        block_count = 2;
-                        break;
-                case S_IFREG:
-                        block_count = 1;
-                        break;
-                }
-                /* get block quota for child */
-                if (block_count)
-                        lquota_chkquota(mds_quota_interface_ref, obd, exp,
-                                        qids, block_pending, block_count,
-                                        NULL, LQUOTA_FLAGS_BLK, NULL, 0);
-        }
-#endif
-
-        handle = mdd_trans_create(env, mdd);
-        if (IS_ERR(handle))
-                GOTO(out_pending, rc = PTR_ERR(handle));
-
-        rc = mdd_trans_start(env, mdd, handle);
-
-        mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
-        rc = mdd_oc_sanity_check(env, mdd_obj, ma);
-        if (rc)
-                GOTO(unlock, rc);
-
-        rc = mdd_object_create_internal(env, NULL, mdd_obj, ma, handle, spec);
-        if (rc)
-                GOTO(unlock, rc);
-
-        if (spec->sp_cr_flags & MDS_CREATE_SLAVE_OBJ) {
-                /* If creating the slave object, set slave EA here. */
-                int lmv_size = spec->u.sp_ea.eadatalen;
-                struct lmv_stripe_md *lmv;
-
-                lmv = (struct lmv_stripe_md *)spec->u.sp_ea.eadata;
-                LASSERT(lmv != NULL && lmv_size > 0);
-
-                rc = __mdd_xattr_set(env, mdd_obj,
-                                     mdd_buf_get_const(env, lmv, lmv_size),
-                                     XATTR_NAME_LMV, 0, handle);
-                if (rc)
-                        GOTO(unlock, rc);
-
-                rc = mdd_attr_set_internal(env, mdd_obj, &ma->ma_attr,
-                                           handle, 0);
-        } else {
-#ifdef CONFIG_FS_POSIX_ACL
-                if (spec->sp_cr_flags & MDS_CREATE_RMT_ACL) {
-                        struct lu_buf *buf = &mdd_env_info(env)->mti_buf;
-
-                        buf->lb_buf = (void *)spec->u.sp_ea.eadata;
-                        buf->lb_len = spec->u.sp_ea.eadatalen;
-                        if ((buf->lb_len > 0) && (buf->lb_buf != NULL)) {
-                                rc = __mdd_acl_init(env, mdd_obj, buf,
-                                                    &ma->ma_attr.la_mode,
-                                                    handle);
-                                if (rc)
-                                        GOTO(unlock, rc);
-                                else
-                                        ma->ma_attr.la_valid |= LA_MODE;
-                        }
-
-                        pfid = spec->u.sp_ea.fid;
-                }
-#endif
-                rc = mdd_object_initialize(env, pfid, NULL, mdd_obj, ma, handle,
-                                           spec);
-        }
-        EXIT;
-unlock:
-        if (rc == 0)
-                rc = mdd_attr_get_internal(env, mdd_obj, ma);
-        mdd_write_unlock(env, mdd_obj);
-
-        mdd_trans_stop(env, mdd, rc, handle);
-out_pending:
-#ifdef HAVE_QUOTA_SUPPORT
-        if (quota_opc) {
-                lquota_pending_commit(mds_quota_interface_ref, obd, qids,
-                                      inode_pending, 0);
-                lquota_pending_commit(mds_quota_interface_ref, obd, qids,
-                                      block_pending, 1);
-                /* Trigger dqacq on the owner of child. If failed,
-                 * the next call for lquota_chkquota will process it. */
-                lquota_adjust(mds_quota_interface_ref, obd, qids, 0, rc,
-                              quota_opc);
-        }
-#endif
-        return rc;
-}
-
-/* partial link */
-static int mdd_ref_add(const struct lu_env *env, struct md_object *obj,
-                       const struct md_attr *ma)
-{
-        struct lu_attr *la_copy = &mdd_env_info(env)->mti_la_for_fix;
-        struct mdd_object *mdd_obj = md2mdd_obj(obj);
-        struct mdd_device *mdd = mdo2mdd(obj);
-        struct thandle *handle;
-        int rc;
-        ENTRY;
-
-        /* XXX: this code won't be used ever:
-         * DNE uses slightly different approach */
-        LBUG();
-
-        handle = mdd_trans_create(env, mdd);
-        if (IS_ERR(handle))
-                RETURN(-ENOMEM);
-
-        rc = mdd_trans_start(env, mdd, handle);
-
-        mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
-        rc = mdd_link_sanity_check(env, NULL, NULL, mdd_obj);
-        if (rc == 0)
-                mdo_ref_add(env, mdd_obj, handle);
-        mdd_write_unlock(env, mdd_obj);
-        if (rc == 0) {
-                LASSERT(ma->ma_attr.la_valid & LA_CTIME);
-                la_copy->la_ctime = ma->ma_attr.la_ctime;
-
-                la_copy->la_valid = LA_CTIME;
-                rc = mdd_attr_check_set_internal_locked(env, mdd_obj, la_copy,
-                                                        handle, 0);
-        }
-        mdd_trans_stop(env, mdd, 0, handle);
-
-        RETURN(rc);
+        /* @hint will be initialized by underlying device. */
+        nc->do_ops->do_ah_init(env, hint, np, nc, attr->la_mode & S_IFMT);
 }
 
 /*
@@ -2314,46 +1789,8 @@ static int mdd_open(const struct lu_env *env, struct md_object *obj,
         return rc;
 }
 
-int mdd_declare_object_kill(const struct lu_env *env, struct mdd_object *obj,
-                            struct md_attr *ma, struct thandle *handle)
-{
-        int rc;
-
-        rc = mdd_declare_unlink_log(env, obj, ma, handle);
-        if (rc)
-                return rc;
-
-        return mdo_declare_destroy(env, obj, handle);
-}
-
-/* return md_attr back,
- * if it is last unlink then return lov ea + llog cookie*/
-int mdd_object_kill(const struct lu_env *env, struct mdd_object *obj,
-                    struct md_attr *ma, struct thandle *handle)
-{
-        int rc = 0;
-        ENTRY;
-
-        if (S_ISREG(mdd_object_type(obj))) {
-                /* Return LOV & COOKIES unconditionally here. We clean evth up.
-                 * Caller must be ready for that. */
-
-                rc = __mdd_lmm_get(env, obj, ma);
-                if ((ma->ma_valid & MA_LOV))
-                        rc = mdd_unlink_log(env, mdo2mdd(&obj->mod_obj),
-                                            obj, ma);
-        }
-
-        if (rc == 0)
-                rc = mdo_destroy(env, obj, handle);
-
-        RETURN(rc);
-}
-
-static int mdd_declare_close(const struct lu_env *env,
-                             struct mdd_object *obj,
-                             struct md_attr *ma,
-                             struct thandle *handle)
+static int mdd_declare_close(const struct lu_env *env, struct mdd_object *obj,
+                             struct md_attr *ma, struct thandle *handle)
 {
         int rc;
 
@@ -2361,7 +1798,7 @@ static int mdd_declare_close(const struct lu_env *env,
         if (rc)
                 return rc;
 
-        return mdd_declare_object_kill(env, obj, ma, handle);
+        return mdo_declare_destroy(env, obj, handle);
 }
 
 /*
@@ -2372,9 +1809,9 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
 {
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
         struct mdd_device *mdd = mdo2mdd(obj);
-        struct thandle    *handle = NULL;
-        int rc;
-        int is_orphan = 0, reset = 1;
+        struct thandle *handle = NULL;
+        int is_orphan = 0;
+        int rc = 0;
 
 #ifdef HAVE_QUOTA_SUPPORT
         struct obd_device *obd = mdo2mdd(obj)->mdd_obd_dev;
@@ -2396,8 +1833,8 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
         /* check without any lock */
         if (mdd_obj->mod_count == 1 &&
             (mdd_obj->mod_flags & (ORPHAN_OBJ | DEAD_OBJ)) != 0) {
- again:
-                handle = mdd_trans_create(env, mdo2mdd(obj));
+again:
+                handle = mdd_trans_create(env, mdd);
                 if (IS_ERR(handle))
                         RETURN(PTR_ERR(handle));
 
@@ -2409,7 +1846,7 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
                 if (rc)
                         GOTO(stop, rc);
 
-                rc = mdd_trans_start(env, mdo2mdd(obj), handle);
+                rc = mdd_trans_start(env, mdd, handle);
                 if (rc)
                         GOTO(stop, rc);
         }
@@ -2427,7 +1864,7 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
         if (mdd_obj->mod_count == 0 && mdd_obj->mod_flags & ORPHAN_OBJ) {
                 /* remove link to object from orphan index */
                 LASSERT(handle != NULL);
-                rc = __mdd_orphan_del(env, mdd_obj, handle);
+                rc = orph_index_delete(env, mdd_obj, handle);
                 if (rc == 0) {
                         CDEBUG(D_HA, "Object "DFID" is deleted from orphan "
                                "list, OSS objects to be destroyed.\n",
@@ -2441,13 +1878,16 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
                         /* If object was not deleted from orphan list, do not
                          * destroy OSS objects, which will be done when next
                          * recovery. */
+                        mdd_write_unlock(env, mdd_obj);
                         GOTO(out, rc);
                 }
         }
 
-        rc = mdd_iattr_get(env, mdd_obj, ma);
+        rc = mdd_la_get(env, mdd_obj, &ma->ma_attr,
+                        mdd_object_capa(env, mdd_obj));
         /* Object maybe not in orphan list originally, it is rare case for
          * mdd_finish_unlink() failure. */
+        mdd_write_unlock(env, mdd_obj);
         if (rc == 0 && (ma->ma_attr.la_nlink == 0 || is_orphan)) {
 #ifdef HAVE_QUOTA_SUPPORT
                 if (mds->mds_quota) {
@@ -2455,36 +1895,28 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
                         mdd_quota_wrapper(&ma->ma_attr, qids);
                 }
 #endif
-                /* MDS_CLOSE_CLEANUP means destroy OSS objects by MDS. */
-                if (ma->ma_valid & MA_FLAGS &&
-                    ma->ma_attr_flags & MDS_CLOSE_CLEANUP) {
-                        rc = mdd_lov_destroy(env, mdd, mdd_obj, &ma->ma_attr);
-                } else {
-                        if (handle == NULL) {
-                                handle = mdd_trans_create(env, mdo2mdd(obj));
-                                if (IS_ERR(handle))
-                                        GOTO(out, rc = PTR_ERR(handle));
+                if (handle == NULL) {
+                        handle = mdd_trans_create(env, mdd);
+                        if (IS_ERR(handle))
+                                GOTO(out, rc = PTR_ERR(handle));
 
-                                rc = mdd_declare_object_kill(env, mdd_obj, ma,
-                                                             handle);
-                                if (rc)
-                                        GOTO(out, rc);
+                        rc = mdo_declare_destroy(env, mdd_obj, handle);
+                        if (rc)
+                                GOTO(out, rc);
 
-                                rc = mdd_declare_changelog_store(env, mdd,
-                                                                 NULL, handle);
-                                if (rc)
-                                        GOTO(stop, rc);
+                        rc = mdd_declare_changelog_store(env, mdd,
+                                                         NULL, handle);
+                        if (rc)
+                                GOTO(stop, rc);
 
-                                rc = mdd_trans_start(env, mdo2mdd(obj), handle);
-                                if (rc)
-                                        GOTO(out, rc);
-                        }
-
-                        rc = mdd_object_kill(env, mdd_obj, ma, handle);
-                        if (rc == 0)
-                                reset = 0;
+                        rc = mdd_trans_start(env, mdd, handle);
+                        if (rc)
+                                GOTO(out, rc);
                 }
 
+                mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
+                rc = mdo_destroy(env, mdd_obj, handle);
+                mdd_write_unlock(env, mdd_obj);
                 if (rc != 0)
                         CERROR("Error when prepare to delete Object "DFID" , "
                                "which will cause OST objects can not be "
@@ -2493,16 +1925,11 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
         EXIT;
 
 out:
-        if (reset)
-                ma->ma_valid &= ~(MA_LOV | MA_COOKIE);
-
-        mdd_write_unlock(env, mdd_obj);
-
         if (rc == 0 &&
             (mode & (FMODE_WRITE | MDS_OPEN_APPEND | MDS_OPEN_TRUNC)) &&
             !(ma->ma_valid & MA_FLAGS && ma->ma_attr_flags & MDS_RECOV_OPEN)) {
                 if (handle == NULL) {
-                        handle = mdd_trans_create(env, mdo2mdd(obj));
+                        handle = mdd_trans_create(env, mdd);
                         if (IS_ERR(handle))
                                 GOTO(stop, rc = IS_ERR(handle));
 
@@ -2511,7 +1938,7 @@ out:
                         if (rc)
                                 GOTO(stop, rc);
 
-                        rc = mdd_trans_start(env, mdo2mdd(obj), handle);
+                        rc = mdd_trans_start(env, mdd, handle);
                         if (rc)
                                 GOTO(stop, rc);
                 }
@@ -2523,6 +1950,8 @@ out:
 stop:
         if (handle != NULL)
                 mdd_trans_stop(env, mdd, rc, handle);
+
+        ma->ma_valid &= ~(MA_LOV | MA_COOKIE);
 #ifdef HAVE_QUOTA_SUPPORT
         if (quota_opc)
                 /* Trigger dqrel on the owner of child. If failed,
@@ -2801,9 +2230,11 @@ const struct md_object_operations mdd_obj_ops = {
         .moo_xattr_set     = mdd_xattr_set,
         .moo_xattr_list    = mdd_xattr_list,
         .moo_xattr_del     = mdd_xattr_del,
+#if 0
         .moo_object_create = mdd_object_create,
         .moo_ref_add       = mdd_ref_add,
         .moo_ref_del       = mdd_ref_del,
+#endif
         .moo_open          = mdd_open,
         .moo_close         = mdd_close,
         .moo_readpage      = mdd_readpage,
@@ -2812,6 +2243,8 @@ const struct md_object_operations mdd_obj_ops = {
         .moo_capa_get      = mdd_capa_get,
         .moo_object_sync   = mdd_object_sync,
         .moo_path          = mdd_path,
+#if 0
         .moo_file_lock     = mdd_file_lock,
         .moo_file_unlock   = mdd_file_unlock,
+#endif
 };

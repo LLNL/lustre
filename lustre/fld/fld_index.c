@@ -115,7 +115,7 @@ static struct dt_rec *fld_rec(const struct lu_env *env,
 }
 
 struct thandle *fld_trans_create(struct lu_server_fld *fld,
-                                const struct lu_env *env)
+                                 const struct lu_env *env)
 {
         struct dt_device *dt_dev;
 
@@ -192,7 +192,6 @@ int fld_index_create(struct lu_server_fld *fld,
                                               fld_rec(env, range),
                                               fld_key(env, start),
                                               th, BYPASS_CAPA, 1);
-
         CDEBUG(D_INFO, "%s: insert given range : "DRANGE" rc = %d\n",
                fld->lsf_name, PRANGE(range), rc);
         RETURN(rc);
@@ -252,6 +251,10 @@ int fld_index_lookup(struct lu_server_fld *fld,
         int rc;
 
         ENTRY;
+
+        /* XXX: root FID, need to make it real FID */
+        if (seq == FID_SEQ_LOCAL_FILE)
+                RETURN(0);
 
         info = lu_context_key_get(&env->le_ctx, &fld_thread_key);
         fld_rec = &info->fti_rec;

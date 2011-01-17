@@ -606,6 +606,11 @@ run_test 31a "voluntary cancel / blocking ast race=============="
 test_31b() {
         remote_ost || { skip "local OST" && return 0; }
         remote_ost_nodsh && skip "remote OST w/o dsh" && return 0
+
+        # make sure there is no local locks due to destroy
+        wait_mds_ost_sync || return 4
+        wait_delete_completed || return 5
+
         mkdir -p $DIR1/$tdir || error "Creating dir $DIR1/$tdir"
         lfs setstripe $DIR/$tdir/$tfile -i 0 -c 1
         cp /etc/hosts $DIR/$tdir/$tfile

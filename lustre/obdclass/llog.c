@@ -94,7 +94,7 @@ void llog_free_handle(struct llog_handle *loghandle)
 EXPORT_SYMBOL(llog_free_handle);
 
 /* returns negative on error; 0 if success; 1 if success & log destroyed */
-int llog_cancel_rec(struct llog_handle *loghandle, int index)
+int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle, int index)
 {
         struct llog_log_hdr *llh = loghandle->lgh_hdr;
         int rc = 0;
@@ -118,7 +118,7 @@ int llog_cancel_rec(struct llog_handle *loghandle, int index)
         if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
             (llh->llh_count == 1) &&
             (loghandle->lgh_last_idx == (LLOG_BITMAP_BYTES * 8) - 1)) {
-                rc = llog_destroy(loghandle);
+                rc = llog_destroy(env, loghandle);
                 if (rc) {
                         CERROR("Failure destroying log after last cancel: %d\n",
                                rc);
@@ -130,12 +130,12 @@ int llog_cancel_rec(struct llog_handle *loghandle, int index)
                 RETURN(rc);
         }
 
-        rc = llog_write_rec(loghandle, &llh->llh_hdr, NULL, 0, NULL, 0);
+        /*rc = llog_write_rec(env, loghandle, &llh->llh_hdr, NULL, 0, NULL, 0);
         if (rc) {
                 CERROR("Failure re-writing header %d\n", rc);
                 ext2_set_bit(index, llh->llh_bitmap);
                 llh->llh_count++;
-        }
+        }*/
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cancel_rec);
@@ -219,12 +219,15 @@ int llog_close(struct llog_handle *loghandle)
 }
 EXPORT_SYMBOL(llog_close);
 
-static int llog_process_thread(void *arg)
+static int __llog_process_thread(void *arg)
 {
         struct llog_process_info     *lpi = (struct llog_process_info *)arg;
         struct llog_handle           *loghandle = lpi->lpi_loghandle;
         struct llog_log_hdr          *llh = loghandle->lgh_hdr;
         struct llog_process_cat_data *cd  = lpi->lpi_catdata;
+        struct dt_device             *dt = NULL;
+        const struct lu_env          *env;
+        struct lu_env                 _env;
         char                         *buf;
         __u64                         cur_offset = LLOG_CHUNK_SIZE;
         __u64                         last_offset;
@@ -236,14 +239,19 @@ static int llog_process_thread(void *arg)
         OBD_ALLOC(buf, LLOG_CHUNK_SIZE);
         if (!buf) {
                 lpi->lpi_rc = -ENOMEM;
-#ifdef __KERNEL__
-                cfs_complete(&lpi->lpi_completion);
-#endif
                 return 0;
         }
 
-        if (!(lpi->lpi_flags & LLOG_FLAG_NODEAMON))
-                cfs_daemonize_ctxt("llog_process_thread");
+        LASSERT(loghandle->lgh_ctxt);
+        LASSERT(loghandle->lgh_ctxt->loc_obd);
+        env = lpi->lpi_env;
+        if (env == NULL && loghandle->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt) {
+                dt = loghandle->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt;
+                rc = lu_env_init(&_env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+                if (rc)
+                        GOTO(out, rc);
+                env = &_env;
+        }
 
         if (cd != NULL) {
                 last_called_index = cd->lpcd_first_idx;
@@ -266,13 +274,14 @@ static int llog_process_thread(void *arg)
                 if (index == last_index + 1)
                         break;
 
+repeat:
                 CDEBUG(D_OTHER, "index: %d last_index %d\n",
                        index, last_index);
 
                 /* get the buf with our target record; avoid old garbage */
                 memset(buf, 0, LLOG_CHUNK_SIZE);
                 last_offset = cur_offset;
-                rc = llog_next_block(loghandle, &saved_index, index,
+                rc = llog_next_block(env, loghandle, &saved_index, index,
                                      &cur_offset, buf, LLOG_CHUNK_SIZE);
                 if (rc)
                         GOTO(out, rc);
@@ -293,8 +302,12 @@ static int llog_process_thread(void *arg)
                         CDEBUG(D_OTHER, "after swabbing, type=%#x idx=%d\n",
                                rec->lrh_type, rec->lrh_index);
 
-                        if (rec->lrh_index == 0)
+                        if (rec->lrh_index == 0) {
+                                /* probably another rec just got added? */
+                                if (index <= loghandle->lgh_last_idx)
+                                        GOTO(repeat, rc = 0);
                                 GOTO(out, 0); /* no more records */
+                        }
 
                         if (rec->lrh_len == 0 || rec->lrh_len >LLOG_CHUNK_SIZE){
                                 CWARN("invalid length %d in llog record for "
@@ -320,13 +333,13 @@ static int llog_process_thread(void *arg)
 
                         /* if set, process the callback on this record */
                         if (ext2_test_bit(index, llh->llh_bitmap)) {
-                                rc = lpi->lpi_cb(loghandle, rec,
+                                rc = lpi->lpi_cb(env, loghandle, rec,
                                                  lpi->lpi_cbdata);
                                 last_called_index = index;
                                 if (rc == LLOG_PROC_BREAK) {
                                         GOTO(out, rc);
                                 } else if (rc == LLOG_DEL_RECORD) {
-                                        llog_cancel_rec(loghandle,
+                                        llog_cancel_rec(env, loghandle,
                                                         rec->lrh_index);
                                         rc = 0;
                                 }
@@ -348,15 +361,29 @@ static int llog_process_thread(void *arg)
                 cd->lpcd_last_idx = last_called_index;
         if (buf)
                 OBD_FREE(buf, LLOG_CHUNK_SIZE);
+        if (dt)
+                lu_env_fini(&_env);
         lpi->lpi_rc = rc;
-#ifdef __KERNEL__
-        cfs_complete(&lpi->lpi_completion);
-#endif
         return 0;
 }
 
-int llog_process_flags(struct llog_handle *loghandle, llog_cb_t cb,
-                       void *data, void *catdata, int flags)
+static int llog_process_thread(void *arg)
+{
+        struct llog_process_info *lpi = (struct llog_process_info *)arg;
+        int                       rc;
+
+        cfs_daemonize_ctxt("llog_process_thread");
+
+        rc = __llog_process_thread(arg);
+
+#ifdef __KERNEL__
+        cfs_complete(&lpi->lpi_completion);
+#endif
+        return rc;
+}
+
+int __llog_process(const struct lu_env *env, struct llog_handle *loghandle,
+                   llog_cb_t cb, void *data, void *catdata, int fork)
 {
         struct llog_process_info *lpi;
         int                      rc;
@@ -371,30 +398,34 @@ int llog_process_flags(struct llog_handle *loghandle, llog_cb_t cb,
         lpi->lpi_cb        = cb;
         lpi->lpi_cbdata    = data;
         lpi->lpi_catdata   = catdata;
-        lpi->lpi_flags     = flags;
+        lpi->lpi_env       = env;
 
 #ifdef __KERNEL__
-        cfs_init_completion(&lpi->lpi_completion);
-        rc = cfs_create_thread(llog_process_thread, lpi, CFS_DAEMON_FLAGS);
-        if (rc < 0) {
-                CERROR("cannot start thread: %d\n", rc);
-                OBD_FREE_PTR(lpi);
-                RETURN(rc);
-        }
-        cfs_wait_for_completion(&lpi->lpi_completion);
+        if (fork) {
+                cfs_init_completion(&lpi->lpi_completion);
+                rc = cfs_create_thread(llog_process_thread, lpi,
+                                       CFS_DAEMON_FLAGS);
+                if (rc < 0) {
+                        CERROR("cannot start thread: %d\n", rc);
+                        OBD_FREE_PTR(lpi);
+                        RETURN(rc);
+                }
+                cfs_wait_for_completion(&lpi->lpi_completion);
+        } else
+                __llog_process_thread(lpi);
 #else
-        llog_process_thread(lpi);
+        __llog_process_thread(lpi);
 #endif
         rc = lpi->lpi_rc;
         OBD_FREE_PTR(lpi);
         RETURN(rc);
 }
-EXPORT_SYMBOL(llog_process_flags);
+EXPORT_SYMBOL(__llog_process);
 
 int llog_process(struct llog_handle *loghandle, llog_cb_t cb,
                  void *data, void *catdata)
 {
-        return llog_process_flags(loghandle, cb, data, catdata, 0);
+        return __llog_process(NULL, loghandle, cb, data, catdata, 1);
 }
 EXPORT_SYMBOL(llog_process);
 
@@ -406,7 +437,8 @@ inline int llog_get_size(struct llog_handle *loghandle)
 }
 EXPORT_SYMBOL(llog_get_size);
 
-int llog_reverse_process(struct llog_handle *loghandle, llog_cb_t cb,
+int llog_reverse_process(const struct lu_env *env,
+                         struct llog_handle *loghandle, llog_cb_t cb,
                          void *data, void *catdata)
 {
         struct llog_log_hdr *llh = loghandle->lgh_hdr;
@@ -441,7 +473,7 @@ int llog_reverse_process(struct llog_handle *loghandle, llog_cb_t cb,
 
                 /* get the buf with our target record; avoid old garbage */
                 memset(buf, 0, LLOG_CHUNK_SIZE);
-                rc = llog_prev_block(loghandle, index, buf, LLOG_CHUNK_SIZE);
+                rc = llog_prev_block(env, loghandle, index, buf, LLOG_CHUNK_SIZE);
                 if (rc)
                         GOTO(out, rc);
 
@@ -465,7 +497,7 @@ int llog_reverse_process(struct llog_handle *loghandle, llog_cb_t cb,
 
                         /* if set, process the callback on this record */
                         if (ext2_test_bit(index, llh->llh_bitmap)) {
-                                rc = cb(loghandle, rec, data);
+                                rc = cb(env, loghandle, rec, data);
                                 if (rc == LLOG_PROC_BREAK) {
                                         GOTO(out, rc);
                                 }

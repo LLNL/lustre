@@ -55,14 +55,10 @@ int class_find_param(char *buf, char *key, char **valp);
 int class_get_next_param(char **params, char *copy);
 int class_match_param(char *buf, char *key, char **valp);
 int class_parse_nid(char *buf, lnet_nid_t *nid, char **endh);
+int class_parse_nid_quiet(char *buf, lnet_nid_t *nid, char **endh);
 int class_parse_net(char *buf, __u32 *net, char **endh);
 int class_match_nid(char *buf, char *key, lnet_nid_t nid);
 int class_match_net(char *buf, char *key, __u32 net);
-/* obd_mount.c */
-int do_lcfg(char *cfgname, lnet_nid_t nid, int cmd,
-            char *s1, char *s2, char *s3, char *s4);
-
-
 
 /****************** User-settable parameter keys *********************/
 /* e.g.
@@ -98,6 +94,8 @@ int do_lcfg(char *cfgname, lnet_nid_t nid, int cmd,
 #define PARAM_MDC                  "mdc."
 #define PARAM_LLITE                "llite."
 #define PARAM_LOV                  "lov."
+#define PARAM_LOD                  "lod."
+#define PARAM_OSP                  "osp."
 #define PARAM_SYS                  "sys."              /* global */
 #define PARAM_SRPC                 "srpc."
 #define PARAM_SRPC_FLVR            "srpc.flavor."

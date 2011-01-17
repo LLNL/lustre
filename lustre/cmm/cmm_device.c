@@ -86,26 +86,14 @@ int cmm_root_get(const struct lu_env *env, struct md_device *md,
 }
 
 static int cmm_statfs(const struct lu_env *env, struct md_device *md,
-                      cfs_kstatfs_t *sfs)
+                      struct obd_statfs *osfs)
 {
         struct cmm_device *cmm_dev = md2cmm_dev(md);
         int rc;
 
         ENTRY;
-        rc = cmm_child_ops(cmm_dev)->mdo_statfs(env,
-                                                cmm_dev->cmm_child, sfs);
+        rc = cmm_child_ops(cmm_dev)->mdo_statfs(env, cmm_dev->cmm_child, osfs);
         RETURN (rc);
-}
-
-static int cmm_maxsize_get(const struct lu_env *env, struct md_device *md,
-                           int *md_size, int *cookie_size)
-{
-        struct cmm_device *cmm_dev = md2cmm_dev(md);
-        int rc;
-        ENTRY;
-        rc = cmm_child_ops(cmm_dev)->mdo_maxsize_get(env, cmm_dev->cmm_child,
-                                                     md_size, cookie_size);
-        RETURN(rc);
 }
 
 static int cmm_init_capa_ctxt(const struct lu_env *env, struct md_device *md,
@@ -402,7 +390,6 @@ int cmm_iocontrol(const struct lu_env *env, struct md_device *m,
 static const struct md_device_operations cmm_md_ops = {
         .mdo_statfs          = cmm_statfs,
         .mdo_root_get        = cmm_root_get,
-        .mdo_maxsize_get     = cmm_maxsize_get,
         .mdo_init_capa_ctxt  = cmm_init_capa_ctxt,
         .mdo_update_capa_key = cmm_update_capa_key,
         .mdo_llog_ctxt_get   = cmm_llog_ctxt_get,
@@ -435,14 +422,11 @@ extern struct lu_device_type mdc_device_type;
 static int cmm_post_init_mdc(const struct lu_env *env,
                              struct cmm_device *cmm)
 {
-        int max_mdsize, max_cookiesize, rc;
+        /* stub for now, do we need ever LOV EA between MDS? */
+        int max_mdsize = 4096;
+        /* no llog cookies anymore */
+        int max_cookiesize = 0, rc = 0;
         struct mdc_device *mc, *tmp;
-
-        /* get the max mdsize and cookiesize from lower layer */
-        rc = cmm_maxsize_get(env, &cmm->cmm_md_dev, &max_mdsize,
-                             &max_cookiesize);
-        if (rc)
-                RETURN(rc);
 
         cfs_spin_lock(&cmm->cmm_tgt_guard);
         cfs_list_for_each_entry_safe(mc, tmp, &cmm->cmm_targets,
@@ -572,9 +556,6 @@ static void cmm_device_shutdown(const struct lu_env *env,
         }
         cfs_spin_unlock(&cm->cmm_tgt_guard);
 
-        /* remove upcall device*/
-        md_upcall_fini(&cm->cmm_md_dev);
-
         EXIT;
 }
 
@@ -673,24 +654,6 @@ static const struct lu_device_operations cmm_lu_ops = {
 };
 
 /* --- lu_device_type operations --- */
-int cmm_upcall(const struct lu_env *env, struct md_device *md,
-               enum md_upcall_event ev, void *data)
-{
-        int rc;
-        ENTRY;
-
-        switch (ev) {
-                case MD_LOV_SYNC:
-                        rc = cmm_post_init_mdc(env, md2cmm_dev(md));
-                        if (rc)
-                                CERROR("can not init md size %d\n", rc);
-                        /* fall through */
-                default:
-                        rc = md_do_upcall(env, md, ev, data);
-        }
-        RETURN(rc);
-}
-
 static struct lu_device *cmm_device_free(const struct lu_env *env,
                                          struct lu_device *d)
 {
@@ -723,7 +686,6 @@ static struct lu_device *cmm_device_alloc(const struct lu_env *env,
         } else {
                 md_device_init(&m->cmm_md_dev, t);
                 m->cmm_md_dev.md_ops = &cmm_md_ops;
-                md_upcall_init(&m->cmm_md_dev, cmm_upcall);
                 l = cmm2lu_dev(m);
                 l->ld_ops = &cmm_lu_ops;
 

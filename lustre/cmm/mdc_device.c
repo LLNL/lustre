@@ -283,7 +283,6 @@ void cmm_mdc_init_ea_size(const struct lu_env *env, struct mdc_device *mc,
         struct obd_device *obd = class_exp2obd(mc->mc_desc.cl_exp);
 
         obd->u.cli.cl_max_mds_easize = max_mdsize;
-        obd->u.cli.cl_max_mds_cookiesize = max_cookiesize;
 }
 
 /** Start mdc device */

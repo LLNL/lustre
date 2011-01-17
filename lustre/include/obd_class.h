@@ -157,12 +157,12 @@ static inline void lprocfs_echo_init_vars(struct lprocfs_static_vars *lvars)
 
 /* Passed as data param to class_config_parse_llog */
 struct config_llog_instance {
-        char               *cfg_obdname;
-        void               *cfg_instance;
-        struct super_block *cfg_sb;
-        struct obd_uuid     cfg_uuid;
-        int                 cfg_last_idx; /* for partial llog processing */
-        int                 cfg_flags;
+        char                  *cfg_obdname;
+        void                  *cfg_instance;
+        struct lustre_sb_info *cfg_lsi;
+        struct obd_uuid        cfg_uuid;
+        int                    cfg_last_idx; /* for partial llog processing */
+        int                    cfg_flags;
 };
 int class_config_parse_llog(struct llog_ctxt *ctxt, char *name,
                             struct config_llog_instance *cfg);
@@ -565,6 +565,7 @@ static inline int obd_setup(struct obd_device *obd, struct lustre_cfg *cfg)
                 rc = lu_env_init(&env, ldt->ldt_ctx_tags);
                 if (rc == 0) {
                         env.le_ses = &session_ctx;
+                        ldt->ldt_obd_type = obd->obd_type;
                         d = ldt->ldt_ops->ldto_device_alloc(&env, ldt, cfg);
                         lu_env_fini(&env);
                         if (!IS_ERR(d)) {
@@ -1232,7 +1233,7 @@ static inline int obd_statfs_async(struct obd_device *obd,
                        obd->obd_osfs.os_bavail, obd->obd_osfs.os_blocks,
                        obd->obd_osfs.os_ffree, obd->obd_osfs.os_files);
                 cfs_spin_lock(&obd->obd_osfs_lock);
-                memcpy(oinfo->oi_osfs, &obd->obd_osfs, sizeof(*oinfo->oi_osfs));
+                *oinfo->oi_osfs = obd->obd_osfs;
                 cfs_spin_unlock(&obd->obd_osfs_lock);
                 oinfo->oi_flags |= OBD_STATFS_FROM_CACHE;
                 if (oinfo->oi_cb_up)
@@ -1284,7 +1285,7 @@ static inline int obd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
                 rc = OBP(obd, statfs)(obd, osfs, max_age, flags);
                 if (rc == 0) {
                         cfs_spin_lock(&obd->obd_osfs_lock);
-                        memcpy(&obd->obd_osfs, osfs, sizeof(obd->obd_osfs));
+                        obd->obd_osfs = *osfs;
                         obd->obd_osfs_age = cfs_time_current_64();
                         cfs_spin_unlock(&obd->obd_osfs_lock);
                 }
@@ -1295,7 +1296,7 @@ static inline int obd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
                        obd->obd_osfs.os_bavail, obd->obd_osfs.os_blocks,
                        obd->obd_osfs.os_ffree, obd->obd_osfs.os_files);
                 cfs_spin_lock(&obd->obd_osfs_lock);
-                memcpy(osfs, &obd->obd_osfs, sizeof(*osfs));
+                *osfs = obd->obd_osfs;
                 cfs_spin_unlock(&obd->obd_osfs_lock);
         }
         RETURN(rc);

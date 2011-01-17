@@ -376,6 +376,70 @@ struct dt_object *dt_store_open(const struct lu_env *env,
 }
 EXPORT_SYMBOL(dt_store_open);
 
+struct dt_object *dt_find_or_create(const struct lu_env *env,
+                                    struct dt_device *dt,
+                                    const struct lu_fid *fid,
+                                    struct dt_object_format *dof,
+                                    struct lu_attr *at)
+{
+        struct dt_object *dto;
+        struct thandle *th;
+        struct lu_attr attr;
+        int rc;
+        ENTRY;
+
+        dto = dt_locate(env, dt, fid);
+        if (unlikely(IS_ERR(dto)))
+                RETURN(dto);
+
+        LASSERT(dto != NULL);
+        if (dt_object_exists(dto))
+                RETURN(dto);
+
+        LASSERT(dto != NULL);
+        th = dt_trans_create(env, dt);
+        if (IS_ERR(th))
+                GOTO(out, rc = PTR_ERR(th));
+
+        if (at == NULL) {
+                memset(&attr, 0, sizeof(attr));
+                attr.la_valid = LA_MODE;
+                attr.la_mode = S_IFREG | 0666;
+                at = &attr;
+        }
+
+        rc = dt_declare_create(env, dto, at, NULL, dof, th);
+        LASSERT(rc == 0);
+
+        rc = dt->dd_ops->dt_trans_start(env, dt, th);
+        if (rc)
+                GOTO(trans_stop, rc);
+
+        dto->do_ops->do_write_lock(env, dto, 0);
+        if (dt_object_exists(dto))
+                GOTO(unlock, rc = 0);
+
+        CDEBUG(D_OTHER, "create new object %lu:%llu\n",
+               (unsigned long) fid->f_oid, fid->f_seq);
+
+        rc = dt_create(env, dto, at, NULL, dof, th);
+        LASSERT(rc == 0);
+        LASSERT(dt_object_exists(dto));
+
+unlock:
+        dto->do_ops->do_write_unlock(env, dto);
+
+trans_stop:
+        dt->dd_ops->dt_trans_stop(env, th);
+out:
+        if (rc) {
+                lu_object_put(env, &dto->do_lu);
+                RETURN(ERR_PTR(rc));
+        }
+        RETURN(dto);
+}
+EXPORT_SYMBOL(dt_find_or_create);
+
 /* dt class init function. */
 int dt_global_init(void)
 {
@@ -452,7 +516,7 @@ void dt_version_set(const struct lu_env *env, struct dt_object *o,
         vbuf.lb_len = sizeof(version);
 
         rc = dt_xattr_set(env, o, &vbuf, xname, 0, th, BYPASS_CAPA);
-        if (rc != 0)
+        if (rc < 0)
                 CDEBUG(D_INODE, "Can't set version, rc %d\n", rc);
         return;
 }
