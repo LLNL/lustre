@@ -417,12 +417,12 @@ int osd_get_bufs(const struct lu_env *env, struct dt_object *d, loff_t pos,
                  struct lustre_capa *capa)
 {
         struct osd_object   *obj    = osd_dt_obj(d);
-	struct niobuf_local *lb;
-	int npages, i, rc = 0;
+        struct niobuf_local *lb;
+        int npages, i, rc = 0;
 
         LASSERT(obj->oo_inode);
 
-	osd_map_remote_to_local(pos, len, &npages, l);
+        osd_map_remote_to_local(pos, len, &npages, l);
 
         for (i = 0, lb = l; i < npages; i++, lb++) {
 
@@ -430,7 +430,7 @@ int osd_get_bufs(const struct lu_env *env, struct dt_object *d, loff_t pos,
                  * can be written to disk as they were promised, and portals
                  * needs to keep the pages all aligned properly. */
                 lb->obj = obj;
-        
+
                 lb->page = osd_get_page(d, lb->file_offset, rw);
                 if (lb->page == NULL)
                         GOTO(cleanup, rc = -ENOMEM);
@@ -482,7 +482,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
         unsigned long timediff;
         ssize_t isize;
         __s64 maxidx;
-        int rc, i, cache = 0;
+        int rc = 0, i, cache = 0;
 
         LASSERT(inode);
 
@@ -524,11 +524,14 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
         timediff = cfs_timeval_sub(&end, &start, NULL);
         lprocfs_counter_add(osd->od_stats, LPROC_OSD_GET_PAGE, timediff);
 
-        rc = osd->od_fsops->fs_map_inode_pages(inode, iobuf->dr_pages,
-                        iobuf->dr_npages, iobuf->dr_blocks,
-                        NULL, 0, NULL);
-        if (likely(rc == 0))
-                rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
+        if (iobuf->dr_npages) {
+                rc = osd->od_fsops->fs_map_inode_pages(inode, iobuf->dr_pages,
+                                                       iobuf->dr_npages,
+                                                       iobuf->dr_blocks,
+                                                       NULL, 0, NULL);
+                if (likely(rc == 0))
+                        rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
+        }
         RETURN(rc);
 }
 
@@ -558,7 +561,7 @@ static int osd_declare_write_commit(const struct lu_env *env, struct dt_object *
          * 5 is max tree depth: inode + 4 index blocks
          * with blockmaps, depth is 3 at most
          */
-	if (LDISKFS_I(inode)->i_flags & LDISKFS_EXTENTS_FL) {
+        if (LDISKFS_I(inode)->i_flags & LDISKFS_EXTENTS_FL) {
                 /*
                  * many concurrent threads may grow tree by the time
                  * our transaction starts. so, consider 2 is a min depth
@@ -588,7 +591,7 @@ static int osd_declare_write_commit(const struct lu_env *env, struct dt_object *
                 oh->ot_credits += LDISKFS_SB(osd_sb(osd))->s_gdb_count;
         else
                 oh->ot_credits += newblocks;
-        
+
         RETURN(0);
 }
 
@@ -704,9 +707,9 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
 
         if (iobuf->dr_npages) {
                 rc = osd->od_fsops->fs_map_inode_pages(inode, iobuf->dr_pages,
-                                iobuf->dr_npages,
-                                iobuf->dr_blocks,
-                                NULL, 0, NULL);
+                                                       iobuf->dr_npages,
+                                                       iobuf->dr_blocks,
+                                                       NULL, 0, NULL);
                 rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
         }
 
