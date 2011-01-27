@@ -4550,6 +4550,7 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
 
         mite = &m->mdt_mite;
         s->ld_md_site = mite;
+        mite->ms_lu = s;
 
         m->mdt_md_dev.md_lu_dev.ld_ops = &mdt_lu_ops;
         m->mdt_md_dev.md_lu_dev.ld_obd = obd;

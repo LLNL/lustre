@@ -58,43 +58,43 @@
 #include <linux/pagemap.h> /* for PAGE_CACHE_SIZE */
 
 /*FIXME: Just copy from obdo_from_inode*/
-void obdo_from_la(struct obdo *dst, struct lu_attr *la, obd_flag valid)
+void obdo_from_la(struct obdo *dst, struct lu_attr *la, __u64 valid)
 {
         obd_flag newvalid = 0;
 
-        if (valid & OBD_MD_FLATIME) {
+        if (valid & LA_ATIME) {
                 dst->o_atime = la->la_atime;
                 newvalid |= OBD_MD_FLATIME;
         }
-        if (valid & OBD_MD_FLMTIME) {
+        if (valid & LA_MTIME) {
                 dst->o_mtime = la->la_mtime;
                 newvalid |= OBD_MD_FLMTIME;
         }
-        if (valid & OBD_MD_FLCTIME) {
+        if (valid & LA_CTIME) {
                 dst->o_ctime = la->la_ctime;
                 newvalid |= OBD_MD_FLCTIME;
         }
-        if (valid & OBD_MD_FLSIZE) {
+        if (valid & LA_SIZE) {
                 dst->o_size = la->la_size;
                 newvalid |= OBD_MD_FLSIZE;
         }
-        if (valid & OBD_MD_FLBLOCKS) {  /* allocation of space (x512 bytes) */
+        if (valid & LA_BLOCKS) {  /* allocation of space (x512 bytes) */
                 dst->o_blocks = la->la_blocks;
                 newvalid |= OBD_MD_FLBLOCKS;
         }
-        if (valid & OBD_MD_FLTYPE) {
+        if (valid & LA_TYPE) {
                 dst->o_mode = (dst->o_mode & S_IALLUGO)|(la->la_mode & S_IFMT);
                 newvalid |= OBD_MD_FLTYPE;
         }
-        if (valid & OBD_MD_FLMODE) {
+        if (valid & LA_MODE) {
                 dst->o_mode = (dst->o_mode & S_IFMT)|(la->la_mode & S_IALLUGO);
                 newvalid |= OBD_MD_FLMODE;
         }
-        if (valid & OBD_MD_FLUID) {
+        if (valid & LA_UID) {
                 dst->o_uid = la->la_uid;
                 newvalid |= OBD_MD_FLUID;
         }
-        if (valid & OBD_MD_FLGID) {
+        if (valid & LA_GID) {
                 dst->o_gid = la->la_gid;
                 newvalid |= OBD_MD_FLGID;
         }
