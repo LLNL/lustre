@@ -1075,6 +1075,12 @@ struct temp_comp
 
 static int mgs_write_log_mdc_to_mdt(struct obd_device *, struct fs_db *,
                                     struct mgs_target_info *, char *);
+static int mgs_write_log_osc_to_lov(struct obd_device *obd, struct fs_db *fsdb,
+                                    struct mgs_target_info *mti,
+                                    char *logname, char *suffix, char *lovname,
+                                    enum lustre_sec_part sec_part, int flags);
+static void name_create_mdt_and_lov(char **logname, char **lovname,
+                                    struct fs_db *fsdb, int i);
 
 static int mgs_steal_llog_handler(const struct lu_env *env,
                                   struct llog_handle *llh,
@@ -1521,7 +1527,7 @@ static int mgs_write_log_mdc_to_mdt(struct obd_device *obd, struct fs_db *fsdb,
         int i, rc;
 
         ENTRY;
-        if (mgs_log_is_empty(obd, mti->mti_svname)) {
+        if (mgs_log_is_empty(obd, logname)) {
                 CERROR("log is empty! Logical error\n");
                 RETURN (-EINVAL);
         }
@@ -1741,9 +1747,8 @@ static int mgs_write_log_osc_to_lov(struct obd_device *obd, struct fs_db *fsdb,
                mti->mti_svname, logname);
 
         if (mgs_log_is_empty(obd, logname)) {
-                /* The first item in the log must be the lov, so we have
-                   somewhere to add our osc. */
-                rc = mgs_write_log_lov(obd, fsdb, mti, logname, lovname);
+                CERROR("log is empty! Logical error\n");
+                RETURN (-EINVAL);
         }
 
         name_create(&nodeuuid, libcfs_nid2str(mti->mti_nids[0]), "");
@@ -1942,8 +1947,15 @@ static int mgs_write_log_ost(struct obd_device *obd, struct fs_db *fsdb,
 
         /* Append ost info to the client log */
         name_create(&logname, mti->mti_fsname, "-client");
+        if (mgs_log_is_empty(obd, logname)) {
+                /* Start client log */
+                rc = mgs_write_log_lov(obd, fsdb, mti, logname,
+                                       fsdb->fsdb_clilov);
+                rc = mgs_write_log_lmv(obd, fsdb, mti, logname,
+                                       fsdb->fsdb_clilmv);
+        }
         mgs_write_log_osc_to_lov(obd, fsdb, mti, logname, "",
-                                 fsdb->fsdb_clilov, LUSTRE_SP_CLI, flags);
+                                 fsdb->fsdb_clilov, LUSTRE_SP_CLI, 0);
         name_destroy(&logname);
         RETURN(rc);
 }
@@ -2486,7 +2498,7 @@ static int mgs_write_log_param(struct obd_device *obd, struct fs_db *fsdb,
         struct lustre_cfg_bufs bufs;
         char *logname;
         char *tmp;
-        int rc = 0;
+        int rc = 0, rc2 = 0;
         ENTRY;
 
         /* For various parameter settings, we have to figure out which logs
@@ -2743,12 +2755,13 @@ static int mgs_write_log_param(struct obd_device *obd, struct fs_db *fsdb,
         }
 
         LCONSOLE_WARN("Ignoring unrecognized param '%s'\n", ptr);
+        rc2 = -ENOSYS;
 
 end:
         if (rc)
                 CERROR("err %d on param '%s'\n", rc, ptr);
 
-        RETURN(rc);
+        RETURN(rc ?: rc2);
 }
 
 /* Not implementing automatic failover nid addition at this time. */
