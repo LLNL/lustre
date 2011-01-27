@@ -36,7 +36,7 @@
 
 if LIBLUSTRE
 noinst_LIBRARIES = libosp.a
-libosp_a_SOURCES = osp_log.c osp_pool.c osp_obd.c osp_pack.c osp_request.c osp_offset.c osp_qos.c osp_merge.c osp_ea.c osp_internal.h osp_cl_internal.h osp_dev.c osp_object.c osp_page.c osp_lock.c osp_io.c ospsub_dev.c ospsub_object.c ospsub_page.c ospsub_lock.c ospsub_io.c
+libosp_a_SOURCES = osp_internal.h osp_dev.c osp_object.c osp_sync.c osp_precreate.c
 libosp_a_CPPFLAGS = $(LLCPPFLAGS)
 libosp_a_CFLAGS = $(LLCFLAGS)
 endif
@@ -50,24 +50,10 @@ if DARWIN
 macos_PROGRAMS := osp
 
 osp_SOURCES :=          \
-        osp_log.c       \
-        osp_pool.c	    \
-        osp_obd.c       \
-        osp_pack.c      \
-        osp_request.c   \
-        osp_merge.c     \
-        osp_qos.c       \
         osp_dev.c       \
         osp_object.c    \
-        osp_page.c      \
-        osp_lock.c      \
-        osp_io.c        \
-        ospsub_dev.c    \
-        ospsub_object.c \
-        ospsub_page.c   \
-        ospsub_lock.c   \
-        ospsub_io.c     \
-        osp_offset.c    \
+        osp_precreate.c      \
+        osp_sync.c      \
         osp_internal.h
 
 osp_CFLAGS := $(EXTRA_KCFLAGS)
