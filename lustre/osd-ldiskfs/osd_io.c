@@ -417,12 +417,12 @@ int osd_bufs_get(const struct lu_env *env, struct dt_object *d, loff_t pos,
                  struct lustre_capa *capa)
 {
         struct osd_object   *obj    = osd_dt_obj(d);
-	struct niobuf_local *lb;
-	int npages, i, rc = 0;
+        struct niobuf_local *lb;
+        int npages, i, rc = 0;
 
         LASSERT(obj->oo_inode);
 
-	osd_map_remote_to_local(pos, len, &npages, l);
+        osd_map_remote_to_local(pos, len, &npages, l);
 
         for (i = 0, lb = l; i < npages; i++, lb++) {
 
@@ -482,7 +482,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
         unsigned long timediff;
         ssize_t isize;
         __s64 maxidx;
-        int rc, i, cache = 0;
+        int rc = 0, i, cache = 0;
 
         LASSERT(inode);
 
@@ -524,12 +524,14 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
         timediff = cfs_timeval_sub(&end, &start, NULL);
         lprocfs_counter_add(osd->od_stats, LPROC_OSD_GET_PAGE, timediff);
 
-        rc = osd->od_fsops->fs_map_inode_pages(inode, iobuf->dr_pages,
-                                               iobuf->dr_npages,
-                                               iobuf->dr_blocks,
-                                               NULL, 0, NULL);
-        if (likely(rc == 0))
-                rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
+        if (iobuf->dr_npages) {
+                rc = osd->od_fsops->fs_map_inode_pages(inode, iobuf->dr_pages,
+                                                       iobuf->dr_npages,
+                                                       iobuf->dr_blocks,
+                                                       NULL, 0, NULL);
+                if (likely(rc == 0))
+                        rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
+        }
         RETURN(rc);
 }
 
@@ -705,9 +707,9 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
 
         if (iobuf->dr_npages) {
                 rc = osd->od_fsops->fs_map_inode_pages(inode, iobuf->dr_pages,
-                                iobuf->dr_npages,
-                                iobuf->dr_blocks,
-                                NULL, 0, NULL);
+                                                       iobuf->dr_npages,
+                                                       iobuf->dr_blocks,
+                                                       NULL, 0, NULL);
                 rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
         }
 
