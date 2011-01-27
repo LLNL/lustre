@@ -35,8 +35,8 @@
 #
 
 if LIBLUSTRE
-noinst_LIBRARIES = liblov.a
-liblov_a_SOURCES = lov_log.c lov_pool.c lov_obd.c lov_pack.c lov_request.c lov_offset.c lov_qos.c lov_merge.c lov_ea.c lov_internal.h lov_cl_internal.h lov_dev.c lov_object.c lov_page.c lov_lock.c lov_io.c lovsub_dev.c lovsub_object.c lovsub_page.c lovsub_lock.c lovsub_io.c
+noinst_LIBRARIES = liblod.a
+liblod_a_SOURCES = lod_pool.c lod_dev.c lod_qos.c lod_internal.h lod_object.c lod_lov.c
 liblov_a_CPPFLAGS = $(LLCPPFLAGS)
 liblov_a_CFLAGS = $(LLCFLAGS)
 endif
@@ -47,32 +47,19 @@ modulefs_DATA = lod$(KMODEXT)
 endif
 
 if DARWIN
-macos_PROGRAMS := lov
+macos_PROGRAMS := lod
 
-lov_SOURCES :=          \
-        lov_log.c       \
-        lov_pool.c	    \
-        lov_obd.c       \
-        lov_pack.c      \
-        lov_request.c   \
-        lov_merge.c     \
-        lov_qos.c       \
-        lov_dev.c       \
-        lov_object.c    \
-        lov_page.c      \
-        lov_lock.c      \
-        lov_io.c        \
-        lovsub_dev.c    \
-        lovsub_object.c \
-        lovsub_page.c   \
-        lovsub_lock.c   \
-        lovsub_io.c     \
-        lov_offset.c    \
-        lov_internal.h
+lod_SOURCES :=          \
+        lod_pool.c      \
+        lod_qos.c       \
+        lod_dev.c       \
+        lod_object.c    \
+        lod_lov.c      \
+        lod_internal.h
 
-lov_CFLAGS := $(EXTRA_KCFLAGS)
-lov_LDFLAGS := $(EXTRA_KLDFLAGS)
-lov_LDADD := $(EXTRA_KLIBS)
+lod_CFLAGS := $(EXTRA_KCFLAGS)
+lod_LDFLAGS := $(EXTRA_KLDFLAGS)
+lod_LDADD := $(EXTRA_KLIBS)
 
 plist_DATA := Info.plist
 
