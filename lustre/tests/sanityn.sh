@@ -322,6 +322,7 @@ run_test 14d "chmod of executing file is still possible ========"
 test_15() {	# bug 974 - ENOSPC
 	echo "PATH=$PATH"
 	sh oos2.sh $MOUNT1 $MOUNT2
+	wait_delete_completed
 	grant_error=`dmesg | grep "> available"`
 	[ -z "$grant_error" ] || error "$grant_error"
 }
@@ -663,7 +664,7 @@ test_32a() { # bug 11270
         $TRUNCATE $DIR2/$tfile 5000000
         $CHECKSTAT -s 5000000 $DIR1/$tfile || error "wrong file size"
         [ $(calc_osc_stats lockless_truncate) -ne 0 ] ||
-                error "not cached trancate isn't lockless"
+                error "not cached truncate isn't lockless"
 
         log "disabled lockless truncate"
         enable_lockless_truncate 0
