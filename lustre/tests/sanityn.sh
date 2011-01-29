@@ -322,6 +322,7 @@ run_test 14d "chmod of executing file is still possible ========"
 test_15() {	# bug 974 - ENOSPC
 	echo "PATH=$PATH"
 	sh oos2.sh $MOUNT1 $MOUNT2
+	wait_delete_completed
 	grant_error=`dmesg | grep "> available"`
 	[ -z "$grant_error" ] || error "$grant_error"
 }
@@ -643,7 +644,7 @@ test_32a() { # bug 11270
         $TRUNCATE $DIR2/$tfile 5000000
         $CHECKSTAT -s 5000000 $DIR1/$tfile || error "wrong file size"
         [ $(calc_osc_stats lockless_truncate) -ne 0 ] ||
-                error "not cached trancate isn't lockless"
+                error "not cached truncate isn't lockless"
 
         log "disabled lockless truncate"
         enable_lockless_truncate 0
@@ -897,15 +898,14 @@ test_36() { #bug 16417
         lctl mark "start test"
         local before=$($LFS df | awk '{if ($1 ~/^filesystem/) {print $5; exit} }')
         dd if=/dev/zero of=$DIR1/$tdir/file000 bs=1M count=$SIZE
-        sync
-        sleep 1
+        sync_all_data
         local after_dd=$($LFS df | awk '{if ($1 ~/^filesystem/) {print $5; exit} }')
         multiop_bg_pause $DIR2/$tdir/file000 O_r${SIZE_B}c || return 3
         read_pid=$!
         rm -f $DIR1/$tdir/file000
         kill -USR1 $read_pid
         wait $read_pid
-        sleep 1
+        wait_delete_completed
         local after=$($LFS df | awk '{if ($1 ~/^filesystem/) {print $5; exit} }')
         echo "*** cycle($i) *** before($before):after_dd($after_dd):after($after)"
         # this free space! not used

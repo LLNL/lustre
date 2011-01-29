@@ -22,11 +22,12 @@ CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 [ "$CPU" = "UML" ] && EXCEPT="$EXCEPT 6"
 
 # Skip these tests
-# BUG NUMBER: 
+# BUG NUMBER:
 ALWAYS_EXCEPT="$REPLAY_OST_SINGLE_EXCEPT"
 
 #					
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="5"
+FAIL_ON_ERROR=false
 
 build_test_filter
 
@@ -197,7 +198,7 @@ test_6() {
     sync
     # let the delete happen
     wait_mds_ost_sync || return 4
-    wait_destroy_complete || return 5
+    wait_delete_completed || return 5
     after=`kbytesfree`
     log "before: $before after: $after"
     (( $before <= $after + 40 )) || return 3	# take OST logs into account
@@ -224,7 +225,7 @@ test_7() {
     sync
     # let the delete happen
     wait_mds_ost_sync || return 4
-    wait_destroy_complete || return 5
+    wait_delete_completed || return 5
     after=`kbytesfree`
     log "before: $before after: $after"
     (( $before <= $after + 40 )) || return 3	# take OST logs into account

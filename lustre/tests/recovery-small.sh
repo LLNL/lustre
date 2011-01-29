@@ -2,8 +2,8 @@
 
 set -e
 
-#         bug  5494 5493
-ALWAYS_EXCEPT="24   52 $RECOVERY_SMALL_EXCEPT"
+#         bug  5494 5493 22805
+ALWAYS_EXCEPT="24   52   60    $RECOVERY_SMALL_EXCEPT"
 
 PTLDEBUG=${PTLDEBUG:--1}
 LUSTRE=${LUSTRE:-`dirname $0`/..}
@@ -17,6 +17,7 @@ require_dsh_mds || exit 0
 # also long tests: 19, 21a, 21e, 21f, 23, 27
 #                                   1  2.5  2.5    4    4          (min)"
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="17  26a  26b    50   51     57"
+FAIL_ON_ERROR=false
 
 build_test_filter
 
@@ -1077,7 +1078,7 @@ test_61()
 {
 	local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS $FSNAME-OST0000)
 	mdtosc=${mdtosc/-MDT*/-MDT\*}
-	local cflags="osc.$mdtosc.connect_flags"
+	local cflags="os[cp].$mdtosc.connect_flags"
 	do_facet $SINGLEMDS "lctl get_param -n $cflags" |grep -q skip_orphan
 	[ $? -ne 0 ] && skip "don't have skip orphan feature" && return
 

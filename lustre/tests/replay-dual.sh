@@ -2,8 +2,8 @@
 
 set -e
 
-# bug number:  10124
-ALWAYS_EXCEPT="15c   $REPLAY_DUAL_EXCEPT"
+# bug number:  23385 10124
+ALWAYS_EXCEPT="14b   15c   $REPLAY_DUAL_EXCEPT"
 
 LFS=${LFS:-lfs}
 SETSTRIPE=${SETSTRIPE:-"$LFS setstripe"}
@@ -23,6 +23,7 @@ init_logging
 remote_mds_nodsh && skip "remote MDS with nodsh" && exit 0
 
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="21b"
+FAIL_ON_ERROR=false
 
 build_test_filter
 
@@ -284,7 +285,7 @@ run_test 13 "close resend timeout"
 
 test_14b() {
     wait_mds_ost_sync
-    wait_destroy_complete
+    wait_delete_complete
     BEFOREUSED=`df -P $DIR | tail -1 | awk '{ print $3 }'`
     mkdir -p $MOUNT1/$tdir
     $SETSTRIPE -o 0 $MOUNT1/$tdir
@@ -306,7 +307,7 @@ test_14b() {
     zconf_mount `hostname` $MOUNT2 || error "mount $MOUNT2 fail"
 
     wait_mds_ost_sync || return 4
-    wait_destroy_complete || return 5
+    wait_delete_complete || return 5
 
     AFTERUSED=`df -P $DIR | tail -1 | awk '{ print $3 }'`
     log "before $BEFOREUSED, after $AFTERUSED"

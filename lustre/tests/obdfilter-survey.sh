@@ -13,6 +13,7 @@ size=${size:-1024}
 
 # the summary file a bit smaller than OSTSIZE
 . ${CONFIG:=$LUSTRE/tests/cfg/$NAME.sh}
+init_logging
 
 [ "$SLOW" = no ] && { nobjhi=1; thrhi=4; }
 thrlo=${thrlo:-$(( thrhi / 2))}

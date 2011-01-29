@@ -127,7 +127,7 @@ get_ost_dev() {
     ost_name=$($LFS osts | grep "^$obdidx: " | cut -d' ' -f2 | \
                 head -n1 | sed -e 's/_UUID$//')
 
-    ost_dev=$(do_node $node "lctl get_param -n obdfilter.$ost_name.mntdev")
+    ost_dev=$(do_node $node "lctl get_param -n osd.$ost_name.mntdev")
     [ ${PIPESTATUS[0]} -ne 0 ] && \
         echo "failed to find the OST device with index $obdidx on $facet" && \
         return 1
