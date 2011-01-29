@@ -2,8 +2,8 @@
 
 set -e
 
-# bug number:  16356
-ALWAYS_EXCEPT="12a   $REPLAY_VBR_EXCEPT"
+# bug number:  23385 16356
+ALWAYS_EXCEPT="11a   12a   $REPLAY_VBR_EXCEPT"
 
 SAVE_PWD=$PWD
 LUSTRE=${LUSTRE:-$(cd $(dirname $0)/..; echo $PWD)}
@@ -18,6 +18,7 @@ init_logging
 remote_mds_nodsh && log "SKIP: remote MDS with nodsh" && exit 0
 
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="7"
+FAIL_ON_ERROR=false
 
 build_test_filter
 

@@ -125,7 +125,7 @@ get_ost_dev() {
     local ost_dev
 
     ost_name=$(ostname_from_index $obdidx)
-    ost_dev=$(do_node $node "lctl get_param -n obdfilter.${ost_name}.mntdev")
+    ost_dev=$(do_node $node "lctl get_param -n osd.${ost_name}.mntdev")
     [ ${PIPESTATUS[0]} -ne 0 ] && \
         echo "failed to find the OST device with index $obdidx on $facet" && \
         return 1
