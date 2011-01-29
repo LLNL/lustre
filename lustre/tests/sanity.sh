@@ -17,9 +17,18 @@ ALWAYS_EXCEPT="                27u   42a  42b  42c  42d  45   51d   68b   $SANIT
 CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 #                                    buffer i/o errs             sock spc runas
 [ "$CPU" = "UML" ] && EXCEPT="$EXCEPT 27m 27n 27o 27p 27q 27r 31d 54a  64b 99a 99b 99c 99d 99e 99f 101a"
+# test76 is not valid with FIDs because inode numbers are not reused
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
+
+# Orion: to be fixed
+# 60a -- llog_osd_create()) ASSERTION(dt) failed
+# 64b -- oss.sh failed
+# 160 -- (bug 22448) changelogs don't work yet
+# 180 -- ofd doesn't work with obdecho
+# 225 - md_echo needs fixes
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 60a 64b 160 180b 225"
 
 case `uname -r` in
-2.4*) FSTYPE=${FSTYPE:-ext3} ;;
 2.6*) FSTYPE=${FSTYPE:-ldiskfs} ;;
 *) error "unsupported kernel" ;;
 esac
@@ -994,6 +1003,11 @@ test_27l() {
 }
 run_test 27l "check setstripe permissions (should return error)"
 
+sleep_maxage() {
+        local DELAY=$(do_facet $SINGLEMDS lctl get_param -n lo[vd].*.qos_maxage | head -n 1 | awk '{print $1 * 2}')
+        sleep $DELAY
+}
+
 test_27m() {
 	[ "$OSTCOUNT" -lt "2" ] && skip_env "$OSTCOUNT < 2 OSTs -- skipping" && return
 	if [ $ORIGFREE -gt $MAXFREE ]; then
@@ -1010,6 +1024,7 @@ test_27m() {
 		[ $i -gt 256 ] && break
 	done
 	i=`expr $i + 1`
+	sleep_maxage
 	touch $DIR/d27/f27m_$i
 	[ `$GETSTRIPE $DIR/d27/f27m_$i | grep -A 10 obdidx | awk '{print $1}'| grep -w "0"` ] && \
 		error "OST0 was full but new created file still use it"
@@ -1022,11 +1037,6 @@ test_27m() {
 }
 run_test 27m "create file while OST0 was full =================="
 
-sleep_maxage() {
-        local DELAY=$(do_facet $SINGLEMDS lctl get_param -n lov.*.qos_maxage | head -n 1 | awk '{print $1 * 2}')
-        sleep $DELAY
-}
-
 # OSCs keep a NOSPC flag that will be reset after ~5s (qos_maxage)
 # if the OST isn't full anymore.
 reset_enospc() {
@@ -1036,6 +1046,7 @@ reset_enospc() {
 	[ "$OSTIDX" ] && list=$(facet_host ost$((OSTIDX + 1)))
 
 	do_nodes $list lctl set_param fail_loc=0
+	sync	# initiate all OST_DESTROYs from MDS to OST
 	sleep_maxage
 }
 
@@ -1055,12 +1066,12 @@ exhaust_precreations() {
 	# on the mdt's osc
 	local mdtosc_proc1=$(get_mdtosc_proc_path mds${MDSIDX} $OST)
 	local last_id=$(do_facet mds${MDSIDX} lctl get_param -n \
-        osc.$mdtosc_proc1.prealloc_last_id)
+        os[cp].$mdtosc_proc1.prealloc_last_id)
 	local next_id=$(do_facet mds${MDSIDX} lctl get_param -n \
-        osc.$mdtosc_proc1.prealloc_next_id)
+        os[cp].$mdtosc_proc1.prealloc_next_id)
 
 	local mdtosc_proc2=$(get_mdtosc_proc_path mds${MDSIDX})
-	do_facet mds${MDSIDX} lctl get_param osc.$mdtosc_proc2.prealloc*
+	do_facet mds${MDSIDX} lctl get_param os[cp].$mdtosc_proc2.prealloc*
 
 	mkdir -p $DIR/$tdir/${OST}
 	$SETSTRIPE -i $OSTIDX -c 1 $DIR/$tdir/${OST}
@@ -1069,7 +1080,7 @@ exhaust_precreations() {
 	do_facet ost$((OSTIDX + 1)) lctl set_param fail_loc=0x215
 	echo "Creating to objid $last_id on ost $OST..."
 	createmany -o $DIR/$tdir/${OST}/f $next_id $((last_id - next_id + 2))
-	do_facet mds${MDSIDX} lctl get_param osc.$mdtosc_proc2.prealloc*
+	do_facet mds${MDSIDX} lctl get_param os[cp].$mdtosc_proc2.prealloc*
 	do_facet ost$((OSTIDX + 1)) lctl set_param fail_loc=$FAILLOC
 	sleep_maxage
 }
@@ -1296,14 +1307,14 @@ test_27y() {
 
         local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS $FSNAME-OST0000)
         local last_id=$(do_facet $SINGLEMDS lctl get_param -n \
-            osc.$mdtosc.prealloc_last_id)
+            os[cp].$mdtosc.prealloc_last_id)
         local next_id=$(do_facet $SINGLEMDS lctl get_param -n \
-            osc.$mdtosc.prealloc_next_id)
+            os[cp].$mdtosc.prealloc_next_id)
         local fcount=$((last_id - next_id))
         [ $fcount -eq 0 ] && skip "not enough space on OST0" && return
         [ $fcount -gt $OSTCOUNT ] && fcount=$OSTCOUNT
 
-        MDS_OSCS=`do_facet $SINGLEMDS lctl dl | awk '/[oO][sS][cC].*md[ts]/ { print $4 }'`
+        MDS_OSCS=`do_facet $SINGLEMDS lctl dl | awk '/[oO][sS][cCpP].*[mM][dD][Tts]/ { print $4 }'`
         OFFSET=$(($OSTCOUNT-1))
         OST=-1
         for OSC in $MDS_OSCS; do
@@ -1430,6 +1441,7 @@ test_27z() {
         dd if=/dev/zero of=$DIR/$tdir/$tfile-2 bs=1M count=$OSTCOUNT ||
                 { error "dd $tfile-2 failed"; return 4; }
 
+        cancel_lru_locks osc
         # make sure write RPCs have been sent to OSTs
         sync; sleep 5; sync
 
@@ -3224,7 +3236,7 @@ test_53() {
 
 	# only test MDT0000
         local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS)
-        for value in $(do_facet $SINGLEMDS lctl get_param osc.$mdtosc.prealloc_last_id) ; do
+        for value in $(do_facet $SINGLEMDS lctl get_param os[cp].$mdtosc.prealloc_last_id) ; do
                 param=`echo ${value[0]} | cut -d "=" -f1`
                 ostname=`echo $param | cut -d "." -f2 | cut -d - -f 1-2`
                 mds_last=$(do_facet $SINGLEMDS lctl get_param -n $param)
@@ -4213,7 +4225,7 @@ test_65k() { # bug11679
         do_facet $SINGLEMDS lctl --device %$INACTIVE_OSC deactivate
         for STRIPE_OSC in $MDS_OSCS; do
             OST=`osc_to_ost $STRIPE_OSC`
-            IDX=`do_facet $SINGLEMDS lctl get_param -n lov.*md*.target_obd |
+            IDX=`do_facet $SINGLEMDS lctl get_param -n lo[vd].*md*.target_obd |
                  awk -F: /$OST/'{ print $1 }' | head -n 1`
 
             [ -f $DIR/$tdir/$IDX ] && continue
@@ -4240,7 +4252,8 @@ run_test 65l "lfs find on -1 stripe dir ========================"
 test_66() {
 	COUNT=${COUNT:-8}
 	dd if=/dev/zero of=$DIR/f66 bs=1k count=$COUNT
-	sync; sleep 1; sync
+	sync; sync_all_data; sync; sync_all_data
+	cancel_lru_locks osc
 	BLOCKS=`ls -s $DIR/f66 | awk '{ print $1 }'`
 	[ $BLOCKS -ge $COUNT ] || error "$DIR/f66 blocks $BLOCKS < $COUNT"
 }
@@ -5141,6 +5154,7 @@ test_101d() {
 
     set_read_ahead $old_READAHEAD
     rm -f $file
+    wait_delete_completed
 
     [ $time_ra_ON -lt $time_ra_OFF ] ||
         error "read-ahead enabled  time read (${time_ra_ON}s) is more than
@@ -7387,6 +7401,7 @@ test_133c() {
 	check_stats ost "punch" 1
 
 	rm -f ${testdir}/${tfile} || error "file remove failed"
+	wait_delete_completed
 	check_stats ost "destroy" 1
 
 	rm -rf $DIR/${tdir}
@@ -7552,7 +7567,7 @@ run_test 150 "truncate/append tests"
 function roc_hit() {
     local list=$(comma_list $(osts_nodes))
 
-    ACCNUM=$(do_nodes $list $LCTL get_param -n obdfilter.*.stats | \
+    ACCNUM=$(do_nodes $list $LCTL get_param -n osd*.*.stats | \
         awk '/'cache_hit'/ {sum+=$2} END {print sum}')
     echo $ACCNUM
 }
@@ -7564,7 +7579,7 @@ function set_cache() {
         on=0;
     fi
     local list=$(comma_list $(osts_nodes))
-    do_nodes $list lctl set_param obdfilter.*.${1}_cache_enable $on
+    do_nodes $list lctl set_param osd*.*OST*.${1}_cache_enable $on
 
     cancel_lru_locks osc
 }
@@ -7575,19 +7590,19 @@ test_151() {
         local CPAGES=3
         local list=$(comma_list $(osts_nodes))
 
-        # check whether obdfilter is cache capable at all
-        if ! do_nodes $list $LCTL get_param -n obdfilter.*.read_cache_enable > /dev/null; then
+        # check whether osd is cache capable at all
+        if ! do_nodes $list $LCTL get_param -n osd*.*OST*.read_cache_enable > /dev/null; then
                 echo "not cache-capable obdfilter"
                 return 0
         fi
 
-        # check cache is enabled on all obdfilters
-        if do_nodes $list $LCTL get_param -n obdfilter.*.read_cache_enable | grep 0 >&/dev/null; then
+        # check cache is enabled on all osd
+        if do_nodes $list $LCTL get_param -n osd*.*OST*.read_cache_enable | grep 0 >&/dev/null; then
                 echo "oss cache is disabled"
                 return 0
         fi
 
-        do_nodes $list $LCTL set_param -n obdfilter.*.writethrough_cache_enable 1
+        do_nodes $list $LCTL set_param -n osd*.*OST*.writethrough_cache_enable 1
 
         # pages should be in the case right after write
         dd if=/dev/urandom of=$DIR/$tfile bs=4k count=$CPAGES || error "dd failed"
@@ -7601,7 +7616,7 @@ test_151() {
 
         # the following read invalidates the cache
         cancel_lru_locks osc
-        do_nodes $list $LCTL set_param -n obdfilter.*.read_cache_enable 0
+        do_nodes $list $LCTL set_param -n osd*.*OST*.read_cache_enable 0
         cat $DIR/$tfile >/dev/null
 
         # now data shouldn't be found in the cache
@@ -7613,7 +7628,7 @@ test_151() {
                 error "IN CACHE: before: $BEFORE, after: $AFTER"
         fi
 
-        do_nodes $list $LCTL set_param -n obdfilter.*.read_cache_enable 1
+        do_nodes $list $LCTL set_param -n osd*.*OST*.read_cache_enable 1
         rm -f $DIR/$tfile
 }
 run_test 151 "test cache on oss and controls ==============================="

@@ -578,17 +578,41 @@ cleanup_gss() {
     fi
 }
 
+facet_fstype () {
+    local facet=$1
+    local tgt=$(echo $facet | tr -d [:digit:] | tr "[:lower:]" "[:upper:]")
+
+    local var=${tgt}FSTYPE
+
+    [[ -n ${!var} ]] && echo ${!var} || echo $FSTYPE 
+}
+
+devicelabel() {
+    local facet=$1
+    local dev=$2
+    local label
+
+    local fstype=$(facet_fstype $facet)
+
+    case $fstype in
+        ldiskfs ) label=$(do_facet ${facet} "$E2LABEL ${dev} 2>/dev/null");;
+        * ) error "unknown fstype!";;
+    esac
+
+    echo $label
+}
+
 mdsdevlabel() {
     local num=$1
     local device=`mdsdevname $num`
-    local label=`do_facet mds$num "e2label ${device}" | grep -v "CMD: "`
+    local label=`devicelabel mds$num ${device} | grep -v "CMD: "`
     echo -n $label
 }
 
 ostdevlabel() {
     local num=$1
     local device=`ostdevname $num`
-    local label=`do_facet ost$num "e2label ${device}" | grep -v "CMD: "`
+    local label=`devicelabel ost$num ${device} | grep -v "CMD: "`
     echo -n $label
 }
 
@@ -666,7 +690,7 @@ mount_facet() {
     else
         set_default_debug_facet $facet
 
-        label=$(do_facet ${facet} "$E2LABEL ${!dev}")
+        label=$(devicelabel ${facet} ${!dev})
         [ -z "$label" ] && echo no label for ${!dev} && exit 1
         eval export ${facet}_svc=${label}
         echo Started ${label}
@@ -1361,23 +1385,52 @@ wait_update_facet () {
     wait_update  $(facet_active_host $facet) "$@"
 }
 
+sync_all_data () {
+    do_node $(osts_nodes) "lctl set_param -n osd*.*OS*.force_sync 1"
+}
+
 wait_delete_completed () {
-    local TOTALPREV=`lctl get_param -n osc.*.kbytesavail | \
-                     awk 'BEGIN{total=0}; {total+=$1}; END{print total}'`
+    local mds2sync=""
+    local stime=`date +%s`
+    local etime
+
+    # find MDS with pending deletions
+    for node in $(mdts_nodes); do
+        changes=$(do_node $node "lctl get_param -n osp*.*.sync_*" | awk '{sum=sum+$1} END{print sum}')
+        #echo "$node: $changes changes on $node"
+        if let "changes == 0"; then
+            continue
+        fi
+        mds2sync="$mds2sync $node"
+    done
+    if [ "$mds2sync" == "" ]; then
+        #echo "no delete in progress"
+        return
+    fi
+
+    # sync MDS transactions
+    do_node $mds2sync "lctl set_param -n osd*.*MD*.force_sync 1"
+
+    # wait till all changes are sent to OSTs
 
     local WAIT=0
     local MAX_WAIT=20
     while [ "$WAIT" -ne "$MAX_WAIT" ]; do
+        changes=$(do_node $mds2sync "lctl get_param -n osp*.*.sync_changes" | awk '{sum=sum+$1} END{print sum}')
+        #echo "$node: $changes changes on all"
+        if [ "$changes" -eq "0" ]; then
+            do_node $(osts_nodes) "lctl set_param -n osd*.*OS*.force_sync 1"
+            etime=`date +%s`
+            #echo "delete took $((etime-stime)) seconds"
+            return
+        fi
         sleep 1
-        TOTAL=`lctl get_param -n osc.*.kbytesavail | \
-               awk 'BEGIN{total=0}; {total+=$1}; END{print total}'`
-        [ "$TOTAL" -eq "$TOTALPREV" ] && return 0
-        echo "Waiting delete completed ... prev: $TOTALPREV current: $TOTAL "
-        TOTALPREV=$TOTAL
         WAIT=$(( WAIT + 1))
     done
-    echo "Delete is not completed in $MAX_WAIT sec"
-    return 1
+
+    etime=`date +%s`
+    echo "Delete is not completed in $((etime-stime)) seconds"
+    do_node $mds2sync "lctl get_param osp*.*.sync_*"
 }
 
 wait_for_host() {
@@ -1448,15 +1501,15 @@ wait_mds_ost_sync () {
     # orphan cleanup. Wait for llogs to get synchronized.
     echo "Waiting for orphan cleanup..."
     # MAX value includes time needed for MDS-OST reconnection
-    local MAX=$(( TIMEOUT * 2 ))
+    local MAX=$(( TIMEOUT * 3 + 3 ))
     local WAIT=0
     while [ $WAIT -lt $MAX ]; do
-        local -a sync=($(do_nodes $(comma_list $(osts_nodes)) \
-            "$LCTL get_param -n obdfilter.*.mds_sync"))
+        local -a sync=($(do_nodes $(comma_list $(mdts_nodes)) \
+            "$LCTL get_param -n osp.*.old_sync_processed"))
         local con=1
         local i
         for ((i=0; i<${#sync[@]}; i++)); do
-            [ ${sync[$i]} -eq 0 ] && continue
+            [ ${sync[$i]} -ne 0 ] && continue
             # there is a not finished MDS-OST synchronization
             con=0
             break;
@@ -1467,31 +1520,6 @@ wait_mds_ost_sync () {
         WAIT=$((WAIT + 2))
     done
     echo "$facet recovery not done in $MAX sec. $STATUS"
-    return 1
-}
-
-wait_destroy_complete () {
-    echo "Waiting for destroy to be done..."
-    # MAX value shouldn't be big as this mean server responsiveness
-    # never increase this just to make test pass but investigate
-    # why it takes so long time
-    local MAX=5
-    local WAIT=0
-    while [ $WAIT -lt $MAX ]; do
-        local -a RPCs=($($LCTL get_param -n osc.*.destroys_in_flight))
-        local con=1
-        for ((i=0; i<${#RPCs[@]}; i++)); do
-            [ ${RPCs[$i]} -eq 0 ] && continue
-            # there are still some destroy RPCs in flight
-            con=0
-            break;
-        done
-        sleep 1
-        [ ${con} -eq 1 ] && return 0 # done waiting
-        echo "Waiting $WAIT secs for destroys to be done."
-        WAIT=$((WAIT + 1))
-    done
-    echo "Destroys weren't done in $MAX sec."
     return 1
 }
 
@@ -2329,6 +2357,11 @@ setupall() {
         done
     fi
 
+    do_facet mgs "$LCTL conf_param $FSNAME.sys.timeout=$TIMEOUT"
+
+    # don't writeconf next time we start
+    WRITECONF=""
+
     init_gss
 
     # wait a while to allow sptlrpc configuration be propogated to targets,
@@ -2378,7 +2411,7 @@ init_facet_vars () {
     eval export ${facet}_opt=\"$@\"
 
     local dev=${facet}_dev
-    local label=$(do_facet ${facet} "$E2LABEL ${!dev}")
+    local label=$(devicelabel ${facet} ${!dev})
     [ -z "$label" ] && echo no label for ${!dev} && exit 1
 
     eval export ${facet}_svc=${label}
@@ -2434,7 +2467,7 @@ osc_ensure_active () {
     local period=0
 
     while [ $period -lt $timeout ]; do
-        count=$(do_facet $facet "lctl dl | grep ' IN osc ' 2>/dev/null | wc -l")
+        count=$(do_facet $facet "lctl dl | grep ' IN os[cp] ' 2>/dev/null | wc -l")
         if [ $count -eq 0 ]; then
             break
         fi
@@ -2674,18 +2707,10 @@ cleanup_and_setup_lustre() {
 # Get all of the server target devices from a given server node and type.
 get_mnt_devs() {
     local node=$1
-    local type=$2
-    local obd_type
     local devs
     local dev
 
-    case $type in
-    mdt) obd_type="osd" ;;
-    ost) obd_type="obdfilter" ;; # needs to be fixed when OST also uses an OSD
-    *) echo "invalid server type" && return 1 ;;
-    esac
-
-    devs=$(do_node $node "lctl get_param -n $obd_type*.*.mntdev")
+    devs=$(do_node $node "lctl get_param -n osd*.*.mntdev")
     for dev in $devs; do
         case $dev in
         *loop*) do_node $node "losetup $dev" | \
@@ -2700,12 +2725,12 @@ get_svr_devs() {
     local i
 
     # MDT device
-    MDTDEV=$(get_mnt_devs $(mdts_nodes) mdt)
+    MDTDEV=$(get_mnt_devs $(mdts_nodes))
 
     # OST devices
     i=0
     for node in $(osts_nodes); do
-        OSTDEVS[i]=$(get_mnt_devs $node ost)
+        OSTDEVS[i]=$(get_mnt_devs $node)
         i=$((i + 1))
     done
 }
@@ -3169,6 +3194,9 @@ exit_status () {
 }
 
 error() {
+    # specific lod/osp bits: check space available and in-progress deletes
+    lfs df
+    do_nodes $(mdts_nodes) "lctl get_param osp.*.sync_*"
     error_noexit "$@"
     exit 1
 }
@@ -3510,7 +3538,7 @@ osc_to_ost()
     osc=$1
     ost=`echo $1 | awk -F_ '{print $3}'`
     if [ -z $ost ]; then
-        ost=`echo $1 | sed 's/-osc.*//'`
+        ost=`echo $1 | sed 's/-os[cp].*//'`
     fi
     echo $ost
 }
@@ -4016,7 +4044,7 @@ mds_on_old_device() {
     local minor=$(get_mds_version_minor $mds)
 
     if [ $major -ge 2 ] || [ $major -eq 1 -a $minor -gt 8 ]; then
-        do_facet $mds "lctl list_param osc.$FSNAME-OST*-osc \
+        do_facet $mds "lctl list_param os[cp].$FSNAME-OST*-os[cp] \
             > /dev/null 2>&1" && return 0
     fi
     return 1
@@ -4141,7 +4169,7 @@ wait_osc_import_state() {
     local expected=$3
     local ost=$(get_osc_import_name $facet $ost_facet)
 
-    local param="osc.${ost}.ost_server_uuid"
+    local param="os[cp].${ost}.ost_server_uuid"
 
     # 1. wait the deadline of client 1st request (it could be skipped)
     # 2. wait the deadline of client 2nd request
