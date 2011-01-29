@@ -11,7 +11,10 @@ SRCDIR=$(dirname $0)
 export PATH=$PWD/$SRCDIR:$SRCDIR:$PWD/$SRCDIR/../utils:$PATH:/sbin
 
 ONLY=${ONLY:-"$*"}
-ALWAYS_EXCEPT="$OST_POOLS_EXCEPT"
+
+# Orion
+# 23 - quota is not working yet
+ALWAYS_EXCEPT="23 $OST_POOLS_EXCEPT"
 # bug number for skipped test: -
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
@@ -136,7 +139,6 @@ check_file_in_osts() {
         local ost_count=$($GETSTRIPE $file | grep 0x | wc -l)
         [[ -n "$count" ]] && [[ $ost_count -ne $count ]] &&
             { error "Stripe count $count expected; got $ost_count" && return 1;}
-
 
 }
 

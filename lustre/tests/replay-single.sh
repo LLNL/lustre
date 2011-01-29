@@ -19,12 +19,14 @@ GRANT_CHECK_LIST=${GRANT_CHECK_LIST:-""}
 
 require_dsh_mds || exit 0
 
-# Skip these tests
-# bug number:  17466 18857
-ALWAYS_EXCEPT="61d   33a 33b    $REPLAY_SINGLE_EXCEPT"
 
-#                                                  63 min  7 min  AT AT AT AT"
-[ "$SLOW" = "no" ] && EXCEPT_SLOW="1 2 3 4 6 12 16 44a      44b    65 66 67 68"
+# Orion exceptions
+# 85a -- HEAD doesn't pass it either
+#ALWAYS_EXCEPT="$ALWAYS_EXCEPT 85a"
+
+#                                         63 min  7 min  AT AT AT AT"
+[ "$SLOW" = "no" ] && EXCEPT_SLOW="12 16  44a     44b    65 66 67 68"
+FAIL_ON_ERROR=false
 
 build_test_filter
 
@@ -768,7 +770,8 @@ test_39() { # bug 4176
 run_test 39 "test recovery from unlink llog (test llog_gen_rec) "
 
 count_ost_writes() {
-    lctl get_param -n osc.*.stats | awk -vwrites=0 '/ost_write/ { writes += $2 } END { print writes; }'
+    lctl get_param -n os[cp].*.stats | awk -vwrites=0 \
+        '/ost_write/ { writes += $2 } END { print writes; }'
 }
 
 #b=2477,2532
@@ -1627,7 +1630,7 @@ test_65b() #bug 3055
     # because previous tests may have caused this value to increase.
     lfs setstripe $DIR/$tfile --index=0 --count=1
     multiop $DIR/$tfile Ow1yc
-    REQ_DELAY=`lctl get_param -n osc.${FSNAME}-OST0000-osc-*.timeouts |
+    REQ_DELAY=`lctl get_param -n os[cp].${FSNAME}-OST0000-osc-*.timeouts |
                awk '/portal 6/ {print $5}'`
     REQ_DELAY=$((${REQ_DELAY} + ${REQ_DELAY} / 4 + 5))
 
@@ -1645,7 +1648,7 @@ test_65b() #bug 3055
     $LCTL dk | grep "Early reply #" || error "No early reply"
     debugrestore
     # client should show REQ_DELAY estimates
-    lctl get_param -n osc.${FSNAME}-OST0000-osc-*.timeouts | grep portal
+    lctl get_param -n os[cp].${FSNAME}-OST0000-osc-*.timeouts | grep portal
 }
 run_test 65b "AT: verify early replies on packed reply / bulk"
 
@@ -1702,7 +1705,7 @@ test_67a() #bug 3055
     remote_ost_nodsh && skip "remote OST with nodsh" && return 0
 
     at_start || return 0
-    CONN1=$(lctl get_param -n osc.*.stats | awk '/_connect/ {total+=$2} END {print total}')
+    CONN1=$(lctl get_param -n os[cp].*.stats | awk '/_connect/ {total+=$2} END {print total}')
     # sleeping threads may drive values above this
     do_facet ost1 "$LCTL set_param fail_val=400"
 #define OBD_FAIL_PTLRPC_PAUSE_REQ    0x50a
@@ -1710,7 +1713,7 @@ test_67a() #bug 3055
     createmany -o $DIR/$tfile 20 > /dev/null
     unlinkmany $DIR/$tfile 20 > /dev/null
     do_facet ost1 "$LCTL set_param fail_loc=0"
-    CONN2=$(lctl get_param -n osc.*.stats | awk '/_connect/ {total+=$2} END {print total}')
+    CONN2=$(lctl get_param -n os[cp].*.stats | awk '/_connect/ {total+=$2} END {print total}')
     ATTEMPTS=$(($CONN2 - $CONN1))
     echo "$ATTEMPTS osc reconnect attempts on gradual slow"
     [ $ATTEMPTS -gt 0 ] && error_ignore 13721 "AT should have prevented reconnect"
@@ -1723,15 +1726,15 @@ test_67b() #bug 3055
     remote_ost_nodsh && skip "remote OST with nodsh" && return 0
 
     at_start || return 0
-    CONN1=$(lctl get_param -n osc.*.stats | awk '/_connect/ {total+=$2} END {print total}')
+    CONN1=$(lctl get_param -n os[cp].*.stats | awk '/_connect/ {total+=$2} END {print total}')
 
     # exhaust precreations on ost1
     local OST=$(ostname_from_index 0)
     local mdtosc=$(get_mdtosc_proc_path mds $OST)
     local last_id=$(do_facet $SINGLEMDS lctl get_param -n \
-        osc.$mdtosc.prealloc_last_id)
+        os[cp].$mdtosc.prealloc_last_id)
     local next_id=$(do_facet $SINGLEMDS lctl get_param -n \
-        osc.$mdtosc.prealloc_next_id)
+        os[cp].$mdtosc.prealloc_next_id)
 
     mkdir -p $DIR/$tdir/${OST}
     lfs setstripe $DIR/$tdir/${OST} -o 0 -c 1 || error "setstripe"
@@ -1744,7 +1747,7 @@ test_67b() #bug 3055
     client_reconnect
     do_facet ost1 "lctl get_param -n ost.OSS.ost_create.timeouts"
     log "phase 2"
-    CONN2=$(lctl get_param -n osc.*.stats | awk '/_connect/ {total+=$2} END {print total}')
+    CONN2=$(lctl get_param -n os[cp].*.stats | awk '/_connect/ {total+=$2} END {print total}')
     ATTEMPTS=$(($CONN2 - $CONN1))
     echo "$ATTEMPTS osc reconnect attempts on instant slow"
     # do it again; should not timeout
@@ -1753,7 +1756,7 @@ test_67b() #bug 3055
     do_facet ost1 "$LCTL set_param fail_loc=0"
     client_reconnect
     do_facet ost1 "lctl get_param -n ost.OSS.ost_create.timeouts"
-    CONN3=$(lctl get_param -n osc.*.stats | awk '/_connect/ {total+=$2} END {print total}')
+    CONN3=$(lctl get_param -n os[cp].*.stats | awk '/_connect/ {total+=$2} END {print total}')
     ATTEMPTS=$(($CONN3 - $CONN2))
     echo "$ATTEMPTS osc reconnect attempts on 2nd slow"
     [ $ATTEMPTS -gt 0 ] && error "AT should have prevented reconnect"
@@ -2171,8 +2174,8 @@ test_88() { #bug 17485
     # exhaust precreations on ost1
     local OST=$(ostname_from_index 0)
     local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS $OST)
-    local last_id=$(do_facet $SINGLEMDS lctl get_param -n osc.$mdtosc.prealloc_last_id)
-    local next_id=$(do_facet $SINGLEMDS lctl get_param -n osc.$mdtosc.prealloc_next_id)
+    local last_id=$(do_facet $SINGLEMDS lctl get_param -n os[cp].$mdtosc.prealloc_last_id)
+    local next_id=$(do_facet $SINGLEMDS lctl get_param -n os[cp].$mdtosc.prealloc_next_id)
     echo "before test: last_id = $last_id, next_id = $next_id"
 
     echo "Creating to objid $last_id on ost $OST..."
@@ -2182,9 +2185,9 @@ test_88() { #bug 17485
     last_id=$(($last_id + 1))
     createmany -o $DIR/$tdir/f-%d $last_id 8
 
-    last_id2=$(do_facet $SINGLEMDS lctl get_param -n osc.$mdtosc.prealloc_last_id)
-    next_id2=$(do_facet $SINGLEMDS lctl get_param -n osc.$mdtosc.prealloc_next_id)
-    echo "before recovery: last_id = $last_id2, next_id = $next_id2" 
+    last_id2=$(do_facet $SINGLEMDS lctl get_param -n os[cp].$mdtosc.prealloc_last_id)
+    next_id2=$(do_facet $SINGLEMDS lctl get_param -n os[cp].$mdtosc.prealloc_next_id)
+    echo "before recovery: last_id = $last_id2, next_id = $next_id2"
 
     # if test uses shutdown_facet && reboot_facet instead of facet_failover ()
     # it has to take care about the affected facets, bug20407
@@ -2206,9 +2209,9 @@ test_88() { #bug 17485
 
     clients_up
 
-    last_id2=$(do_facet $SINGLEMDS lctl get_param -n osc.$mdtosc.prealloc_last_id)
-    next_id2=$(do_facet $SINGLEMDS lctl get_param -n osc.$mdtosc.prealloc_next_id)
-    echo "after recovery: last_id = $last_id2, next_id = $next_id2" 
+    last_id2=$(do_facet $SINGLEMDS lctl get_param -n os[cp].$mdtosc.prealloc_last_id)
+    next_id2=$(do_facet $SINGLEMDS lctl get_param -n os[cp].$mdtosc.prealloc_next_id)
+    echo "after recovery: last_id = $last_id2, next_id = $next_id2"
 
     # create new files, which should use new objids, and ensure the orphan 
     # cleanup phase for ost1 is completed at the same time
@@ -2244,7 +2247,7 @@ test_89() {
         mkdir -p $DIR/$tdir
         rm -f $DIR/$tdir/$tfile
         wait_mds_ost_sync
-        wait_destroy_complete
+        wait_delete_complete
         BLOCKS1=$(df -P $MOUNT | tail -n 1 | awk '{ print $3 }')
         lfs setstripe -i 0 -c 1 $DIR/$tdir/$tfile
         dd if=/dev/zero bs=1M count=10 of=$DIR/$tdir/$tfile

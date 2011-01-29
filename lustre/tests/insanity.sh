@@ -10,11 +10,16 @@ init_test_env $@
 
 . ${CONFIG:=$LUSTRE/tests/cfg/$NAME.sh}
 init_logging
-#              
+#
 ALWAYS_EXCEPT="10  $INSANITY_EXCEPT"
 
 if [ "$FAILURE_MODE" = "HARD" ]; then
         skip_env "$0: is not functional with FAILURE_MODE = HARD, please use recovery-double-scale, bz20407"
+        exit 0
+fi
+
+if [ ! combined_mgs_mds ]; then
+        skip_env "$0: is not functional with combined MGS, need separate one"
         exit 0
 fi
 
