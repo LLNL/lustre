@@ -392,8 +392,6 @@ int filter_commitrw(int cmd, struct obd_export *exp,
                     struct obdo *oa, int objcount, struct obd_ioobj *obj,
                     struct niobuf_remote *nb, int npages, struct niobuf_local *res,
                     struct obd_trans_info *oti, int rc);
-int filter_brw(int cmd, struct obd_export *, struct obd_info *oinfo,
-               obd_count oa_bufs, struct brw_page *pga, struct obd_trans_info *);
 void flip_into_page_cache(struct inode *inode, struct page *new_page);
 
 /* filter_io_*.c */
@@ -490,7 +488,7 @@ void filter_object_put(const struct lu_env *env, struct filter_object *fo);
 int filter_attr_set(const struct lu_env *env, struct filter_object *fo,
                     const struct lu_attr *la);
 int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
-                         __u64 start, __u64 end, struct obdo *oa);
+                         __u64 start, __u64 end, const struct lu_attr *la);
 int filter_object_destroy(const struct lu_env *env, struct filter_object *fo);
 int filter_attr_get(const struct lu_env *env, struct filter_object *fo,
                     struct lu_attr *la);

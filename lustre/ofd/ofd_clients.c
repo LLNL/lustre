@@ -93,6 +93,9 @@ repeat:
                ted->ted_lr_idx, ted->ted_lr_off,
                (unsigned int)sizeof(*ted->ted_lcd));
 
+        if (OBD_FAIL_CHECK(OBD_FAIL_TGT_CLIENT_ADD))
+                RETURN(-ENOSPC);
+
         th = filter_trans_create(env, ofd);
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));

@@ -142,6 +142,14 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         buf.lb_len = sizeof(tmp);
         off = group * sizeof(tmp);
 
+        filter_write_lock(env, fo);
+        if (filter_object_exists(fo)) {
+                /* underlying filesystem is broken - object must not exist */
+                CERROR("object %u/"LPD64" exists: "DFID"\n",
+                       (unsigned) group, id, PFID(&fid));
+                GOTO(out_unlock, rc = -EEXIST);
+        }
+
         th = filter_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(out_unlock, rc = PTR_ERR(th));
@@ -162,35 +170,27 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         if (rc)
                 GOTO(trans_stop, rc);
 
-        filter_write_lock(env, fo);
-        if (filter_object_exists(fo)) {
-                /* underlying filesystem is broken - object must not exist */
-                CERROR("object %u/"LPD64" exists: "DFID"\n",
-                       (unsigned) group, id, PFID(&fid));
-                GOTO(out_unlock, rc = -EEXIST);
-        }
-
         CDEBUG(D_OTHER, "create new object %lu:%llu\n",
                (unsigned long) fid.f_oid, fid.f_seq);
 
         rc = dt_create(env, next, &attr, NULL, &dof, th);
         if (rc)
-                GOTO(out_unlock, rc);
+                GOTO(trans_stop, rc);
         LASSERT(filter_object_exists(fo));
 
         attr.la_valid &= ~LA_TYPE;
         rc = dt_attr_set(env, next, &attr, th, BYPASS_CAPA);
         if (rc)
-                GOTO(out_unlock, rc);
+                GOTO(trans_stop, rc);
 
         filter_last_id_set(ofd, id, group);
 
         rc = filter_last_id_write(env, ofd, group, th);
 
-out_unlock:
-        filter_write_unlock(env, fo);
 trans_stop:
         filter_trans_stop(env, ofd, th);
+out_unlock:
+        filter_write_unlock(env, fo);
         filter_object_put(env, fo);
         RETURN(rc);
 }
@@ -212,34 +212,39 @@ int filter_attr_set(const struct lu_env *env, struct filter_object *fo,
                 filter_fmd_put(info->fti_exp, fmd);
         }
 
+        filter_write_lock(env, fo);
+        if (!filter_object_exists(fo))
+                GOTO(unlock, rc = -ENOENT);
+
         th = filter_trans_create(env, ofd);
         if (IS_ERR(th))
-                RETURN(PTR_ERR(th));
+                GOTO(unlock, rc = PTR_ERR(th));
 
         rc = dt_declare_attr_set(env, filter_object_child(fo), la, th);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(stop, rc);
 
         rc = filter_trans_start(env, ofd, th);
         if (rc)
-                RETURN(rc);
+                GOTO(stop, rc);
 
         rc = dt_attr_set(env, filter_object_child(fo), la, th,
                         filter_object_capa(env, fo));
-
+stop:
         filter_trans_stop(env, ofd, th);
-
+unlock:
+        filter_write_unlock(env, fo);
         RETURN(rc);
 }
 
 int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
-                        __u64 start, __u64 end, struct obdo *oa)
+                        __u64 start, __u64 end, const struct lu_attr *la)
 {
         struct filter_thread_info *info = filter_info(env);
         struct filter_device      *ofd = filter_obj2dev(fo);
         struct filter_mod_data    *fmd;
         struct dt_object          *dob = filter_object_child(fo);
         struct thandle            *th;
-        struct lu_attr             attr;
         int rc;
         ENTRY;
 
@@ -251,18 +256,15 @@ int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
                 fmd->fmd_mactime_xid = info->fti_xid;
         filter_fmd_put(info->fti_exp, fmd);
 
-        la_from_obdo(&attr, oa, OBD_MD_FLMTIME | OBD_MD_FLATIME | OBD_MD_FLCTIME);
-        attr.la_size = start;
-        attr.la_valid |= LA_SIZE;
-        attr.la_valid &= ~LA_TYPE;
-
         filter_write_lock(env, fo);
+        if (!filter_object_exists(fo))
+                GOTO(unlock, rc = -ENOENT);
 
         th = filter_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
-        rc = dt_declare_attr_set(env, dob, &attr, th);
+        rc = dt_declare_attr_set(env, dob, la, th);
         if (rc)
                 GOTO(stop, rc);
 
@@ -272,21 +274,19 @@ int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
 
         rc = filter_trans_start(env, ofd, th);
         if (rc)
-                GOTO(unlock, rc);
+                GOTO(stop, rc);
 
         rc = dt_punch(env, dob, start, OBD_OBJECT_EOF, th,
                       filter_object_capa(env, fo));
         if (rc)
-                GOTO(unlock, rc);
+                GOTO(stop, rc);
 
-        rc = dt_attr_set(env, dob, &attr, th, filter_object_capa(env, fo));
+        rc = dt_attr_set(env, dob, la, th, filter_object_capa(env, fo));
 
 stop:
         filter_trans_stop(env, ofd, th);
-
 unlock:
         filter_write_unlock(env, fo);
-
         RETURN(rc);
 
 }
@@ -297,24 +297,28 @@ int filter_object_destroy(const struct lu_env *env, struct filter_object *fo)
         int rc = 0;
         ENTRY;
 
+        filter_write_lock(env, fo);
+        if (!filter_object_exists(fo))
+                GOTO(unlock, rc = -ENOENT);
+
         th = filter_trans_create(env, filter_obj2dev(fo));
         if (IS_ERR(th))
-                RETURN(PTR_ERR(th));
+                GOTO(unlock, rc = PTR_ERR(th));
+
         dt_declare_ref_del(env, filter_object_child(fo), th);
         dt_declare_destroy(env, filter_object_child(fo), th);
         rc = filter_trans_start(env, filter_obj2dev(fo), th);
         if (rc)
-                RETURN(rc);
+                GOTO(stop, rc);
 
         filter_fmd_drop(filter_info(env)->fti_exp, &fo->ofo_header.loh_fid);
 
-        filter_write_lock(env, fo);
         dt_ref_del(env, filter_object_child(fo), th);
         dt_destroy(env, filter_object_child(fo), th);
-        filter_write_unlock(env, fo);
-
+stop:
         filter_trans_stop(env, filter_obj2dev(fo), th);
-
+unlock:
+        filter_write_unlock(env, fo);
         RETURN(rc);
 }
 
