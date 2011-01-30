@@ -469,7 +469,7 @@ void filter_object_put(const struct lu_env *env, struct filter_object *fo);
 int filter_attr_set(const struct lu_env *env, struct filter_object *fo,
                     const struct lu_attr *la);
 int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
-                         __u64 start, __u64 end, struct obdo *oa);
+                         __u64 start, __u64 end, const struct lu_attr *la);
 int filter_object_destroy(const struct lu_env *env, struct filter_object *fo);
 int filter_attr_get(const struct lu_env *env, struct filter_object *fo,
                     struct lu_attr *la);

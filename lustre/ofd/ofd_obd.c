@@ -685,9 +685,6 @@ int filter_setattr(const struct lu_env *env, struct obd_export *exp,
                 GOTO(out, rc = -EPERM);
         }
 
-        info->fti_attr.la_valid = LA_MODE;
-        info->fti_attr.la_mode = S_IFREG | 0666;
-
         fo = filter_object_find(env, ofd, &info->fti_fid);
         if (IS_ERR(fo)) {
                 CERROR("can't find object %lu:%llu\n",
@@ -695,19 +692,14 @@ int filter_setattr(const struct lu_env *env, struct obd_export *exp,
                        info->fti_fid.f_seq);
                 GOTO(out, rc = PTR_ERR(fo));
         }
-        if (!filter_object_exists(fo)) {
-                CERROR("can't find object "DFID"\n", PFID(&info->fti_fid));
-                GOTO(out_unlock, rc = -ENOENT);
-        }
 
         la_from_obdo(&info->fti_attr, oinfo->oi_oa, oinfo->oi_oa->o_valid);
         info->fti_attr.la_valid &= ~LA_TYPE;
 
         /* setting objects attributes (including owner/group) */
         rc = filter_attr_set(env, fo, &info->fti_attr);
-        if (rc) {
+        if (rc)
                 GOTO(out_unlock, rc);
-        }
 
         res = ldlm_resource_get(ns, NULL, &info->fti_resid, LDLM_EXTENT, 0);
         if (res != NULL) {
@@ -718,6 +710,7 @@ int filter_setattr(const struct lu_env *env, struct obd_export *exp,
         oinfo->oi_oa->o_valid = OBD_MD_FLID;
 
         /* Quota release needs uid/gid info */
+        rc = filter_attr_get(env, fo, &info->fti_attr);
         obdo_from_la(oinfo->oi_oa, &info->fti_attr,
                      FILTER_VALID_FLAGS | LA_UID | LA_GID);
         filter_info2oti(info, oti);
@@ -759,23 +752,12 @@ static int filter_punch(const struct lu_env *env, struct obd_export *exp,
         if (rc)
                 GOTO(out_env, rc);
 
-        info->fti_attr.la_valid = LA_MODE;
-        info->fti_attr.la_mode = S_IFREG | 0666;
-
         fo = filter_object_find(env, ofd, &info->fti_fid);
-
         if (IS_ERR(fo)) {
                 CERROR("error finding object %lu:%llu: %ld\n",
                        (unsigned long) info->fti_fid.f_oid,
                        info->fti_fid.f_seq, PTR_ERR(fo));
                 GOTO(out_env, rc = PTR_ERR(fo));
-        }
-
-        if (!filter_object_exists(fo)) {
-                CERROR("can't find object %lu:%llu\n",
-                       (unsigned long) info->fti_fid.f_oid,
-                       info->fti_fid.f_seq);
-                GOTO(out, rc = -ENOENT);
         }
 
         LASSERT(oinfo->oi_policy.l_extent.end == OBD_OBJECT_EOF);
@@ -786,8 +768,14 @@ static int filter_punch(const struct lu_env *env, struct obd_export *exp,
                 oinfo->oi_oa->o_size = oinfo->oi_policy.l_extent.end;
         }
 
+        la_from_obdo(&info->fti_attr, oinfo->oi_oa,
+                     OBD_MD_FLMTIME | OBD_MD_FLATIME | OBD_MD_FLCTIME);
+        info->fti_attr.la_valid &= ~LA_TYPE;
+        info->fti_attr.la_size = oinfo->oi_policy.l_extent.start;
+        info->fti_attr.la_valid |= LA_SIZE;
+
         rc = filter_object_punch(env, fo, oinfo->oi_policy.l_extent.start,
-                                 oinfo->oi_policy.l_extent.end, oinfo->oi_oa);
+                                 oinfo->oi_policy.l_extent.end, &info->fti_attr);
         if (rc)
                 GOTO(out, rc);
 
@@ -838,10 +826,7 @@ static int filter_destroy_by_fid(const struct lu_env *env,
                 RETURN(PTR_ERR(fo));
         LASSERT(fo != NULL);
 
-        if (!filter_object_exists(fo))
-                rc = -ENOENT;
-        else
-                rc = filter_object_destroy(env, fo);
+        rc = filter_object_destroy(env, fo);
 
         filter_object_put(env, fo);
         RETURN(rc);
