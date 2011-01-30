@@ -50,7 +50,7 @@ static int filter_preprw_read(const struct lu_env *env,
                               struct niobuf_local *res)
 {
         struct filter_object *fo;
-        int i, j, rc = -ENOENT, tot_bytes = 0;
+        int i, j, rc, tot_bytes = 0;
         LASSERT(env != NULL);
 
         fo = filter_object_find(env, ofd, fid);
@@ -58,37 +58,33 @@ static int filter_preprw_read(const struct lu_env *env,
                 RETURN(PTR_ERR(fo));
         LASSERT(fo != NULL);
 
-        if (filter_object_exists(fo)) {
-                /* parse remote buffers to local buffers 
-                   and prepare the latter */
+        filter_read_lock(env, fo);
+        if (!filter_object_exists(fo))
+                GOTO(unlock, rc = -ENOENT);
 
-                filter_read_lock(env, fo);
-
-                for (i = 0, j = 0; i < niocount; i++) {
-                        rc = dt_bufs_get(env, filter_object_child(fo),
-                                         nb + i, res + j, 0,
-                                         filter_object_capa(env, fo));
-                        LASSERT(rc > 0);
-                        LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
-                        /* correct index for local buffers to continue with */
-                        j += rc;
-                        LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
-                        tot_bytes += nb[i].len;
-                }
-                *nr_local = j;
-                LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
-                rc = dt_attr_get(env, filter_object_child(fo), la,
-                                 filter_object_capa(env, fo));
-                LASSERT(rc == 0);
-                rc = dt_read_prep(env, filter_object_child(fo), res,
-                                  *nr_local);
-                lprocfs_counter_add(filter_obd(ofd)->obd_stats,
-                                    LPROC_FILTER_READ_BYTES, tot_bytes);
-
-                if (unlikely(rc))
-                        filter_read_unlock(env, fo);
+        /* parse remote buffers to local buffers and prepare the latter */
+        for (i = 0, j = 0; i < niocount; i++) {
+                rc = dt_bufs_get(env, filter_object_child(fo), nb + i,
+                                 res + j, 0, filter_object_capa(env, fo));
+                LASSERT(rc > 0);
+                LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
+                /* correct index for local buffers to continue with */
+                j += rc;
+                LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
+                tot_bytes += nb[i].len;
         }
 
+        *nr_local = j;
+        LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
+        rc = dt_attr_get(env, filter_object_child(fo), la,
+                         filter_object_capa(env, fo));
+        LASSERT(rc == 0);
+        rc = dt_read_prep(env, filter_object_child(fo), res, *nr_local);
+        lprocfs_counter_add(filter_obd(ofd)->obd_stats,
+                            LPROC_FILTER_READ_BYTES, tot_bytes);
+unlock:
+        if (unlikely(rc))
+                filter_read_unlock(env, fo);
         filter_object_put(env, fo);
 
         RETURN(rc);
@@ -123,7 +119,7 @@ static int filter_preprw_write(const struct lu_env *env, struct obd_export *exp,
                         if (oa == NULL) {
                                 OBDO_ALLOC(noa);
                                 if (noa == NULL)
-                                        GOTO(recreate_out, rc = -ENOMEM);
+                                        GOTO(out2, rc = -ENOMEM);
                                 noa->o_id = obj->ioo_id;
                                 noa->o_valid = OBD_MD_FLID;
                         }
@@ -135,7 +131,7 @@ static int filter_preprw_write(const struct lu_env *env, struct obd_export *exp,
                         if (oa == NULL)
                                 OBDO_FREE(noa);
                 }
-recreate_out:
+
                 if (IS_ERR(fo) || !filter_object_exists(fo)) {
                         CERROR("%s: BRW to missing obj "LPU64"/"LPU64":rc %d\n",
                                exp->exp_obd->obd_name,
@@ -148,6 +144,10 @@ recreate_out:
         }
 
         filter_read_lock(env, fo);
+        if (!filter_object_exists(fo)) {
+                filter_read_unlock(env, fo);
+                GOTO(out2, rc = -ENOENT);
+        }
         /* Always sync if syncjournal parameter is set */
         oti->oti_sync_write = ofd->ofd_syncjournal;
         /* parse remote buffers to local buffers and prepare the latter */
@@ -196,6 +196,8 @@ recreate_out:
                 rc = dt_write_prep(env, filter_object_child(fo), res,
                                    *nr_local);
         } else {
+
+        if (unlikely(rc != 0)) {
                 dt_bufs_put(env, filter_object_child(fo), res, *nr_local);
                 filter_read_unlock(env, fo);
         }
@@ -205,10 +207,11 @@ out2:
         RETURN(rc);
 }
 
-int filter_preprw(int cmd, struct obd_export *exp, struct obdo *oa, int objcount,
-                  struct obd_ioobj *obj, struct niobuf_remote *nb,
-                  int *nr_local, struct niobuf_local *res,
-                  struct obd_trans_info *oti, struct lustre_capa *capa)
+int filter_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
+                  int objcount, struct obd_ioobj *obj,
+                  struct niobuf_remote *nb, int *nr_local,
+                  struct niobuf_local *res, struct obd_trans_info *oti,
+                  struct lustre_capa *capa)
 {
         struct lu_env *env = oti->oti_thread->t_env;
         struct filter_device *ofd = filter_exp(exp);
@@ -238,10 +241,6 @@ int filter_preprw(int cmd, struct obd_export *exp, struct obdo *oa, int objcount
                 if (rc == 0) {
                         LASSERT(oa != NULL);
                         la_from_obdo(&info->fti_attr, oa, OBD_MD_FLGETATTR);
-                        /* XXX: shouldn't we get this from odbo? */
-                        info->fti_attr.la_valid = LA_TYPE|LA_MODE;
-                        info->fti_attr.la_mode = S_IFREG | 0666;
-
                         rc = filter_preprw_write(env, exp, ofd, &info->fti_fid,
                                                  &info->fti_attr, oa, objcount,
                                                  obj, nb, nr_local, res, oti);
@@ -284,11 +283,8 @@ filter_commitrw_read(const struct lu_env *env, struct filter_device *ofd,
         if (IS_ERR(fo))
                 RETURN(PTR_ERR(fo));
         LASSERT(fo != NULL);
-        if (filter_object_exists(fo)) {
-                dt_bufs_put(env, filter_object_child(fo), res, niocount);
-        } else {
-                /* CROW object, do nothing */
-        }
+        LASSERT(filter_object_exists(fo));
+        dt_bufs_put(env, filter_object_child(fo), res, niocount);
 
         filter_read_unlock(env, fo);
         filter_object_put(env, fo);
@@ -384,8 +380,7 @@ retry:
                 GOTO(out_stop, rc);
 
         /* get attr to return */
-        dt_attr_get(env, o, la,
-                         filter_object_capa(env, fo));
+        dt_attr_get(env, o, la, filter_object_capa(env, fo));
 
 out_stop:
         /* Force commit to make the just-deleted blocks
