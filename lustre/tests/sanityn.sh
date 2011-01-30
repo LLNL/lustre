@@ -7,9 +7,12 @@ ONLY=${ONLY:-"$*"}
 ALWAYS_EXCEPT="                14b  19         22    28   29          35    $SANITYN_EXCEPT"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
-# bug number for skipped test:        12652 12652
-grep -q 'Enterprise Server 10' /etc/SuSE-release 2> /dev/null &&
-	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 11    14" || true
+# Orion exceptions
+# 15 - oos2.sh is broken
+ALWAYS_EXCEPT="15 $ALWAYS_EXCEPT"
+
+# bug number for skipped test:                                                    12652 12652
+grep -q 'Enterprise Server 10' /etc/SuSE-release && ALWAYS_EXCEPT="$ALWAYS_EXCEPT 11    14" || true
 
 # Tests that fail on uml
 [ "$UML" = "true" ] && EXCEPT="$EXCEPT 7"
