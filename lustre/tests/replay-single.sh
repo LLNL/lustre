@@ -21,8 +21,8 @@ require_dsh_mds || exit 0
 
 
 # Orion exceptions
-# 85a -- HEAD doesn't pass it either
-#ALWAYS_EXCEPT="$ALWAYS_EXCEPT 85a"
+# 61b -- MGS issue
+ALWAYS_EXCEPT="61b $ALWAYS_EXCEPT"
 
 #                                         63 min  7 min  AT AT AT AT"
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="12 16  44a     44b    65 66 67 68"
