@@ -630,7 +630,7 @@ int osd_trans_start(const struct lu_env *env, struct dt_device *d,
         oh->ot_credits += LDISKFS_QUOTA_INIT_BLOCKS(osd_sb(dev));
 
         if (!osd_param_is_sane(dev, th)) {
-                CERROR("Invalid transaction parameters (%d)\n", oh->ot_credits);
+                CWARN("Too many transaction credits (%d)\n", oh->ot_credits);
                 /* XXX */
                 oh->ot_credits = osd_journal(dev)->j_max_transaction_buffers;
 #ifdef OSD_TRACK_DECLARES
@@ -643,7 +643,6 @@ int osd_trans_start(const struct lu_env *env, struct dt_device *d,
                 CERROR("  insert: %d, delete: %d\n",
                        oh->ot_declare_insert, oh->ot_declare_delete);
 #endif
-                GOTO(out, rc = -EINVAL);
         }
 
         /*
