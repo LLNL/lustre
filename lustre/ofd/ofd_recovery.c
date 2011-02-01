@@ -42,39 +42,26 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <libcfs/libcfs.h>
-#include <lustre_quota.h>
 #include "ofd_internal.h"
-
-struct thandle *filter_trans_create0(const struct lu_env *env,
-                                     struct filter_device *ofd)
-{
-        struct thandle *th;
-        th = dt_trans_create(env, ofd->ofd_osd);
-        return th;
-}
 
 struct thandle *filter_trans_create(const struct lu_env *env,
                                     struct filter_device *ofd)
 {
-        struct filter_thread_info *info;
+        struct filter_thread_info *info = filter_info(env);
         struct thandle *th;
         struct filter_export_data *fed;
         struct tg_export_data *ted;
         int rc;
 
-        info = lu_context_key_get(&env->le_ctx, &filter_thread_key);
         LASSERT(info);
 
-#if 0
-        /* export can require sync operations */
-        if (info->fti_exp != NULL)
-                p->tp_sync = info->fti_exp->exp_need_sync;
-#endif
-
-        th = filter_trans_create0(env, ofd);
+        th = dt_trans_create(env, ofd->ofd_osd);
         if (IS_ERR(th))
                 return th;
+
+        /* export can require sync operations */
+        if (info->fti_exp != NULL)
+                th->th_sync |= info->fti_exp->exp_need_sync;
 
         /* no last_rcvd update needed */
         if (info->fti_exp == NULL)
@@ -86,11 +73,13 @@ struct thandle *filter_trans_create(const struct lu_env *env,
         rc = dt_declare_record_write(env, ofd->ofd_last_rcvd,
                                      sizeof(*ted->ted_lcd),
                                      ted->ted_lr_off, th);
+        if (rc)
+                RETURN(ERR_PTR(rc));
         /* declare last_rcvd header update */
         rc = dt_declare_record_write(env, ofd->ofd_last_rcvd,
                                      sizeof(ofd->ofd_fsd), 0, th);
-        LASSERT(rc == 0);
-
+        if (rc)
+                RETURN(ERR_PTR(rc));
         return th;
 }
 
@@ -98,18 +87,14 @@ int filter_trans_start(const struct lu_env *env,
                        struct filter_device *ofd,
                        struct thandle *th)
 {
-        int rc;
-        rc = ofd->ofd_osd->dd_ops->dt_trans_start(env, ofd->ofd_osd, th);
-        if (rc)
-                CERROR("Cannot start transaction, err =%d\n", rc);
-        return rc;
+        return dt_trans_start(env, ofd->ofd_osd, th);
 }
 
 void filter_trans_stop(const struct lu_env *env,
                        struct filter_device *ofd,
                        struct thandle *th)
 {
-        ofd->ofd_osd->dd_ops->dt_trans_stop(env, th);
+        dt_trans_stop(env, ofd->ofd_osd, th);
 }
 
 /*
@@ -171,15 +156,14 @@ static int filter_last_rcvd_update(struct filter_thread_info *info,
 
 /* add credits for last_rcvd update */
 static int filter_txn_start_cb(const struct lu_env *env,
-                               struct thandle *handle,
-                               void *cookie)
+                               struct thandle *handle, void *cookie)
 {
         return 0;
 }
 
 /* Update last_rcvd records with latests transaction data */
-int filter_txn_stop_cb(const struct lu_env *env,
-                              struct thandle *txn, void *cookie)
+int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
+                       void *cookie)
 {
         struct filter_device *ofd = cookie;
         struct filter_txn_info *txi;
@@ -262,9 +246,8 @@ static int filter_txn_commit_cb(const struct lu_env *env,
 int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
                     struct obd_device *obd)
 {
-        struct lu_fid fid;
+        struct filter_thread_info *info = filter_info(env);
         struct filter_object *fo;
-        struct lu_attr attr;
         int rc = 0;
         ENTRY;
 
@@ -281,28 +264,28 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
 
         dt_txn_callback_add(ofd->ofd_osd, &ofd->ofd_txn_cb);
 
-        lu_local_obj_fid(&fid, OFD_LAST_RECV_OID);
-        memset(&attr, 0, sizeof(attr));
-        attr.la_valid = LA_MODE;
-        attr.la_mode = S_IFREG | 0666;
+        lu_local_obj_fid(&info->fti_fid, OFD_LAST_RECV_OID);
+        memset(&info->fti_attr, 0, sizeof(info->fti_attr));
+        info->fti_attr.la_valid = LA_MODE;
+        info->fti_attr.la_mode = S_IFREG | 0666;
 
-        fo = filter_object_find_or_create(env, ofd, &fid, &attr);
+        fo = filter_object_find_or_create(env, ofd, &info->fti_fid, &info->fti_attr);
         LASSERT(!IS_ERR(fo));
 
         LASSERT(ofd->ofd_osd);
-        rc = lut_init2(env, &ofd->ofd_lut, obd, ofd->ofd_osd, &fid);
+        rc = lut_init2(env, &ofd->ofd_lut, obd, ofd->ofd_osd, &info->fti_fid);
         LASSERT(rc == 0);
 
         rc = filter_server_data_init(env, ofd);
         LASSERT(rc == 0);
         lu_object_put(env, &ofd->ofd_last_rcvd->do_lu);
 
-        lu_local_obj_fid(&fid, OFD_LAST_GROUP_OID);
-        memset(&attr, 0, sizeof(attr));
-        attr.la_valid = LA_MODE;
-        attr.la_mode = S_IFREG | 0666;
+        lu_local_obj_fid(&info->fti_fid, OFD_LAST_GROUP_OID);
+        memset(&info->fti_attr, 0, sizeof(info->fti_attr));
+        info->fti_attr.la_valid = LA_MODE;
+        info->fti_attr.la_mode = S_IFREG | 0666;
 
-        fo = filter_object_find_or_create(env, ofd, &fid, &attr);
+        fo = filter_object_find_or_create(env, ofd, &info->fti_fid, &info->fti_attr);
         LASSERT(!IS_ERR(fo));
         ofd->ofd_last_group_file = filter_object_child(fo);
         rc = filter_groups_init(env, ofd);
@@ -339,8 +322,10 @@ void filter_fs_cleanup(const struct lu_env *env, struct filter_device *ofd)
 
         for (i = 0; i <= ofd->ofd_max_group; i++) {
                 filter_last_id_write(env, ofd, i, NULL);
-                if (ofd->ofd_lastid_obj[i])
+                if (ofd->ofd_lastid_obj[i]) {
+                        filter_last_id_write(env, ofd, i, NULL);
                         lu_object_put(env, &ofd->ofd_lastid_obj[i]->do_lu);
+                }
         }
 
         i = dt_sync(env, ofd->ofd_osd);

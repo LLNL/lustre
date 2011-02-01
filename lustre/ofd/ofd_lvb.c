@@ -41,8 +41,6 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <lustre_dlm.h>
-
 #include "ofd_internal.h"
 
 static int filter_lvbo_free(struct ldlm_resource *res) {

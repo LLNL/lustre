@@ -166,7 +166,7 @@ int seq_store_update(const struct lu_env *env, struct lu_server_seq *seq,
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
 
-        th->th_sync = sync;
+        th->th_sync |= sync;
 
         rc = seq_declare_store_write(seq, env, th);
         if (rc)

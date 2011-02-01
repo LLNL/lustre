@@ -40,7 +40,6 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <libcfs/libcfs.h>
 #include "ofd_internal.h"
 
 static int filter_preprw_read(const struct lu_env *env,
@@ -78,7 +77,8 @@ static int filter_preprw_read(const struct lu_env *env,
         LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
         rc = dt_attr_get(env, filter_object_child(fo), la,
                          filter_object_capa(env, fo));
-        LASSERT(rc == 0);
+        if (unlikely(rc))
+                GOTO(unlock, rc);
         rc = dt_read_prep(env, filter_object_child(fo), res, *nr_local);
         lprocfs_counter_add(filter_obd(ofd)->obd_stats,
                             LPROC_FILTER_READ_BYTES, tot_bytes);
@@ -303,7 +303,6 @@ filter_commitrw_write(const struct lu_env *env, struct filter_device *ofd,
         struct filter_object *fo;
         struct dt_object     *o;
         struct lu_attr       *ln = &info->fti_attr2;
-        struct lu_buf         buf;
         struct thandle       *th;
         int                   rc = 0;
         int retries = 0;
@@ -334,18 +333,18 @@ retry:
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
 
-        th->th_sync = oti->oti_sync_write;
+        th->th_sync |= oti->oti_sync_write;
 
-        buf.lb_buf = NULL;
+        info->fti_buf.lb_buf = NULL;
 
         if (ln->la_mode & S_ISUID || ln->la_mode & S_ISGID) {
                 la->la_valid |= LA_MODE;
                 la->la_mode = ln->la_mode & ~(S_ISUID | S_ISGID);
 
-                buf.lb_len = sizeof(*ff);
-                buf.lb_buf = ff;
+                info->fti_buf.lb_len = sizeof(*ff);
+                info->fti_buf.lb_buf = ff;
 
-                rc = dt_declare_xattr_set(env, o, &buf,
+                rc = dt_declare_xattr_set(env, o, &info->fti_buf,
                                           XATTR_NAME_FID, 0, th);
                 if (rc)
                         GOTO(out_stop, rc);
@@ -369,15 +368,18 @@ retry:
         if (rc)
                 GOTO(out_stop, rc);
 
-        if (la->la_valid)
+        if (la->la_valid) {
                 rc = dt_attr_set(env, o, la, th, filter_object_capa(env, fo));
-        if (rc)
-                GOTO(out_stop, rc);
+                if (rc)
+                        GOTO(out_stop, rc);
+        }
 
-        if (buf.lb_buf)
-                rc = dt_xattr_set(env, o, &buf, XATTR_NAME_FID, 0, th, BYPASS_CAPA);
-        if (rc)
-                GOTO(out_stop, rc);
+        if (info->fti_buf.lb_buf) {
+                rc = dt_xattr_set(env, o, &info->fti_buf, XATTR_NAME_FID, 0,
+                                  th, BYPASS_CAPA);
+                if (rc)
+                        GOTO(out_stop, rc);
+        }
 
         /* get attr to return */
         dt_attr_get(env, o, la, filter_object_capa(env, fo));
@@ -428,8 +430,8 @@ int filter_commitrw(int cmd, struct obd_export *exp,
         struct lu_env             *env = oti->oti_thread->t_env;
         struct filter_thread_info *info;
         struct filter_mod_data    *fmd;
-        __u64                       valid;
-        int                         rc = 0;
+        __u64                      valid;
+        int                        rc = 0;
 
         info = filter_info(env);
         filter_oti2info(info, oti);

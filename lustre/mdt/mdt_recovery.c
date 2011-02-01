@@ -139,7 +139,7 @@ int mdt_trans_start(const struct lu_env *env,
 
         /* export can require sync operations */
         if (mti->mti_exp != NULL)
-                th->th_sync = mti->mti_exp->exp_need_sync;
+                th->th_sync |= mti->mti_exp->exp_need_sync;
 
         return mdt->mdt_bottom->dd_ops->dt_trans_start(env, mdt->mdt_bottom, th);
 }
