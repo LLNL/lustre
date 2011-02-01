@@ -45,7 +45,6 @@
 
 #include <obd_class.h>
 #include <lustre_param.h>
-#include <lustre_log.h>
 
 #include "ofd_internal.h"
 
@@ -388,76 +387,6 @@ struct lu_object_operations filter_obj_ops = {
         .loo_object_print   = filter_object_print
 };
 
-#if 0
-static struct lu_device *filter_layer_setup(const struct lu_env *env,
-                                         const char *typename,
-                                         struct lu_device *child,
-                                         struct lustre_cfg *cfg)
-{
-        const char            *dev = lustre_cfg_string(cfg, 0);
-        struct obd_type       *type;
-        struct lu_device_type *ldt;
-        struct lu_device      *d;
-        int rc;
-        ENTRY;
-
-        /* find the type */
-        type = class_get_type(typename);
-        if (!type) {
-                CERROR("Unknown type: '%s'\n", typename);
-                GOTO(out, rc = -ENODEV);
-        }
-
-        rc = lu_env_refill((struct lu_env *) &env->le_ctx);
-        if (rc != 0) {
-                CERROR("Failure to refill context: '%d'\n", rc);
-                GOTO(out_type, rc);
-        }
-
-        if (env->le_ses != NULL) {
-                rc = lu_context_refill(env->le_ses);
-                if (rc != 0) {
-                        CERROR("Failure to refill session: '%d'\n", rc);
-                        GOTO(out_type, rc);
-                }
-        }
-
-        ldt = type->typ_lu;
-        if (ldt == NULL) {
-                CERROR("type: '%s'\n", typename);
-                GOTO(out_type, rc = -EINVAL);
-        }
-
-        ldt->ldt_obd_type = type;
-        d = ldt->ldt_ops->ldto_device_alloc(env, ldt, cfg);
-        if (IS_ERR(d)) {
-                CERROR("Cannot allocate device: '%s'\n", typename);
-                GOTO(out_type, rc = -ENODEV);
-        }
-
-        LASSERT(child->ld_site);
-        d->ld_site = child->ld_site;
-
-        type->typ_refcnt++;
-        rc = ldt->ldt_ops->ldto_device_init(env, d, dev, child);
-        if (rc) {
-                CERROR("can't init device '%s', rc %d\n", typename, rc);
-                GOTO(out_alloc, rc);
-        }
-        lu_device_get(d);
-
-        RETURN(d);
-
-out_alloc:
-        ldt->ldt_ops->ldto_device_free(env, d);
-        type->typ_refcnt--;
-out_type:
-        class_put_type(type);
-out:
-        return ERR_PTR(rc);
-}
-#endif
-
 static int filter_connect_to_next(const struct lu_env *env, struct filter_device *m,
                                   const char *nextdev)
 {
@@ -468,7 +397,7 @@ static int filter_connect_to_next(const struct lu_env *env, struct filter_device
 
         LASSERT(m->ofd_osd_exp == NULL);
 
-        OBD_ALLOC(data, sizeof(*data));
+        OBD_ALLOC_PTR(data);
         if (data == NULL)
                 GOTO(out, rc = -ENOMEM);
 
@@ -481,7 +410,7 @@ static int filter_connect_to_next(const struct lu_env *env, struct filter_device
         /* XXX: which flags we need on OST? */
         data->ocd_version = LUSTRE_VERSION_CODE;
 
-        rc = obd_connect(NULL, &m->ofd_osd_exp, obd, &obd->obd_uuid, data, NULL);
+        rc = obd_connect(env, &m->ofd_osd_exp, obd, &obd->obd_uuid, data, NULL);
         if (rc) {
                 CERROR("cannot connect to next dev %s (%d)\n", nextdev, rc);
                 GOTO(out, rc);
@@ -495,38 +424,38 @@ static int filter_connect_to_next(const struct lu_env *env, struct filter_device
 
 out:
         if (data)
-                OBD_FREE(data, sizeof(*data));
+                OBD_FREE_PTR(data);
         RETURN(rc);
 }
 
-int filter_stack_init(const struct lu_env *env,
-                          struct filter_device *m, struct lustre_cfg *cfg)
+static int filter_stack_init(const struct lu_env *env,
+                             struct filter_device *m, struct lustre_cfg *cfg)
 {
+        struct filter_thread_info *info = filter_info(env);
         struct lu_device  *d = &m->ofd_dt_dev.dd_lu_dev;
         struct lu_device  *tmp;
-        char               osdname[64];
         int rc;
         ENTRY;
 
         LASSERT(m->ofd_osd_exp == NULL);
-        snprintf(osdname, sizeof(osdname), "%s-dsk", lustre_cfg_string(cfg, 0));
+        snprintf(info->fti_u.name, sizeof(info->fti_u.name),
+                 "%s-dsk", lustre_cfg_string(cfg, 0));
 
-        rc = filter_connect_to_next(env, m, osdname);
-        LASSERT(rc == 0);
+        rc = filter_connect_to_next(env, m, info->fti_u.name);
+        if (rc)
+                RETURN(rc);
 
         tmp = &m->ofd_osd->dd_lu_dev;
         rc = tmp->ld_ops->ldo_prepare(env, d, tmp);
-        GOTO(out, rc);
-
-out:
-        /* XXX: error handling */
-        LASSERT(rc == 0);
-
-        return rc;
+        if (rc) {
+                rc = obd_disconnect(m->ofd_osd_exp);
+                m->ofd_osd = NULL;
+        }
+        RETURN(rc);
 }
 
 static void filter_stack_fini(const struct lu_env *env,
-                           struct filter_device *m, struct lu_device *top)
+                              struct filter_device *m, struct lu_device *top)
 {
         struct obd_device       *obd = filter_obd(m);
         struct lustre_cfg_bufs   bufs;
@@ -651,7 +580,15 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         ENTRY;
 
         obd = class_name2obd(dev);
-        LASSERT(obd != NULL);
+        if (obd == NULL) {
+                CERROR("Cannot find obd with name %s\n", dev);
+                RETURN(-ENODEV);
+        }
+
+        rc = lu_env_refill((struct lu_env *)env);
+        if (rc != 0)
+                RETURN(rc);
+        LASSERT(env);
 
         m->ofd_fmd_max_num = FILTER_FMD_MAX_NUM_DEFAULT;
         m->ofd_fmd_max_age = FILTER_FMD_MAX_AGE_DEFAULT;
@@ -688,22 +625,15 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         CFS_INIT_LIST_HEAD(&m->ofd_llog_list);
         cfs_spin_lock_init(&m->ofd_llog_list_lock);
         m->ofd_lcm = NULL;
-
-        dt_device_init(&m->ofd_dt_dev, ldt);
         m->ofd_dt_dev.dd_lu_dev.ld_ops = &filter_lu_ops;
         m->ofd_dt_dev.dd_lu_dev.ld_obd = obd;
         /* set this lu_device to obd, because error handling need it */
         obd->obd_lu_dev = &m->ofd_dt_dev.dd_lu_dev;
 
-        rc = lu_env_refill((struct lu_env *)env);
-        if (rc != 0)
-                RETURN(rc);
-        LASSERT(env);
-
         rc = filter_procfs_init(m);
         if (rc) {
                 CERROR("Can't init filter lprocfs, rc %d\n", rc);
-                GOTO(err_fini_proc, rc);
+                RETURN(rc);
         }
 
         obd->obd_replayable = 1;
@@ -718,6 +648,9 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
                 }
         }
 
+        info = filter_info_init(env, NULL);
+        LASSERT(info != NULL);
+
         /* init the stack */
         rc = filter_stack_init(env, m, cfg);
         if (rc) {
@@ -725,11 +658,9 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
                 GOTO(err_fini_proc, rc);
         }
 
-        info = filter_info_init(env, NULL);
-        LASSERT(info != NULL);
-
-        snprintf(info->fti_u.ns_name, sizeof(info->fti_u.ns_name), "filter-%p", m);
-        m->ofd_namespace = ldlm_namespace_new(obd, info->fti_u.ns_name,
+        snprintf(info->fti_u.name, sizeof(info->fti_u.name),
+                 "filter-%p", m);
+        m->ofd_namespace = ldlm_namespace_new(obd, info->fti_u.name,
                                               LDLM_NAMESPACE_SERVER,
                                               LDLM_NAMESPACE_GREEDY,
                                               LDLM_NS_TYPE_OST);
@@ -754,7 +685,7 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         rc = obd_llog_init(obd, &obd->obd_olg, obd, NULL);
         if (rc) {
                 CERROR("failed to setup llogging subsystems\n");
-                GOTO(err_lut_fini, rc);
+                GOTO(err_fs_cleanup, rc);
         }
 
 
@@ -779,10 +710,8 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         RETURN(0);
 
 err_fs_cleanup:
-        next->dd_ops->dt_quota.dt_cleanup(env, next);
-        filter_fs_cleanup(env, m);
-err_lut_fini:
         lut_fini(env, &m->ofd_lut);
+        filter_fs_cleanup(env, m);
 err_free_ns:
         ldlm_namespace_free(m->ofd_namespace, 0, obd->obd_force);
         obd->obd_namespace = m->ofd_namespace = NULL;
@@ -790,8 +719,6 @@ err_stack_fini:
         filter_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
 err_fini_proc:
         filter_procfs_fini(m);
-
-        dt_device_fini(&m->ofd_dt_dev);
         return (rc);
 }
 
@@ -799,7 +726,6 @@ static void filter_fini(const struct lu_env *env, struct filter_device *m)
 {
         struct obd_device *obd = filter_obd(m);
         struct lu_device  *d = &m->ofd_dt_dev.dd_lu_dev;
-        struct dt_device  *next;
 
         target_recovery_fini(obd);
 #if 0
@@ -816,23 +742,18 @@ static void filter_fini(const struct lu_env *env, struct filter_device *m)
                 d->ld_obd->obd_namespace = m->ofd_namespace = NULL;
         }
 
-        filter_procfs_fini(m);
-        if (obd->obd_fsops)
-                fsfilt_put_ops(obd->obd_fsops);
 #if 0
         sptlrpc_rule_set_free(&m->mdt_sptlrpc_rset);
 #endif
 
-        next = m->ofd_osd;
-        next->dd_ops->dt_quota.dt_cleanup(env, next);
+        m->ofd_osd->dd_ops->dt_quota.dt_cleanup(env, m->ofd_osd);
 
         /* 
          * Finish the stack 
          */
         filter_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
-
+        filter_procfs_fini(m);
         LASSERT(cfs_atomic_read(&d->ld_ref) == 0);
-
         EXIT;
 }
 
@@ -867,9 +788,10 @@ static struct lu_device *filter_device_alloc(const struct lu_env *env,
                 return ERR_PTR(-ENOMEM);
 
         l = &m->ofd_dt_dev.dd_lu_dev;
+        dt_device_init(&m->ofd_dt_dev, t);
         rc = filter_init0(env, m, t, cfg);
         if (rc != 0) {
-                OBD_FREE_PTR(m);
+                filter_device_free(env, l);
                 l = ERR_PTR(rc);
         }
 

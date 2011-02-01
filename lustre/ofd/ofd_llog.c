@@ -41,10 +41,6 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <lustre_log.h>
-#if 0
-#include <lustre_commit_confd.h>
-#endif
 #include "ofd_internal.h"
 
 #define OBD_LLOG_GROUP  0

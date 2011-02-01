@@ -42,7 +42,6 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <libcfs/libcfs.h>
 #include "ofd_internal.h"
 
 /* Add client data to the FILTER.  We use a bitmap to locate a free space

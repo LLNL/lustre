@@ -48,7 +48,6 @@
 #include <linux/kmod.h>
 #endif
 
-#include <obd.h>
 #include <lustre_capa.h>
 #include "ofd_internal.h"
 

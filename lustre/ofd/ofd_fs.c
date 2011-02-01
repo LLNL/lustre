@@ -43,16 +43,13 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <libcfs/libcfs.h>
 #include "ofd_internal.h"
 
 int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
                         struct dt_object *dt, void *data, loff_t _off, int len,
                         struct thandle *_th)
 {
-        struct thandle *th;
-        struct lu_buf   buf;
-        loff_t          off;
+        struct filter_thread_info *info = filter_info(env);
         int             rc;
         ENTRY;
 
@@ -61,27 +58,27 @@ int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
         LASSERT(len);
         LASSERT(data);
 
-        buf.lb_buf = data;
-        buf.lb_len = len;
-        off = _off;
+        info->fti_buf.lb_buf = data;
+        info->fti_buf.lb_len = len;
+        info->fti_off = _off;
 
-        th = _th;
-        if (th == NULL) {
+        if (_th == NULL) {
+                struct thandle *th;
                 th = filter_trans_create(env, ofd);
                 if (IS_ERR(th))
                         RETURN(PTR_ERR(th));
-                rc = dt_declare_record_write(env, dt, buf.lb_len, off, th);
-                LASSERT(rc == 0);
-                rc = filter_trans_start(env, ofd, th);
-                if (rc)
-                        RETURN(rc);
-        }
-
-        rc = dt_record_write(env, dt, &buf, &off, th);
-
-        if (_th == NULL) {
-                LASSERT(th);
+                rc = dt_declare_record_write(env, dt, info->fti_buf.lb_len,
+                                             info->fti_off, th);
+                if (rc == 0) {
+                        rc = filter_trans_start(env, ofd, th);
+                        if (rc == 0)
+                                rc = dt_record_write(env, dt, &info->fti_buf,
+                                                     &info->fti_off, th);
+                }
                 filter_trans_stop(env, ofd, th);
+        } else {
+                rc = dt_record_write(env, dt, &info->fti_buf, &info->fti_off,
+                                     _th);
         }
 
         RETURN(rc);
@@ -178,8 +175,9 @@ int filter_group_load(const struct lu_env *env,
         if (attr.la_size == 0) {
                 /* object is just created, initialize last id */
                 ofd->ofd_last_objids[group] = FILTER_INIT_OBJID;
-                filter_last_id_write(env, ofd, group, 0);
-
+                filter_last_id_set(ofd, FILTER_INIT_OBJID, group);
+                filter_last_id_write(env, ofd, group, NULL);
+                filter_last_group_write(env, ofd);
         } else if (attr.la_size == sizeof(lastid)) {
                 off = 0;
                 buf.lb_buf = &lastid;
@@ -207,8 +205,6 @@ int filter_groups_init(const struct lu_env *env, struct filter_device *ofd)
         struct filter_thread_info *info = filter_info(env);
         unsigned long              groups_size;
         __u32                      last_group;
-        struct lu_buf              buf;
-        loff_t                     off;
         int rc = 0, i;
         ENTRY;
 
@@ -231,10 +227,11 @@ int filter_groups_init(const struct lu_env *env, struct filter_device *ofd)
                 GOTO(cleanup, rc = -EIO);
         }
 
-        off = 0;
-        buf.lb_buf = &last_group;
-        buf.lb_len = sizeof(last_group);
-        rc = dt_record_read(env, ofd->ofd_last_group_file, &buf, &off);
+        info->fti_off = 0;
+        info->fti_buf.lb_buf = &last_group;
+        info->fti_buf.lb_len = sizeof(last_group);
+        rc = dt_record_read(env, ofd->ofd_last_group_file, &info->fti_buf,
+                            &info->fti_off);
         if (rc) {
                 CERROR("can't read LAST_GROUP: %d\n", rc);
                 GOTO(cleanup, rc);
@@ -263,15 +260,14 @@ static int filter_last_rcvd_header_read(const struct lu_env *env,
                                         struct filter_device *ofd)
 {
         struct filter_thread_info *info = filter_info(env);
-        struct lu_buf              buf;
-        loff_t                     off;
         int rc;
 
-        off = 0;
-        buf.lb_buf = &info->fti_fsd;
-        buf.lb_len = sizeof(info->fti_fsd);
+        info->fti_off = 0;
+        info->fti_buf.lb_buf = &info->fti_fsd;
+        info->fti_buf.lb_len = sizeof(info->fti_fsd);
 
-        rc = dt_record_read(env, ofd->ofd_last_rcvd, &buf, &off);
+        rc = dt_record_read(env, ofd->ofd_last_rcvd, &info->fti_buf,
+                            &info->fti_off);
         if (rc == 0)
                 lsd_le_to_cpu(&info->fti_fsd, &ofd->ofd_fsd);
         return rc;
@@ -305,13 +301,12 @@ static int filter_last_rcvd_read(const struct lu_env *env,
                                  struct lsd_client_data *lcd, loff_t *off)
 {
         struct filter_thread_info *info = filter_info(env);
-        struct lu_buf              buf;
         int                        rc;
 
-        buf.lb_buf = &info->fti_fcd;
-        buf.lb_len = sizeof(*lcd);
+        info->fti_buf.lb_buf = &info->fti_fcd;
+        info->fti_buf.lb_len = sizeof(*lcd);
 
-        rc = dt_record_read(env, ofd->ofd_last_rcvd, &buf, off);
+        rc = dt_record_read(env, ofd->ofd_last_rcvd, &info->fti_buf, off);
         if (rc == 0)
                 lcd_le_to_cpu((struct lsd_client_data *) &info->fti_fcd, lcd);
         return rc;

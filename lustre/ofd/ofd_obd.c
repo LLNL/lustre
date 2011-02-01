@@ -43,10 +43,6 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <obd_class.h>
-#include <lustre_ver.h>
-#include <lustre_log.h>
-
 #include "ofd_internal.h"
 
 extern int ost_handle(struct ptlrpc_request *req);
@@ -260,9 +256,6 @@ static int filter_obd_connect(const struct lu_env *env, struct obd_export **_exp
         /* init new group */
         if (group > ofd->ofd_max_group) {
                 ofd->ofd_max_group = group;
-                filter_last_id_set(ofd, FILTER_INIT_OBJID, group);
-                filter_last_id_write(env, ofd, group, NULL);
-                filter_last_group_write(env, ofd);
                 rc = filter_group_load(env, ofd, group);
         }
 
@@ -453,6 +446,24 @@ static int filter_adapt_sptlrpc_conf(struct obd_device *obd, int initial)
         return 0;
 }
 
+static int filter_set_mds_conn(struct obd_export *exp, void *val)
+{
+        int rc = 0, group;
+        ENTRY;
+
+        LCONSOLE_WARN("%s: received MDS connection from %s\n",
+                      exp->exp_obd->obd_name, obd_export_nid2str(exp));
+        //obd->u.filter.fo_mdc_conn.cookie = exp->exp_handle.h_cookie;
+
+        /* setup llog imports */
+        if (val != NULL)
+                group = (int)(*(__u32 *)val);
+        else
+                group = 0; /* default value */
+
+        RETURN(rc);
+}
+
 static int filter_set_info_async(const struct lu_env *env,
                                  struct obd_export *exp, __u32 keylen,
                                  void *key, __u32 vallen, void *val,
@@ -461,8 +472,6 @@ static int filter_set_info_async(const struct lu_env *env,
         struct filter_device *ofd = filter_exp(exp);
         struct obd_device    *obd;
         int                   rc = 0;
-        int                   group;
-
         ENTRY;
 
         obd = exp->exp_obd;
@@ -475,48 +484,25 @@ static int filter_set_info_async(const struct lu_env *env,
                 rc = filter_update_capa_key(ofd, (struct lustre_capa_key *)val);
                 if (rc)
                         CERROR("filter update capability key failed: %d\n", rc);
-                GOTO(out, rc);
-        }
-
-        if (KEY_IS(KEY_REVIMP_UPD)) {
+        } else if (KEY_IS(KEY_REVIMP_UPD)) {
                 filter_revimp_update(exp);
-                GOTO(out, rc = 0);
-        }
-
-        if (KEY_IS(KEY_SPTLRPC_CONF)) {
+        } else if (KEY_IS(KEY_SPTLRPC_CONF)) {
                 filter_adapt_sptlrpc_conf(obd, 0);
-                GOTO(out, rc = 0);
-        }
+        } else if (KEY_IS(KEY_MDS_CONN)) {
+                rc = filter_set_mds_conn(exp, val);
+        } else if (KEY_IS(KEY_GRANT_SHRINK)) {
+                struct ost_body *body = val;
 
-        if (KEY_IS(KEY_GRANT_SHRINK)) {
-                struct ost_body *body = (struct ost_body *)val;
                 /* handle shrink grant */
                 cfs_mutex_down(&ofd->ofd_grant_sem);
                 filter_grant_incoming(env, exp, &body->oa);
                 cfs_mutex_up(&ofd->ofd_grant_sem);
-                GOTO(out, rc = 0);
-        }
 
-        if (!KEY_IS(KEY_MDS_CONN))
-                GOTO(out, rc = -EINVAL);
-
-        LCONSOLE_WARN("%s: received MDS connection from %s\n", obd->obd_name,
-                      obd_export_nid2str(exp));
-
-        /* setup llog imports */
-        if (val != NULL) {
-                group = (int)(*(__u32 *)val);
-                LASSERT(group >= FID_SEQ_OST_MDT0);
-                cfs_spin_lock(&ofd->ofd_objid_lock);
-                if (group > ofd->ofd_max_group)
-                        ofd->ofd_max_group = group;
-                cfs_spin_unlock(&ofd->ofd_objid_lock);
         } else {
-                /* XXX: protocol incompatibility 1.6 vs. 1.8 */
-                group = 0;
+                CERROR("Invalid key %s\n", (char*)key);
+                rc = -EINVAL;
         }
 
-out:
         RETURN(rc);
 }
 
@@ -525,6 +511,7 @@ static int filter_get_info(const struct lu_env *env,
                            __u32 *vallen, void *val, struct lov_stripe_md *lsm)
 {
         struct filter_device *ofd = filter_exp(exp);
+        int rc = 0;
         ENTRY;
 
         if (exp->exp_obd == NULL) {
@@ -532,7 +519,7 @@ static int filter_get_info(const struct lu_env *env,
                 RETURN(-EINVAL);
         }
 
-        if (KEY_IS("blocksize")) {
+        if (KEY_IS(KEY_BLOCKSIZE)) {
                 __u32 *blocksize = val;
                 if (blocksize) {
                         if (*vallen < sizeof(*blocksize))
@@ -540,10 +527,7 @@ static int filter_get_info(const struct lu_env *env,
                         *blocksize = 1 << ofd->ofd_dt_conf.ddp_block_shift;
                 }
                 *vallen = sizeof(*blocksize);
-                RETURN(0);
-        }
-
-        if (KEY_IS("blocksize_bits")) {
+        } else if (KEY_IS(KEY_BLOCKSIZE_BITS)) {
                 __u32 *blocksize_bits = val;
                 if (blocksize_bits) {
                         if (*vallen < sizeof(*blocksize_bits))
@@ -551,42 +535,26 @@ static int filter_get_info(const struct lu_env *env,
                         *blocksize_bits = ofd->ofd_dt_conf.ddp_block_shift;
                 }
                 *vallen = sizeof(*blocksize_bits);
-                RETURN(0);
-        }
-
-        if (KEY_IS("last_id")) {
-                struct filter_export_data *fed = &exp->exp_filter_data;
+        } else if (KEY_IS(KEY_LAST_ID)) {
                 obd_id *last_id = val;
                 if (last_id) {
                         if (*vallen < sizeof(*last_id))
                                 RETURN(-EOVERFLOW);
-                        *last_id = filter_last_id(ofd, fed->fed_group);
+                        *last_id = filter_last_id(ofd,
+                                        exp->exp_filter_data.fed_group);
                 }
                 *vallen = sizeof(*last_id);
-                RETURN(0);
-        }
-
-        if (KEY_IS("FLAVOR")) {
-                cfs_read_lock(&ofd->ofd_sptlrpc_lock);
-                LBUG();
-#if 0
-                sptlrpc_rule_set_choose(&ofd->ofd_sptlrpc_rset,
-                                        exp->exp_sp_peer,
-                                        exp->exp_connection->c_peer.nid,
-                                        &exp->exp_flvr);
-                cfs_read_unlock(&ofd->ofd_sptlrpc_lock);
-#endif
-                RETURN(0);
-        }
-
-        if (KEY_IS(KEY_SYNC_LOCK_CANCEL)) {
+        } else if (KEY_IS(KEY_FIEMAP)) {
+                rc = -EOPNOTSUPP;
+        } else if (KEY_IS(KEY_SYNC_LOCK_CANCEL)) {
                 *((__u32 *) val) = ofd->ofd_sync_lock_cancel;
                 *vallen = sizeof(__u32);
-                RETURN(0);
+        } else {
+                CERROR("Invalid key %s\n", (char*)key);
+                rc = -EINVAL;
         }
 
-        CDEBUG(D_IOCTL, "invalid key\n");
-        RETURN(-EINVAL);
+        RETURN(rc);
 }
 
 static int filter_statfs(const struct lu_env *env, struct obd_export *exp,
@@ -1028,16 +996,16 @@ int filter_create(const struct lu_env *env, struct obd_export *exp,
                         if (rc)
                                 break;
                 }
-                rc = filter_last_id_write(env, ofd, oa->o_seq, 0);
+                filter_last_id_write(env, ofd, oa->o_seq, 0);
                 if (i > 0) {
                         /* some objects got created, we can return
                          * them, even if last creation failed */
                         oa->o_id = filter_last_id(ofd, oa->o_seq);
                         rc = 0;
-                } else
+                } else {
                         CERROR("unable to precreate: %d\n", rc);
-
-                LASSERT(oa->o_seq == oa->o_seq);
+                        oa->o_id = filter_last_id(ofd, oa->o_seq);
+                }
                 oa->o_valid |= OBD_MD_FLID | OBD_MD_FLGROUP;
         }
 

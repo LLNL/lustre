@@ -5,24 +5,13 @@
 #ifndef _FILTER_INTERNAL_H
 #define _FILTER_INTERNAL_H
 
-#ifdef __KERNEL__
-# include <linux/spinlock.h>
-#endif
 #include <lustre/lustre_idl.h>
-#include <lustre_disk.h>
-#include <lustre_handles.h>
 #include <obd.h>
-#include <lustre_debug.h>
 #include <obd_cksum.h>
-#include <lprocfs_status.h>
-#include <lustre_fsfilt.h>
 #include <lustre_fid.h>
-#include <obd_ost.h>
 #include <lustre_log.h>
 
 #define FILTER_GROUPS_FILE "groups"
-
-#define FILTER_LAYOUT_VERSION "2"
 
 #define FILTER_INIT_OBJID 0
 
@@ -283,11 +272,11 @@ struct filter_thread_info {
         struct lu_attr             fti_attr2;
         struct ldlm_res_id         fti_resid;
         struct filter_fid          fti_mds_fid;
+        struct ost_id              fti_ostid;
 
         union {
-                char               ns_name[48];  /* for obdfilter_init0()     */
-                struct lustre_cfg_bufs bufs;     /* for obdfilter_stack_fini()*/
-                struct obd_statfs  osfs;         /* for obdfilter_statfs()    */
+                char               name[64]; /* for obdfilter_init0()     */
+                struct obd_statfs  osfs;     /* for obdfilter_statfs()    */
         } fti_u;
 
         /* server and client data buffers */
@@ -296,6 +285,10 @@ struct filter_thread_info {
 
         /* Ops object filename */
         struct lu_name             fti_name;
+
+        struct dt_object_format    fti_dof;
+        struct lu_buf              fti_buf;
+        loff_t                     fti_off;
 };
 
 extern struct lu_context_key filter_txn_thread_key;

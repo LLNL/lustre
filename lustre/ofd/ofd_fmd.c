@@ -38,8 +38,6 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <libcfs/libcfs.h>
-
 #include "ofd_internal.h"
 
 cfs_mem_cache_t *ll_fmd_cachep;
