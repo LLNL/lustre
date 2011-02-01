@@ -726,7 +726,6 @@ int osd_trans_start(const struct lu_env *env, struct dt_device *d,
                        oh->ot_declare_insert, oh->ot_declare_delete,
                        oh->ot_declare_destroy);
 #endif
-                GOTO(out, rc = -EINVAL);
         }
 
         /*
