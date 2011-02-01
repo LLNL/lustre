@@ -41,9 +41,6 @@
 
 #define DEBUG_SUBSYSTEM S_FILTER
 
-#include <libcfs/libcfs.h>
-#include <obd_class.h>
-#include <lustre_fsfilt.h>
 #include "ofd_internal.h"
 
 #define PRINTK_GRANTS(ofd,fed)                                  \
