@@ -52,6 +52,7 @@
 #include <cl_object.h>
 #include <lustre_fid.h>
 #include <lustre_acl.h>
+#include <obd_lov.h>
 
 #include "echo_internal.h"
 
@@ -526,6 +527,53 @@ static int echo_object_init(const struct lu_env *env, struct lu_object *obj,
         RETURN(0);
 }
 
+/* taken from osc_unpackmd() */
+static int echo_alloc_memmd(struct echo_device *ed, struct lov_stripe_md **lsmp)
+{
+        int lsm_size;
+        ENTRY;
+
+        /* If export is lov/osc then use their obd method */
+        if (ed->ed_next != NULL)
+                return obd_alloc_memmd(ed->ed_ec->ec_exp, lsmp);
+        /* OFD has no unpackmd method, do everything here */
+        lsm_size = lov_stripe_md_size(1);
+
+        LASSERT(*lsmp == NULL);
+        OBD_ALLOC(*lsmp, lsm_size);
+        if (*lsmp == NULL)
+                RETURN(-ENOMEM);
+
+        OBD_ALLOC((*lsmp)->lsm_oinfo[0], sizeof(struct lov_oinfo));
+        if ((*lsmp)->lsm_oinfo[0] == NULL) {
+                OBD_FREE(*lsmp, lsm_size);
+                RETURN(-ENOMEM);
+        }
+
+        loi_init((*lsmp)->lsm_oinfo[0]);
+        (*lsmp)->lsm_maxbytes = LUSTRE_STRIPE_MAXBYTES;
+
+        RETURN(lsm_size);
+}
+
+static int echo_free_memmd(struct echo_device *ed, struct lov_stripe_md **lsmp)
+{
+        int lsm_size;
+        ENTRY;
+
+        /* If export is lov/osc then use their obd method */
+        if (ed->ed_next != NULL)
+                return obd_free_memmd(ed->ed_ec->ec_exp, lsmp);
+        /* OFD has no unpackmd method, do everything here */
+        lsm_size = lov_stripe_md_size(1);
+
+        LASSERT(*lsmp != NULL);
+        OBD_FREE((*lsmp)->lsm_oinfo[0], sizeof(struct lov_oinfo));
+        OBD_FREE(*lsmp, lsm_size);
+        *lsmp = NULL;
+        RETURN(0);
+}
+
 static void echo_object_free(const struct lu_env *env, struct lu_object *obj)
 {
         struct echo_object *eco    = cl2echo_obj(lu2cl(obj));
@@ -543,7 +591,7 @@ static void echo_object_free(const struct lu_env *env, struct lu_object *obj)
         lu_object_header_fini(obj->lo_header);
 
         if (lsm)
-                obd_free_memmd(ec->ec_exp, &lsm);
+                echo_free_memmd(eco->eo_dev, &lsm);
         OBD_SLAB_FREE_PTR(eco, echo_object_kmem);
         EXIT;
 }
@@ -2154,7 +2202,7 @@ static int echo_create_object(struct echo_device *ed, int on_target,
                 RETURN(-EINVAL);
         }
 
-        rc = obd_alloc_memmd(ec->ec_exp, &lsm);
+        rc = echo_alloc_memmd(ed, &lsm);
         if (rc < 0) {
                 CERROR("Cannot allocate md: rc = %d\n", rc);
                 GOTO(failed, rc);
@@ -2163,7 +2211,7 @@ static int echo_create_object(struct echo_device *ed, int on_target,
         if (ulsm != NULL) {
                 int i, idx;
 
-                rc = echo_copyin_lsm (ed, lsm, ulsm, ulsm_nob);
+                rc = echo_copyin_lsm(ed, lsm, ulsm, ulsm_nob);
                 if (rc != 0)
                         GOTO(failed, rc);
 
@@ -2221,7 +2269,7 @@ static int echo_create_object(struct echo_device *ed, int on_target,
         if (created && rc)
                 obd_destroy(ec->ec_exp, oa, lsm, oti, NULL, NULL);
         if (lsm)
-                obd_free_memmd(ec->ec_exp, &lsm);
+                echo_free_memmd(ed, &lsm);
         if (rc)
                 CERROR("create object failed with: rc = %d\n", rc);
         return (rc);
@@ -2230,7 +2278,6 @@ static int echo_create_object(struct echo_device *ed, int on_target,
 static int echo_get_object(struct echo_object **ecop, struct echo_device *ed,
                            struct obdo *oa)
 {
-        struct echo_client_obd *ec  = ed->ed_ec;
         struct lov_stripe_md   *lsm = NULL;
         struct echo_object     *eco;
         int                     rc;
@@ -2243,7 +2290,7 @@ static int echo_get_object(struct echo_object **ecop, struct echo_device *ed,
                 RETURN(-EINVAL);
         }
 
-        rc = obd_alloc_memmd(ec->ec_exp, &lsm);
+        rc = echo_alloc_memmd(ed, &lsm);
         if (rc < 0)
                 RETURN(rc);
 
@@ -2260,7 +2307,7 @@ static int echo_get_object(struct echo_object **ecop, struct echo_device *ed,
         else
                 rc = PTR_ERR(eco);
         if (lsm)
-                obd_free_memmd(ec->ec_exp, &lsm);
+                echo_free_memmd(ed, &lsm);
         RETURN(rc);
 }
 
@@ -2475,7 +2522,7 @@ static int echo_client_prep_commit(struct obd_export *exp, int rw,
         struct niobuf_remote *rnb;
         obd_off off;
         obd_size npages, tot_pages;
-        int i, ret = 0;
+        int i, ret = 0, brw_flags = 0;
         ENTRY;
 
         if (count <= 0 || (count & (~CFS_PAGE_MASK)) != 0 ||
@@ -2491,6 +2538,9 @@ static int echo_client_prep_commit(struct obd_export *exp, int rw,
         if (lnb == NULL || rnb == NULL)
                 GOTO(out, ret = -ENOMEM);
 
+        if (rw == OBD_BRW_WRITE)
+                brw_flags = OBD_BRW_ASYNC;
+
         obdo_to_ioobj(oa, &ioo);
 
         off = offset;
@@ -2504,6 +2554,7 @@ static int echo_client_prep_commit(struct obd_export *exp, int rw,
                 for (i = 0; i < npages; i++, off += CFS_PAGE_SIZE) {
                         rnb[i].offset = off;
                         rnb[i].len = CFS_PAGE_SIZE;
+                        rnb[i].flags = brw_flags;
                 }
 
                 ioo.ioo_bufcnt = npages;
@@ -2540,7 +2591,8 @@ static int echo_client_prep_commit(struct obd_export *exp, int rw,
                                                              rnb[i].len);
                 }
 
-                ret = obd_commitrw(rw, exp, oa, 1,&ioo,rnb,npages,lnb,oti,ret);
+                ret = obd_commitrw(rw, exp, oa, 1, &ioo, rnb, npages, lnb,
+                                   oti, ret);
                 if (ret != 0)
                         GOTO(out, ret);
 
@@ -2557,12 +2609,12 @@ out:
 }
 
 static int echo_client_brw_ioctl(int rw, struct obd_export *exp,
-                                 struct obd_ioctl_data *data)
+                                 struct obd_ioctl_data *data,
+                                 struct obd_trans_info *dummy_oti)
 {
         struct obd_device *obd = class_exp2obd(exp);
         struct echo_device *ed = obd2echo_dev(obd);
         struct echo_client_obd *ec = ed->ed_ec;
-        struct obd_trans_info dummy_oti = { 0 };
         struct obdo *oa = &data->ioc_obdo1;
         struct echo_object *eco;
         int rc;
@@ -2576,21 +2628,28 @@ static int echo_client_brw_ioctl(int rw, struct obd_export *exp,
                 RETURN(rc);
 
         oa->o_valid &= ~OBD_MD_FLHANDLE;
-
         switch((long)data->ioc_pbuf1) {
         case 1:
                 async = 0;
                 /* fall through */
         case 2:
-                rc = echo_client_kbrw(ed, rw, oa,
-                                      eco, data->ioc_offset,
-                                      data->ioc_count, async, &dummy_oti);
+                if (ed->ed_next != NULL)
+                        rc = echo_client_kbrw(ed, rw, oa,
+                                              eco, data->ioc_offset,
+                                              data->ioc_count, async,
+                                              dummy_oti);
+                else
+                        rc = echo_client_prep_commit(ec->ec_exp, rw, oa,
+                                                     eco, data->ioc_offset,
+                                                     data->ioc_count,
+                                                     data->ioc_count,
+                                                     dummy_oti);
                 break;
         case 3:
                 rc = echo_client_prep_commit(ec->ec_exp, rw, oa,
-                                            eco, data->ioc_offset,
-                                            data->ioc_count, data->ioc_plen1,
-                                            &dummy_oti);
+                                             eco, data->ioc_offset,
+                                             data->ioc_count, data->ioc_plen1,
+                                             dummy_oti);
                 break;
         default:
                 rc = -EINVAL;
@@ -2657,6 +2716,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp,
         struct echo_object     *eco;
         struct obd_ioctl_data  *data = karg;
         struct obd_trans_info   dummy_oti;
+        struct lu_env           env;
         struct oti_req_ack_lock *ack_lock;
         struct obdo            *oa;
         struct lu_fid           fid;
@@ -2682,14 +2742,19 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp,
         if (rc < 0)
                 RETURN(rc);
 
+        rc = lu_env_init(&env, LCT_DT_THREAD);
+        if (rc)
+                GOTO(out, rc = -ENOMEM);
+        dummy_oti.oti_env = &env;
+
         switch (cmd) {
         case OBD_IOC_CREATE:                    /* may create echo object */
                 if (!cfs_capable(CFS_CAP_SYS_ADMIN))
                         GOTO (out, rc = -EPERM);
 
-                rc = echo_create_object (ed, 1, oa,
-                                         data->ioc_pbuf1, data->ioc_plen1,
-                                         &dummy_oti);
+                rc = echo_create_object(ed, 1, oa,
+                                        data->ioc_pbuf1, data->ioc_plen1,
+                                        &dummy_oti);
                 GOTO(out, rc);
 
         case OBD_IOC_ECHO_MD: {
@@ -2773,11 +2838,12 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp,
                 GOTO(out, rc);
 
         case OBD_IOC_GETATTR:
-                rc = echo_get_object (&eco, ed, oa);
+                rc = echo_get_object(&eco, ed, oa);
                 if (rc == 0) {
                         struct obd_info oinfo = { { { 0 } } };
                         oinfo.oi_md = eco->eo_lsm;
                         oinfo.oi_oa = oa;
+                        oinfo.oi_env = &env;
                         rc = obd_getattr(ec->ec_exp, &oinfo);
                         echo_put_object(eco);
                 }
@@ -2787,13 +2853,13 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp,
                 if (!cfs_capable(CFS_CAP_SYS_ADMIN))
                         GOTO (out, rc = -EPERM);
 
-                rc = echo_get_object (&eco, ed, oa);
+                rc = echo_get_object(&eco, ed, oa);
                 if (rc == 0) {
                         struct obd_info oinfo = { { { 0 } } };
                         oinfo.oi_oa = oa;
                         oinfo.oi_md = eco->eo_lsm;
 
-                        rc = obd_setattr(ec->ec_exp, &oinfo, NULL);
+                        rc = obd_setattr(ec->ec_exp, &oinfo, &dummy_oti);
                         echo_put_object(eco);
                 }
                 GOTO(out, rc);
@@ -2805,7 +2871,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp,
                 rw = OBD_BRW_WRITE;
                 /* fall through */
         case OBD_IOC_BRW_READ:
-                rc = echo_client_brw_ioctl(rw, exp, data);
+                rc = echo_client_brw_ioctl(rw, exp, data, &dummy_oti);
                 GOTO(out, rc);
 
         case ECHO_IOC_GET_STRIPE:
@@ -2854,7 +2920,8 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp,
         }
 
         EXIT;
- out:
+out:
+        lu_env_fini(&env);
 
         /* XXX this should be in a helper also called by target_send_reply */
         for (ack_lock = dummy_oti.oti_ack_locks, i = 0; i < 4;
@@ -2863,11 +2930,9 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp,
                         break;
                 ldlm_lock_decref(&ack_lock->lock, ack_lock->mode);
         }
-
 #ifndef HAVE_UNLOCKED_IOCTL
         cfs_lock_kernel();
 #endif
-
         return rc;
 }
 
@@ -2928,12 +2993,9 @@ static int echo_client_setup(const struct lu_env *env,
 
         OBD_FREE_PTR(ocd);
 
-        if (rc != 0) {
+        if (rc != 0)
                 CERROR("fail to connect to device %s\n",
                        lustre_cfg_string(lcfg, 1));
-                return (rc);
-        }
-
         RETURN(rc);
 }
 
