@@ -285,7 +285,6 @@ void filter_fs_cleanup(const struct lu_env *env, struct filter_device *ofd)
         info->fti_no_need_trans = 1;
 
         for (i = 0; i <= ofd->ofd_max_group; i++) {
-                filter_last_id_write(env, ofd, i, NULL);
                 if (ofd->ofd_lastid_obj[i]) {
                         filter_last_id_write(env, ofd, i, NULL);
                         lu_object_put(env, &ofd->ofd_lastid_obj[i]->do_lu);
