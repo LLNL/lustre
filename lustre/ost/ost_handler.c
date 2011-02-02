@@ -286,6 +286,7 @@ static int ost_getattr(struct obd_export *exp, struct ptlrpc_request *req)
         if (!oinfo)
                 GOTO(unlock, rc = -ENOMEM);
         oinfo->oi_oa = &repbody->oa;
+        oinfo->oi_env = req->rq_svc_thread->t_env;
         oinfo->oi_capa = capa;
 
         req->rq_status = obd_getattr(exp, oinfo);
@@ -507,6 +508,7 @@ static int ost_setattr(struct obd_export *exp, struct ptlrpc_request *req,
         if (!oinfo)
                 RETURN(-ENOMEM);
         oinfo->oi_oa = &repbody->oa;
+        oinfo->oi_env = req->rq_svc_thread->t_env;
         oinfo->oi_capa = capa;
 
         req->rq_status = obd_setattr(exp, oinfo, oti);

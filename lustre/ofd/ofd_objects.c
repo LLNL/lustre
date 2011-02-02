@@ -96,6 +96,7 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         struct thandle          *th;
         obd_id                   tmp;
         int                      rc;
+        ENTRY;
 
         /* Don't create objects beyond the valid range for this SEQ */
         if (unlikely(fid_seq_is_mdt0(group) && id >= IDIF_MAX_OID)) {
