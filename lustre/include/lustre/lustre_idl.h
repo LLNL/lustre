@@ -453,7 +453,7 @@ static inline int fid_seq_is_mdt(const __u64 seq)
 
 static inline int fid_seq_is_rsvd(const __u64 seq)
 {
-        return seq <= FID_SEQ_RSVD;
+        return (seq > FID_SEQ_OST_MDT0 && seq <= FID_SEQ_RSVD);
 };
 
 static inline int fid_is_mdt0(const struct lu_fid *fid)
@@ -754,7 +754,7 @@ static inline int fid_is_sane(const struct lu_fid *fid)
                 fid != NULL &&
                 ((fid_seq(fid) >= FID_SEQ_START && fid_oid(fid) != 0
                                                 && fid_ver(fid) == 0) ||
-                fid_is_igif(fid));
+                fid_is_igif(fid) || fid_seq_is_rsvd(fid_seq(fid)));
 }
 
 static inline int fid_is_zero(const struct lu_fid *fid)

@@ -153,7 +153,7 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
         LASSERT(!IS_ERR(jh));
 
         inode = ldiskfs_create_inode(jh, osd_sb(osd)->s_root->d_inode,
-                                    (S_IFREG | S_IXUGO));
+                                    (S_IFREG | S_IXUGO | S_IRUGO | S_IWUSR));
         LASSERT(!IS_ERR(inode));
 
         if (feat->dif_flags & DT_IND_VARKEY)
@@ -379,6 +379,13 @@ void osd_oi_fini(struct osd_thread_info *info,
         *oi_table = NULL;
 }
 
+static inline int fid_is_fs_root(const struct lu_fid *fid)
+{
+        /* Map root inode to special local object FID */
+        return (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE &&
+                fid_oid(fid) == OSD_FS_ROOT_OID));
+}
+
 int osd_fid_unpack(struct lu_fid *fid, const struct osd_fid_pack *pack);
 
 static int osd_oi_iam_lookup(struct osd_thread_info *oti,
@@ -434,9 +441,13 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
         if (fid_is_idif(fid)) {
                 /* old OSD obj id */
                 rc = osd_compat_objid_lookup(info, osd, fid, id);
-        } else if (osd_fid_is_igif(fid)) {
+        } else if (fid_is_igif(fid)) {
                 lu_igif_to_id(fid, id);
                 rc = 0;
+        } else if (fid_is_fs_root(fid)) {
+                struct inode *inode = osd_sb(osd)->s_root->d_inode;
+                id->oii_ino = inode->i_ino;
+                id->oii_gen = inode->i_generation;
         } else {
                 if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE)) {
                         rc = osd_compat_spec_lookup(info, osd, fid, id);
