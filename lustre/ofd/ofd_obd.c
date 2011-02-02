@@ -921,7 +921,6 @@ int filter_create(const struct lu_env *env, struct obd_export *exp,
         info->fti_no_need_trans = 1;
         filter_oti2info(info, oti);
 
-        LASSERT(ea == NULL);
         LASSERT(oa->o_seq >= FID_SEQ_OST_MDT0);
         LASSERT(oa->o_valid & OBD_MD_FLGROUP);
 

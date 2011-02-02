@@ -213,7 +213,6 @@ int filter_preprw(const struct lu_env *env, int cmd, struct obd_export *exp,
                   struct niobuf_local *res, struct obd_trans_info *oti,
                   struct lustre_capa *capa)
 {
-        struct lu_env *env = oti->oti_thread->t_env;
         struct filter_device *ofd = filter_exp(exp);
         struct filter_thread_info *info;
         int rc = 0;
@@ -426,7 +425,8 @@ void filter_prepare_fidea(struct filter_fid *ff, struct obdo *oa)
 
 int filter_commitrw(const struct lu_env *env, int cmd, struct obd_export *exp,
                     struct obdo *oa, int objcount, struct obd_ioobj *obj,
-                    struct niobuf_remote *nb, int npages, struct niobuf_local *res,
+                    struct niobuf_remote *nb, int npages,
+                    struct niobuf_local *res,
                     struct obd_trans_info *oti, int old_rc)
 {
         struct filter_device      *ofd = filter_exp(exp);
