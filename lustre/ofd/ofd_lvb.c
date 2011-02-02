@@ -85,9 +85,6 @@ static int filter_lvbo_init(struct ldlm_resource *res)
         if (IS_ERR(fo))
                 GOTO(out, rc = PTR_ERR(fo));
 
-        if (!filter_object_exists(fo))
-                GOTO(out_put, rc = -ENOENT);
-
         rc = filter_attr_get(&env, fo, &info->fti_attr);
         if (rc)
                 GOTO(out_put, rc);
