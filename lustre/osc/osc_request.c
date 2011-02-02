@@ -431,6 +431,61 @@ static int osc_setattr_async(struct obd_export *exp, struct obd_info *oinfo,
                                       oinfo->oi_cb_up, oinfo, rqset);
 }
 
+/* Used by only echo client now */
+int osc_create(struct obd_export *exp, struct obdo *oa,
+               struct lov_stripe_md **ea, struct obd_trans_info *oti)
+{
+        struct ptlrpc_request *req;
+        struct ost_body       *body;
+        struct lov_stripe_md  *lsm;
+        int                    rc;
+        ENTRY;
+
+        LASSERT(oa);
+        LASSERT(ea);
+        LASSERT(oa->o_seq == FID_SEQ_ECHO);
+        lsm = *ea;
+        LASSERT(lsm);
+
+        req = ptlrpc_request_alloc(class_exp2cliimp(exp), &RQF_OST_CREATE);
+        if (req == NULL)
+                GOTO(out, rc = -ENOMEM);
+
+        rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_CREATE);
+        if (rc) {
+                ptlrpc_request_free(req);
+                GOTO(out, rc);
+        }
+
+        body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
+        LASSERT(body);
+        lustre_set_wire_obdo(&body->oa, oa);
+
+        ptlrpc_request_set_replen(req);
+
+        rc = ptlrpc_queue_wait(req);
+        if (rc)
+                GOTO(out_req, rc);
+
+        body = req_capsule_server_get(&req->rq_pill, &RMF_OST_BODY);
+        if (body == NULL)
+                GOTO(out_req, rc = -EPROTO);
+
+        lustre_get_wire_obdo(oa, &body->oa);
+
+        /* This should really be sent by the OST */
+        oa->o_blksize = PTLRPC_MAX_BRW_SIZE;
+        oa->o_valid |= OBD_MD_FLBLKSZ;
+
+        lsm->lsm_object_id = oa->o_id;
+        lsm->lsm_object_seq = oa->o_seq;
+
+out_req:
+        ptlrpc_req_finished(req);
+out:
+        RETURN(rc);
+}
+
 int osc_punch_base(struct obd_export *exp, struct obd_info *oinfo,
                    obd_enqueue_update_f upcall, void *cookie,
                    struct ptlrpc_request_set *rqset)
@@ -4218,6 +4273,7 @@ struct obd_ops osc_obd_ops = {
         .o_statfs_async         = osc_statfs_async,
         .o_packmd               = osc_packmd,
         .o_unpackmd             = osc_unpackmd,
+        .o_create               = osc_create,
         .o_destroy              = osc_destroy,
         .o_getattr              = osc_getattr,
         .o_getattr_async        = osc_getattr_async,
