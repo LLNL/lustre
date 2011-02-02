@@ -208,10 +208,7 @@ static int osd_write_locked(const struct lu_env *env, struct osd_object *o)
 static int osd_root_get(const struct lu_env *env,
                         struct dt_device *dev, struct lu_fid *f)
 {
-        struct inode *inode;
-
-        inode = osd_sb(osd_dt_dev(dev))->s_root->d_inode;
-        LU_IGIF_BUILD(f, inode->i_ino, inode->i_generation);
+        lu_local_obj_fid(f, OSD_FS_ROOT_OID);
         return 0;
 }
 
@@ -300,7 +297,7 @@ static int osd_fid_lookup(const struct lu_env *env,
 
         LINVRNT(osd_invariant(obj));
         LASSERT(obj->oo_inode == NULL);
-        LASSERT(fid_is_sane(fid) || osd_fid_is_root(fid) || fid_is_idif(fid));
+        LASSERT(fid_is_sane(fid) || fid_is_idif(fid));
         /*
          * This assertion checks that osd layer sees only local
          * fids. Unfortunately it is somewhat expensive (does a
@@ -1924,7 +1921,7 @@ static int osd_declare_object_destroy(const struct lu_env *env,
         oh = container_of0(th, struct osd_thandle, ot_super);
         LASSERT(oh->ot_handle == NULL);
         LASSERT(inode);
-        LASSERT(!test_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags));
+        LASSERT(!lu_object_is_dying(dt->do_lu.lo_header));
 
         OSD_DECLARE_OP(oh, destroy);
         OSD_DECLARE_OP(oh, delete);

@@ -107,6 +107,7 @@ enum local_oid {
         MDT_LAST_RECV_OID       = 11UL,
         /** \see osd_mod_init */
         OSD_REM_OBJ_DIR_OID     = 12UL,
+        OSD_FS_ROOT_OID         = 13UL,
         /** \see mds_quota_setup(TODO) */
         QUOTA_SLAVE_UID_OID     = 15UL,
         QUOTA_SLAVE_GID_OID     = 16UL,

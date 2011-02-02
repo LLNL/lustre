@@ -514,22 +514,6 @@ static inline struct super_block *osd_sb(const struct osd_device *dev)
 
 #define OSD_MAX_CACHE_SIZE OBD_OBJECT_EOF
 
-/* The on-disk extN format reserves inodes 0-11 for internal filesystem
- * use, and these inodes will be invisible on client side, so the valid
- * sequence for IGIF fid is 12-0xffffffff. But root inode (2#) will be seen
- * on server side (osd), and it should be valid too here.
- */
-#define OSD_ROOT_SEQ            2
-static inline int osd_fid_is_root(const struct lu_fid *fid)
-{
-        return fid_seq(fid) == OSD_ROOT_SEQ;
-}
-
-static inline int osd_fid_is_igif(const struct lu_fid *fid)
-{
-        return fid_is_igif(fid) || osd_fid_is_root(fid);
-}
-
 #endif /* __KERNEL__ */
 
 #ifdef LPROCFS
