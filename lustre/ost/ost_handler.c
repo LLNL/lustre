@@ -283,6 +283,7 @@ static int ost_getattr(struct obd_export *exp, struct ptlrpc_request *req)
         OBD_ALLOC_PTR(oinfo);
         if (!oinfo)
                 GOTO(unlock, rc = -ENOMEM);
+        oinfo->oi_env = req->rq_svc_thread->t_env;
         oinfo->oi_oa = &body->oa;
         oinfo->oi_capa = capa;
 
@@ -501,6 +502,7 @@ static int ost_setattr(struct obd_export *exp, struct ptlrpc_request *req,
         OBD_ALLOC_PTR(oinfo);
         if (!oinfo)
                 RETURN(-ENOMEM);
+        oinfo->oi_env = req->rq_svc_thread->t_env;
         oinfo->oi_oa = &body->oa;
         oinfo->oi_capa = capa;
 

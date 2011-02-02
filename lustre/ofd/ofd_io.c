@@ -213,7 +213,7 @@ int filter_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
                   struct niobuf_local *res, struct obd_trans_info *oti,
                   struct lustre_capa *capa)
 {
-        struct lu_env *env = oti->oti_thread->t_env;
+        struct lu_env *env = oti->oti_env;
         struct filter_device *ofd = filter_exp(exp);
         struct filter_thread_info *info;
         int rc = 0;
@@ -427,7 +427,7 @@ int filter_commitrw(int cmd, struct obd_export *exp,
                     struct obd_trans_info *oti, int old_rc)
 {
         struct filter_device      *ofd = filter_exp(exp);
-        struct lu_env             *env = oti->oti_thread->t_env;
+        struct lu_env             *env = oti->oti_env;
         struct filter_thread_info *info;
         struct filter_mod_data    *fmd;
         __u64                      valid;

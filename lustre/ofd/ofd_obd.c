@@ -661,7 +661,7 @@ int filter_setattr(struct obd_export *exp,
         struct ldlm_resource      *res;
         struct filter_object      *fo;
         struct obdo               *oa = oinfo->oi_oa;
-        struct lu_env             *env = oti->oti_thread->t_env;
+        struct lu_env             *env = oti->oti_env;
         int                        rc = 0;
         ENTRY;
 
@@ -738,7 +738,7 @@ static int filter_punch(struct obd_export *exp, struct obd_info *oinfo,
                         struct obd_trans_info *oti, struct ptlrpc_request_set *rqset)
 {
         struct filter_device *ofd = filter_exp(exp);
-        struct lu_env *env = oti->oti_thread->t_env;
+        struct lu_env *env = oti->oti_env;
         struct filter_thread_info *info;
         struct ldlm_namespace *ns = ofd->ofd_namespace;
         struct ldlm_resource *res;
@@ -850,7 +850,7 @@ int filter_destroy(struct obd_export *exp,
                    struct obdo *oa, struct lov_stripe_md *md,
                    struct obd_trans_info *oti, struct obd_export *md_exp, void *capa)
 {
-        struct lu_env *env = oti->oti_thread->t_env;
+        struct lu_env *env = oti->oti_env;
         struct filter_device *ofd = filter_exp(exp);
         struct filter_thread_info *info;
         struct llog_cookie *fcc = NULL;
@@ -956,7 +956,7 @@ int filter_create(struct obd_export *exp, struct obdo *oa,
                   struct lov_stripe_md **ea, struct obd_trans_info *oti)
 {
         struct filter_device *ofd = filter_exp(exp);
-        struct lu_env *env = oti->oti_thread->t_env;
+        struct lu_env *env = oti->oti_env;
         struct filter_thread_info *info;
         int rc = 0, diff;
         ENTRY;
@@ -1067,14 +1067,14 @@ int filter_getattr(struct obd_export *exp, struct obd_info *oinfo)
         struct filter_device *ofd = filter_exp(exp);
         struct filter_thread_info *info;
         struct filter_object *fo;
-        struct lu_env env;
+        struct lu_env *env = oinfo->oi_env;
         int rc = 0;
         ENTRY;
 
-        rc = lu_env_init(&env, LCT_DT_THREAD);
+        rc = lu_env_refill(env);
         if (rc)
                 RETURN(rc);
-        info = filter_info_init(&env, exp);
+        info = filter_info_init(env, exp);
 
         fid_ostid_unpack(&info->fti_fid, &oinfo->oi_oa->o_oi, 0);
         rc = filter_auth_capa(ofd, &info->fti_fid, oinfo->oi_oa->o_seq,
@@ -1082,19 +1082,18 @@ int filter_getattr(struct obd_export *exp, struct obd_info *oinfo)
         if (rc)
                 GOTO(out, rc);
 
-        fo = filter_object_find(&env, ofd, &info->fti_fid);
+        fo = filter_object_find(env, ofd, &info->fti_fid);
         if (IS_ERR(fo))
                 GOTO(out, rc = PTR_ERR(fo));
         LASSERT(fo != NULL);
-        rc = filter_attr_get(&env, fo, &info->fti_attr);
+        rc = filter_attr_get(env, fo, &info->fti_attr);
         oinfo->oi_oa->o_valid = OBD_MD_FLID;
         if (rc == 0)
                 obdo_from_la(oinfo->oi_oa, &info->fti_attr,
                              FILTER_VALID_FLAGS | LA_UID | LA_GID);
 
-        filter_object_put(&env, fo);
+        filter_object_put(env, fo);
 out:
-        lu_env_fini(&env);
         RETURN(rc);
 }
 
@@ -1202,10 +1201,7 @@ struct obd_ops filter_obd_ops = {
 
 /*        .o_setup          = filter_setup,
         .o_cleanup        = filter_cleanup,
-        .o_connect        = filter_connect,
         .o_ping           = filter_ping,
-        .o_unpackmd       = filter_unpackmd,
-        .o_brw            = filter_brw,
 
         .o_llog_connect   = filter_llog_connect,
         .o_health_check   = filter_health_check,

@@ -191,6 +191,7 @@ struct obd_info {
         /* oss capability, its type is obd_capa in client to avoid copy.
          * in contrary its type is lustre_capa in OSS. */
         void                   *oi_capa;
+        struct lu_env          *oi_env;
 };
 
 /* compare all relevant fields. */
@@ -766,7 +767,8 @@ struct obd_trans_info {
         long                     oti_sync_write:1;
 
         /* initial thread handling transaction */
-        struct ptlrpc_thread *   oti_thread;
+        struct ptlrpc_thread    *oti_thread;
+        struct lu_env           *oti_env;
         __u32                    oti_conn_cnt;
         /** VBR: versions */
         __u64                    oti_pre_version;
@@ -797,6 +799,7 @@ static inline void oti_init(struct obd_trans_info *oti,
         if (req->rq_repmsg != NULL)
                 oti->oti_transno = lustre_msg_get_transno(req->rq_repmsg);
         oti->oti_thread = req->rq_svc_thread;
+        oti->oti_env = oti->oti_thread->t_env;
         if (req->rq_reqmsg != NULL)
                 oti->oti_conn_cnt = lustre_msg_get_conn_cnt(req->rq_reqmsg);
 }
