@@ -324,13 +324,11 @@ int filter_attr_get(const struct lu_env *env, struct filter_object *fo,
         int rc = 0;
         ENTRY;
 
-        filter_read_lock(env, fo);
         if (filter_object_exists(fo)) {
                 rc = dt_attr_get(env, filter_object_child(fo), la,
                                  filter_object_capa(env, fo));
         } else {
                 rc = -ENOENT;
         }
-        filter_read_unlock(env, fo);
         RETURN(rc);
 }
