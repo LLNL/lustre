@@ -1812,7 +1812,6 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
         struct thandle *handle = NULL;
         int is_orphan = 0;
         int rc = 0;
-
 #ifdef HAVE_QUOTA_SUPPORT
         struct obd_device *obd = mdo2mdd(obj)->mdd_obd_dev;
         struct mds_obd *mds = &obd->u.mds;
@@ -1858,6 +1857,7 @@ again:
                 goto again;
         }
 
+        OBD_RACE(OBD_FAIL_MDS_ORPHAN_RACE);
         /* release open count */
         mdd_obj->mod_count --;
 
