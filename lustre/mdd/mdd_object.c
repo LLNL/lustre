@@ -539,7 +539,7 @@ int mdd_iattr_get(const struct lu_env *env, struct mdd_object *mdd_obj,
                 RETURN(0);
 
         rc = mdd_la_get(env, mdd_obj, &ma->ma_attr,
-                          mdd_object_capa(env, mdd_obj));
+                        mdd_object_capa(env, mdd_obj));
         if (rc == 0)
                 ma->ma_valid |= MA_INODE;
         RETURN(rc);
@@ -1986,6 +1986,7 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
         ENTRY;
 
         mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
+        OBD_RACE(OBD_FAIL_MDS_ORPHAN_RACE);
         /* release open count */
         mdd_obj->mod_count --;
 
@@ -2018,10 +2019,8 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
                 rc = mdd_iattr_get(env, mdd_obj, ma);
                 ma->ma_valid &= ~(MA_LOV | MA_COOKIE);
         }
-
-        mdd_write_unlock(env, mdd_obj);
-
 cleanup:
+        mdd_write_unlock(env, mdd_obj);
 #ifdef HAVE_QUOTA_SUPPORT
         if (quota_opc)
                 /* Trigger dqrel on the owner of child. If failed,
