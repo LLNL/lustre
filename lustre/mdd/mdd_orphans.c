@@ -266,15 +266,22 @@ static int orph_key_test_and_del(const struct lu_env *env,
 {
         struct thandle *th = NULL;
         struct mdd_object  *mdo;
-        int rc;
+        int rc = -EBUSY;
 
         mdo = mdd_object_find(env, mdd, lf);
         if (IS_ERR(mdo))
                 return PTR_ERR(mdo);
 
-        rc = -EBUSY;
-        if (mdo->mod_count == 0) {
-                CDEBUG(D_HA, "Found orphan "DFID", delete it\n", PFID(lf));
+        OBD_RACE(OBD_FAIL_MDS_ORPHAN_RACE);
+
+        if (mdo->mod_count > 0) {
+                mdd_write_lock(env, mdo, MOR_TGT_CHILD);
+                CDEBUG(D_HA, "Found orphan "DFID", open count = %d\n",
+                       PFID(lf), mdo->mod_count);
+                mdo->mod_flags |= ORPHAN_OBJ;
+                mdd_write_unlock(env, mdo);
+        } else if (mdo->mod_flags & ORPHAN_OBJ) {
+                CWARN("Found orphan "DFID"! Delete it\n", PFID(lf));
 
                 th = mdd_trans_create(env, mdd);
                 if (IS_ERR(th))
@@ -306,14 +313,7 @@ static int orph_key_test_and_del(const struct lu_env *env,
                 mdd_write_unlock(env, mdo);
 stop:
                 mdd_trans_stop(env, mdd, 0, th);
-        } else {
-                mdd_write_lock(env, mdo, MOR_TGT_CHILD);
-                CDEBUG(D_HA, "Found orphan "DFID" count %d, skip it\n",
-                       PFID(lf), mdo->mod_count);
-                mdo->mod_flags |= ORPHAN_OBJ;
-                mdd_write_unlock(env, mdo);
         }
-
         mdd_object_put(env, mdo);
         return rc;
 }

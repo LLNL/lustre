@@ -456,7 +456,7 @@ test_21() {
 }
 run_test 21 "|X| open(O_CREAT), unlink touch new, replay, close (test mds_cleanup_orphans)"
 
-test_22() {
+test_22a() {
     multiop_bg_pause $DIR/$tfile O_tSc || return 3
     pid=$!
 
@@ -469,7 +469,22 @@ test_22() {
     [ -e $DIR/$tfile ] && return 2
     return 0
 }
-run_test 22 "open(O_CREAT), |X| unlink, replay, close (test mds_cleanup_orphans)"
+run_test 22a "open(O_CREAT), |X| unlink, replay, close (test mds_cleanup_orphans)"
+
+test_22b() {
+    multiop_bg_pause $DIR/$tfile O_tSc || return 3
+    pid=$!
+    replay_barrier $SINGLEMDS
+    rm -f $DIR/$tfile
+    facet_failover $SINGLEMDS
+#define OBD_FAIL_MDS_ORPHAN_RACE  0x148
+    do_facet $SINGLEMDS "lctl set_param fail_loc=0x80000148"
+    client_up || return 1
+    kill -USR1 $pid
+    wait $pid
+    return 0
+}
+run_test 22b "check orphan code race in test 22"
 
 test_23() {
     multiop_bg_pause $DIR/$tfile O_tSc || return 5
