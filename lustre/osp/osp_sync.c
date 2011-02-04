@@ -38,6 +38,7 @@
  * Lustre OST Proxy Device
  *
  * Author: Alex Zhuravlev <bzzz@sun.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #ifndef EXPORT_SYMTAB
@@ -45,20 +46,7 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
-#include <obd_class.h>
-#include <lustre_ver.h>
-#include <obd_support.h>
-#include <lprocfs_status.h>
-
-#include <lustre_disk.h>
-#include <lustre_fid.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
-#include <lustre_param.h>
-#include <lustre_fid.h>
-
+#include <lustre_log.h>
 #include "osp_internal.h"
 
 static int osp_sync_id_traction_init(struct osp_device *d);
@@ -101,6 +89,7 @@ static void osp_sync_remove_from_tracker(struct osp_device *d);
 
 /* XXX: do math to learn reasonable threshold
  * should it be ~ number of changes fitting bulk? */
+
 #define OSP_SYN_THRESHOLD       10
 #define OSP_MAX_IN_FLIGHT       8
 #define OSP_MAX_IN_PROGRESS     4096
@@ -119,9 +108,9 @@ static inline int osp_sync_stopped(struct osp_device *d)
 
 static inline int osp_sync_has_new_job(struct osp_device *d)
 {
-        return ((d->opd_syn_last_processed_id < d->opd_syn_last_used_id)
-                && (d->opd_syn_last_processed_id < d->opd_syn_last_committed_id))
-                        || (d->opd_syn_prev_done == 0);
+        return ((d->opd_syn_last_processed_id < d->opd_syn_last_used_id) &&
+                (d->opd_syn_last_processed_id < d->opd_syn_last_committed_id))
+                || (d->opd_syn_prev_done == 0);
 }
 
 static inline int osp_sync_low_in_progress(struct osp_device *d)
@@ -138,7 +127,7 @@ static inline int osp_sync_has_work(struct osp_device *d)
 {
         /* has new/old changes and low in-progress? */
         if (osp_sync_has_new_job(d) && osp_sync_low_in_progress(d) &&
-                        osp_sync_low_in_flight(d) && d->opd_imp_connected)
+            osp_sync_low_in_flight(d) && d->opd_imp_connected)
                 return 1;
 
         /* has remotely committed? */
@@ -183,11 +172,10 @@ static inline int osp_sync_can_process_new(struct osp_device *d,
 int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
                          llog_op_type type, struct thandle *th)
 {
-        struct osp_device   *d = lu2osp_dev(o->opo_obj.do_lu.lo_dev);
-        struct obd_device   *obd = d->opd_obd;
-        struct llog_ctxt    *ctxt;
-        struct llog_rec_hdr  hdr;
-        int                  rc;
+        struct osp_thread_info *osi = osp_env_info(env);
+        struct osp_device      *d = lu2osp_dev(o->opo_obj.do_lu.lo_dev);
+        struct llog_ctxt       *ctxt;
+        int                     rc;
         ENTRY;
 
         /* XXX: it's a layering violation, to access internals of th,
@@ -196,11 +184,11 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 
         switch (type) {
                 case MDS_UNLINK_REC:
-                        hdr.lrh_len = sizeof(struct llog_unlink_rec);
+                        osi->u.hdr.lrh_len = sizeof(struct llog_unlink_rec);
                         break;
 
                 case MDS_SETATTR64_REC:
-                        hdr.lrh_len = sizeof(struct llog_setattr64_rec);
+                        osi->u.hdr.lrh_len = sizeof(struct llog_setattr64_rec);
                         break;
 
                 default:
@@ -210,9 +198,10 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
         /* we want ->dt_trans_start() to allocate per-thandle structure */
         th->th_tags |= LCT_OSP_THREAD;
 
-        ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
+        ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
         LASSERT(ctxt);
-        rc = llog_declare_add_2(env, ctxt, &hdr, NULL, th);
+
+        rc = llog_declare_add_2(env, ctxt, &osi->u.hdr, NULL, th);
         llog_ctxt_put(ctxt);
 
         RETURN(rc);
@@ -222,42 +211,35 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 int osp_sync_add(const struct lu_env *env, struct osp_object *o,
                  llog_op_type type, struct thandle *th)
 {
-        struct osp_device   *d = lu2osp_dev(o->opo_obj.do_lu.lo_dev);
-        const struct lu_fid *fid = lu_object_fid(&o->opo_obj.do_lu);
-        struct obd_device   *obd = d->opd_obd;
-        struct llog_cookie  cookie;
-        struct llog_ctxt    *ctxt;
-        struct osp_txn_info *txn;
-        struct ost_id        ostid = { 0 };
-        union {
-                struct llog_unlink_rec          unlink;
-                struct llog_setattr64_rec       setattr;
-                struct llog_rec_hdr             hdr;
-        } u;
-        int                  rc;
+        struct osp_thread_info *osi = osp_env_info(env);
+        struct osp_device      *d = lu2osp_dev(o->opo_obj.do_lu.lo_dev);
+        const struct lu_fid    *fid = lu_object_fid(&o->opo_obj.do_lu);
+        struct llog_ctxt       *ctxt;
+        struct osp_txn_info    *txn;
+        int                     rc;
         ENTRY;
 
         /* XXX: it's a layering violation, to access internals of th,
          * but we can do this as a sanity check, for a while */
         LASSERT(th->th_dev == d->opd_storage);
 
-        rc = fid_ostid_pack(fid, &ostid);
+        rc = fid_ostid_pack(fid, &osi->osi_oi);
         LASSERT(rc == 0);
 
         switch (type) {
                 case MDS_UNLINK_REC:
-                        u.unlink.lur_hdr.lrh_len = sizeof(u.unlink);
-                        u.unlink.lur_hdr.lrh_type = MDS_UNLINK_REC;
-                        u.unlink.lur_oid  = ostid.oi_id;
-                        u.unlink.lur_oseq = ostid.oi_seq;
-                        u.unlink.lur_count = 1;
+                        osi->u.hdr.lrh_len = sizeof(osi->u.unlink);
+                        osi->u.hdr.lrh_type = MDS_UNLINK_REC;
+                        osi->u.unlink.lur_oid  = osi->osi_oi.oi_id;
+                        osi->u.unlink.lur_oseq = osi->osi_oi.oi_seq;
+                        osi->u.unlink.lur_count = 1;
                         break;
 
                 case MDS_SETATTR64_REC:
-                        u.setattr.lsr_hdr.lrh_len = sizeof(u.setattr);
-                        u.setattr.lsr_hdr.lrh_type = MDS_SETATTR64_REC;
-                        u.setattr.lsr_oid  = ostid.oi_id;
-                        u.setattr.lsr_oseq = ostid.oi_seq;
+                        osi->u.hdr.lrh_len = sizeof(osi->u.setattr);
+                        osi->u.hdr.lrh_type = MDS_SETATTR64_REC;
+                        osi->u.setattr.lsr_oid  = osi->osi_oi.oi_id;
+                        osi->u.setattr.lsr_oseq = osi->osi_oi.oi_seq;
                         break;
 
                 default:
@@ -268,20 +250,20 @@ int osp_sync_add(const struct lu_env *env, struct osp_object *o,
         LASSERT(txn);
 
         txn->oti_current_id = osp_sync_id_get(d, txn->oti_current_id);
-        u.hdr.lrh_id = txn->oti_current_id;
+        osi->u.hdr.lrh_id = txn->oti_current_id;
 
-        ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
+        ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
         if (ctxt == NULL)
                 RETURN(-ENOMEM);
-        rc = llog_add_2(env, ctxt, &u.hdr, NULL, &cookie, 1, th);
+        rc = llog_add_2(env, ctxt, &osi->u.hdr, NULL, &osi->osi_cookie, 1, th);
         llog_ctxt_put(ctxt);
 
         CDEBUG(D_OTHER, "%s: new record %lu:%lu:%lu/%lu: %d\n",
                 d->opd_obd->obd_name,
-                (unsigned long) cookie.lgc_lgl.lgl_oid,
-                (unsigned long) cookie.lgc_lgl.lgl_oseq,
-                (unsigned long) cookie.lgc_lgl.lgl_ogen,
-                (unsigned long) cookie.lgc_index, rc);
+                (unsigned long) osi->osi_cookie.lgc_lgl.lgl_oid,
+                (unsigned long) osi->osi_cookie.lgc_lgl.lgl_oseq,
+                (unsigned long) osi->osi_cookie.lgc_lgl.lgl_ogen,
+                (unsigned long) osi->osi_cookie.lgc_index, rc);
 
         if (rc > 0)
                 rc = 0;
@@ -293,7 +275,6 @@ int osp_sync_add(const struct lu_env *env, struct osp_object *o,
         }
 
         RETURN(rc);
-
 }
 
 /*
@@ -320,7 +301,7 @@ int osp_sync_add(const struct lu_env *env, struct osp_object *o,
  */
 static void osp_sync_request_commit_cb(struct ptlrpc_request *req)
 {
-        struct osp_device   *d = req->rq_cb_data;
+        struct osp_device *d = req->rq_cb_data;
 
         CDEBUG(D_HA, "commit req %p, transno %u\n", req, (unsigned) req->rq_transno);
         if (unlikely(req->rq_transno == 0))
@@ -342,10 +323,9 @@ static void osp_sync_request_commit_cb(struct ptlrpc_request *req)
 }
 
 static int osp_sync_interpret(const struct lu_env *env,
-                              struct ptlrpc_request *req,
-                              void *aa, int rc)
+                              struct ptlrpc_request *req, void *aa, int rc)
 {
-        struct osp_device    *d = req->rq_cb_data;
+        struct osp_device *d = req->rq_cb_data;
 
         /* XXX: error handling here */
         if (req->rq_svc_thread != (void *) OSP_JOB_MAGIC)
@@ -414,10 +394,8 @@ static int osp_sync_send_new_rpc(struct osp_device *d, struct ptlrpc_request *re
         rc = ptlrpcd_add_req(req, PSCOPE_OTHER);
         if (unlikely(rc != 0)) {
                 CERROR("can't send RPC: %d\n", rc);
-                LBUG();
-                /* XXX: error handling? release request? */
+                ptlrpc_req_finished(req);
         }
-
         RETURN(rc);
 }
 
@@ -506,7 +484,7 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         struct llog_unlink_rec *rec = (struct llog_unlink_rec *) h;
         struct ptlrpc_request  *req;
         struct ost_body        *body;
-        int                        rc;
+        int                     rc;
 
         LASSERT(h->lrh_type == MDS_UNLINK_REC);
 
@@ -683,7 +661,7 @@ static int osp_sync_process_queues(const struct lu_env *env,
         struct osp_device *d = data;
         int                rc;
 
-        do { 
+        do {
                 struct l_wait_info lwi = { 0 };
 
                 if (!osp_sync_running(d)) {
@@ -764,24 +742,22 @@ static int osp_sync_thread(void *_arg)
         struct llog_handle     *llh;
         struct lu_env           env;
         int                     rc;
+        char                    pname[16];
         ENTRY;
-
-        {
-                char pname[16];
-                sprintf(pname, "osp-syn-%u\n", d->opd_index);
-                cfs_daemonize(pname);
-        }
-
-        cfs_spin_lock(&d->opd_syn_lock);
-        thread->t_flags = SVC_RUNNING;
-        cfs_spin_unlock(&d->opd_syn_lock);
-        cfs_waitq_signal(&thread->t_ctl_waitq);
 
         rc = lu_env_init(&env, d->opd_storage->dd_lu_dev.ld_type->ldt_ctx_tags);
         if (rc) {
                 CERROR("can't initialize env: %d\n", rc);
                 RETURN(rc);
         }
+
+        sprintf(pname, "osp-syn-%u\n", d->opd_index);
+        cfs_daemonize(pname);
+
+        cfs_spin_lock(&d->opd_syn_lock);
+        thread->t_flags = SVC_RUNNING;
+        cfs_spin_unlock(&d->opd_syn_lock);
+        cfs_waitq_signal(&thread->t_ctl_waitq);
 
         ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
         if (ctxt == NULL) {
@@ -813,7 +789,6 @@ static int osp_sync_thread(void *_arg)
         rc = llog_cleanup(ctxt);
         if (rc)
                 CERROR("can't cleanup llog: %d\n", rc);
-
 out:
         thread->t_flags = SVC_STOPPED;
 
@@ -838,14 +813,12 @@ out:
 
 static struct llog_operations osp_mds_ost_orig_logops;
 
-static int osp_sync_llog_init(struct osp_device *d)
+static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
 {
-        struct obd_device   *obd = d->opd_obd;
-        struct llog_gen_rec  genrecord;
-        struct llog_cookie   cookie;
-        struct llog_catid    catid;
-        struct llog_ctxt    *ctxt;
-        int                  rc;
+        struct osp_thread_info *osi = osp_env_info(env);
+        struct obd_device      *obd = d->opd_obd;
+        struct llog_ctxt       *ctxt;
+        int                     rc;
         ENTRY;
 
         LASSERT(obd);
@@ -857,15 +830,16 @@ static int osp_sync_llog_init(struct osp_device *d)
         OBD_SET_CTXT_MAGIC(&obd->obd_lvfs_ctxt);
         obd->obd_lvfs_ctxt.dt = d->opd_storage;
 
-        rc = llog_get_cat_list(obd, NULL, d->opd_index, 1, &catid);
+        rc = llog_get_cat_list(obd, NULL, d->opd_index, 1, &osi->osi_cid);
         if (rc) {
                 CERROR("can't get id from catalogs: %d\n", rc);
-                GOTO(out, rc);
+                RETURN(rc);
         }
 
         CDEBUG(D_INFO, "%s: Init llog for %d - catid "LPX64"/"LPX64":%x\n",
-               obd->obd_name, d->opd_index, catid.lci_logid.lgl_oid,
-               catid.lci_logid.lgl_oseq, catid.lci_logid.lgl_ogen);
+               obd->obd_name, d->opd_index, osi->osi_cid.lci_logid.lgl_oid,
+               osi->osi_cid.lci_logid.lgl_oseq,
+               osi->osi_cid.lci_logid.lgl_ogen);
 
         osp_mds_ost_orig_logops = llog_osd_ops;
         osp_mds_ost_orig_logops.lop_setup = llog_obd_origin_setup;
@@ -876,15 +850,17 @@ static int osp_sync_llog_init(struct osp_device *d)
         osp_mds_ost_orig_logops.lop_connect = llog_origin_connect;
 
         rc = llog_setup(obd, &obd->obd_olg, LLOG_MDS_OST_ORIG_CTXT, obd, 1,
-                        &catid.lci_logid, &osp_mds_ost_orig_logops);
+                        &osi->osi_cid.lci_logid, &osp_mds_ost_orig_logops);
         if (rc) {
                 CERROR("rc: %d\n", rc);
-                GOTO(out, rc);
+                RETURN(rc);
         }
 
-        rc = llog_put_cat_list(obd, NULL, d->opd_index, 1, &catid);
+        rc = llog_put_cat_list(obd, NULL, d->opd_index, 1, &osi->osi_cid);
         if (rc) {
                 CERROR("rc: %d\n", rc);
+                ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
+                llog_cleanup(ctxt);
                 GOTO(out, rc);
         }
 
@@ -895,19 +871,18 @@ static int osp_sync_llog_init(struct osp_device *d)
         d->opd_syn_generation.mnt_cnt = cfs_time_current();
         d->opd_syn_generation.conn_cnt = cfs_time_current();
 
-        genrecord.lgr_hdr.lrh_type = LLOG_GEN_REC;
-        genrecord.lgr_hdr.lrh_len = sizeof(genrecord);
+        osi->u.hdr.lrh_type = LLOG_GEN_REC;
+        osi->u.hdr.lrh_len = sizeof(osi->u.gen);
 
-        memcpy(&genrecord.lgr_gen, &d->opd_syn_generation,
-               sizeof(genrecord.lgr_gen));
+        memcpy(&osi->u.gen.lgr_gen, &d->opd_syn_generation,
+               sizeof(osi->u.gen.lgr_gen));
 
         ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
         LASSERT(ctxt);
-        rc = llog_add(ctxt, &genrecord.lgr_hdr, NULL, &cookie, 1);
+        rc = llog_add(ctxt, &osi->u.gen.lgr_hdr, NULL, &osi->osi_cookie, 1);
         if (rc == 1)
                 rc = 0;
         llog_ctxt_put(ctxt);
-
 out:
         RETURN(rc);
 }
@@ -915,7 +890,7 @@ out:
 /*
  * initializes sync component of OSP
  */
-int osp_sync_init(struct osp_device *d)
+int osp_sync_init(const struct lu_env *env, struct osp_device *d)
 {
         struct l_wait_info lwi = { 0 };
         int                rc;
@@ -928,20 +903,11 @@ int osp_sync_init(struct osp_device *d)
         /*
          * initialize llog storing changes
          */
-        rc = osp_sync_llog_init(d);
+        rc = osp_sync_llog_init(env, d);
         if (rc) {
                 CERROR("can't initialized llog: %d\n", rc);
                 RETURN(rc);
         }
-
-        /*
-         * Register commit callbacks on the local storage
-         */
-        //d->opd_syn_txn_cb.dtc_txn_start = osp_sync_txn_commit_cb;
-        //d->opd_syn_txn_cb.dtc_cookie = d;
-        //d->opd_syn_txn_cb.dtc_tag = LCT_MD_THREAD;
-        //CFS_INIT_LIST_HEAD(&d->opd_syn_txn_cb.dtc_linkage);
-        //dt_txn_callback_add(d->opd_storage, &d->opd_syn_txn_cb);
 
         /*
          * Start synchronization thread
@@ -1009,8 +975,8 @@ static CFS_DEFINE_MUTEX(osp_id_tracker_sem);
 static CFS_LIST_HEAD(osp_id_tracker_list);
 
 static int osp_sync_tracker_commit_cb(const struct lu_env *env,
-                                  struct thandle *th,
-                                  void *cookie)
+                                      struct thandle *th,
+                                      void *cookie)
 {
         struct osp_id_tracker *tr = cookie;
         struct osp_device     *d;

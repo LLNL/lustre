@@ -41,11 +41,10 @@
 #ifndef _OSP_INTERNAL_H
 #define _OSP_INTERNAL_H
 
-
-#include <libcfs/libcfs.h>
+#include <lustre/lustre_idl.h>
 #include <obd.h>
 #include <dt_object.h>
-#include <lustre/lustre_idl.h>
+#include <lustre_fid.h>
 
 struct osp_id_tracker;
 
@@ -160,10 +159,28 @@ struct osp_object {
 };
 
 struct osp_thread_info {
-        /* XXX: go through all the functions, replace big local variables
-         *      and allocations with this TLS where possible */
-        int a;
+        struct lu_buf        osi_lb;
+        struct lu_fid        osi_fid;
+        struct lu_attr       osi_attr;
+        struct ost_id        osi_oi;
+        obd_id               osi_id;
+        loff_t               osi_off;
+        union {
+                struct llog_rec_hdr       hdr;
+                struct llog_unlink_rec    unlink;
+                struct llog_setattr64_rec setattr;
+                struct llog_gen_rec       gen;
+        } u;
+        struct llog_cookie   osi_cookie;
+        struct llog_catid    osi_cid;
 };
+
+static inline void osp_objid_buf_prep(struct osp_thread_info *osi, int index)
+{
+        osi->osi_lb.lb_buf = &osi->osi_id;
+        osi->osi_lb.lb_len = sizeof(osi->osi_id);
+        osi->osi_off = sizeof(osi->osi_id) * index;
+}
 
 extern struct lu_context_key osp_thread_key;
 
@@ -172,7 +189,11 @@ static inline struct osp_thread_info *osp_env_info(const struct lu_env *env)
         struct osp_thread_info *info;
 
         info = lu_context_key_get(&env->le_ctx, &osp_thread_key);
-        LASSERT(info != NULL);
+        if (info == NULL) {
+                lu_env_refill((struct lu_env *)env);
+                info = lu_context_key_get(&env->le_ctx, &osp_thread_key);
+        }
+        LASSERT(info);
         return info;
 }
 
@@ -252,7 +273,7 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt, __u64);
 void osp_pre_update_status(struct osp_device *d, int rc);
 
 /* osp_sync.c */
-int osp_sync_init(struct osp_device *d);
+int osp_sync_init(const struct lu_env *env, struct osp_device *d);
 int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
                          llog_op_type type, struct thandle *th);
 int osp_sync_add(const struct lu_env *env, struct osp_object *d,
