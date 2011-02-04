@@ -38,6 +38,7 @@
  * Lustre OST Proxy Device
  *
  * Author: Alex Zhuravlev <bzzz@sun.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #ifndef EXPORT_SYMTAB
@@ -45,22 +46,7 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
-#include <obd_class.h>
-#include <lustre_ver.h>
-#include <obd_support.h>
-#include <lprocfs_status.h>
-
-#include <lustre_disk.h>
-#include <lustre_fid.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
-#include <lustre_param.h>
-#include <lustre_fid.h>
-
 #include "osp_internal.h"
-
 
 /*
  * there are two specific states to take care about:
@@ -78,9 +64,8 @@
 
 static inline int osp_statfs_need_update(struct osp_device *d)
 {
-        if (cfs_time_before(cfs_time_current(), d->opd_statfs_fresh_till))
-                return 0;
-        return 1;
+        return !cfs_time_before(cfs_time_current(),
+                                d->opd_statfs_fresh_till);
 }
 
 static void osp_statfs_timer_cb(unsigned long _d)
@@ -92,11 +77,10 @@ static void osp_statfs_timer_cb(unsigned long _d)
 
 static int osp_statfs_interpret(const struct lu_env *env,
                                 struct ptlrpc_request *req,
-                                union ptlrpc_async_args *aa,
-                                int rc)
+                                union ptlrpc_async_args *aa, int rc)
 {
-        struct obd_statfs       *msfs;
-        struct osp_device       *d;
+        struct obd_statfs *msfs;
+        struct osp_device *d;
         ENTRY;
 
         aa = ptlrpc_req_async_args(req);
@@ -107,26 +91,22 @@ static int osp_statfs_interpret(const struct lu_env *env,
                 GOTO(out, rc);
 
         msfs = req_capsule_server_get(&req->rq_pill, &RMF_OBD_STATFS);
-        if (msfs == NULL) {
+        if (msfs == NULL)
                 GOTO(out, rc = -EPROTO);
-        }
 
         d->opd_statfs = *msfs;
 
         osp_pre_update_status(d, rc);
 
+        /* schedule next update */
+        d->opd_statfs_fresh_till = cfs_time_shift(d->opd_statfs_maxage);
+        cfs_timer_arm(&d->opd_statfs_timer, d->opd_statfs_fresh_till);
+        CDEBUG(D_CACHE, "updated statfs %p\n", d);
+        RETURN(0);
 out:
-        if (rc == 0) {
-                /* schedule next update */
-                d->opd_statfs_fresh_till = cfs_time_shift(d->opd_statfs_maxage);
-                cfs_timer_arm(&d->opd_statfs_timer, d->opd_statfs_fresh_till);
-                CDEBUG(D_CACHE, "updated statfs %p\n", d);
-        } else {
-                /* couldn't update statfs, try again as soon as possible */
-                cfs_waitq_signal(&d->opd_pre_waitq);
-                CERROR("couldn't update statfs: %d\n", rc);
-        }
-
+        /* couldn't update statfs, try again as soon as possible */
+        cfs_waitq_signal(&d->opd_pre_waitq);
+        CERROR("couldn't update statfs: %d\n", rc);
         RETURN(rc);
 }
 
@@ -146,7 +126,6 @@ static int osp_statfs_update(struct osp_device *d)
         LASSERT(imp);
 
         req = ptlrpc_request_alloc(imp, &RQF_OST_STATFS);
-
         if (req == NULL)
                 RETURN(-ENOMEM);
 
@@ -195,14 +174,11 @@ static inline int osp_precreate_stopped(struct osp_device *d)
 
 static inline int osp_precreate_near_empty_nolock(struct osp_device *d)
 {
-        int window, rc = 0;
-
-        window = d->opd_pre_last_created - d->opd_pre_next;
-        if (window - d->opd_pre_reserved < d->opd_pre_grow_count / 2)
-                rc = 1;
-
-        /* don't consider new precreation till OST is healty and has free space */
-        return (rc && (d->opd_pre_status == 0));
+        int window = d->opd_pre_last_created - d->opd_pre_next;
+        /* don't consider new precreation till OST is healty and
+         * has free space */
+        return ((window - d->opd_pre_reserved < d->opd_pre_grow_count / 2) &&
+                (d->opd_pre_status == 0));
 }
 
 static inline int osp_precreate_near_empty(struct osp_device *d)
@@ -213,7 +189,6 @@ static inline int osp_precreate_near_empty(struct osp_device *d)
         cfs_spin_lock(&d->opd_pre_lock);
         rc = osp_precreate_near_empty_nolock(d);
         cfs_spin_unlock(&d->opd_pre_lock);
-
         return rc;
 }
 
@@ -240,7 +215,7 @@ static int osp_precreate_send(struct osp_device *d)
 
         req = ptlrpc_request_alloc(imp, &RQF_OST_CREATE);
         if (req == NULL)
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
         req->rq_request_portal = OST_CREATE_PORTAL;
         /* we should not resend create request - anyway we will have delorphan
          * and kill these objects */
@@ -249,7 +224,7 @@ static int osp_precreate_send(struct osp_device *d)
         rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_CREATE);
         if (rc) {
                 ptlrpc_request_free(req);
-                GOTO(out, rc);
+                RETURN(rc);
         }
 
         cfs_spin_lock(&d->opd_pre_lock);
@@ -306,8 +281,6 @@ static int osp_precreate_send(struct osp_device *d)
 
 out_req:
         ptlrpc_req_finished(req);
-
-out:
         RETURN(rc);
 }
 
@@ -378,14 +351,17 @@ static int osp_precreate_cleanup_orphans(struct osp_device *d)
 
         req = ptlrpc_request_alloc(imp, &RQF_OST_CREATE);
         if (req == NULL)
-                RETURN(rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_CREATE);
-        if (rc)
-                GOTO(out_req, rc);
+        if (rc) {
+                ptlrpc_request_free(req);
+                RETURN(rc);
+        }
 
         body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
-        LASSERT(body);
+        if (body == NULL)
+                GOTO(out_req, rc = -EPROTO);
 
         body->oa.o_flags = OBD_FL_DELORPHAN;
         body->oa.o_valid = OBD_MD_FLFLAGS | OBD_MD_FLGROUP;
@@ -402,6 +378,7 @@ static int osp_precreate_cleanup_orphans(struct osp_device *d)
         rc = ptlrpc_queue_wait(req);
         if (rc)
                 GOTO(out_req, rc);
+
         LASSERT(req->rq_transno == 0);
 
         body = req_capsule_server_get(&req->rq_pill, &RMF_OST_BODY);
@@ -427,9 +404,10 @@ static int osp_precreate_cleanup_orphans(struct osp_device *d)
 
 out_req:
         ptlrpc_req_finished(req);
-
         /*
          * XXX: how do we do if orphan cleanup failed? deactivate import?
+         * Can we write orphan gap in ids to the unlink llog like for gaps in
+         * transactions?
          */
         RETURN(rc);
 }
@@ -491,14 +469,12 @@ static int osp_precreate_thread(void *_arg)
         struct osp_device      *d = _arg;
         struct ptlrpc_thread   *thread = &d->opd_pre_thread;
         struct l_wait_info      lwi = { 0 };
+        char pname[16];
         int                     rc;
         ENTRY;
 
-        {
-                char pname[16];
-                sprintf(pname, "osp-pre-%u\n", d->opd_index);
-                cfs_daemonize(pname);
-        }
+        sprintf(pname, "osp-pre-%u\n", d->opd_index);
+        cfs_daemonize(pname);
 
         cfs_spin_lock(&d->opd_pre_lock);
         thread->t_flags = SVC_RUNNING;
@@ -506,16 +482,14 @@ static int osp_precreate_thread(void *_arg)
         cfs_waitq_signal(&thread->t_ctl_waitq);
 
         while (osp_precreate_running(d)) {
-
                 /*
                  * need to be connected to OST
                  */
                 while (osp_precreate_running(d)) {
 
                         l_wait_event(d->opd_pre_waitq,
-                                        !osp_precreate_running(d) ||
-                                        d->opd_new_connection,
-                                        &lwi);
+                                     !osp_precreate_running(d) ||
+                                     d->opd_new_connection, &lwi);
 
                         if (!osp_precreate_running(d))
                                 break;
@@ -546,8 +520,8 @@ static int osp_precreate_thread(void *_arg)
                 l_wait_event(d->opd_pre_waitq,
                              (!d->opd_pre_reserved && d->opd_recovery_completed) ||
                              !osp_precreate_running(d) ||
-                             d->opd_got_disconnected,
-                             &lwi);
+                             d->opd_got_disconnected, &lwi);
+
                 if (osp_precreate_running(d) && !d->opd_got_disconnected) {
                         rc = osp_precreate_cleanup_orphans(d);
                         if (rc) {
@@ -661,9 +635,9 @@ int osp_precreate_reserve(struct osp_device *d)
 
                 l_wait_event(d->opd_pre_user_waitq,
                              (d->opd_pre_last_created > d->opd_pre_next &&
-                              (d->opd_pre_last_created - d->opd_pre_next > d->opd_pre_reserved))
-                             || d->opd_pre_status != 0,
-                              &lwi);
+                              (d->opd_pre_last_created - d->opd_pre_next >
+                               d->opd_pre_reserved)) ||
+                             d->opd_pre_status != 0, &lwi);
         }
 
         RETURN(rc);
@@ -674,7 +648,7 @@ int osp_precreate_reserve(struct osp_device *d)
  */
 __u64 osp_precreate_get_id(struct osp_device *d)
 {
-        obd_id  objid;
+        obd_id objid;
 
         /* grab next id from the pool */
         cfs_spin_lock(&d->opd_pre_lock);
@@ -697,15 +671,15 @@ __u64 osp_precreate_get_id(struct osp_device *d)
 /*
  *
  */
-int osp_object_truncate(const struct lu_env *env, struct dt_object *dt, __u64 size)
+int osp_object_truncate(const struct lu_env *env, struct dt_object *dt,
+                        __u64 size)
 {
+        struct osp_thread_info *osi = osp_env_info(env);
         struct osp_device      *d = lu2osp_dev(dt->do_lu.lo_dev);
-        const struct lu_fid    *fid = lu_object_fid(&dt->do_lu);
         struct ptlrpc_request  *req = NULL;
         struct obd_import      *imp;
         struct ost_body        *body;
         struct obdo            *oa = NULL;
-        struct ost_id           ostid = { 0 };
         int                     rc;
         ENTRY;
 
@@ -714,13 +688,15 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt, __u64 si
 
         req = ptlrpc_request_alloc(imp, &RQF_OST_PUNCH);
         if (req == NULL)
-                RETURN(rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         /* XXX: capa support? */
         /* osc_set_capa_size(req, &RMF_CAPA1, capa); */
         rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_PUNCH);
-        if (rc)
-                GOTO(out, rc);
+        if (rc) {
+                ptlrpc_request_free(req);
+                RETURN(rc);
+        }
 
         /*
          * XXX: decide how do we do here with resend
@@ -736,10 +712,10 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt, __u64 si
         if (oa == NULL)
                 GOTO(out, rc = -ENOMEM);
 
-        rc = fid_ostid_pack(fid, &ostid);
+        rc = fid_ostid_pack(lu_object_fid(&dt->do_lu), &osi->osi_oi);
         LASSERT(rc == 0);
-        oa->o_id = ostid.oi_id;
-        oa->o_seq = ostid.oi_seq;
+        oa->o_id = osi->osi_oi.oi_id;
+        oa->o_seq = osi->osi_oi.oi_seq;
         oa->o_size = size;
         oa->o_blocks = OBD_OBJECT_EOF;
         oa->o_valid = OBD_MD_FLSIZE | OBD_MD_FLBLOCKS |
@@ -757,12 +733,10 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt, __u64 si
         rc = ptlrpc_queue_wait(req);
         if (rc)
                 CERROR("can't punch object: %d\n", rc);
-
 out:
         ptlrpc_req_finished(req);
         if (oa)
                 OBD_FREE_PTR(oa);
-
         RETURN(rc);
 }
 

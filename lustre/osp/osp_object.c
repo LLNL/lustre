@@ -38,6 +38,7 @@
  * Lustre OST Proxy Device
  *
  * Author: Alex Zhuravlev <bzzz@sun.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #ifndef EXPORT_SYMTAB
@@ -45,54 +46,29 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
-#include <obd_class.h>
-#include <lustre_ver.h>
-#include <obd_support.h>
-#include <lprocfs_status.h>
-
-#include <lustre_disk.h>
-#include <lustre_fid.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
-#include <lustre_param.h>
-#include <lustre_fid.h>
-
 #include "osp_internal.h"
 
 static __u64 osp_object_assign_id(const struct lu_env *env,
                                   struct osp_device *d, struct osp_object *o)
 {
-        const struct lu_fid *f;
-        struct lu_fid        fid;
-        struct ost_id        ostid;
-        __u64                objid;
+        struct osp_thread_info *osi = osp_env_info(env);
+        const struct lu_fid    *f = lu_object_fid(&o->opo_obj.do_lu);
 
-        f = lu_object_fid(&o->opo_obj.do_lu);
-        LASSERT(f->f_oid == 0);
-        LASSERT(f->f_seq == 0);
-        LASSERT(f->f_ver == 0);
-
+        LASSERT(fid_is_zero(f));
         LASSERT(o->opo_reserved);
         o->opo_reserved = 0;
 
-        objid = osp_precreate_get_id(d);
-
         /* assign fid to anonymous object */
-        ostid.oi_id = objid;
-        ostid.oi_seq = FID_SEQ_OST_MDT0; /* XXX: mds number to support CMD? */
-        fid_ostid_unpack(&fid, &ostid, d->opd_index);
-        lu_object_assign_fid(env, &o->opo_obj.do_lu, &fid);
+        osi->osi_oi.oi_id = osp_precreate_get_id(d);
+        osi->osi_oi.oi_seq = FID_SEQ_OST_MDT0; /* XXX: mds number to support CMD? */
+        fid_ostid_unpack(&osi->osi_fid, &osi->osi_oi, d->opd_index);
+        lu_object_assign_fid(env, &o->opo_obj.do_lu, &osi->osi_fid);
 
-        return objid;
+        return osi->osi_oi.oi_id;
 }
 
-
-static int osp_declare_attr_set(const struct lu_env *env,
-                                 struct dt_object *dt,
-                                 const struct lu_attr *attr,
-                                 struct thandle *th)
+static int osp_declare_attr_set(const struct lu_env *env, struct dt_object *dt,
+                                const struct lu_attr *attr, struct thandle *th)
 {
         struct osp_device  *d = lu2osp_dev(dt->do_lu.lo_dev);
         struct osp_object  *o = dt2osp_obj(dt);
@@ -136,11 +112,9 @@ static int osp_declare_attr_set(const struct lu_env *env,
         RETURN(rc);
 }
 
-static int osp_attr_set(const struct lu_env *env,
-                         struct dt_object *dt,
-                         const struct lu_attr *attr,
-                         struct thandle *th,
-                         struct lustre_capa *capa)
+static int osp_attr_set(const struct lu_env *env, struct dt_object *dt,
+                        const struct lu_attr *attr, struct thandle *th,
+                        struct lustre_capa *capa)
 {
         struct osp_object  *o = dt2osp_obj(dt);
         int                 rc = 0;
@@ -174,11 +148,11 @@ static int osp_attr_set(const struct lu_env *env,
 }
 
 static int osp_declare_object_create(const struct lu_env *env,
-                                      struct dt_object *dt,
-                                      struct lu_attr *attr,
-                                      struct dt_allocation_hint *hint,
-                                      struct dt_object_format *dof,
-                                      struct thandle *th)
+                                     struct dt_object *dt,
+                                     struct lu_attr *attr,
+                                     struct dt_allocation_hint *hint,
+                                     struct dt_object_format *dof,
+                                     struct thandle *th)
 {
         struct osp_device   *d = lu2osp_dev(dt->do_lu.lo_dev);
         struct osp_object   *o = dt2osp_obj(dt);
@@ -189,7 +163,7 @@ static int osp_declare_object_create(const struct lu_env *env,
         LASSERT(d->opd_last_used_file);
         fid = lu_object_fid(&dt->do_lu);
 
-        if (unlikely((fid_oid(fid) || fid_seq(fid)))) {
+        if (unlikely(!fid_is_zero(fid))) {
                 /* replace case: caller knows fid */
                 /* XXX: for compatibility use common for all OSPs file */
                 rc = dt_declare_record_write(env, d->opd_last_used_file, 8, 0, th);
@@ -213,46 +187,43 @@ static int osp_declare_object_create(const struct lu_env *env,
                 o->opo_reserved = 1;
 
                 /* XXX: for compatibility use common for all OSPs file */
-                rc = dt_declare_record_write(env, d->opd_last_used_file, 8, 0, th);
+                rc = dt_declare_record_write(env, d->opd_last_used_file,
+                                             8, 0, th);
         } else {
                 /* not needed in the cache anymore */
-                set_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags);
+                cfs_set_bit(LU_OBJECT_HEARD_BANSHEE,
+                            &dt->do_lu.lo_header->loh_flags);
         }
 
         RETURN(rc);
 }
 
-static int osp_object_create(const struct lu_env *env,
-                              struct dt_object *dt,
-                              struct lu_attr *attr,
-                              struct dt_allocation_hint *hint,
-                              struct dt_object_format *dof,
-                              struct thandle *th)
+static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
+                             struct lu_attr *attr,
+                             struct dt_allocation_hint *hint,
+                             struct dt_object_format *dof, struct thandle *th)
 {
-        struct osp_device   *d = lu2osp_dev(dt->do_lu.lo_dev);
-        struct osp_object   *o = dt2osp_obj(dt);
-        struct lu_buf        lb;
-        obd_id               objid;
-        loff_t               offset;
-        int                  rc = 0;
-        int                  update = 0;
+        struct osp_thread_info *osi = osp_env_info(env);
+        struct osp_device      *d = lu2osp_dev(dt->do_lu.lo_dev);
+        struct osp_object      *o = dt2osp_obj(dt);
+        int                     rc = 0;
+        int                     update = 0;
         ENTRY;
 
         /* XXX: to support CMD we need group here, to be put into config? */
 
         if (o->opo_reserved) {
                 /* regular case, id is assigned holding trunsaction open */
-                objid = osp_object_assign_id(env, d, o);
+                osi->osi_id = osp_object_assign_id(env, d, o);
         } else {
                 /* special case, id was assigned outside of transaction
                  * see comments in osp_declare_attr_set */
-                struct ost_id   ostid = { 0 };
-                rc = fid_ostid_pack(lu_object_fid(&dt->do_lu), &ostid);
+                rc = fid_ostid_pack(lu_object_fid(&dt->do_lu), &osi->osi_oi);
                 LASSERT(rc == 0);
-                objid = ostid_id(&ostid);
+                osi->osi_id = ostid_id(&osi->osi_oi);
         }
 
-        LASSERT(objid);
+        LASSERT(osi->osi_id);
 
         /*
          * update last_used object id for our OST
@@ -260,10 +231,10 @@ static int osp_object_create(const struct lu_env *env,
          * which is going to be each creation * <# stripes>
          * XXX: needs volatile
          */
-        if (objid > d->opd_last_used_id) {
+        if (osi->osi_id > d->opd_last_used_id) {
                 cfs_spin_lock(&d->opd_pre_lock);
-                if (objid > d->opd_last_used_id) {
-                        d->opd_last_used_id = objid;
+                if (osi->osi_id > d->opd_last_used_id) {
+                        d->opd_last_used_id = osi->osi_id;
                         update = 1;
                 }
                 cfs_spin_unlock(&d->opd_pre_lock);
@@ -277,15 +248,12 @@ static int osp_object_create(const struct lu_env *env,
          */
         if (update) {
                 /* we updated last_used in-core, so we update on a disk */
-                objid = cpu_to_le64(objid);
-                lb.lb_buf = &objid;
-                lb.lb_len = sizeof(objid);
-
-                /* XXXXXXXXXXXXXXXXX: don't use local var, otherwise racy */
+                osi->osi_id = cpu_to_le64(osi->osi_id);
+                osp_objid_buf_prep(osi, d->opd_index);
+                /* XXX: don't use local var, otherwise racy */
                 /* andreas asked more and more */
-                offset = d->opd_index * sizeof(objid);
-                rc = dt_record_write(env, d->opd_last_used_file, &lb,
-                                     &offset, th);
+                rc = dt_record_write(env, d->opd_last_used_file, &osi->osi_lb,
+                                     &osi->osi_off, th);
         }
 
         /* object is created, we can ignore first attr_set from being logged */
@@ -295,8 +263,7 @@ static int osp_object_create(const struct lu_env *env,
 }
 
 static int osp_declare_object_destroy(const struct lu_env *env,
-                                      struct dt_object *dt,
-                                      struct thandle *th)
+                                      struct dt_object *dt, struct thandle *th)
 {
         struct osp_object  *o = dt2osp_obj(dt);
         int                 rc = 0;
@@ -311,8 +278,7 @@ static int osp_declare_object_destroy(const struct lu_env *env,
 }
 
 static int osp_object_destroy(const struct lu_env *env,
-                         struct dt_object *dt,
-                         struct thandle *th)
+                              struct dt_object *dt, struct thandle *th)
 {
         struct osp_object  *o = dt2osp_obj(dt);
         int                 rc = 0;
@@ -328,7 +294,7 @@ static int osp_object_destroy(const struct lu_env *env,
 
 
         /* not needed in cache any more */
-        set_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags);
+        cfs_set_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags);
 
         RETURN(rc);
 }
@@ -343,7 +309,7 @@ struct dt_object_operations osp_obj_ops = {
 };
 
 static int osp_object_init(const struct lu_env *env, struct lu_object *o,
-                            const struct lu_object_conf *unused)
+                           const struct lu_object_conf *unused)
 {
         struct osp_object *po = lu2osp_obj(o);
 
@@ -379,7 +345,7 @@ static void osp_object_release(const struct lu_env *env, struct lu_object *o)
                 cfs_spin_unlock(&d->opd_pre_lock);
 
                 /* not needed in cache any more */
-                set_bit(LU_OBJECT_HEARD_BANSHEE, &o->lo_header->loh_flags);
+                cfs_set_bit(LU_OBJECT_HEARD_BANSHEE, &o->lo_header->loh_flags);
         }
 
 #if 0
@@ -416,7 +382,6 @@ static int osp_object_invariant(const struct lu_object *o)
 {
         LBUG();
 }
-
 
 struct lu_object_operations osp_lu_obj_ops = {
         .loo_object_init      = osp_object_init,

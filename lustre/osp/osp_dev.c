@@ -38,6 +38,7 @@
  * Lustre OST Proxy Device
  *
  * Author: Alex Zhuravlev <bzzz@sun.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #ifndef EXPORT_SYMTAB
@@ -46,18 +47,8 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <linux/module.h>
-#include <obd.h>
 #include <obd_class.h>
-#include <lustre_ver.h>
-#include <obd_support.h>
-#include <lprocfs_status.h>
-
-#include <lustre_disk.h>
-#include <lustre_fid.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
 #include <lustre_param.h>
-#include <lustre_fid.h>
 
 #include "osp_internal.h"
 
@@ -244,51 +235,40 @@ static const struct dt_device_operations osp_dt_ops = {
 
 static int osp_init_last_used(const struct lu_env *env, struct osp_device *m)
 {
-        struct dt_object_format  dof = { 0 };
-        struct dt_object        *o;
-        struct lu_fid            fid;
-        struct lu_attr           attr;
-        int                      rc;
-        struct lu_buf            lb;
-        obd_id                   tmp;
-        loff_t                   off;
+        struct osp_thread_info *osi = osp_env_info(env);
+        struct dt_object_format dof = { 0 };
+        struct dt_object       *o;
+        int                     rc;
         ENTRY;
 
-        memset(&attr, 0, sizeof(attr));
-        attr.la_valid = LA_MODE;
-        attr.la_mode = S_IFREG | 0666;
-        lu_local_obj_fid(&fid, MDD_LOV_OBJ_OID);
+        osi->osi_attr.la_valid = LA_MODE;
+        osi->osi_attr.la_mode = S_IFREG | 0666;
+        lu_local_obj_fid(&osi->osi_fid, MDD_LOV_OBJ_OID);
         dof.dof_type = DFT_REGULAR;
-        o = dt_find_or_create(env, m->opd_storage, &fid, &dof, &attr);
+        o = dt_find_or_create(env, m->opd_storage, &osi->osi_fid, &dof,
+                              &osi->osi_attr);
         if (IS_ERR(o))
                 RETURN(PTR_ERR(o));
 
-        m->opd_last_used_file = o;
-
-        rc = dt_attr_get(env, o, &attr, NULL);
+        rc = dt_attr_get(env, o, &osi->osi_attr, NULL);
         if (rc)
                 GOTO(out, rc);
 
-        if (attr.la_size >= sizeof(tmp) * (m->opd_index + 1)) {
-                lb.lb_buf = &tmp;
-                lb.lb_len = sizeof(tmp);
-                off = sizeof(tmp) * m->opd_index;
-                rc = o->do_body_ops->dbo_read(env, o, &lb, &off, BYPASS_CAPA);
-                if (rc < 0)
+        m->opd_last_used_file = o;
+        m->opd_last_used_id = 0;
+
+        if (osi->osi_attr.la_size >= sizeof(osi->osi_id) * (m->opd_index + 1)) {
+                osp_objid_buf_prep(osi, m->opd_index);
+                rc = dt_record_read(env, o, &osi->osi_lb, &osi->osi_off);
+                if (rc != 0)
                         GOTO(out, rc);
+                m->opd_last_used_id = le64_to_cpu(osi->osi_id);
         }
-
-        if (rc == sizeof(tmp)) {
-                m->opd_last_used_id = le64_to_cpu(tmp);
-        } else {
-                /* XXX: is this that simple? what if the file got corrupted? */
-                m->opd_last_used_id = 0;
-        }
-        rc = 0;
-
+        RETURN(0);
 out:
         /* object will be released in device cleanup path */
-
+        lu_object_put(env, &o->do_lu);
+        m->opd_last_used_file = NULL;
         RETURN(rc);
 }
 
@@ -302,9 +282,9 @@ static int osp_connect_to_osd(const struct lu_env *env, struct osp_device *m,
 
         LASSERT(m->opd_storage_exp == NULL);
 
-        OBD_ALLOC(data, sizeof(*data));
+        OBD_ALLOC_PTR(data);
         if (data == NULL)
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         obd = class_name2obd(nextdev);
         if (obd == NULL) {
@@ -312,7 +292,8 @@ static int osp_connect_to_osd(const struct lu_env *env, struct osp_device *m,
                 GOTO(out, rc = -ENOTCONN);
         }
 
-        rc = obd_connect(NULL, &m->opd_storage_exp, obd, &obd->obd_uuid, data, NULL);
+        rc = obd_connect(env, &m->opd_storage_exp, obd, &obd->obd_uuid, data,
+                         NULL);
         if (rc) {
                 CERROR("cannot connect to next dev %s (%d)\n", nextdev, rc);
                 GOTO(out, rc);
@@ -324,8 +305,7 @@ static int osp_connect_to_osd(const struct lu_env *env, struct osp_device *m,
         m->opd_storage = lu2dt_dev(m->opd_storage_exp->exp_obd->obd_lu_dev);
 
 out:
-        if (data)
-                OBD_FREE(data, sizeof(*data));
+        OBD_FREE_PTR(data);
         RETURN(rc);
 }
 
@@ -338,29 +318,34 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
         int                         rc;
         ENTRY;
 
-        dt_device_init(&m->opd_dt_dev, ldt);
+        m->opd_obd = class_name2obd(lustre_cfg_string(cfg, 0));
+        if (m->opd_obd == NULL) {
+                CERROR("Cannot find obd with name %s\n",
+                       lustre_cfg_string(cfg, 0));
+                RETURN(-ENODEV);
+        }
 
         if (sscanf(lustre_cfg_buf(cfg, 4), "%d", &m->opd_index) != 1) {
                 CERROR("can't find index in configuration\n");
                 RETURN(-EINVAL);
         }
 
+        m->opd_dt_dev.dd_lu_dev.ld_ops = &osp_lu_ops;
+        m->opd_dt_dev.dd_ops = &osp_dt_ops;
+        m->opd_obd->obd_lu_dev = &m->opd_dt_dev.dd_lu_dev;
+
         rc = osp_connect_to_osd(env, m, lustre_cfg_string(cfg, 3));
         if (rc)
-                RETURN(rc);
-
-        /* setup regular network client */
-        m->opd_obd = class_name2obd(lustre_cfg_string(cfg, 0));
-        LASSERT(m->opd_obd != NULL);
-        m->opd_obd->obd_lu_dev = &m->opd_dt_dev.dd_lu_dev;
+                GOTO(out_fini, rc);
 
         rc = ptlrpcd_addref();
         if (rc)
-                RETURN(rc);
+                GOTO(out_disconnect, rc);
+
         rc = client_obd_setup(m->opd_obd, cfg);
         if (rc) {
                 CERROR("can't setup obd: %d\n", rc);
-                GOTO(out, rc);
+                GOTO(out_ref, rc);
         }
 
         /* XXX: how do we do this well? */
@@ -375,22 +360,22 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
          */
         rc = osp_init_last_used(env, m);
         if (rc)
-                GOTO(out, rc);
+                GOTO(out_proc, rc);
 
         /*
          * Initialize precreation thread, it handles new connections as well
          */
         rc = osp_init_precreate(m);
         if (rc)
-                GOTO(out, rc);
+                GOTO(out_proc, rc);
 
         /*
          * Initialize synhronization mechanism taking care of propogating
          * changes to OST in near transactional manner
          */
-        rc = osp_sync_init(m);
+        rc = osp_sync_init(env, m);
         if (rc)
-                GOTO(out, rc);
+                GOTO(out_precreat, rc);
 
         /*
          * Initiate connect to OST
@@ -401,11 +386,26 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
         imp = m->opd_obd->u.cli.cl_import;
 
         rc = ptlrpc_init_import(imp);
-        LASSERT(rc == 0);
-
+        if (rc)
+                GOTO(out, rc);
+        RETURN(0);
 
 out:
-        /* XXX: release all resource in error case */
+        /* stop sync thread */
+        osp_sync_fini(m);
+out_precreat:
+        /* stop precreate thread */
+        osp_precreate_fini(m);
+out_proc:
+        ptlrpc_lprocfs_unregister_obd(m->opd_obd);
+        lprocfs_obd_cleanup(m->opd_obd);
+        client_obd_cleanup(m->opd_obd);
+out_ref:
+        ptlrpcd_decref();
+out_disconnect:
+        obd_disconnect(m->opd_storage_exp);
+out_fini:
+        dt_device_fini(&m->opd_dt_dev);
         RETURN(rc);
 }
 
@@ -434,13 +434,11 @@ static struct lu_device *osp_device_alloc(const struct lu_env *env,
                 int rc;
 
                 l = osp2lu_dev(m);
+                dt_device_init(&m->opd_dt_dev, t);
                 rc = osp_init0(env, m, t, lcfg);
                 if (rc != 0) {
                         osp_device_free(env, l);
                         l = ERR_PTR(rc);
-                } else {
-                        l->ld_ops = &osp_lu_ops;
-                        m->opd_dt_dev.dd_ops = &osp_dt_ops;
                 }
         }
         return l;
@@ -744,9 +742,20 @@ out:
 
 /* context key constructor/destructor: mdt_key_init, mdt_key_fini */
 LU_KEY_INIT_FINI(osp, struct osp_thread_info);
+static void osp_key_exit(const struct lu_context *ctx,
+                         struct lu_context_key *key, void *data)
+{
+        struct osp_thread_info *info = data;
 
-/* context key: osp_thread_key */
-LU_CONTEXT_KEY_DEFINE(osp, LCT_MD_THREAD);
+        info->osi_attr.la_valid = 0;
+}
+
+struct lu_context_key osp_thread_key = {
+        .lct_tags = LCT_MD_THREAD,
+        .lct_init = osp_key_init,
+        .lct_fini = osp_key_fini,
+        .lct_exit = osp_key_exit
+};
 
 /* context key constructor/destructor: mdt_txn_key_init, mdt_txn_key_fini */
 LU_KEY_INIT_FINI(osp_txn, struct osp_txn_info);
@@ -756,7 +765,6 @@ struct lu_context_key osp_txn_key = {
         .lct_init = osp_txn_key_init,
         .lct_fini = osp_txn_key_fini
 };
-
 LU_TYPE_INIT_FINI(osp, &osp_thread_key, &osp_txn_key);
 
 static struct lu_device_type_operations osp_device_type_ops = {
