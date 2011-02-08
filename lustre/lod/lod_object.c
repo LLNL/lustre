@@ -310,11 +310,9 @@ static int lod_xattr_get(const struct lu_env *env, struct dt_object *dt,
 
         if (rc == -ENODATA && dir && !strcmp(XATTR_NAME_LOV, name)) {
                 struct lov_user_md *lum = buf->lb_buf;
-                struct lod_device  *d;
-                struct lov_desc    *desc;
+                struct lod_device  *d = lu2lod_dev(dt->do_lu.lo_dev);
+                struct lov_desc    *desc = &(lod2lov(d)->desc);
 
-                d = lu2lod_dev(dt->do_lu.lo_dev);
-                desc = &d->lod_obd->u.lov.desc; 
                 rc = sizeof(struct lov_user_md_v1);
                 if (buf->lb_len >= sizeof(struct lov_user_md_v1)) {
                         lum->lmm_magic = LOV_USER_MAGIC_V1;
@@ -563,7 +561,7 @@ static int lod_cache_parent_striping(const struct lu_env *env,
                 GOTO(unlock, rc = 0);
         }
 
-        v1 = (struct lov_user_md_v1 *)lod_mti_get(env)->lti_ea_store;
+        v1 = (struct lov_user_md_v1 *)lod_env_info(env)->lti_ea_store;
         if (v1->lmm_magic == __swab32(LOV_USER_MAGIC_V1))
                 lustre_swab_lov_user_md_v1(v1);
         else if (v1->lmm_magic == __swab32(LOV_USER_MAGIC_V3))
@@ -614,7 +612,6 @@ static void lod_ah_init(const struct lu_env *env,
         ENTRY;
 
         LASSERT(child);
-        LASSERT(lod_mti_get(env));
         LASSERT(dt_write_locked(env, child));
 
         if (likely(parent)) {
@@ -690,7 +687,7 @@ static void lod_ah_init(const struct lu_env *env,
         /*
          * if the parent doesn't provide with specific pattern, grab fs-wide one
          */
-        desc = &d->lod_obd->u.lov.desc;
+        desc = &(lod2lov(d)->desc);
         if (lc->mbo_stripenr == 0)
                 lc->mbo_stripenr = desc->ld_default_stripe_count;
         if (lc->mbo_stripe_size == 0)
@@ -847,7 +844,6 @@ static int lod_declare_object_create(const struct lu_env *env,
                 /* to transfer default striping from the parent */
                 rc = dt_declare_xattr_set(env, next, &buf, XATTR_NAME_LOV, 0, th);
         }
-        
 
 out:
         RETURN(rc);

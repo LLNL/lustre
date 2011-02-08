@@ -143,6 +143,7 @@ test_9() {
 	do_facet client "rm $DIR/$tfile $DIR/$t2 $DIR/$t1" ||
 		error_noexit "Can't remove files"
 	do_facet client "rm $TMP/$t1 $TMP/$tfile"
+	sleep 5 # make sure bulk pause timeout is happened
 }
 run_test 9 "pause bulk on OST (bug 1420)"
 
