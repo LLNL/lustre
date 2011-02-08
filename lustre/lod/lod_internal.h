@@ -36,45 +36,50 @@
  * lustre/lod/lod_internal.h
  *
  * Author: Alex Zhuravlev <bzzz@sun.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #ifndef _LOD_INTERNAL_H
 #define _LOD_INTERNAL_H
 
-
+#include <libcfs/libcfs.h>
 #include <obd.h>
 #include <dt_object.h>
 
 #define LOV_USES_ASSIGNED_STRIPE        0
 #define LOV_USES_DEFAULT_STRIPE         1
 
-
-#define LOD_MAX_OSTNR                  1024  /* XXX: should be dynamic */
+#define LOD_MAX_OSTNR                  128  /* XXX: should be dynamic */
 #define LOD_BITMAP_SIZE                (LOD_MAX_OSTNR / sizeof(unsigned long) + 1)
 
-struct lod_device {
-        struct dt_device                 lod_dt_dev;
-        struct obd_export               *lod_child_exp;
-        struct dt_device                *lod_child;
-        struct obd_device               *lod_obd;
-        struct dt_txn_callback           lod_txn_cb;
-        cfs_proc_dir_entry_t            *lod_proc_entry;
-        struct lprocfs_stats            *lod_stats;
-        int                              lod_connects;
-        int                              lod_recovery_completed;
+struct lod_ost_desc {
+        struct dt_device  *ltd_ost;
+        struct obd_export *ltd_exp;
+        struct ltd_qos     ltd_qos; /* qos info per target */
+        struct obd_statfs  ltd_statfs;
+};
 
-        /* list of known OSTs */
-        struct dt_device                *lod_ost[LOD_MAX_OSTNR];
-        struct obd_export               *lod_ost_exp[LOD_MAX_OSTNR];
+struct lod_device {
+        struct dt_device      lod_dt_dev;
+        struct obd_export    *lod_child_exp;
+        struct dt_device     *lod_child;
+        cfs_proc_dir_entry_t *lod_proc_entry;
+        struct lprocfs_stats *lod_stats;
+        int                   lod_connects;
+        int                   lod_recovery_completed;
+
+        /* list of known OSTs, XXX: to be dynamic */
+        struct lod_ost_desc   lod_desc[LOD_MAX_OSTNR];
 
         /* bitmap of OSTs available */
-        unsigned long                    lod_ost_bitmap[LOD_BITMAP_SIZE];
+        unsigned long         lod_ost_bitmap[LOD_BITMAP_SIZE];
 
         /* number of known OSTs */
-        int                              lod_ostnr;
-        cfs_semaphore_t                  lod_mutex;
+        int                   lod_ostnr;
+        cfs_semaphore_t       lod_mutex;
         /* maximum EA size underlied OSD may have */
-        unsigned int                     lod_osd_max_easize;
+        unsigned int          lod_osd_max_easize;
+        struct lov_qos        lod_qos; /* qos info per lod */
 };
 
 /*
@@ -102,7 +107,6 @@ struct lod_object {
 
 struct lod_thread_info {
         /* array of OSTs selected in striping creation */
-        int     ost_arr[LOD_MAX_OSTNR];    /* XXX: should be dynamic */
         char   *lti_ea_store;              /* a buffer for lov ea */
         int     lti_ea_store_size;
 };
@@ -122,7 +126,17 @@ static inline struct lod_device* lu2lod_dev(struct lu_device *d)
 
 static inline struct lu_device *lod2lu_dev(struct lod_device *d)
 {
-        return (&d->lod_dt_dev.dd_lu_dev);
+        return &d->lod_dt_dev.dd_lu_dev;
+}
+
+static inline struct obd_device *lod2obd(struct lod_device *d)
+{
+        return d->lod_dt_dev.dd_lu_dev.ld_obd;
+}
+
+static inline struct lov_obd *lod2lov(struct lod_device *d)
+{
+        return &d->lod_dt_dev.dd_lu_dev.ld_obd->u.lov;
 }
 
 static inline struct lod_device *dt2lod_dev(struct dt_device *d)
@@ -173,12 +187,13 @@ static inline struct dt_object *dt_object_child(struct dt_object *o)
 
 extern struct lu_context_key lod_thread_key;
 
-static inline struct lod_thread_info *lod_mti_get(const struct lu_env *env)
+static inline struct lod_thread_info *lod_env_info(const struct lu_env *env)
 {
-        return lu_context_key_get(&env->le_ctx, &lod_thread_key);
+        struct lod_thread_info *info;
+        info = lu_context_key_get(&env->le_ctx, &lod_thread_key);
+        LASSERT(info);
+        return info;
 }
-
-
 
 /* lod_lov.c */
 int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
@@ -225,8 +240,8 @@ int lod_qos_prep_create(const struct lu_env *env, struct lod_object *lo,
 int lod_alloc_replay(const struct lu_env *env, struct lod_object *lo,
                      struct lu_attr *attr, const struct lu_buf *buf,
                      struct thandle *th);
-int qos_add_tgt(struct obd_device *obd, int index);
-int qos_del_tgt(struct obd_device *obd, int index);
+int qos_add_tgt(struct lod_device*, int);
+int qos_del_tgt(struct lod_device*, int);
 
 /* lproc_lod.c */
 extern struct file_operations lod_proc_target_fops;
