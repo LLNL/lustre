@@ -206,33 +206,31 @@ static int lod_rd_qos_priofree(char *page, char **start, off_t off, int count,
                                int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device*) data;
-        struct lov_obd *lov;
+        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
 
-        LASSERT(dev != NULL);
-        lov = &dev->u.lov;
+        LASSERT(lod != NULL);
         *eof = 1;
         return snprintf(page, count, "%d%%\n", 
-                        (lov->lov_qos.lq_prio_free * 100) >> 8);
+                        (lod->lod_qos.lq_prio_free * 100) >> 8);
 }
 
 static int lod_wr_qos_priofree(struct file *file, const char *buffer,
                                unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_obd *lov;
+        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
         int val, rc;
         LASSERT(dev != NULL);
 
-        lov = &dev->u.lov;
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
                 return rc;
 
         if (val > 100)
                 return -EINVAL;
-        lov->lov_qos.lq_prio_free = (val << 8) / 100;
-        lov->lov_qos.lq_dirty = 1;
-        lov->lov_qos.lq_reset = 1;
+        lod->lod_qos.lq_prio_free = (val << 8) / 100;
+        lod->lod_qos.lq_dirty = 1;
+        lod->lod_qos.lq_reset = 1;
         return count;
 }
 
@@ -240,24 +238,22 @@ static int lod_rd_qos_thresholdrr(char *page, char **start, off_t off,
                                   int count, int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device*) data;
-        struct lov_obd *lov;
+        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
 
         LASSERT(dev != NULL);
-        lov = &dev->u.lov;
         *eof = 1;
         return snprintf(page, count, "%d%%\n",
-                        (lov->lov_qos.lq_threshold_rr * 100) >> 8);
+                        (lod->lod_qos.lq_threshold_rr * 100) >> 8);
 }
 
 static int lod_wr_qos_thresholdrr(struct file *file, const char *buffer,
                                   unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_obd *lov;
+        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
         int val, rc;
         LASSERT(dev != NULL);
 
-        lov = &dev->u.lov;
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
                 return rc;
@@ -265,8 +261,8 @@ static int lod_wr_qos_thresholdrr(struct file *file, const char *buffer,
         if (val > 100 || val < 0)
                 return -EINVAL;
 
-        lov->lov_qos.lq_threshold_rr = (val << 8) / 100;
-        lov->lov_qos.lq_dirty = 1;
+        lod->lod_qos.lq_threshold_rr = (val << 8) / 100;
+        lod->lod_qos.lq_dirty = 1;
         return count;
 }
 
@@ -314,9 +310,9 @@ static int lod_wr_qos_maxage(struct file *file, const char *buffer,
         lustre_cfg_bufs_set_string(&bufs, 1, str);
         lcfg = lustre_cfg_new(LCFG_PARAM, &bufs);
         for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                if (d->lod_ost[i] == NULL)
+                if (d->lod_desc[i].ltd_ost == NULL)
                         continue;
-                next = &d->lod_ost[i]->dd_lu_dev;
+                next = &d->lod_desc[i].ltd_ost->dd_lu_dev;
                 rc = next->ld_ops->ldo_process_config(NULL, next, lcfg);
                 if (rc)
                         CERROR("can't set maxage on #%d: %d\n", i, rc);
@@ -370,7 +366,7 @@ static int lod_tgt_seq_show(struct seq_file *p, void *v)
         lov = &obd->u.lov;
 
         idx = tgt->ltd_index;
-        next = d->lod_ost[idx];
+        next = d->lod_desc[idx].ltd_ost;
         if (next == NULL)
                 return -EINVAL;
 

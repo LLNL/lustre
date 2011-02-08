@@ -43,26 +43,10 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
 #include <obd_class.h>
-#include <lustre_ver.h>
-#include <obd_support.h>
-#include <lprocfs_status.h>
-
-#include <lustre_disk.h>
-#include <lustre_fid.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
-#include <lustre_param.h>
-#include <lustre_fid.h>
 #include <obd_lov.h>
 
 #include "lod_internal.h"
-
-/* IDIF stuff */
-#include <lustre_fid.h>
-
 
 static int lov_add_target(struct lov_obd *lov, struct obd_device *tgt_obd,
                           __u32 index, int gen, int active)
@@ -73,12 +57,6 @@ static int lov_add_target(struct lov_obd *lov, struct obd_device *tgt_obd,
 
         LASSERT(lov);
         LASSERT(tgt_obd);
-
-        if (gen <= 0) {
-                CERROR("request to add OBD %s with invalid generation: %d\n",
-                       tgt_obd->obd_name, gen);
-                RETURN(-EINVAL);
-        }
 
         cfs_mutex_down(&lov->lov_lock);
 
@@ -159,14 +137,14 @@ static int lov_add_target(struct lov_obd *lov, struct obd_device *tgt_obd,
 }
 
 int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
-                        char *osp, unsigned index, unsigned gen)
+                       char *osp, unsigned index, unsigned gen)
 {
         struct obd_connect_data *data = NULL;
         struct obd_export       *exp = NULL;
         struct obd_device       *obd;
         struct lu_device        *ldev;
         struct dt_device        *d;
-        int                     rc;
+        int                      rc;
         ENTRY;
 
         CDEBUG(D_CONFIG, "osp:%s idx:%d gen:%d\n", osp, index, gen);
@@ -185,11 +163,11 @@ int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
 
         obd = class_name2obd(osp);
         if (obd == NULL) {
-                CERROR("can't find OSP\n");
+                CERROR("can't find %s device\n", osp);
                 RETURN(-EINVAL);
         }
 
-        OBD_ALLOC(data, sizeof(*data));
+        OBD_ALLOC_PTR(data);
         if (data == NULL)
                 RETURN(-ENOMEM);
         /* XXX: which flags we need on MDS? */
@@ -197,9 +175,10 @@ int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
         data->ocd_connect_flags |= OBD_CONNECT_INDEX;
         data->ocd_index = index;
 
-        rc = obd_connect(NULL, &exp, obd, &obd->obd_uuid, data, NULL);
+        rc = obd_connect(env, &exp, obd, &obd->obd_uuid, data, NULL);
         if (rc) {
-                CERROR("cannot connect to next dev %s (%d)\n", osp, rc);
+                CERROR("%s: cannot connect to next dev %s (%d)\n",
+                       obd->obd_name, osp, rc);
                 GOTO(out_free, rc);
         }
 
@@ -211,41 +190,36 @@ int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
 
         cfs_mutex_down(&m->lod_mutex);
 
-        rc = lov_add_target(&m->lod_obd->u.lov, obd, index, gen, 1);
+        if (m->lod_desc[index].ltd_ost != NULL) {
+                CERROR("device %d is registered already\n", index);
+                GOTO(out_mutex, rc = -EINVAL);
+        }
+
+        rc = lov_add_target(lod2lov(m), obd, index, gen, 1);
         if (rc) {
                 CERROR("can't add target: %d\n", rc);
-                GOTO(out, rc);
+                GOTO(out_mutex, rc);
         }
 
-        rc = qos_add_tgt(m->lod_obd, index);
+        rc = qos_add_tgt(m, index);
         if (rc) {
-                CERROR("can't add: %d\n", rc);
-                GOTO(out, rc);
+                CERROR("%s: qos_add failed, %d\n", obd->obd_name, rc);
+                OBD_FREE_PTR(obd->u.lov.lov_tgts[index]);
+                GOTO(out_mutex, rc);
         }
 
-        if (m->lod_ost[index] == NULL) {
-                m->lod_ost[index] = d;
-                m->lod_ost_exp[index] = exp;
-                m->lod_ostnr++;
-                set_bit(index, m->lod_ost_bitmap);
-                rc = 0;
-                if (m->lod_recovery_completed)
-                        ldev->ld_ops->ldo_recovery_complete(env, ldev); 
-        } else {
-                CERROR("device %d is registered already\n", index);
-                GOTO(out, rc = -EINVAL);
-        }
-
-out:
+        m->lod_desc[index].ltd_ost = d;
+        m->lod_desc[index].ltd_exp = exp;
+        m->lod_ostnr++;
+        cfs_set_bit(index, m->lod_ost_bitmap);
+        if (m->lod_recovery_completed)
+                ldev->ld_ops->ldo_recovery_complete(env, ldev);
+out_mutex:
         cfs_mutex_up(&m->lod_mutex);
-
-        if (rc) {
-                /* XXX: obd_disconnect(), qos_del_tgt(), lov_del_target() */
-        }
-
+        if (rc)
+                obd_disconnect(exp);
 out_free:
-        if (data)
-                OBD_FREE(data, sizeof(*data));
+        OBD_FREE_PTR(data);
         RETURN(rc);
 }
 
@@ -255,8 +229,7 @@ out_free:
  *
  */
 int lod_generate_and_set_lovea(const struct lu_env *env,
-                                struct lod_object *mo,
-                                struct thandle *th)
+                               struct lod_object *mo, struct thandle *th)
 {
         struct dt_object       *next = dt_object_child(&mo->mbo_obj);
         const struct lu_fid    *fid  = lu_object_fid(&mo->mbo_obj.do_lu);
@@ -319,7 +292,7 @@ int lod_generate_and_set_lovea(const struct lu_env *env,
 
 int lod_get_lov_ea(const struct lu_env *env, struct lod_object *mo)
 {
-        struct lod_thread_info *info = lod_mti_get(env);
+        struct lod_thread_info *info = lod_env_info(env);
         struct dt_object       *next = dt_object_child(&mo->mbo_obj);
         struct lu_buf           lb;
         int                     rc;
@@ -410,8 +383,8 @@ int lod_initialize_objects(const struct lu_env *env, struct lod_object *mo,
                  * is completed. to be changed to -EINVAL
                  */
 
-                LASSERTF(md->lod_ost[idx], "idx %d\n", idx);
-                nd = &md->lod_ost[idx]->dd_lu_dev;
+                LASSERTF(md->lod_desc[idx].ltd_ost, "idx %d\n", idx);
+                nd = &md->lod_desc[idx].ltd_ost->dd_lu_dev;
 
                 o = lu_object_find_at(env, nd, &fid, NULL);
                 if (IS_ERR(o))
@@ -480,7 +453,7 @@ out:
 int lod_load_striping(const struct lu_env *env, struct lod_object *mo)
 {
         struct dt_object       *next = dt_object_child(&mo->mbo_obj);
-        struct lod_thread_info *info = lod_mti_get(env);
+        struct lod_thread_info *info = lod_env_info(env);
         struct lu_buf           buf;
         int                     rc;
         ENTRY;
@@ -548,7 +521,7 @@ int lod_store_def_striping(const struct lu_env *env, struct dt_object *dt,
                                 mo->mbo_def_stripe_offset))
                 RETURN(0);
 
-        OBD_ALLOC(v3, sizeof(*v3));
+        OBD_ALLOC_PTR(v3);
         if (v3 == NULL)
                 RETURN(-ENOMEM);
 
@@ -566,7 +539,7 @@ int lod_store_def_striping(const struct lu_env *env, struct dt_object *dt,
         buf.lb_len = sizeof(*v3);
         rc = dt_xattr_set(env, next, &buf, XATTR_NAME_LOV, 0, th, BYPASS_CAPA);
 
-        OBD_FREE(v3, sizeof(*v3));
+        OBD_FREE_PTR(v3);
 
         RETURN(rc);
 }
@@ -615,7 +588,7 @@ void lod_fix_desc(struct lov_desc *desc)
         lod_fix_desc_qos_maxage(&desc->ld_qos_maxage);
 }
 
-int lod_lov_init(struct lod_device *m, struct lustre_cfg *lcfg)
+int lod_lov_init(struct lod_device *lod, struct lustre_cfg *lcfg)
 {
         struct lprocfs_static_vars  lvars = { 0 };
         struct obd_device          *obd;
@@ -624,10 +597,9 @@ int lod_lov_init(struct lod_device *m, struct lustre_cfg *lcfg)
         int                         rc;
         ENTRY;
 
-        m->lod_obd = class_name2obd(lustre_cfg_string(lcfg, 0));
-        LASSERT(m->lod_obd != NULL);
-        m->lod_obd->obd_lu_dev = &m->lod_dt_dev.dd_lu_dev;
-        obd = m->lod_obd;
+        obd = class_name2obd(lustre_cfg_string(lcfg, 0));
+        LASSERT(obd != NULL);
+        obd->obd_lu_dev = &lod->lod_dt_dev.dd_lu_dev;
         lov = &obd->u.lov;
 
         if (LUSTRE_CFG_BUFLEN(lcfg, 1) < 1) {
@@ -663,21 +635,23 @@ int lod_lov_init(struct lod_device *m, struct lustre_cfg *lcfg)
 
         cfs_sema_init(&lov->lov_lock, 1);
         cfs_atomic_set(&lov->lov_refcount, 0);
-        CFS_INIT_LIST_HEAD(&lov->lov_qos.lq_oss_list);
-        cfs_init_rwsem(&lov->lov_qos.lq_rw_sem);
         lov->lov_sp_me = LUSTRE_SP_CLI;
-        lov->lov_qos.lq_dirty = 1;
-        lov->lov_qos.lq_rr.lqr_dirty = 1;
-        lov->lov_qos.lq_reset = 1;
+
+
+        CFS_INIT_LIST_HEAD(&lod->lod_qos.lq_oss_list);
+        cfs_init_rwsem(&lod->lod_qos.lq_rw_sem);
+        lod->lod_qos.lq_dirty = 1;
+        lod->lod_qos.lq_rr.lqr_dirty = 1;
+        lod->lod_qos.lq_reset = 1;
         /* Default priority is toward free space balance */
-        lov->lov_qos.lq_prio_free = 232;
+        lod->lod_qos.lq_prio_free = 232;
         /* Default threshold for rr (roughly 17%) */
-        lov->lov_qos.lq_threshold_rr = 43;
+        lod->lod_qos.lq_threshold_rr = 43;
         /* Init statfs fields */
-        OBD_ALLOC_PTR(lov->lov_qos.lq_statfs_data);
-        if (NULL == lov->lov_qos.lq_statfs_data)
+        OBD_ALLOC_PTR(lod->lod_qos.lq_statfs_data);
+        if (NULL == lod->lod_qos.lq_statfs_data)
                 RETURN(-ENOMEM);
-        cfs_waitq_init(&lov->lov_qos.lq_statfs_waitq);
+        cfs_waitq_init(&lod->lod_qos.lq_statfs_waitq);
 
         lov->lov_pools_hash_body = cfs_hash_create("POOLS", HASH_POOLS_CUR_BITS,
                                                    HASH_POOLS_MAX_BITS,
@@ -691,7 +665,7 @@ int lod_lov_init(struct lod_device *m, struct lustre_cfg *lcfg)
         rc = lov_ost_pool_init(&lov->lov_packed, 0);
         if (rc)
                 RETURN(rc);
-        rc = lov_ost_pool_init(&lov->lov_qos.lq_rr.lqr_pool, 0);
+        rc = lov_ost_pool_init(&lod->lod_qos.lq_rr.lqr_pool, 0);
         if (rc) {
                 lov_ost_pool_free(&lov->lov_packed);
                 RETURN(rc);
@@ -712,13 +686,12 @@ int lod_lov_init(struct lod_device *m, struct lustre_cfg *lcfg)
         lov->lov_pool_proc_entry = lprocfs_register("pools",
                                                     obd->obd_proc_entry,
                                                     NULL, NULL);
-
         RETURN(rc);
 }
 
-int lod_lov_fini(struct lod_device *m)
+int lod_lov_fini(struct lod_device *lod)
 {
-        struct obd_device   *obd = m->lod_obd;
+        struct obd_device   *obd = lod2obd(lod);
         struct lov_obd      *lov = &obd->u.lov;
         cfs_list_t          *pos, *tmp;
         struct pool_desc    *pool;
@@ -733,15 +706,15 @@ int lod_lov_fini(struct lod_device *m)
                 lod_pool_del(obd, pool->pool_name);
         }
         cfs_hash_putref(lov->lov_pools_hash_body);
-        lov_ost_pool_free(&(lov->lov_qos.lq_rr.lqr_pool));
+        lov_ost_pool_free(&(lod->lod_qos.lq_rr.lqr_pool));
         lov_ost_pool_free(&lov->lov_packed);
 
         for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                exp = m->lod_ost_exp[i];
+                exp = lod->lod_desc[i].ltd_exp;
                 if (exp == NULL)
                         continue;
 
-                rc = qos_del_tgt(m->lod_obd, i);
+                rc = qos_del_tgt(lod, i);
                 LASSERT(rc == 0);
 
                 rc = obd_disconnect(exp);
@@ -761,7 +734,7 @@ int lod_lov_fini(struct lod_device *m)
         /* clear pools parent proc entry only after all pools is killed */
         lprocfs_obd_cleanup(obd);
 
-        OBD_FREE_PTR(lov->lov_qos.lq_statfs_data);
+        OBD_FREE_PTR(lod->lod_qos.lq_statfs_data);
 
         RETURN(0);
 }

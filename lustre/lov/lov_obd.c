@@ -790,21 +790,8 @@ int lov_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 
         cfs_sema_init(&lov->lov_lock, 1);
         cfs_atomic_set(&lov->lov_refcount, 0);
-        CFS_INIT_LIST_HEAD(&lov->lov_qos.lq_oss_list);
-        cfs_init_rwsem(&lov->lov_qos.lq_rw_sem);
         lov->lov_sp_me = LUSTRE_SP_CLI;
-        lov->lov_qos.lq_dirty = 1;
-        lov->lov_qos.lq_rr.lqr_dirty = 1;
-        lov->lov_qos.lq_reset = 1;
-        /* Default priority is toward free space balance */
-        lov->lov_qos.lq_prio_free = 232;
-        /* Default threshold for rr (roughly 17%) */
-        lov->lov_qos.lq_threshold_rr = 43;
         /* Init statfs fields */
-        OBD_ALLOC_PTR(lov->lov_qos.lq_statfs_data);
-        if (NULL == lov->lov_qos.lq_statfs_data)
-                RETURN(-ENOMEM);
-        cfs_waitq_init(&lov->lov_qos.lq_statfs_waitq);
 
         lov->lov_pools_hash_body = cfs_hash_create("POOLS", HASH_POOLS_CUR_BITS,
                                                    HASH_POOLS_MAX_BITS,
@@ -817,10 +804,7 @@ int lov_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
         lov->lov_pool_count = 0;
         rc = lov_ost_pool_init(&lov->lov_packed, 0);
         if (rc)
-                GOTO(out_free_statfs, rc);
-        rc = lov_ost_pool_init(&lov->lov_qos.lq_rr.lqr_pool, 0);
-        if (rc)
-                GOTO(out_free_lov_packed, rc);
+                RETURN(rc);
 
         lprocfs_lov_init_vars(&lvars);
         lprocfs_obd_setup(obd, lvars.obd_vars);
@@ -840,10 +824,6 @@ int lov_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 
         RETURN(0);
 
-out_free_lov_packed:
-        lov_ost_pool_free(&lov->lov_packed);
-out_free_statfs:
-        OBD_FREE_PTR(lov->lov_qos.lq_statfs_data);
         return rc;
 }
 EXPORT_SYMBOL(lov_setup);
@@ -885,7 +865,6 @@ static int lov_cleanup(struct obd_device *obd)
                 lov_pool_del(obd, pool->pool_name);
         }
         cfs_hash_putref(lov->lov_pools_hash_body);
-        lov_ost_pool_free(&(lov->lov_qos.lq_rr.lqr_pool));
         lov_ost_pool_free(&lov->lov_packed);
 
         if (lov->lov_tgts) {
@@ -916,7 +895,6 @@ static int lov_cleanup(struct obd_device *obd)
         /* clear pools parent proc entry only after all pools is killed */
         lprocfs_obd_cleanup(obd);
 
-        OBD_FREE_PTR(lov->lov_qos.lq_statfs_data);
         RETURN(0);
 }
 
