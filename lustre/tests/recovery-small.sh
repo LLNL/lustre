@@ -103,6 +103,7 @@ test_9() {
     do_facet client "cp $SAMPLE_FILE $DIR/${tfile}.2"  || return 2
     do_facet client "sync"
     do_facet client "rm $DIR/$tfile $DIR/${tfile}.2" || return 3
+    sleep 5 # make sure bulk pause timeout is happened
 }
 run_test 9 "pause bulk on OST (bug 1420)"
 
