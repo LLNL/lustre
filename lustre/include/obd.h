@@ -661,7 +661,6 @@ struct lov_tgt_desc {
         struct obd_uuid     ltd_uuid;
         struct obd_device  *ltd_obd;
         struct obd_export  *ltd_exp;
-        struct ltd_qos      ltd_qos;     /* qos info per target */
         __u32               ltd_gen;
         __u32               ltd_index;   /* index in lov_obd->tgts */
         unsigned long       ltd_active:1,/* is this target up for requests */
@@ -696,10 +695,7 @@ struct lov_obd {
                                                           array */
         cfs_mutex_t             lov_lock;
         struct obd_connect_data lov_ocd;
-        struct lov_qos          lov_qos;               /* qos info per lov */
         cfs_atomic_t            lov_refcount;
-        __u32                   lov_tgt_count;         /* how many OBD's */
-        __u32                   lov_active_tgt_count;  /* how many active */
         __u32                   lov_death_row;/* tgts scheduled to be deleted */
         __u32                   lov_tgt_size;   /* size of tgts array */
         int                     lov_connects;
