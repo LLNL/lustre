@@ -718,15 +718,6 @@ static inline int mdd_permission_internal_locked(const struct lu_env *env,
         return __mdd_permission_internal(env, obj, la, mask, role);
 }
 
-static inline int mdo_data_get(const struct lu_env *env,
-                               struct mdd_object *obj,
-                               void **data)
-{
-        struct dt_object *next = mdd_object_child(obj);
-        next->do_ops->do_data_get(env, next, data);
-        return 0;
-}
-
 /* mdd inline func for calling osd_dt_object ops */
 static inline int mdo_attr_get(const struct lu_env *env, struct mdd_object *obj,
                                struct lu_attr *la, struct lustre_capa *capa)

@@ -200,7 +200,6 @@ static int lod_root_get(const struct lu_env *env,
                         struct dt_device *dev, struct lu_fid *f)
 {
         struct lod_device *d = dt2lod_dev(dev);
-        LASSERT(d->lod_child);
         return dt_root_get(env, d->lod_child, f);
 }
 
@@ -208,7 +207,6 @@ static int lod_statfs(const struct lu_env *env,
                       struct dt_device *dev, struct obd_statfs *sfs)
 {
         struct lod_device *d = dt2lod_dev(dev);
-        LASSERT(d->lod_child);
         return dt_statfs(env, d->lod_child, sfs);
 }
 
@@ -216,7 +214,6 @@ static struct thandle *lod_trans_create(const struct lu_env *env,
                                         struct dt_device *dev)
 {
         struct lod_device *d = dt2lod_dev(dev);
-        LASSERT(d->lod_child);
         return dt_trans_create(env, d->lod_child);
 }
 
@@ -224,7 +221,6 @@ static int lod_trans_start(const struct lu_env *env, struct dt_device *dev,
                            struct thandle *th)
 {
         struct lod_device *d = dt2lod_dev(dev);
-        LASSERT(d->lod_child);
         return dt_trans_start(env, d->lod_child, th);
 }
 

@@ -78,13 +78,13 @@ static int mdd_xattr_get(const struct lu_env *env,
                          struct md_object *obj, struct lu_buf *buf,
                          const char *name);
 
+/* obsoleted, kept just to keep code compilable */
 int mdd_data_get(const struct lu_env *env, struct mdd_object *obj,
                  void **data)
 {
         LASSERTF(mdd_object_exists(obj), "FID is "DFID"\n",
                  PFID(mdd_object_fid(obj)));
-        mdo_data_get(env, obj, data);
-        return 0;
+        return -ENOTSUPP;
 }
 
 int mdd_la_get(const struct lu_env *env, struct mdd_object *obj,
@@ -2280,7 +2280,7 @@ static int mdd_object_sync(const struct lu_env *env, struct md_object *obj)
 
         LASSERT(mdd_object_exists(mdd_obj));
         next = mdd_object_child(mdd_obj);
-        return next->do_ops->do_object_sync(env, next);
+        return dt_object_sync(env, next);
 }
 
 static dt_obj_version_t mdd_version_get(const struct lu_env *env,
@@ -2289,7 +2289,7 @@ static dt_obj_version_t mdd_version_get(const struct lu_env *env,
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
 
         LASSERT(mdd_object_exists(mdd_obj));
-        return do_version_get(env, mdd_object_child(mdd_obj));
+        return dt_version_get(env, mdd_object_child(mdd_obj));
 }
 
 static void mdd_version_set(const struct lu_env *env, struct md_object *obj,
@@ -2298,7 +2298,7 @@ static void mdd_version_set(const struct lu_env *env, struct md_object *obj,
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
 
         LASSERT(mdd_object_exists(mdd_obj));
-        do_version_set(env, mdd_object_child(mdd_obj), version);
+        dt_version_set(env, mdd_object_child(mdd_obj), version);
 }
 
 const struct md_object_operations mdd_obj_ops = {

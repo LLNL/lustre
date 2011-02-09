@@ -231,11 +231,11 @@ out_free:
 int lod_generate_and_set_lovea(const struct lu_env *env,
                                struct lod_object *mo, struct thandle *th)
 {
+        struct lod_thread_info *info = lod_env_info(env);
         struct dt_object       *next = dt_object_child(&mo->mbo_obj);
         const struct lu_fid    *fid  = lu_object_fid(&mo->mbo_obj.do_lu);
         struct lov_mds_md_v1   *lmm;
         struct lov_ost_data_v1 *objs;
-        struct lu_buf           buf;
         __u32                   magic;
         int                     i, rc;
         ENTRY;
@@ -244,13 +244,13 @@ int lod_generate_and_set_lovea(const struct lu_env *env,
         LASSERT(mo->mbo_stripenr > 0);
 
         magic = mo->mbo_pool ? LOV_MAGIC_V3 : LOV_MAGIC_V1;
-        buf.lb_len = lov_mds_md_size(mo->mbo_stripenr, magic);
+        info->lti_buf.lb_len = lov_mds_md_size(mo->mbo_stripenr, magic);
 
         /* XXX: use thread info to save on allocation? */
-        OBD_ALLOC(lmm, buf.lb_len);
+        OBD_ALLOC(lmm, info->lti_buf.lb_len);
         if (lmm == NULL)
                 RETURN(-ENOMEM);
-        buf.lb_buf = lmm;
+        info->lti_buf.lb_buf = lmm;
 
         lmm->lmm_magic = cpu_to_le32(magic);
         lmm->lmm_pattern = cpu_to_le32(LOV_PATTERN_RAID0);
@@ -268,24 +268,23 @@ int lod_generate_and_set_lovea(const struct lu_env *env,
 
         for (i = 0; i < mo->mbo_stripenr; i++) {
                 const struct lu_fid *fid;
-                struct ost_id        ostid = { 0 };
 
                 LASSERT(mo->mbo_stripe[i]);
                 fid = lu_object_fid(&mo->mbo_stripe[i]->do_lu);
 
-                rc = fid_ostid_pack(fid, &ostid);
+                rc = fid_ostid_pack(fid, &info->lti_ostid);
                 LASSERT(rc == 0);
-                LASSERT(ostid.oi_seq == FID_SEQ_OST_MDT0);
+                LASSERT(info->lti_ostid.oi_seq == FID_SEQ_OST_MDT0);
 
-                objs[i].l_object_id  = cpu_to_le64(ostid.oi_id);
-                objs[i].l_object_seq = cpu_to_le64(ostid.oi_seq);
+                objs[i].l_object_id  = cpu_to_le64(info->lti_ostid.oi_id);
+                objs[i].l_object_seq = cpu_to_le64(info->lti_ostid.oi_seq);
                 objs[i].l_ost_gen    = cpu_to_le32(1); /* XXX */
                 objs[i].l_ost_idx    = cpu_to_le32(fid_idif_ost_idx(fid));
         }
 
-        rc = dt_xattr_set(env, next, &buf, XATTR_NAME_LOV, 0, th, BYPASS_CAPA);
+        rc = dt_xattr_set(env, next, &info->lti_buf, XATTR_NAME_LOV, 0, th, BYPASS_CAPA);
 
-        OBD_FREE(lmm, buf.lb_len);
+        OBD_FREE(lmm, info->lti_buf.lb_len);
 
         RETURN(rc);
 }
@@ -294,7 +293,6 @@ int lod_get_lov_ea(const struct lu_env *env, struct lod_object *mo)
 {
         struct lod_thread_info *info = lod_env_info(env);
         struct dt_object       *next = dt_object_child(&mo->mbo_obj);
-        struct lu_buf           lb;
         int                     rc;
         ENTRY;
 
@@ -312,9 +310,10 @@ int lod_get_lov_ea(const struct lu_env *env, struct lod_object *mo)
         }
 
 repeat:
-        lb.lb_buf = info->lti_ea_store;
-        lb.lb_len = info->lti_ea_store_size;
-        rc = dt_xattr_get(env, next, &lb, XATTR_NAME_LOV, BYPASS_CAPA);
+        info->lti_buf.lb_buf = info->lti_ea_store;
+        info->lti_buf.lb_len = info->lti_ea_store_size;
+        rc = dt_xattr_get(env, next, &info->lti_buf, XATTR_NAME_LOV,
+                          BYPASS_CAPA);
 
         /* if object is not striped or inaccessible */
         if (rc == -ENODATA)
@@ -323,7 +322,7 @@ repeat:
         if (rc == -ERANGE) {
                 /* EA doesn't fit, reallocate new buffer */
                 /* XXX: what's real limit? */
-                LASSERT(lb.lb_len <= 16 * 1024);
+                LASSERT(info->lti_buf.lb_len <= 16 * 1024);
                 if (info->lti_ea_store) {
                         LASSERT(info->lti_ea_store_size);
                         OBD_FREE(info->lti_ea_store, info->lti_ea_store_size);
@@ -331,10 +330,10 @@ repeat:
                         info->lti_ea_store_size = 0;
                 }
 
-                OBD_ALLOC(info->lti_ea_store, lb.lb_len * 2);
+                OBD_ALLOC(info->lti_ea_store, info->lti_buf.lb_len * 2);
                 if (info->lti_ea_store == NULL)
                         RETURN(-ENOMEM);
-                info->lti_ea_store_size = lb.lb_len * 2;
+                info->lti_ea_store_size = info->lti_buf.lb_len * 2;
 
                 GOTO(repeat, rc);
         }
@@ -349,11 +348,10 @@ repeat:
 int lod_initialize_objects(const struct lu_env *env, struct lod_object *mo,
                            struct lov_ost_data_v1 *objs)
 {
+        struct lod_thread_info *info = lod_env_info(env);
         struct lod_device  *md = lu2lod_dev(mo->mbo_obj.do_lu.lo_dev);
         struct lu_object   *o, *n;
         struct lu_device   *nd;
-        struct ost_id       ostid;
-        struct lu_fid       fid;
         int                 i, idx, rc = 0;
         ENTRY;
 
@@ -371,11 +369,11 @@ int lod_initialize_objects(const struct lu_env *env, struct lod_object *mo,
 
         for (i = 0; i < mo->mbo_stripenr; i++) {
 
-                ostid.oi_id = le64_to_cpu(objs[i].l_object_id);
+                info->lti_ostid.oi_id = le64_to_cpu(objs[i].l_object_id);
                 /* XXX: support for CMD? */
-                ostid.oi_seq = le64_to_cpu(objs[i].l_object_seq);
+                info->lti_ostid.oi_seq = le64_to_cpu(objs[i].l_object_seq);
                 idx = le64_to_cpu(objs[i].l_ost_idx);
-                fid_ostid_unpack(&fid, &ostid, idx);
+                fid_ostid_unpack(&info->lti_fid, &info->lti_ostid, idx);
 
                 /*
                  * XXX: assertion is left for testing, to make
@@ -386,7 +384,7 @@ int lod_initialize_objects(const struct lu_env *env, struct lod_object *mo,
                 LASSERTF(md->lod_desc[idx].ltd_ost, "idx %d\n", idx);
                 nd = &md->lod_desc[idx].ltd_ost->dd_lu_dev;
 
-                o = lu_object_find_at(env, nd, &fid, NULL);
+                o = lu_object_find_at(env, nd, &info->lti_fid, NULL);
                 if (IS_ERR(o))
                         GOTO(out, rc = PTR_ERR(o));
 
@@ -454,7 +452,6 @@ int lod_load_striping(const struct lu_env *env, struct lod_object *mo)
 {
         struct dt_object       *next = dt_object_child(&mo->mbo_obj);
         struct lod_thread_info *info = lod_env_info(env);
-        struct lu_buf           buf;
         int                     rc;
         ENTRY;
 
@@ -488,9 +485,9 @@ int lod_load_striping(const struct lu_env *env, struct lod_object *mo)
          * there is LOV EA (striping information) in this object
          * let's parse it and create in-core objects for the stripes
          */
-        buf.lb_buf = info->lti_ea_store;
-        buf.lb_len = info->lti_ea_store_size;
-        rc = lod_parse_striping(env, mo, &buf);
+        info->lti_buf.lb_buf = info->lti_ea_store;
+        info->lti_buf.lb_len = info->lti_ea_store_size;
+        rc = lod_parse_striping(env, mo, &info->lti_buf);
 
 out:
         RETURN(rc);
@@ -499,10 +496,10 @@ out:
 int lod_store_def_striping(const struct lu_env *env, struct dt_object *dt,
                            struct thandle *th)
 {
+        struct lod_thread_info *info = lod_env_info(env);
         struct lod_object     *mo = lod_dt_obj(dt);
         struct dt_object      *next = dt_object_child(dt);
         struct lov_user_md_v3 *v3;
-        struct lu_buf          buf;
         int                    rc;
         ENTRY;
 
@@ -535,9 +532,9 @@ int lod_store_def_striping(const struct lu_env *env, struct dt_object *dt,
         if (mo->mbo_pool)
                 strncpy(v3->lmm_pool_name, mo->mbo_pool, LOV_MAXPOOLNAME);
 
-        buf.lb_buf = v3;
-        buf.lb_len = sizeof(*v3);
-        rc = dt_xattr_set(env, next, &buf, XATTR_NAME_LOV, 0, th, BYPASS_CAPA);
+        info->lti_buf.lb_buf = v3;
+        info->lti_buf.lb_len = sizeof(*v3);
+        rc = dt_xattr_set(env, next, &info->lti_buf, XATTR_NAME_LOV, 0, th, BYPASS_CAPA);
 
         OBD_FREE_PTR(v3);
 

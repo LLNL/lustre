@@ -2536,16 +2536,6 @@ static void osd_object_version_set(const struct lu_env *env, struct dt_object *d
         inode->i_sb->s_op->dirty_inode(inode);
 }
 
-static int osd_data_get(const struct lu_env *env, struct dt_object *dt,
-                        void **data)
-{
-        struct osd_object *obj = osd_dt_obj(dt);
-        ENTRY;
-
-        *data = (void *)obj->oo_inode;
-        RETURN(0);
-}
-
 /*
  * Index operations.
  */
@@ -2697,7 +2687,6 @@ static const struct dt_object_operations osd_obj_ops = {
         .do_object_sync       = osd_object_sync,
         .do_version_get       = osd_object_version_get,
         .do_version_set       = osd_object_version_set,
-        .do_data_get          = osd_data_get,
 };
 
 /**
@@ -2735,7 +2724,6 @@ static const struct dt_object_operations osd_obj_ea_ops = {
         .do_object_sync       = osd_object_sync,
         .do_version_get  = osd_object_version_get,
         .do_version_set  = osd_object_version_set,
-        .do_data_get          = osd_data_get,
 };
 
 
