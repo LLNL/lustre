@@ -132,7 +132,7 @@ test_1b() { # former test_0b
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
     do_node $CLIENT1 mkdir -p -m 755 $MOUNT/$tdir
 
@@ -153,7 +153,7 @@ test_1c() { # former test_0c
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mkdir -p -m 755 $DIR/$tdir
@@ -218,7 +218,7 @@ test_2b() { # former test_0e
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mkdir -p -m 755 $DIR/$tdir
@@ -254,7 +254,7 @@ test_3b() { # former test_0g
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mkdir -p -m 755 $DIR/$tdir
@@ -308,7 +308,7 @@ test_4c() { # former test_0j
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mcreate $file
@@ -331,7 +331,7 @@ test_4d() { # former test_0k
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mcreate $file
@@ -369,7 +369,7 @@ test_4f() { # former test_0m
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 openfile -f O_RDWR:O_CREAT -m 0644 $file
@@ -421,7 +421,7 @@ test_4h() { # former test_0o
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 openfile -f O_RDWR:O_CREAT -m 0644 $file
@@ -449,8 +449,8 @@ test_4i() { # former test_0p
     local ad_orig
     local var=${SINGLEMDS}_svc
 
-    ad_orig=$(do_facet $SINGLEMDS "$LCTL get_param mdd.${!var}.atime_diff")
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.atime_diff=0"
+    ad_orig=$(do_facet $SINGLEMDS "$LCTL get_param mdd.${!var}-mdd.atime_diff")
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.atime_diff=0"
     do_node $CLIENT1 mcreate $file
     pre=$(get_version $CLIENT1 $file)
     do_node $CLIENT1 touch $file
@@ -489,8 +489,8 @@ test_4k() { # former test_0r
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.atime_diff=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.atime_diff=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 openfile -f O_RDWR:O_CREAT -m 0644 $file
@@ -546,7 +546,7 @@ test_5b() { # former test_0t
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mcreate $DIR/$tfile
@@ -569,7 +569,7 @@ test_5c() { # former test_0u
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 openfile -f O_RDWR:O_CREAT -m 0644 $DIR/$tfile
@@ -628,7 +628,7 @@ test_6c() { # former test_0x
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mcreate $DIR/$tfile
@@ -651,7 +651,7 @@ test_6d() { # former test_0y
     local var=${SINGLEMDS}_svc
     zconf_mount $CLIENT2 $MOUNT2
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mcreate $DIR/$tfile
@@ -683,7 +683,7 @@ test_7_cycle() {
     local cname=$TESTNAME.$cycle
 
     echo "start cycle: $cname"
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     do_node $CLIENT1 mkdir -p $DIR/$tdir
@@ -1001,7 +1001,7 @@ test_10b() { # former test_2b
     [ $CLIENTCOUNT -ge 2 ] || \
         { skip "Need two or more clients, have $CLIENTCOUNT" && exit 0; }
 
-    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}.sync_permission=0"
+    do_facet $SINGLEMDS "$LCTL set_param mdd.${!var}-mdd.sync_permission=0"
     do_facet $SINGLEMDS "$LCTL set_param mdt.${!var}.commit_on_sharing=0"
 
     zconf_mount $CLIENT1 $MOUNT
