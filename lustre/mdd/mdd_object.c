@@ -2219,7 +2219,7 @@ static int mdd_object_sync(const struct lu_env *env, struct md_object *obj)
                 return -ENOENT;
         }
         next = mdd_object_child(mdd_obj);
-        return next->do_ops->do_object_sync(env, next);
+        return dt_object_sync(env, next);
 }
 
 const struct md_object_operations mdd_obj_ops = {

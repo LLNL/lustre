@@ -444,13 +444,6 @@ struct dt_object_operations {
                                         struct lustre_capa *old,
                                         __u64 opc);
         int (*do_object_sync)(const struct lu_env *, struct dt_object *);
-        /**
-         * Get object info of next level. Currently, only get inode from osd.
-         * This is only used by quota b=16542
-         * precondition: dt_object_exists(dt);
-         */
-        int (*do_data_get)(const struct lu_env *env, struct dt_object *dt,
-                           void **data);
 };
 
 /**
@@ -766,6 +759,14 @@ void dt_version_set(const struct lu_env *env, struct dt_object *o,
                     dt_obj_version_t version, struct thandle *th);
 dt_obj_version_t dt_version_get(const struct lu_env *env, struct dt_object *o);
 
+static inline int dt_object_sync(const struct lu_env *env,
+                                 struct dt_object *o)
+{
+        LASSERT(o);
+        LASSERT(o->do_ops);
+        LASSERT(o->do_ops->do_object_sync);
+        return o->do_ops->do_object_sync(env, o);
+}
 
 int dt_record_read(const struct lu_env *env, struct dt_object *dt,
                    struct lu_buf *buf, loff_t *pos);

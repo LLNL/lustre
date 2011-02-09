@@ -107,8 +107,11 @@ struct lod_object {
 
 struct lod_thread_info {
         /* array of OSTs selected in striping creation */
-        char   *lti_ea_store;              /* a buffer for lov ea */
-        int     lti_ea_store_size;
+        char         *lti_ea_store;              /* a buffer for lov ea */
+        int           lti_ea_store_size;
+        struct lu_buf lti_buf;
+        struct ost_id lti_ostid;
+        struct lu_fid lti_fid;
 };
 
 extern const struct lu_device_operations lod_lu_ops;

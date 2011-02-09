@@ -2494,16 +2494,6 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt)
         RETURN(rc);
 }
 
-static int osd_data_get(const struct lu_env *env, struct dt_object *dt,
-                        void **data)
-{
-        struct osd_object *obj = osd_dt_obj(dt);
-        ENTRY;
-
-        *data = (void *)obj->oo_inode;
-        RETURN(0);
-}
-
 /*
  * Index operations.
  */
@@ -2665,7 +2655,6 @@ static const struct dt_object_operations osd_obj_ops = {
         .do_xattr_list        = osd_xattr_list,
         .do_capa_get          = osd_capa_get,
         .do_object_sync       = osd_object_sync,
-        .do_data_get          = osd_data_get,
 };
 
 /**
@@ -2699,7 +2688,6 @@ static const struct dt_object_operations osd_obj_ea_ops = {
         .do_xattr_list        = osd_xattr_list,
         .do_capa_get          = osd_capa_get,
         .do_object_sync       = osd_object_sync,
-        .do_data_get          = osd_data_get,
 };
 
 static int osd_index_declare_iam_delete(const struct lu_env *env,
