@@ -129,6 +129,7 @@ typedef struct
         cfs_sysctl_table_header_t *kib_sysctl;  /* sysctl interface */
 #endif
         char            **kib_qp_debug_upcall;
+        int              *kib_require_priv_port;/* use and allow only privileged ports */
 } kib_tunables_t;
 
 extern kib_tunables_t  kiblnd_tunables;

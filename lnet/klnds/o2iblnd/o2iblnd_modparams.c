@@ -124,6 +124,10 @@ static char *qp_debug_upcall = "";
 CFS_MODULE_PARM(qp_debug_upcall, "s", charp, 0444,
                 "upcall to run when ib timeout occurs");
 
+static int require_privileged_port = 1;
+CFS_MODULE_PARM(require_privileged_port, "i", int, 0644,
+                "use and require privileged ports for connection");
+
 kib_tunables_t kiblnd_tunables = {
         .kib_service                = &service,
         .kib_cksum                  = &cksum,
@@ -145,7 +149,8 @@ kib_tunables_t kiblnd_tunables = {
         .kib_fmr_flush_trigger      = &fmr_flush_trigger,
         .kib_fmr_cache              = &fmr_cache,
         .kib_pmr_pool_size          = &pmr_pool_size,
-        .kib_qp_debug_upcall        = &qp_debug_upcall
+        .kib_qp_debug_upcall        = &qp_debug_upcall,
+        .kib_require_priv_port      = &require_privileged_port
 };
 
 #if defined(CONFIG_SYSCTL) && !CFS_SYSFS_MODULE_PARM
