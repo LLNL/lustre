@@ -877,9 +877,8 @@ out:
  * Notify the MGS that this target is ready.
  * Used by IR - if the MGS receives this message, it will notify clients.
  */
-static int server_notify_target(struct super_block *sb, struct obd_device *obd)
+static int server_notify_target(struct lustre_sb_info *lsi, struct obd_device *obd)
 {
-        struct lustre_sb_info *lsi = s2lsi(sb);
         struct obd_device *mgc = lsi->lsi_mgc;
         struct mgs_target_info *mti = NULL;
         int rc;
@@ -990,7 +989,7 @@ static int server_start_targets(struct lustre_sb_info *lsi)
                               obd->obd_self_export, 0, NULL, NULL);
         }
 
-        server_notify_target(sb, obd);
+        server_notify_target(lsi, obd);
 
         /* calculate recovery timeout, do it after lustre_process_log */
         server_calc_timeout(lsi, obd);

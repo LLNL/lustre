@@ -56,7 +56,7 @@
 #include <obd_support.h>
 #include <lustre_disk.h>
 #include <lustre_lib.h>
-#include <lustre_fsfilt.h>
+#include <lustre_fid.h>
 #include <libcfs/list.h>
 #include "mgs_internal.h"
 
@@ -119,38 +119,13 @@ int mgs_client_free(struct obd_export *exp)
         return 0;
 }
 
-/* Same as mds_lvfs_fid2dentry */
-/* Look up an entry by inode number. */
-/* this function ONLY returns valid dget'd dentries with an initialized inode
-   or errors */
-static struct dentry *mgs_lvfs_fid2dentry(__u64 id, __u32 gen,
-                                          __u64 gr, void *data)
+int mgs_fs_setup(const struct lu_env *env, struct mgs_device *mgs)
 {
-        struct fsfilt_fid  fid;
-        struct obd_device *obd = (struct obd_device *)data;
-        ENTRY;
-
-        CDEBUG(D_DENTRY, "--> mgs_fid2dentry: ino/gen %lu/%u, sb %p\n",
-               (unsigned long)id, gen, obd->u.mgs.mgs_sb);
-
-        if (id == 0)
-                RETURN(ERR_PTR(-ESTALE));
-
-        fid.ino = id;
-        fid.gen = gen;
-
-        RETURN(fsfilt_fid2dentry(obd, obd->u.mgs.mgs_vfsmnt, &fid, 0));
-}
-
-struct lvfs_callback_ops mgs_lvfs_ops = {
-        l_fid2dentry:     mgs_lvfs_fid2dentry,
-};
-
-int mgs_fs_setup(struct obd_device *obd, struct vfsmount *mnt)
-{
-        struct mgs_obd *mgs = &obd->u.mgs;
-        struct lvfs_run_ctxt saved;
-        struct dentry *dentry;
+        struct obd_device       *obd = mgs->mgs_obd;
+        struct lu_fid            fid;
+        struct dt_object        *o;
+        struct lu_fid            rfid;
+        struct dt_object        *root;
         int rc;
         ENTRY;
 
@@ -159,66 +134,81 @@ int mgs_fs_setup(struct obd_device *obd, struct vfsmount *mnt)
         if (rc)
                 RETURN(rc);
 
-        mgs->mgs_vfsmnt = mnt;
-        mgs->mgs_sb = mnt->mnt_root->d_inode->i_sb;
-
-        rc = fsfilt_setup(obd, mgs->mgs_sb);
-        if (rc)
-                RETURN(rc);
-
         OBD_SET_CTXT_MAGIC(&obd->obd_lvfs_ctxt);
-        obd->obd_lvfs_ctxt.pwdmnt = mnt;
-        obd->obd_lvfs_ctxt.pwd = mnt->mnt_root;
-        obd->obd_lvfs_ctxt.fs = get_ds();
-        obd->obd_lvfs_ctxt.cb_ops = mgs_lvfs_ops;
+        obd->obd_lvfs_ctxt.dt = mgs->mgs_bottom;
 
-        push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
+        /* XXX: fix when support for N:1 layering is implemented */
+        LASSERT(mgs->mgs_dt_dev.dd_lu_dev.ld_site);
+        mgs->mgs_dt_dev.dd_lu_dev.ld_site->ls_top_dev = &mgs->mgs_dt_dev.dd_lu_dev;
 
         /* Setup the configs dir */
-        dentry = simple_mkdir(cfs_fs_pwd(current->fs), mnt, MOUNT_CONFIGS_DIR, 0777, 1);
-        if (IS_ERR(dentry)) {
-                rc = PTR_ERR(dentry);
-                CERROR("cannot create %s directory: rc = %d\n",
-                       MOUNT_CONFIGS_DIR, rc);
-                GOTO(err_pop, rc);
-        }
-        mgs->mgs_configs_dir = dentry;
+
+        fid.f_seq = FID_SEQ_LOCAL_FILE;
+        fid.f_oid = OSD_GENERATED_OID;
+        fid.f_ver = 0;
+        rc = local_oid_storage_init(env, mgs->mgs_bottom,
+                                    &mgs->mgs_dt_dev.dd_lu_dev,
+                                    &fid, &mgs->mgs_los);
+        if (rc)
+                GOTO(out, rc);
+
+        rc = dt_root_get(env, mgs->mgs_bottom, &rfid);
+        if (rc)
+                GOTO(out_los, rc);
+
+        root = dt_locate_at(env, mgs->mgs_bottom, &rfid,
+                            &mgs->mgs_dt_dev.dd_lu_dev);
+        if (unlikely(IS_ERR(root)))
+                GOTO(out_los, PTR_ERR(root));
+
+        o = local_file_find_or_create(env, mgs->mgs_los, root, MOUNT_CONFIGS_DIR,
+                                      S_IFDIR | S_IRUGO | S_IWUSR | S_IXUGO);
+        if (IS_ERR(o))
+                GOTO(out_root, rc = PTR_ERR(o));
+
+        mgs->mgs_configs_dir = o;
 
         /* create directory to store nid table versions */
-        dentry = simple_mkdir(cfs_fs_pwd(current->fs), mnt, MGS_NIDTBL_DIR,
-                              0777, 1);
-        if (IS_ERR(dentry)) {
-                rc = PTR_ERR(dentry);
-                CERROR("cannot create %s directory: rc = %d\n",
-                       MOUNT_CONFIGS_DIR, rc);
-                GOTO(err_pop, rc);
-        } else {
-                dput(dentry);
+        o = local_file_find_or_create(env, mgs->mgs_los, root, MGS_NIDTBL_DIR,
+                                      S_IFDIR | S_IRUGO | S_IWUSR | S_IXUGO);
+        if (IS_ERR(o)) {
+                lu_object_put(env, &mgs->mgs_configs_dir->do_lu);
+                mgs->mgs_configs_dir = NULL;
+                GOTO(out_root, rc = PTR_ERR(o));
         }
 
-err_pop:
-        pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
+        mgs->mgs_nidtbl_dir = o;
+
+out_root:
+        lu_object_put(env, &root->do_lu);
+out_los:
+        if (rc) {
+                local_oid_storage_fini(env, mgs->mgs_los);
+                mgs->mgs_los = NULL;
+        }
+out:
+        mgs->mgs_dt_dev.dd_lu_dev.ld_site->ls_top_dev = NULL;
         return rc;
 }
 
-int mgs_fs_cleanup(struct obd_device *obd)
+int mgs_fs_cleanup(const struct lu_env *env, struct mgs_device *mgs)
 {
-        struct mgs_obd *mgs = &obd->u.mgs;
-        struct lvfs_run_ctxt saved;
-        int rc = 0;
+        struct obd_device *obd = mgs->mgs_obd;
 
         class_disconnect_exports(obd); /* cleans up client info too */
 
-        push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
-
         if (mgs->mgs_configs_dir) {
-                l_dput(mgs->mgs_configs_dir);
+                lu_object_put(env, &mgs->mgs_configs_dir->do_lu);
                 mgs->mgs_configs_dir = NULL;
         }
+        if (mgs->mgs_nidtbl_dir) {
+                lu_object_put(env, &mgs->mgs_nidtbl_dir->do_lu);
+                mgs->mgs_nidtbl_dir = NULL;
+        }
+        if (mgs->mgs_los) {
+                local_oid_storage_fini(env, mgs->mgs_los);
+                mgs->mgs_los = NULL;
+        }
 
-        shrink_dcache_sb(mgs->mgs_sb);
-
-        pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
-
-        return rc;
+        return 0;
 }

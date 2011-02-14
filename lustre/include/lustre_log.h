@@ -107,6 +107,7 @@ struct llog_handle {
                 struct plain_handle_data phd;
                 struct cat_handle_data   chd;
         } u;
+        char                   *lgh_name;
         void                   *private_data;
 };
 
@@ -340,6 +341,7 @@ struct llog_ctxt {
         cfs_atomic_t             loc_refcount;
         void                    *llog_proc_cb;
         long                     loc_flags; /* flags, see above defines */
+        struct dt_object        *loc_dir;
 };
 
 #define LCM_NAME_SIZE 64

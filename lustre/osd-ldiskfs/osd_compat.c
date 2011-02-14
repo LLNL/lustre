@@ -531,13 +531,24 @@ int osd_compat_spec_insert(struct osd_thread_info *info,
         int                      seq;
         ENTRY;
 
-        if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
-            fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
+        if (fid_oid(fid) == OFD_LAST_RECV_OID) {
+                rc = osd_compat_add_entry(info, osd, root, LAST_RCVD, id,
+                                          th);
+        } else if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
+                   fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
                 /* on creation of LAST_ID we create O/<group> hierarchy */
                 LASSERT(map);
                 seq = fid_oid(fid) - OFD_GROUP0_LAST_OID;
                 LASSERT(seq < MAX_OBJID_GROUP);
                 LASSERT(map->groups[seq].groot);
+                rc = osd_compat_add_entry(info, osd, map->groups[seq].groot,
+                                          "LAST_ID", id, th);
+        } else if (fid_oid(fid) == OFD_LAST_GROUP_OID) {
+                /* on creation of LAST_GROUP we create legacy OST hierarchy */
+                rc = osd_compat_add_entry(info, osd, root, "LAST_GROUP", id,
+                                          th);
+        } else if (fid_oid(fid) == LLOG_CATALOGS_OID) {
+                rc = osd_compat_add_entry(info, osd, root, "CATALOGS", id, th);
         } else {
                 name = oid2name(fid_oid(fid));
                 if (name == NULL)
