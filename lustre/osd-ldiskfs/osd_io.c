@@ -87,13 +87,6 @@ static struct osd_device *osd_obj2dev(const struct osd_object *o)
         return osd_dev(o->oo_dt.do_lu.lo_dev);
 }
 
-extern struct lu_context_key osd_key;
-
-static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
-{
-        return lu_context_key_get(&env->le_ctx, &osd_key);
-}
-
 int osd_object_auth(const struct lu_env *env, struct dt_object *dt,
                     struct lustre_capa *capa, __u64 opc);
 

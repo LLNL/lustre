@@ -60,6 +60,7 @@ struct lu_fid;
 struct osd_thread_info;
 struct lu_site;
 struct thandle;
+struct osd_oi;
 
 struct dt_device;
 struct osd_device;
@@ -69,15 +70,6 @@ enum {
         OSD_OI_FID_NR
 };
 
-/*
- * Object Index (oi) instance.
- */
-struct osd_oi {
-        /*
-         * underlying index object, where fid->id mapping in stored.
-         */
-        struct dt_object *oi_dir;
-};
 
 /*
  * Storage cookie. Datum uniquely identifying inode on the underlying file

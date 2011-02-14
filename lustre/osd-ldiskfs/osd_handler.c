@@ -180,11 +180,6 @@ osd_pop_ctxt(struct osd_ctxt *save)
 }
 #endif
 
-static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
-{
-        return lu_context_key_get(&env->le_ctx, &osd_key);
-}
-
 /*
  * Concurrency: doesn't matter
  */
@@ -387,30 +382,6 @@ static void osd_object_free(const struct lu_env *env, struct lu_object *l)
 
         dt_object_fini(&obj->oo_dt);
         OBD_FREE_PTR(obj);
-}
-
-/**
- * IAM Iterator
- */
-static struct iam_path_descr *osd_it_ipd_get(const struct lu_env *env,
-                                             const struct iam_container *bag)
-{
-        return bag->ic_descr->id_ops->id_ipd_alloc(bag,
-                                           osd_oti_get(env)->oti_it_ipd);
-}
-
-static struct iam_path_descr *osd_idx_ipd_get(const struct lu_env *env,
-                                              const struct iam_container *bag)
-{
-        return bag->ic_descr->id_ops->id_ipd_alloc(bag,
-                                           osd_oti_get(env)->oti_idx_ipd);
-}
-
-static void osd_ipd_put(const struct lu_env *env,
-                        const struct iam_container *bag,
-                        struct iam_path_descr *ipd)
-{
-        bag->ic_descr->id_ops->id_ipd_free(ipd);
 }
 
 /*
@@ -3222,7 +3193,17 @@ struct osd_object *osd_object_find(const struct lu_env *env,
         struct lu_object         *luch;
         struct lu_object         *lo;
 
-        luch = lu_object_find(env, ludev, fid, NULL);
+        /*
+         * at this point topdev might not exist yet
+         * (i.e. MGS is preparing profiles). so we can
+         * not rely on topdev and instead lookup with
+         * our device passed as topdev. this can't work
+         * if the object isn't cached yet (as osd doesn't
+         * allocate lu_header). IOW, the object must be
+         * in the cache, otherwise lu_object_alloc() crashes
+         * -bzzz
+         */
+        luch = lu_object_find_at(env, ludev, fid, NULL);
         if (!IS_ERR(luch)) {
                 if (lu_object_exists(luch)) {
                         lo = lu_object_locate(luch->lo_header, ludev->ld_type);
@@ -4053,13 +4034,16 @@ static int osd_device_init(const struct lu_env *env, struct lu_device *d,
 
 static int osd_shutdown(const struct lu_env *env, struct osd_device *o)
 {
-        struct osd_thread_info *info = osd_oti_get(env);
         ENTRY;
+        /*
+         * this is mdt-mdd-lod-osd shutdown path (ioconfig)
+         * we release this object here because it still created
+         * with mdt topdev
+         */
         if (o->od_obj_area != NULL) {
                 lu_object_put(env, &o->od_obj_area->do_lu);
                 o->od_obj_area = NULL;
         }
-        osd_oi_fini(info, &o->od_oi);
 
         RETURN(0);
 }
@@ -4113,6 +4097,14 @@ static int osd_mount(const struct lu_env *env,
                 GOTO(out, rc);
         }
 
+        if (lvfs_check_rdonly(o->od_mnt->mnt_sb->s_bdev)) {
+                CERROR("Underlying device %s is marked as read-only. "
+                       "Setup failed\n", dev);
+                mntput(o->od_mnt);
+                o->od_mnt = NULL;
+                GOTO(out, rc = -EROFS);
+        }
+
         o->od_fsops = fsfilt_get_ops(mt_str(LDD_MT_LDISKFS));
         LASSERT(o->od_fsops);
 
@@ -4131,10 +4123,13 @@ out:
 static struct lu_device *osd_device_fini(const struct lu_env *env,
                                          struct lu_device *d)
 {
+        struct osd_thread_info *info = osd_oti_get(env);
         int rc;
         ENTRY;
 
         osd_compat_fini(osd_dev(d));
+
+        osd_oi_fini(info, &osd_dev(d)->od_oi);
 
         if (osd_dev(d)->od_mnt) {
                 shrink_dcache_sb(osd_sb(osd_dev(d)));
@@ -4161,59 +4156,89 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
         RETURN(NULL);
 }
 
+static int osd_device_init0(const struct lu_env *env,
+                            struct osd_device *o,
+                            struct lustre_cfg *cfg)
+{
+        struct osd_thread_info *info = osd_oti_get(env);
+        struct lu_device       *l = osd2lu_dev(o);
+        int                     rc;
+
+        l->ld_ops = &osd_lu_ops;
+        o->od_dt_dev.dd_ops = &osd_dt_ops;
+
+        cfs_spin_lock_init(&o->od_osfs_lock);
+        o->od_osfs_age = cfs_time_shift_64(-1000);
+        o->od_capa_hash = init_capa_hash();
+        if (o->od_capa_hash == NULL)
+                GOTO(out, rc = -ENOMEM);
+
+        /* XXX: probably better to move the code here? */
+        rc = osd_device_init(env, l, NULL, NULL);
+        if (rc)
+                GOTO(out_capa, rc);
+
+        o->od_iop_mode = 1;
+        o->od_read_cache = 1;
+        o->od_writethrough_cache = 1;
+        o->od_readcache_max_filesize = OSD_MAX_CACHE_SIZE;
+
+        rc = osd_mount(env, o, cfg);
+        if (rc)
+                GOTO(out_ctxt, rc);
+
+        /* 1. initialize oi before any file create or file open */
+        rc = osd_oi_init(info, &o->od_oi, o);
+        if (rc)
+                GOTO(out_mnt, rc);
+
+        rc = lu_site_init(&o->od_site, l);
+        if (rc)
+                GOTO(out_oi, rc);
+        o->od_site.ls_bottom_dev = l;
+
+        strncpy(o->od_svname, lustre_cfg_string(cfg, 4),
+                        sizeof(o->od_svname) - 1);
+
+        GOTO(out, rc);
+
+out_oi:
+        osd_oi_fini(info, &o->od_oi);
+out_mnt:
+        mntput(o->od_mnt);
+        o->od_mnt = NULL;
+out_ctxt:
+        lu_context_fini(&o->od_env_for_commit.le_ctx);
+out_capa:
+        if (o->od_capa_hash)
+                cleanup_capa_hash(o->od_capa_hash);
+
+out:
+        RETURN(rc);
+}
+
 static struct lu_device *osd_device_alloc(const struct lu_env *env,
                                           struct lu_device_type *t,
                                           struct lustre_cfg *cfg)
 {
-        struct lu_device  *l;
         struct osd_device *o;
         int                rc;
 
         OBD_ALLOC_PTR(o);
-        if (o != NULL) {
-                int result;
+        if (o == NULL)
+                return ERR_PTR(-ENOMEM);
 
-                result = dt_device_init(&o->od_dt_dev, t);
-                if (result == 0) {
-                        l = osd2lu_dev(o);
-                        l->ld_ops = &osd_lu_ops;
-                        o->od_dt_dev.dd_ops = &osd_dt_ops;
-                        cfs_spin_lock_init(&o->od_osfs_lock);
-                        o->od_osfs_age = cfs_time_shift_64(-1000);
-                        o->od_capa_hash = init_capa_hash();
-                        if (o->od_capa_hash == NULL) {
-                                dt_device_fini(&o->od_dt_dev);
-                                l = ERR_PTR(-ENOMEM);
-                        }
-                        /* XXX: make this function more readable */
-                        /* XXX: pass some name, device name? */
-                        rc = osd_device_init(env, l, NULL, NULL);
-                        o->od_iop_mode = 1;
-                        o->od_read_cache = 1;
-                        o->od_writethrough_cache = 1;
-                        o->od_readcache_max_filesize = OSD_MAX_CACHE_SIZE;
-                        rc = osd_mount(env, o, cfg);
-                        if (rc == 0) {
-                                lu_site_init(&o->od_site, l);
-                                o->od_site.ls_bottom_dev = l;
-                        } else {
-                                lu_context_fini(&o->od_env_for_commit.le_ctx);
-                                dt_device_fini(&o->od_dt_dev);
-                                l = ERR_PTR(rc);
-                        }
-                        strncpy(o->od_svname, lustre_cfg_string(cfg, 4),
-                                sizeof(o->od_svname) - 1);
-                } else
-                        l = ERR_PTR(result);
+        rc = dt_device_init(&o->od_dt_dev, t);
+        if (rc == 0) {
+                rc = osd_device_init0(env, o, cfg);
+                if (rc)
+                        dt_device_fini(&o->od_dt_dev);
+        }
 
-                if (IS_ERR(l)) {
-                        if (o->od_capa_hash)
-                                cleanup_capa_hash(o->od_capa_hash);
-                        OBD_FREE_PTR(o);
-                }
-        } else
-                l = ERR_PTR(-ENOMEM);
-        return l;
+        if (unlikely(rc != 0))
+                OBD_FREE_PTR(o);
+
+        return rc == 0 ? osd2lu_dev(o) : ERR_PTR(rc);
 }
 
 static struct lu_device *osd_device_free(const struct lu_env *env,
@@ -4225,6 +4250,7 @@ static struct lu_device *osd_device_free(const struct lu_env *env,
         cleanup_capa_hash(o->od_capa_hash);
         /* XXX: make osd top device in order to release reference */
         d->ld_site->ls_top_dev = d;
+        lu_site_purge(env, d->ld_site, -1);
         lu_site_fini(&o->od_site);
         dt_device_fini(&o->od_dt_dev);
         OBD_FREE_PTR(o);
@@ -4268,11 +4294,6 @@ static int osd_prepare(const struct lu_env *env,
         int result;
 
         ENTRY;
-        /* 1. initialize oi before any file create or file open */
-        result = osd_oi_init(oti, &osd->od_oi, osd);
-        if (result != 0)
-                RETURN(result);
-
         result = osd_procfs_init(osd, osd->od_svname);
         if (result != 0) {
                 CERROR("can't initialize procfs entry for %s\n", osd->od_svname);
@@ -4291,6 +4312,7 @@ static int osd_prepare(const struct lu_env *env,
                         goto out;
 
                 /* 3. open remote object dir */
+                /* XXX: use fixed fid */
                 d = dt_store_open(env, lu2dt_dev(dev), "",
                                 remote_obj_dir, &oti->oti_fid);
                 if (!IS_ERR(d)) {

@@ -161,12 +161,25 @@ enum dt_txn_op {
         DTO_NR
 };
 
-extern const int osd_dto_credits_noquota[DTO_NR];
-
 struct osd_directory {
         struct iam_container od_container;
         struct iam_descr     od_descr;
 };
+
+/*
+ * Object Index (oi) instance.
+ */
+struct osd_oi {
+        /*
+         * underlying index object, where fid->id mapping in stored.
+         */
+        //struct dt_object *oi_dir;
+        struct inode            *oi_inode;
+        struct osd_directory     oi_dir;
+};
+
+
+extern const int osd_dto_credits_noquota[DTO_NR];
 
 struct osd_object {
         struct dt_object       oo_dt;
@@ -419,6 +432,13 @@ struct osd_thread_info {
         char                   oti_ldp2[OSD_FID_REC_SZ];
 };
 
+extern struct lu_context_key osd_key;
+
+static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
+{
+        return lu_context_key_get(&env->le_ctx, &osd_key);
+}
+
 #ifdef LPROCFS
 enum {
         LPROC_OSD_READ_BYTES = 0,
@@ -513,6 +533,32 @@ static inline struct super_block *osd_sb(const struct osd_device *dev)
 }
 
 #define OSD_MAX_CACHE_SIZE OBD_OBJECT_EOF
+
+
+/**
+ * IAM Iterator
+ */
+static inline struct iam_path_descr *osd_it_ipd_get(const struct lu_env *env,
+                                             const struct iam_container *bag)
+{
+        return bag->ic_descr->id_ops->id_ipd_alloc(bag,
+                                           osd_oti_get(env)->oti_it_ipd);
+}
+
+static inline struct iam_path_descr *osd_idx_ipd_get(const struct lu_env *env,
+                                              const struct iam_container *bag)
+{
+        return bag->ic_descr->id_ops->id_ipd_alloc(bag,
+                                           osd_oti_get(env)->oti_idx_ipd);
+}
+
+static inline void osd_ipd_put(const struct lu_env *env,
+                        const struct iam_container *bag,
+                        struct iam_path_descr *ipd)
+{
+        bag->ic_descr->id_ops->id_ipd_free(ipd);
+}
+
 
 #endif /* __KERNEL__ */
 

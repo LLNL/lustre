@@ -607,15 +607,12 @@ int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
                            const struct lu_fid *fid, const struct osd_inode_id *id,
                            struct thandle *th)
 {
-        struct osd_compat_objid *map;
-        struct dentry           *root;
+        struct osd_compat_objid *map = osd->od_ost_map;
+        struct dentry           *root = osd_sb(osd)->s_root;
         int                      rc = 0;
         int                      group;
         ENTRY;
 
-        map = osd->od_ost_map;
-        LASSERT(map);
-        root = osd_sb(osd)->s_root;
 
         if (fid_oid(fid) == OFD_LAST_RECV_OID) {
                 rc = osd_compat_add_entry(info, osd, root, "last_rcvd", id, th);
@@ -623,6 +620,7 @@ int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
         } else if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
                         fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
                 /* on creation of LAST_ID we create O/<group> hierarchy */
+                LASSERT(map);
                 group = fid_oid(fid) - OFD_GROUP0_LAST_OID;
                 rc = osd_compat_load_or_make_group(osd, group);
                 if (rc)
@@ -634,8 +632,9 @@ int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
                 /* on creation of LAST_GROUP we create legacy OST hierarchy */
                 rc = osd_compat_add_entry(info, osd, root, "LAST_GROUP", id, th);
         } else if (fid_oid(fid) == LLOG_CATALOGS_OID) {
-                /* on creation of LAST_GROUP we create legacy OST hierarchy */
                 rc = osd_compat_add_entry(info, osd, root, "CATALOGS", id, th);
+        } else if (fid_oid(fid) == MGS_CONFIGS_OID) {
+                rc = osd_compat_add_entry(info, osd, root, "CONFIGS", id, th);
 #if 0
         } else if (fid_oid(fid) == QUOTA_SLAVE_UID_OID) {
                 /* on creation of user quota file we create legacy OST hierarchy */
@@ -654,41 +653,28 @@ cleanup:
         RETURN(rc);
 }
 
-#if 0
 int osd_compat_spec_lookup(struct osd_thread_info *info, struct osd_device *osd,
                            const struct lu_fid *fid, struct osd_inode_id *id)
 {
-        struct osd_compat_objid       *map;
-        int                            rc = 0;
-        int                            group;
+        struct dentry *dentry;
+        int            rc = -ERESTART;
         ENTRY;
 
-        map = osd->od_ost_map;
-        LASSERT(map);
-        LASSERT(map->root);
-
-        CERROR("spec lookup for %lu\n", (unsigned long) fid_oid(fid));
-        if (fid_oid(fid) == OFD_LAST_RECV_OID) {
-                /* last_rcvd */
-                *id = map->last_rcvd_id;
-
-        } else if (fid_oid(fid) >= OFD_GROUP0_LAST_ID &&
-                        fid_oid(fid) >= OFD_GROUP4K_LAST_ID) {
-                /* LAST_ID: up on first access directory structure is created */
-                CERROR("access to group %d\n", group);
-                group = fid_oid(fid) - OFD_GROUP0_LAST_ID;
-                rc = osd_compat_objid_init_group(dev, group);
-                if (rc == 0)
-                        *id = map->groups[group].grp->last_id;
-
-        } else if (fid_oid(fid) == OFD_LAST_GROUP) {
-                *id = map->last_group_id;
-        } else {
-                /* unknown special file: probably OI can handle this */
-                rc = -ERESTART;
-
+        if (fid_oid(fid) == MGS_CONFIGS_OID) {
+                dentry = ll_lookup_one_len("CONFIGS", osd_sb(osd)->s_root, 7);
+                if (!IS_ERR(dentry)) {
+                        if (dentry->d_inode) {
+                                if (is_bad_inode(dentry->d_inode)) {
+                                        rc = -EIO;
+                                } else {
+                                        id->oii_ino = dentry->d_inode->i_ino;
+                                        id->oii_gen = dentry->d_inode->i_generation;
+                                        rc = 0;
+                                }
+                        }
+                        dput(dentry);
+                }
         }
         RETURN(rc);
 }
-#endif
 

@@ -496,19 +496,6 @@ struct client_obd {
 
 #define CL_NOT_QUOTACHECKED 1   /* client->cl_qchk_stat init value */
 
-struct mgs_obd {
-        struct obd_device_target         mgs_obt;
-        struct ptlrpc_service           *mgs_service;
-        struct vfsmount                 *mgs_vfsmnt;
-        struct super_block              *mgs_sb;
-        struct dentry                   *mgs_configs_dir;
-        cfs_list_t                       mgs_fs_db_list;
-        cfs_semaphore_t                  mgs_sem;
-        cfs_proc_dir_entry_t            *mgs_proc_live;
-        struct dt_device                *mgs_osd;
-        struct obd_export               *mgs_osd_exp;
-};
-
 struct dt_object;
 struct dt_device;
 
@@ -1032,7 +1019,6 @@ struct obd_device {
                 struct echo_obd echo;
                 struct lov_obd lov;
                 struct lmv_obd lmv;
-                struct mgs_obd mgs;
         } u;
         /* Fields used by LProcFS */
         unsigned int           obd_cntr_base;
