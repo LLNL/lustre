@@ -696,7 +696,6 @@ struct local_oid_storage {
         /* how many handle's reference this los has */
         cfs_atomic_t      los_refcount;
         struct dt_device *los_dev;
-        struct lu_device *los_top; /* top might differ from lu_site top */
         struct dt_object *los_obj;
 
         /* data used to generate new fids */
@@ -824,7 +823,6 @@ int dt_lookup_dir(const struct lu_env *env, struct dt_object *dir,
                   const char *name, struct lu_fid *fid);
 
 int local_oid_storage_init(const struct lu_env *env, struct dt_device *dev,
-                           struct lu_device *top,
                            const struct lu_fid *first_fid,
                            struct local_oid_storage **los);
 void local_oid_storage_fini(const struct lu_env *env,
@@ -843,6 +841,12 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
                                             struct local_oid_storage *los,
                                             struct dt_object *parent,
                                             const char *name, __u32 mode);
+struct dt_object *local_file_find_or_create_with_fid(const struct lu_env *env,
+						     struct dt_device *dt,
+						     const struct lu_fid *fid,
+						     struct dt_object *parent,
+						     const char *name,
+						     __u32 mode);
 
 static inline int dt_object_sync(const struct lu_env *env,
                                  struct dt_object *o)
@@ -1378,5 +1382,33 @@ static inline int dt_lookup(const struct lu_env *env,
 }
 
 #define LU221_BAD_TIME (0x80000000U + 24 * 3600)
+
+struct dt_find_hint {
+        struct lu_fid        *dfh_fid;
+        struct dt_device     *dfh_dt;
+        struct dt_object     *dfh_o;
+};
+
+struct dt_thread_info {
+        char                     dti_buf[DT_MAX_PATH];
+        struct dt_find_hint      dti_dfh;
+        struct lu_attr           dti_attr;
+        struct lu_fid            dti_fid;
+        struct dt_object_format  dti_dof;
+        struct lustre_mdt_attrs  dti_lma;
+        struct lu_buf            dti_lb;
+        loff_t                   dti_off;
+};
+
+extern struct lu_context_key dt_key;
+
+static inline struct dt_thread_info *dt_info(const struct lu_env *env)
+{
+        struct dt_thread_info *dti;
+
+        dti = lu_context_key_get(&env->le_ctx, &dt_key);
+        LASSERT(dti);
+        return dti;
+}
 
 #endif /* __LUSTRE_DT_OBJECT_H */

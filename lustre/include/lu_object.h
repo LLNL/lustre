@@ -723,6 +723,7 @@ static inline int lu_object_is_dying(const struct lu_object_header *h)
 }
 
 void lu_object_put(const struct lu_env *env, struct lu_object *o);
+void lu_object_die_put(const struct lu_env *env, struct lu_object *o);
 
 int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr);
 

@@ -501,6 +501,7 @@ int mdd_changelog_write_header(struct mdd_device *mdd, int markerflags)
         RETURN(rc);
 }
 #endif
+
 /**
  * Create ".lustre" directory.
  */
@@ -527,7 +528,6 @@ static int create_dot_lustre_dir(const struct lu_env *env, struct mdd_device *m)
 
         return 0;
 }
-
 
 static int dot_lustre_mdd_permission(const struct lu_env *env,
                                      struct md_object *pobj,
@@ -1006,11 +1006,9 @@ out:
 /** Setup ".lustre" directory object */
 static int mdd_dot_lustre_setup(const struct lu_env *env, struct mdd_device *m)
 {
-        struct dt_object *dt_dot_lustre;
-        struct lu_fid *fid = &mdd_env_info(env)->mti_fid;
         int rc;
 
-        rc = create_dot_lustre_dir(env, m);
+        rc = create_dot_lustre_dir(env, m)
         if (rc)
                 return rc;
 
@@ -1024,7 +1022,6 @@ static int mdd_dot_lustre_setup(const struct lu_env *env, struct mdd_device *m)
         /* references are released in mdd_device_shutdown() */
         m->mdd_dot_lustre = lu2mdd_obj(lu_object_locate(dt_dot_lustre->do_lu.lo_header,
                                                         &mdd_device_type));
-
         m->mdd_dot_lustre->mod_obj.mo_dir_ops = &mdd_dot_lustre_dir_ops;
         m->mdd_dot_lustre->mod_obj.mo_ops = &mdd_dot_lustre_obj_ops;
 
@@ -1032,8 +1029,21 @@ static int mdd_dot_lustre_setup(const struct lu_env *env, struct mdd_device *m)
         if (rc)
                 CERROR("Error initializing \"fid\" object - %d.\n", rc);
 
-out:
-        RETURN(rc);
+        return rc;
+}
+
+static void mdd_device_shutdown(const struct lu_env *env, struct mdd_device *m,
+                                struct lustre_cfg *cfg)
+{
+        mdd_changelog_fini(env, m);
+        orph_index_fini(env, m);
+        if (m->mdd_dot_lustre_objs.mdd_obf)
+                mdd_object_put(env, m->mdd_dot_lustre_objs.mdd_obf);
+        if (m->mdd_dot_lustre)
+                mdd_object_put(env, m->mdd_dot_lustre);
+	if (m->mdd_los != NULL)
+		local_oid_storage_fini(env, m->mdd_los);
+        lu_site_purge(env, mdd2lu_dev(m)->ld_site, ~0);
 }
 
 static int mdd_process_config(const struct lu_env *env,
@@ -1160,7 +1170,7 @@ static int mdd_prepare(const struct lu_env *env,
 	}
 
 out:
-	return rc;
+	RETURN(rc);
 }
 
 const struct lu_device_operations mdd_lu_ops = {

@@ -66,6 +66,7 @@ struct lu_fid;
 struct osd_thread_info;
 struct lu_site;
 struct thandle;
+struct osd_oi;
 
 struct dt_device;
 struct osd_device;

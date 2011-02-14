@@ -140,6 +140,7 @@ struct mdd_device {
 	unsigned int			 mdd_sync_permission;
 	struct dt_object		*mdd_objid;
 	int				 mdd_connects;
+	struct local_oid_storage        *mdd_los;
 };
 
 enum mod_flags {

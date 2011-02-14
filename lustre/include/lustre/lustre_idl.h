@@ -424,7 +424,7 @@ enum fid_seq {
 	/* sequence is used for local named objects FIDs generated
 	 * by local_object_storage library */
 	FID_SEQ_LOCAL_NAME = 0x200000003ULL,
-	FID_SEQ_LLOG_OBJ   = 0x200000004ULL,
+	FID_SEQ_SPECIAL    = 0x200000004ULL,
         FID_SEQ_QUOTA      = 0x200000005ULL,
         FID_SEQ_QUOTA_GLB  = 0x200000006ULL,
         FID_SEQ_NORMAL     = 0x200000400ULL,

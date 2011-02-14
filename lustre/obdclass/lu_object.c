@@ -156,6 +156,18 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
 EXPORT_SYMBOL(lu_object_put);
 
 /**
+ * Put object and don't keep in cache. This is temporary solution for
+ * multi-site objects when its layering is not constant.
+ */
+void lu_object_die_put(const struct lu_env *env, struct lu_object *o)
+{
+	cfs_set_bit(LU_OBJECT_HEARD_BANSHEE,
+		    &o->lo_header->loh_flags);
+	return lu_object_put(env, o);
+}
+EXPORT_SYMBOL(lu_object_die_put);
+
+/**
  * Allocate new object.
  *
  * This follows object creation protocol, described in the comment within
@@ -185,6 +197,7 @@ static struct lu_object *lu_object_alloc(const struct lu_env *env,
          * after this point.
          */
         LASSERT(fid_is_igif(f) || fid_is_idif(f) || fid_ver(f) == 0);
+	LASSERT(top->lo_header != NULL);
         top->lo_header->loh_fid = *f;
         layers = &top->lo_header->loh_layers;
         do {
@@ -235,6 +248,7 @@ static void lu_object_free(const struct lu_env *env, struct lu_object *o)
         site   = o->lo_dev->ld_site;
         layers = &o->lo_header->loh_layers;
         bkt    = lu_site_bkt_from_fid(site, &o->lo_header->loh_fid);
+
         /*
          * First call ->loo_object_delete() method to release all resources.
          */

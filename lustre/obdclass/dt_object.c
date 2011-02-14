@@ -50,41 +50,16 @@
 #include <lustre_fid.h>
 #include <lquota.h>
 
-struct dt_find_hint {
-        struct lu_fid        *dfh_fid;
-        struct dt_device     *dfh_dt;
-        struct dt_object     *dfh_o;
-};
-
-struct dt_thread_info {
-        char                     dti_buf[DT_MAX_PATH];
-        struct dt_find_hint      dti_dfh;
-        struct lu_attr           dti_attr;
-        struct lu_fid            dti_fid;
-        struct dt_object_format  dti_dof;
-        struct lustre_mdt_attrs  dti_lma;
-        struct lu_buf            dti_lb;
-        loff_t                   dti_off;
-};
-
 /* context key constructor/destructor: dt_global_key_init, dt_global_key_fini */
 LU_KEY_INIT(dt_global, struct dt_thread_info);
 LU_KEY_FINI(dt_global, struct dt_thread_info);
 
-static struct lu_context_key dt_key = {
+struct lu_context_key dt_key = {
         .lct_tags = LCT_MD_THREAD | LCT_DT_THREAD | LCT_MG_THREAD | LCT_LOCAL,
         .lct_init = dt_global_key_init,
         .lct_fini = dt_global_key_fini
 };
-
-static inline struct dt_thread_info *dt_info(const struct lu_env *env)
-{
-        struct dt_thread_info *dti;
-
-        dti = lu_context_key_get(&env->le_ctx, &dt_key);
-        LASSERT(dti);
-        return dti;
-}
+EXPORT_SYMBOL(dt_key);
 
 /* no lock is necessary to protect the list, because call-backs
  * are added during system startup. Please refer to "struct dt_device".
