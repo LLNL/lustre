@@ -187,8 +187,6 @@ enum dt_txn_op {
         DTO_NR
 };
 
-extern const int osd_dto_credits_noquota[DTO_NR];
-
 struct osd_directory {
         struct iam_container od_container;
         struct iam_descr     od_descr;
@@ -205,6 +203,8 @@ struct osd_oi {
         struct inode            *oi_inode;
         struct osd_directory     oi_dir;
 };
+
+extern const int osd_dto_credits_noquota[DTO_NR];
 
 struct osd_object {
         struct dt_object       oo_dt;
@@ -502,6 +502,12 @@ struct osd_thread_info {
 };
 
 extern int ldiskfs_pdo;
+extern struct lu_context_key osd_key;
+
+static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
+{
+        return lu_context_key_get(&env->le_ctx, &osd_key);
+}
 
 #ifdef LPROCFS
 enum {
@@ -604,6 +610,30 @@ static inline struct osd_oi *osd_fid2oi(struct osd_device *osd,
         LASSERT(!fid_is_igif(fid));
         LASSERT(osd->od_oi_table != NULL && osd->od_oi_count >= 1);
         return &osd->od_oi_table[fid->f_seq % osd->od_oi_count];
+}
+
+/**
+ * IAM Iterator
+ */
+static inline struct iam_path_descr *osd_it_ipd_get(const struct lu_env *env,
+                                             const struct iam_container *bag)
+{
+        return bag->ic_descr->id_ops->id_ipd_alloc(bag,
+                                           osd_oti_get(env)->oti_it_ipd);
+}
+
+static inline struct iam_path_descr *osd_idx_ipd_get(const struct lu_env *env,
+                                              const struct iam_container *bag)
+{
+        return bag->ic_descr->id_ops->id_ipd_alloc(bag,
+                                           osd_oti_get(env)->oti_idx_ipd);
+}
+
+static inline void osd_ipd_put(const struct lu_env *env,
+                        const struct iam_container *bag,
+                        struct iam_path_descr *ipd)
+{
+        bag->ic_descr->id_ops->id_ipd_free(ipd);
 }
 
 #endif /* __KERNEL__ */

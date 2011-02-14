@@ -257,30 +257,29 @@ struct config_llog_data *do_config_log_add(struct obd_device *obd,
 static struct config_llog_data *config_recover_log_add(struct obd_device *obd,
         char *fsname,
         struct config_llog_instance *cfg,
-        struct super_block *sb)
+        struct lustre_sb_info *lsi)
 {
         struct config_llog_instance lcfg = *cfg;
-        struct lustre_sb_info *lsi = s2lsi(sb);
         struct config_llog_data *cld;
         char logname[32];
 
-        if ((lsi->lsi_flags & LSI_SERVER) && IS_OST(lsi->lsi_ldd))
+        if (IS_OST(lsi))
                 return NULL;
 
         /* we have to use different llog for clients and mdts for cmd
          * where only clients are notified if one of cmd server restarts */
         LASSERT(strlen(fsname) < sizeof(logname) / 2);
         strcpy(logname, fsname);
-        if (lsi->lsi_flags & LSI_SERVER) { /* mdt */
+        if (IS_MDT(lsi)) { /* mdt */
                 LASSERT(lcfg.cfg_instance == NULL);
-                lcfg.cfg_instance = sb;
+                lcfg.cfg_instance = lsi;
                 strcat(logname, "-mdtir");
         } else {
                 LASSERT(lcfg.cfg_instance != NULL);
                 strcat(logname, "-cliir");
         }
 
-        cld = do_config_log_add(obd, logname, CONFIG_T_RECOVER, &lcfg, sb);
+        cld = do_config_log_add(obd, logname, CONFIG_T_RECOVER, &lcfg, lsi);
         return cld;
 }
 
@@ -294,7 +293,6 @@ static int config_log_add(struct obd_device *obd, char *logname,
                           struct config_llog_instance *cfg,
                           struct lustre_sb_info *lsi)
 {
-        struct lustre_sb_info *lsi = s2lsi(sb);
         struct config_llog_data *cld;
         struct config_llog_data *sptlrpc_cld;
         char                     seclogname[32];
@@ -339,7 +337,7 @@ static int config_log_add(struct obd_device *obd, char *logname,
         if (!(lsi->lsi_lmd->lmd_flags & LMD_FLG_NOIR)) {
                 struct config_llog_data *recover_cld;
                 *strrchr(seclogname, '-') = 0;
-                recover_cld = config_recover_log_add(obd, seclogname, cfg, sb);
+                recover_cld = config_recover_log_add(obd, seclogname, cfg, lsi);
                 if (IS_ERR(recover_cld)) {
                         config_log_put(cld);
                         RETURN(PTR_ERR(recover_cld));
@@ -1123,7 +1121,6 @@ static int mgc_apply_recover_logs(struct obd_device *mgc,
                                   void *data, int datalen)
 {
         struct config_llog_instance *cfg = &cld->cld_cfg;
-        struct lustre_sb_info       *lsi = s2lsi(cfg->cfg_sb);
         struct mgs_nidtbl_entry *entry;
         struct lustre_cfg       *lcfg;
         struct lustre_cfg_bufs   bufs;
@@ -1137,17 +1134,20 @@ static int mgc_apply_recover_logs(struct obd_device *mgc,
         ENTRY;
 
         LASSERT(cfg->cfg_instance != NULL);
-        LASSERT(cfg->cfg_sb == cfg->cfg_instance);
+        LASSERT(cfg->cfg_lsi == cfg->cfg_instance);
 
         OBD_ALLOC(inst, CFS_PAGE_SIZE);
         if (inst == NULL)
                 RETURN(-ENOMEM);
 
-        if (!(lsi->lsi_flags & LSI_SERVER)) {
+        if (!(IS_MDT(cfg->cfg_lsi))) {
                 pos = sprintf(inst, "%p", cfg->cfg_instance);
         } else {
-                LASSERT(IS_MDT(lsi->lsi_ldd));
-                pos = sprintf(inst, "MDT%04x", lsi->lsi_ldd->ldd_svindex);
+                __u32 idx;
+
+                LASSERT(IS_MDT(cfg->cfg_lsi));
+                rc = server_name2index(cfg->cfg_lsi->lsi_svname, &idx, NULL);
+                pos = sprintf(inst, "MDT%04x", idx);
         }
 
         ++pos;

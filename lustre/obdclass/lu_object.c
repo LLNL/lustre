@@ -241,6 +241,7 @@ static void lu_object_free(const struct lu_env *env, struct lu_object *o)
         site   = o->lo_dev->ld_site;
         layers = &o->lo_header->loh_layers;
         bkt    = lu_site_bkt_from_fid(site, &o->lo_header->loh_fid);
+
         /*
          * First call ->loo_object_delete() method to release all resources.
          */

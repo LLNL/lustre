@@ -107,7 +107,7 @@ MDS_MOUNT_OPTS=${MDS_MOUNT_OPTS:-"-o loop,user_xattr"}
 fi
 
 if [ "$MDSDEV1" != "$MGSDEV" ]; then
-    MGS_MOUNT_OPTS="-o loop"
+    MGS_MOUNT_OPTS=${MGS_MOUNT_OPTS:-"-o loop"}
 else
     MGS_MOUNT_OPTS=${MGS_MOUNT_OPTS:-$MDS_MOUNT_OPTS}
 fi

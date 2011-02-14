@@ -47,21 +47,13 @@
 #define D_MGS D_CONFIG
 
 #ifdef __KERNEL__
-#include <linux/module.h>
 #include <linux/pagemap.h>
-#include <linux/fs.h>
 #endif
 
 #include <obd.h>
-#include <obd_lov.h>
 #include <obd_class.h>
-#include <lustre_log.h>
-#include <obd_ost.h>
-#include <libcfs/list.h>
-#include <linux/lvfs.h>
-#include <lustre_fsfilt.h>
 #include <lustre_disk.h>
-#include <lustre_param.h>
+
 #include "mgs_internal.h"
 
 static unsigned int ir_timeout;
@@ -225,81 +217,99 @@ out:
         RETURN(rc);
 }
 
-static int nidtbl_update_version(struct obd_device *obd, struct mgs_nidtbl *tbl)
+static int nidtbl_update_version(const struct lu_env *env,
+                                 struct mgs_device *mgs,
+                                 struct mgs_nidtbl *tbl)
 {
-        struct lvfs_run_ctxt saved;
-        struct file         *file = NULL;
-        char                 filename[sizeof(MGS_NIDTBL_DIR) + 9];
-        u64                  version;
-        loff_t               off = 0;
-        int                  rc;
+        struct dt_object *o;
+        struct thandle   *th;
+        u64               version;
+        struct lu_buf     buf = {
+                                .lb_buf = &version,
+                                .lb_len = sizeof(version)
+                          };
+        loff_t            off = 0;
+        int               rc;
         ENTRY;
 
         LASSERT(cfs_mutex_is_locked(&tbl->mn_lock));
-        LASSERT(sizeof(filename) < 32);
 
-        sprintf(filename, "%s/%s",
-                MGS_NIDTBL_DIR, tbl->mn_fsdb->fsdb_name);
+        o = local_file_find_or_create(env, mgs->mgs_los, mgs->mgs_nidtbl_dir,
+                                      tbl->mn_fsdb->fsdb_name,
+                                      S_IFREG | S_IRUGO | S_IWUSR);
+        if (IS_ERR(o))
+                RETURN(PTR_ERR(o));
 
-        push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
+        th = dt_trans_create(env, mgs->mgs_bottom);
+        if (IS_ERR(th))
+                GOTO(out_put, rc = PTR_ERR(th));
 
-        file = l_filp_open(filename, O_RDWR|O_CREAT, 0660);
-        if (!IS_ERR(file)) {
-                version = cpu_to_le64(tbl->mn_version);
-                rc = lustre_fwrite(file, &version, sizeof(version), &off);
-                if (rc == sizeof(version))
-                        rc = 0;
-                filp_close(file, 0);
-                fsfilt_sync(obd, obd->u.mgs.mgs_sb);
-        } else {
-                rc = PTR_ERR(file);
-        }
+        th->th_sync = 1; /* update table synchronously */
+        rc = dt_declare_record_write(env, o, buf.lb_len, off, th);
+        if (rc)
+                GOTO(out, rc);
 
-        pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
+        rc = dt_trans_start_local(env, mgs->mgs_bottom, th);
+        if (rc)
+                GOTO(out, rc);
+
+        version = cpu_to_le64(tbl->mn_version);
+        rc = dt_record_write(env, o, &buf, &off, th);
+
+out:
+        dt_trans_stop(env, mgs->mgs_bottom, th);
+out_put:
+        lu_object_put(env, &o->do_lu);
         RETURN(rc);
 }
 
 #define MGS_NIDTBL_VERSION_INIT 2
 
-static int nidtbl_read_version(struct obd_device *obd, struct mgs_nidtbl *tbl)
+static int nidtbl_read_version(const struct lu_env *env,
+                               struct mgs_device *mgs, struct mgs_nidtbl *tbl,
+                               u64 *version)
 {
-        struct lvfs_run_ctxt saved;
-        struct file         *file = NULL;
-        char                 filename[sizeof(MGS_NIDTBL_DIR) + 9];
-        u64                  version;
-        loff_t               off = 0;
-        int                  rc;
+        struct dt_object *o;
+        struct lu_fid     fid;
+        u64               tmpver;
+        struct lu_buf     buf = {
+                                .lb_buf = &tmpver,
+                                .lb_len = sizeof(tmpver)
+                          };
+        loff_t            off = 0;
+        int               rc;
         ENTRY;
 
         LASSERT(cfs_mutex_is_locked(&tbl->mn_lock));
-        LASSERT(sizeof(filename) < 32);
+        LASSERT(mgs->mgs_nidtbl_dir);
+        rc = dt_lookup_dir(env, mgs->mgs_nidtbl_dir, tbl->mn_fsdb->fsdb_name,
+                           &fid);
+        if (rc == -ENOENT) {
+                *version = MGS_NIDTBL_VERSION_INIT;
+                RETURN(0);
+        } else if (rc < 0)
+                RETURN(rc);
 
-        sprintf(filename, "%s/%s",
-                MGS_NIDTBL_DIR, tbl->mn_fsdb->fsdb_name);
+        o = dt_locate_at(env, mgs->mgs_bottom, &fid, &mgs->mgs_dt_dev.dd_lu_dev);
+        if (IS_ERR(o))
+                RETURN(PTR_ERR(o));
 
-        push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
-
-        file = l_filp_open(filename, O_RDONLY, 0);
-        if (!IS_ERR(file)) {
-                rc = lustre_fread(file, &version, sizeof(version), &off);
-                if (rc == sizeof(version))
-                        rc = cpu_to_le64(version);
-                else if (rc == 0)
-                        rc = MGS_NIDTBL_VERSION_INIT;
-                else
-                        CERROR("read version file %s error %d\n", filename, rc);
-                filp_close(file, 0);
+        rc = dt_read(env, o, &buf, &off);
+        if (rc == buf.lb_len) {
+                *version = le64_to_cpu(tmpver);
+                rc = 0;
+        } else if (rc == 0) {
+                *version = MGS_NIDTBL_VERSION_INIT;
         } else {
-                rc = PTR_ERR(file);
-                if (rc == -ENOENT)
-                        rc = MGS_NIDTBL_VERSION_INIT;
+                CERROR("read version file %s error %d\n",
+                       tbl->mn_fsdb->fsdb_name, rc);
         }
-
-        pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
+        lu_object_put(env, &o->do_lu);
         RETURN(rc);
 }
 
-static int mgs_nidtbl_write(struct fs_db *fsdb, struct mgs_target_info *mti)
+static int mgs_nidtbl_write(const struct lu_env *env, struct fs_db *fsdb,
+                            struct mgs_target_info *mti)
 {
         struct mgs_nidtbl        *tbl;
         struct mgs_nidtbl_target *tgt;
@@ -339,7 +349,7 @@ static int mgs_nidtbl_write(struct fs_db *fsdb, struct mgs_target_info *mti)
 
         cfs_list_move_tail(&tgt->mnt_list, &tbl->mn_targets);
 
-        rc = nidtbl_update_version(fsdb->fsdb_obd, tbl);
+        rc = nidtbl_update_version(env, fsdb->fsdb_mgs, tbl);
         EXIT;
 
 out:
@@ -362,26 +372,31 @@ static void mgs_nidtbl_fini_fs(struct fs_db *fsdb)
 
         while (!cfs_list_empty(&head)) {
                 struct mgs_nidtbl_target *tgt;
+
                 tgt = list_entry(head.next, struct mgs_nidtbl_target, mnt_list);
                 cfs_list_del(&tgt->mnt_list);
                 OBD_FREE_PTR(tgt);
         }
 }
 
-static int mgs_nidtbl_init_fs(struct fs_db *fsdb)
+static int mgs_nidtbl_init_fs(const struct lu_env *env, struct fs_db *fsdb)
 {
         struct mgs_nidtbl *tbl = &fsdb->fsdb_nidtbl;
+        int rc;
 
         CFS_INIT_LIST_HEAD(&tbl->mn_targets);
         cfs_mutex_init(&tbl->mn_lock);
         tbl->mn_nr_targets = 0;
         tbl->mn_fsdb = fsdb;
         cfs_mutex_lock(&tbl->mn_lock);
-        tbl->mn_version = nidtbl_read_version(fsdb->fsdb_obd, tbl);
+        rc = nidtbl_read_version(env, fsdb->fsdb_mgs, tbl, &tbl->mn_version);
         cfs_mutex_unlock(&tbl->mn_lock);
-        CDEBUG(D_MGS, "IR: current version is %llu\n", tbl->mn_version);
-
-        return 0;
+        if (rc < 0)
+                CERROR("IR: failed to read current version, rc = %d\n", rc);
+        else
+                CDEBUG(D_MGS,
+                       "IR: current version is "LPU64"\n", tbl->mn_version);
+        return rc;
 }
 
 /* --------- Imperative Recovery relies on nidtbl stuff ------- */
@@ -434,16 +449,16 @@ static int mgs_ir_notify(void *arg)
                        name, cfs_atomic_read(&fsdb->fsdb_notify_phase));
 
                 fsdb->fsdb_notify_start = cfs_time_current();
-                mgs_revoke_lock(fsdb->fsdb_obd, fsdb, CONFIG_T_RECOVER);
+                mgs_revoke_lock(fsdb->fsdb_mgs, fsdb, CONFIG_T_RECOVER);
         }
 
         cfs_complete(&fsdb->fsdb_notify_comp);
         return 0;
 }
 
-int mgs_ir_init_fs(struct obd_device *obd, struct fs_db *fsdb)
+int mgs_ir_init_fs(const struct lu_env *env, struct mgs_device *mgs,
+                   struct fs_db *fsdb)
 {
-        struct mgs_obd *mgs = &obd->u.mgs;
         int rc;
 
         if (!ir_timeout)
@@ -457,7 +472,7 @@ int mgs_ir_init_fs(struct obd_device *obd, struct fs_db *fsdb)
         CFS_INIT_LIST_HEAD(&fsdb->fsdb_clients);
 
         /* start notify thread */
-        fsdb->fsdb_obd = obd;
+        fsdb->fsdb_mgs = mgs;
         cfs_atomic_set(&fsdb->fsdb_notify_phase, 0);
         cfs_waitq_init(&fsdb->fsdb_notify_waitq);
         cfs_init_completion(&fsdb->fsdb_notify_comp);
@@ -467,11 +482,11 @@ int mgs_ir_init_fs(struct obd_device *obd, struct fs_db *fsdb)
         else
                 CERROR("Start notify thread error %d\n", rc);
 
-        mgs_nidtbl_init_fs(fsdb);
+        mgs_nidtbl_init_fs(env, fsdb);
         return 0;
 }
 
-void mgs_ir_fini_fs(struct obd_device *obd, struct fs_db *fsdb)
+void mgs_ir_fini_fs(struct mgs_device *mgs, struct fs_db *fsdb)
 {
         if (cfs_test_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags))
                 return;
@@ -490,10 +505,8 @@ void mgs_ir_fini_fs(struct obd_device *obd, struct fs_db *fsdb)
 /* caller must have held fsdb_sem */
 static inline void ir_state_graduate(struct fs_db *fsdb)
 {
-        struct mgs_obd *mgs = &fsdb->fsdb_obd->u.mgs;
-
         if (fsdb->fsdb_ir_state == IR_STARTUP) {
-                if (cfs_time_before(mgs->mgs_start_time + ir_timeout,
+                if (cfs_time_before(fsdb->fsdb_mgs->mgs_start_time + ir_timeout,
                                     cfs_time_current_sec())) {
                         fsdb->fsdb_ir_state = IR_FULL;
                         if (fsdb->fsdb_nonir_clients)
@@ -502,7 +515,8 @@ static inline void ir_state_graduate(struct fs_db *fsdb)
         }
 }
 
-int mgs_ir_update(struct obd_device *obd, struct mgs_target_info *mti)
+int mgs_ir_update(const struct lu_env *env, struct mgs_device *mgs,
+                  struct mgs_target_info *mti)
 {
         struct fs_db *fsdb;
         bool notify = true;
@@ -511,11 +525,11 @@ int mgs_ir_update(struct obd_device *obd, struct mgs_target_info *mti)
         if (mti->mti_instance == 0)
                 return -EINVAL;
 
-        rc = mgs_find_or_make_fsdb(obd, mti->mti_fsname, &fsdb);
+        rc = mgs_find_or_make_fsdb(env, mgs, mti->mti_fsname, &fsdb);
         if (rc)
                 return rc;
 
-        rc = mgs_nidtbl_write(fsdb, mti);
+        rc = mgs_nidtbl_write(env, fsdb, mti);
         if (rc)
                 return rc;
 
@@ -585,7 +599,8 @@ static int delogname(char *logname, char *fsname, int *typ)
 
 int mgs_get_ir_logs(struct ptlrpc_request *req)
 {
-        struct obd_device *obd = req->rq_export->exp_obd;
+        struct lu_env     *env = req->rq_svc_thread->t_env;
+        struct mgs_device *mgs = exp2mgs_dev(req->rq_export);
         struct fs_db      *fsdb;
         struct mgs_config_body  *body;
         struct mgs_config_res   *res;
@@ -594,7 +609,6 @@ int mgs_get_ir_logs(struct ptlrpc_request *req)
         char               fsname[16];
         long               bufsize;
         int                unit_size;
-
         int                type;
         int                rc = 0;
         int                i;
@@ -615,9 +629,9 @@ int mgs_get_ir_logs(struct ptlrpc_request *req)
         if (rc)
                 RETURN(rc);
 
-        rc = mgs_find_or_make_fsdb(obd, fsname, &fsdb);
+        rc = mgs_find_or_make_fsdb(env, mgs, fsname, &fsdb);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         bufsize = body->mcb_units << body->mcb_bits;
         nrpages = (bufsize + CFS_PAGE_SIZE - 1) >> CFS_PAGE_SHIFT;
@@ -641,8 +655,8 @@ int mgs_get_ir_logs(struct ptlrpc_request *req)
 
         res->mcr_offset = body->mcb_offset;
         unit_size = min_t(int, 1 << body->mcb_bits, CFS_PAGE_SIZE);
-        bytes = mgs_nidtbl_read(obd, &fsdb->fsdb_nidtbl, res, pages, nrpages,
-                                bufsize / unit_size, unit_size);
+        bytes = mgs_nidtbl_read(mgs->mgs_obd, &fsdb->fsdb_nidtbl, res, pages,
+                                nrpages, bufsize / unit_size, unit_size);
         if (bytes < 0)
                 GOTO(out, rc = bytes);
 
@@ -664,14 +678,13 @@ int mgs_get_ir_logs(struct ptlrpc_request *req)
         ptlrpc_free_bulk(desc);
 
 out:
-        if (pages) {
-                for (i = 0; i < nrpages; i++) {
-                        if (pages[i] == NULL)
-                                break;
-                        cfs_free_page(pages[i]);
-                }
-                OBD_FREE(pages, sizeof(*pages) * nrpages);
+        for (i = 0; i < nrpages; i++) {
+                if (pages[i] == NULL)
+                        break;
+                cfs_free_page(pages[i]);
         }
+        OBD_FREE(pages, sizeof(*pages) * nrpages);
+
         return rc;
 }
 
@@ -832,10 +845,11 @@ int lprocfs_wr_ir_timeout(struct file *file, const char *buffer,
 
 /* --------------- Handle non IR support clients --------------- */
 /* attach a lustre file system to an export */
-int mgs_fsc_attach(struct obd_export *exp, char *fsname)
+int mgs_fsc_attach(const struct lu_env *env, struct obd_export *exp,
+                   char *fsname)
 {
         struct mgs_export_data *data = &exp->u.eu_mgs_data;
-        struct obd_device *obd       = exp->exp_obd;
+        struct mgs_device *mgs = exp2mgs_dev(exp);
         struct fs_db      *fsdb;
         struct mgs_fsc    *fsc     = NULL;
         struct mgs_fsc    *new_fsc = NULL;
@@ -843,7 +857,7 @@ int mgs_fsc_attach(struct obd_export *exp, char *fsname)
         int                rc;
         ENTRY;
 
-        rc = mgs_find_or_make_fsdb(obd, fsname, &fsdb);
+        rc = mgs_find_or_make_fsdb(env, mgs, fsname, &fsdb);
         if (rc)
                 RETURN(rc);
 

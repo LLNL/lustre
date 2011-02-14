@@ -598,6 +598,8 @@ static int llog_lvfs_create(struct llog_ctxt *ctxt, struct llog_handle **res,
         int open_flags = O_RDWR | O_CREAT | O_LARGEFILE;
         ENTRY;
 
+        LBUG();
+
         handle = llog_alloc_handle();
         if (handle == NULL)
                 RETURN(-ENOMEM);

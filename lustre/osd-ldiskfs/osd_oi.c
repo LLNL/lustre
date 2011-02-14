@@ -118,7 +118,7 @@ struct dentry * osd_child_dentry_by_inode(const struct lu_env *env,
                                                  const int namelen);
 
 static int osd_oi_index_create_one(struct osd_thread_info *info,
-                                   struct osd_device *osd, char *name,
+                                   struct osd_device *osd, const char *name,
                                    struct dt_index_features *feat)
 {
         const struct lu_env *env = info->oti_env;
@@ -468,6 +468,8 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
                 } else if (rc == 0)
                         rc = -ENOENT;
         }
+
+out:
         return rc;
 }
 
