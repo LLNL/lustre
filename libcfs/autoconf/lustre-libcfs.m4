@@ -654,6 +654,39 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
+#2.6.23 has new shrinker API
+AC_DEFUN([LIBCFS_REGISTER_SHRINKER],
+[AC_MSG_CHECKING([if kernel has register_shrinker])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/mm.h>
+],[
+        register_shrinker(NULL);
+], [
+        AC_MSG_RESULT([yes])
+        AC_DEFINE(HAVE_REGISTER_SHRINKER, 1,
+                [kernel has register_shrinker])
+],[
+        AC_MSG_RESULT([no])
+])
+])
+
+# rhel6 adds an argument to shrink callback
+AC_DEFUN([LIBCFS_SHRINK_3ARGS],
+[AC_MSG_CHECKING([if shrink has 3 arguments])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/mm.h>
+],[
+        struct shrinker s;
+        return s.shrink(NULL, 0, 0);
+],[
+        AC_MSG_RESULT(yes)
+        AC_DEFINE(HAVE_SHRINK_3ARGS, 1,
+                  [shrink has 3 arguments])
+],[
+        AC_MSG_RESULT(no)
+])
+])
+
 #
 # LIBCFS_PROG_LINUX
 #
@@ -684,6 +717,7 @@ LIBCFS_KMEM_CACHE
 # 2.6.23
 LIBCFS_KMEM_CACHE_CREATE_DTOR
 LIBCFS_NETLINK_CBMUTEX
+LIBCFS_REGISTER_SHRINKER
 # 2.6.24
 LIBCFS_SYSCTL_UNNUMBERED
 LIBCFS_SCATTERLIST_SETPAGE
@@ -702,6 +736,7 @@ LIBCFS_FUNC_UNSHARE_FS_STRUCT
 LIBCFS_SOCK_MAP_FD_2ARG
 # 2.6.32
 LIBCFS_STACKTRACE_OPS_HAVE_WALK_STACK
+LIBCFS_SHRINK_3ARGS
 # 2.6.34
 LIBCFS_ADD_WAIT_QUEUE_EXCLUSIVE
 ])
