@@ -157,8 +157,10 @@ EXPORT_SYMBOL(lu_ref_init_loc);
 
 void lu_ref_fini(struct lu_ref *ref)
 {
+        cfs_spin_lock(&ref->lf_guard);
         REFASSERT(ref, cfs_list_empty(&ref->lf_list));
         REFASSERT(ref, ref->lf_refs == 0);
+        cfs_spin_unlock(&ref->lf_guard);
         cfs_spin_lock(&lu_ref_refs_guard);
         cfs_list_del_init(&ref->lf_linkage);
         cfs_spin_unlock(&lu_ref_refs_guard);
