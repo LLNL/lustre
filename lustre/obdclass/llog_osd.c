@@ -233,8 +233,14 @@ static struct llog_superblock *llog_osd_find_sb(struct dt_device *dev)
         return lsb;
 }
 
+static struct lu_device_type_operations llog_device_type_ops = {
+        .ldto_start = NULL,
+        .ldto_stop  = NULL,
+};
+
 static struct lu_device_type llog_osd_lu_type = {
-        .ldt_name = "llog_osd"
+        .ldt_name     = "llog_osd",
+        .ldt_ops      = &llog_device_type_ops,
 };
 
 static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
@@ -272,10 +278,10 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
         cfs_list_add(&lsb->lsb_list, &lsb_list_head);
 
         /* a-ha! */
-        lsb->lsb_top_dev.dd_lu_dev.ld_type = &llog_osd_lu_type;
+        LASSERT(dev->dd_lu_dev.ld_site);
+        lu_device_init(&lsb->lsb_top_dev.dd_lu_dev, &llog_osd_lu_type);
         lsb->lsb_top_dev.dd_lu_dev.ld_ops = &llog_osd_lu_dev_ops;
         lsb->lsb_top_dev.dd_lu_dev.ld_site = dev->dd_lu_dev.ld_site;
-        LASSERT(dev->dd_lu_dev.ld_site);
 
         /* initialize data allowing to generate new fids,
          * literally we need a sequece */
@@ -405,6 +411,8 @@ static void llog_osd_put_sb(const struct lu_env *env, struct llog_superblock *ls
                 }
 
                 cfs_list_del(&lsb->lsb_list);
+                lu_site_purge(env, lsb->lsb_top_dev.dd_lu_dev.ld_site, ~0);
+                lu_device_fini(&lsb->lsb_top_dev.dd_lu_dev);
                 OBD_FREE_PTR(lsb);
         }
         cfs_mutex_unlock(&lsb_list_mutex);

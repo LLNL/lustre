@@ -1110,10 +1110,10 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
 
         ping_evictor_stop();
 
+        ptlrpc_unregister_service(mgs->mgs_service);
+
         obd_exports_barrier(obd);
         obd_zombie_barrier();
-
-        ptlrpc_unregister_service(mgs->mgs_service);
 
         mgs_cleanup_fsdb_list(mgs);
         lproc_mgs_cleanup(mgs);
@@ -1126,10 +1126,15 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
                         CERROR("can't cleanup llog: %d\n", rc);
         }
 
-        lu_site_purge(env, d->ld_site, -1);
-
         ldlm_namespace_free(obd->obd_namespace, NULL, 1);
         obd->obd_namespace = NULL;
+
+        lu_site_purge(env, d->ld_site, ~0);
+        if (!cfs_hash_is_empty(d->ld_site->ls_obj_hash)) {
+                static DECLARE_LU_CDEBUG_PRINT_INFO(cookie, D_ERROR);
+                lu_site_print(env, d->ld_site, &cookie, lu_cdebug_printer);
+        }
+
         LASSERT(mgs->mgs_bottom_exp);
         obd_disconnect(mgs->mgs_bottom_exp);
 
