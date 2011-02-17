@@ -9,5 +9,6 @@ subdir-m += quota
 
 @SERVER_TRUE@subdir-m += ofd ost mgs mdt cmm mdd osd-ldiskfs lod osp
 @CLIENT_TRUE@subdir-m += osc lov mdc lmv llite
+@OSDADDON@
 
 @INCLUDE_RULES@
