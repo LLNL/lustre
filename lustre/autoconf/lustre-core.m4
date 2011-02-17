@@ -2546,7 +2546,7 @@ AC_DEFUN([LC_CONFIG_QUOTA],
 [AC_ARG_ENABLE([quota],
 	AC_HELP_STRING([--enable-quota],
 			[enable quota support]),
-	[],[enable_quota='yes'])
+	[],[enable_quota='no'])
 ])
 
 AC_DEFUN([LC_QUOTA],
@@ -2740,7 +2740,7 @@ fi
 AC_ARG_ENABLE([lu_ref],
         AC_HELP_STRING([--enable-lu_ref],
                 [enable lu_ref reference tracking code]),
-        [],[])
+        [],[enable_lu_ref='yes'])
 AC_MSG_CHECKING([whether to track references with lu_ref])
 AC_MSG_RESULT([$enable_lu_ref])
 if test x$enable_lu_ref = xyes ; then
