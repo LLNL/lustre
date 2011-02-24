@@ -35,10 +35,7 @@
 #
 
 if MODULES
-if SERVER
-  LLITE_LLOOP = llite_lloop$(KMODEXT)
-endif
-modulefs_DATA = lustre$(KMODEXT) $(LLITE_LLOOP)
+modulefs_DATA = lustre$(KMODEXT) llite_lloop$(KMODEXT)
 endif
 
 MOSTLYCLEANFILES := @MOSTLYCLEANFILES@ 
