@@ -1848,6 +1848,38 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
+# 2.6.32 removes blk_queue_max_sectors
+AC_DEFUN([LC_BLK_QUEUE_MAX_SECTORS],
+[AC_MSG_CHECKING([if blk_queue_max_sectors is defined])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/blkdev.h>
+],[
+        blk_queue_max_sectors(NULL, 0);
+],[
+        AC_MSG_RESULT(yes)
+        AC_DEFINE(HAVE_BLK_QUEUE_MAX_SECTORS, 1,
+                  [blk_queue_max_sectors is defined])
+],[
+        AC_MSG_RESULT(no)
+])
+])
+
+# 2.6.32 replaces 2 functions blk_queue_max_phys_segments and blk_queue_max_hw_segments by blk_queue_max_segments
+AC_DEFUN([LC_BLK_QUEUE_MAX_SEGMENTS],
+[AC_MSG_CHECKING([if blk_queue_max_segments is defined])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/blkdev.h>
+],[
+        blk_queue_max_segments(NULL, 0);
+],[
+        AC_MSG_RESULT(yes)
+        AC_DEFINE(HAVE_BLK_QUEUE_MAX_SEGMENTS, 1,
+                  [blk_queue_max_segments is defined])
+],[
+        AC_MSG_RESULT(no)
+])
+])
+
 #
 # LC_D_OBTAIN_ALIAS
 # starting from 2.6.28 kernel replaces d_alloc_anon() with
@@ -1935,18 +1967,28 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
-# 2.6.32 has new BDI interface.
-AC_DEFUN([LC_NEW_BACKING_DEV_INFO],
-[AC_MSG_CHECKING([if backing_dev_info has a wb_cnt field])
-LB_LINUX_TRY_COMPILE([
-        #include <linux/backing-dev.h>
+# 2.6.32 has bdi_register() functions.
+AC_DEFUN([LC_EXPORT_BDI_REGISTER],
+[LB_CHECK_SYMBOL_EXPORT([bdi_register],
+[mm/backing-dev.c],[
+        AC_DEFINE(HAVE_BDI_REGISTER, 1,
+                [bdi_register function is present])
 ],[
-        struct backing_dev_info bdi;
-        bdi.wb_cnt = 0;
+])
+])
+
+# 2.6.32 add s_bdi for super block
+AC_DEFUN([LC_SB_BDI],
+[AC_MSG_CHECKING([if super_block has s_bdi field])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/fs.h>
+],[
+        struct super_block sb;
+        sb.s_bdi = NULL;
 ],[
         AC_MSG_RESULT(yes)
-        AC_DEFINE(HAVE_NEW_BACKING_DEV_INFO, 1,
-                  [backing_dev_info has a wb_cnt field])
+        AC_DEFINE(HAVE_SB_BDI, 1,
+                  [super_block has s_bdi field])
 ],[
         AC_MSG_RESULT(no)
 ])
@@ -1971,6 +2013,24 @@ AC_DEFUN([LC_EXPORTFS_DECODE_FH],
 ],[
 ])
 ])
+
+# 2.6.32-71 adds an argument to shrink callback
+AC_DEFUN([LC_SHRINK_3ARGS],
+[AC_MSG_CHECKING([if shrink has 3 arguments])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/mm.h>
+],[
+        struct shrinker s;
+        return s.shrink(NULL, 0, 0);
+],[
+        AC_MSG_RESULT(yes)
+        AC_DEFINE(HAVE_SHRINK_3ARGS, 1,
+                  [shrink has 3 arguments])
+],[
+        AC_MSG_RESULT(no)
+])
+])
+
 
 #
 # LC_PROG_LINUX
@@ -2132,9 +2192,11 @@ AC_DEFUN([LC_PROG_LINUX],
 
          # 2.6.32
          LC_REQUEST_QUEUE_LIMITS
-         LC_NEW_BACKING_DEV_INFO
+         LC_EXPORT_BDI_REGISTER
+         LC_SB_BDI
          LC_BLK_QUEUE_MAX_SECTORS
          LC_BLK_QUEUE_MAX_SEGMENTS
+         LC_SHRINK_3ARGS
 
          #
          if test x$enable_server = xyes ; then
@@ -2142,6 +2204,10 @@ AC_DEFUN([LC_PROG_LINUX],
                         LC_QUOTA64    # must after LC_HAVE_QUOTAIO_V1_H
                 fi
          fi
+
+         # 2.6.32 rhel6
+         LC_BLK_QUEUE_MAX_SECTORS
+         LC_BLK_QUEUE_MAX_SEGMENTS
 ])
 
 #
