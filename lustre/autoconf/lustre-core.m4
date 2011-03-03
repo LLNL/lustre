@@ -1167,6 +1167,22 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
+#2.6.23 has new shrinker API
+AC_DEFUN([LC_REGISTER_SHRINKER],
+[AC_MSG_CHECKING([if kernel has register_shrinker])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/mm.h>
+],[
+        register_shrinker(NULL);
+], [
+        AC_MSG_RESULT([yes])
+        AC_DEFINE(HAVE_REGISTER_SHRINKER, 1,
+                [kernel has register_shrinker])
+],[
+        AC_MSG_RESULT([no])
+])
+])
+
 # 2.6.23 add code to wait other users to complete before removing procfs entry
 AC_DEFUN([LC_PROCFS_USERS],
 [AC_MSG_CHECKING([if kernel has pde_users member in procfs entry struct])
@@ -1546,6 +1562,16 @@ LB_LINUX_TRY_COMPILE([
                   [vfs_symlink wants 4 args])
 ],[
         AC_MSG_RESULT(no)
+])
+])
+
+# 2.6.23 has new shrinker API
+AC_DEFUN([LC_REGISTER_SHRINKER],
+[LB_CHECK_SYMBOL_EXPORT([register_shrinker],
+[mm/vmscan.c],[
+        AC_DEFINE(HAVE_REGISTER_SHRINKER, 1,
+                  [kernel exports register_shrinker])
+],[
 ])
 ])
 
@@ -2066,6 +2092,7 @@ AC_DEFUN([LC_PROG_LINUX],
          LC_KERNEL_SENDFILE
          LC_HAVE_EXPORTFS_H
          LC_VM_OP_FAULT
+         LC_REGISTER_SHRINKER
          LC_PROCFS_USERS
          LC_EXPORTFS_DECODE_FH
   

@@ -1151,14 +1151,14 @@ static int ldlm_pools_shrink(ldlm_side_t client, int nr,
         return cached;
 }
 
-KERN_SHRINKER(ldlm_pools_srv_shrink)
+static int ldlm_pools_srv_shrink(int nr, unsigned int gfp_mask)
 {
-        return ldlm_pools_shrink(LDLM_NAMESPACE_SERVER, nr_to_scan, gfp_mask);
+        return ldlm_pools_shrink(LDLM_NAMESPACE_SERVER, nr, gfp_mask);
 }
 
-KERN_SHRINKER(ldlm_pools_cli_shrink)
+static int ldlm_pools_cli_shrink(int nr, unsigned int gfp_mask)
 {
-        return ldlm_pools_shrink(LDLM_NAMESPACE_CLIENT, nr_to_scan, gfp_mask);
+        return ldlm_pools_shrink(LDLM_NAMESPACE_CLIENT, nr, gfp_mask);
 }
 
 void ldlm_pools_recalc(ldlm_side_t client)
