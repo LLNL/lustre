@@ -809,6 +809,8 @@ static void filter_key_exit(const struct lu_context *ctx,
 
         info->fti_xid = 0;
         info->fti_transno = 0;
+        info->fti_pre_version = 0;
+        info->fti_obj = NULL;
         info->fti_has_trans = 0;
         info->fti_no_need_trans = 0;
 

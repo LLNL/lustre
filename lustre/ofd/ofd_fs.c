@@ -75,7 +75,7 @@ int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
                                 rc = dt_record_write(env, dt, &info->fti_buf,
                                                      &info->fti_off, th);
                 }
-                filter_trans_stop(env, ofd, th);
+                filter_trans_stop(env, ofd, NULL, th);
         } else {
                 rc = dt_record_write(env, dt, &info->fti_buf, &info->fti_off,
                                      _th);
