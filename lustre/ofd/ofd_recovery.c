@@ -92,8 +92,13 @@ int filter_trans_start(const struct lu_env *env,
 
 void filter_trans_stop(const struct lu_env *env,
                        struct filter_device *ofd,
+                       struct filter_object *obj,
                        struct thandle *th)
 {
+        /* version change is required for this object */
+        if (obj)
+                filter_info(env)->fti_obj = obj;
+
         dt_trans_stop(env, ofd->ofd_osd, th);
 }
 
@@ -161,6 +166,17 @@ static int filter_txn_start_cb(const struct lu_env *env,
         return 0;
 }
 
+/* Set new object versions */
+static void filter_version_set(struct filter_thread_info *info)
+{
+        if (info->fti_obj != NULL) {
+                dt_version_set(info->fti_env,
+                               filter_object_child(info->fti_obj),
+                               info->fti_transno);
+                info->fti_obj = NULL;
+        }
+}
+
 /* Update last_rcvd records with latests transaction data */
 int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
                        void *cookie)
@@ -204,6 +220,11 @@ int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
                 if (info->fti_transno > ofd->ofd_last_transno)
                        ofd->ofd_last_transno = info->fti_transno;
         }
+        cfs_spin_unlock(&ofd->ofd_transno_lock);
+
+        /** VBR: set new versions */
+        if (txn->th_result == 0)
+                filter_version_set(info);
 
         /* filling reply data */
         CDEBUG(D_INODE, "transno = %llu, last_committed = %llu\n",
@@ -211,7 +232,6 @@ int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
 
         /* save transno for the commit callback */
         txi->txi_transno = info->fti_transno;
-        cfs_spin_unlock(&ofd->ofd_transno_lock);
 
         filter_trans_add_cb(txn, lut_cb_last_committed,
                             class_export_cb_get(info->fti_exp));

@@ -45,6 +45,31 @@
 #include <libcfs/libcfs.h>
 #include "ofd_internal.h"
 
+int filter_version_get_check(struct filter_thread_info *info,
+                             struct filter_object *fo)
+{
+        dt_obj_version_t curr_version;
+
+        LASSERT(filter_object_exists(fo));
+        LASSERT(info->fti_exp);
+
+        curr_version = dt_version_get(info->fti_env, filter_object_child(fo));
+        if ((__s64)curr_version == -EOPNOTSUPP)
+                RETURN(0);
+        /* VBR: version is checked always because costs nothing */
+        if (info->fti_pre_version != 0 &&
+            info->fti_pre_version != curr_version) {
+                CDEBUG(D_INODE, "Version mismatch "LPX64" != "LPX64"\n",
+                       info->fti_pre_version, curr_version);
+                cfs_spin_lock(&info->fti_exp->exp_lock);
+                info->fti_exp->exp_vbr_failed = 1;
+                cfs_spin_unlock(&info->fti_exp->exp_lock);
+                RETURN (-EOVERFLOW);
+        }
+        info->fti_pre_version = curr_version;
+        RETURN(0);
+}
+
 struct filter_object *filter_object_find(const struct lu_env *env,
                                          struct filter_device *ofd,
                                          const struct lu_fid *fid)
@@ -185,7 +210,7 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         rc = filter_last_id_write(env, ofd, group, th);
 
 trans_stop:
-        filter_trans_stop(env, ofd, th);
+        filter_trans_stop(env, ofd, fo, th);
 out_unlock:
         filter_write_unlock(env, fo);
         filter_object_put(env, fo);
@@ -213,6 +238,11 @@ int filter_attr_set(const struct lu_env *env, struct filter_object *fo,
         if (!filter_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
+        /* VBR: version recovery check */
+        rc = filter_version_get_check(info, fo);
+        if (rc)
+                GOTO(unlock, rc);
+
         th = filter_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
@@ -228,7 +258,7 @@ int filter_attr_set(const struct lu_env *env, struct filter_object *fo,
         rc = dt_attr_set(env, filter_object_child(fo), la, th,
                         filter_object_capa(env, fo));
 stop:
-        filter_trans_stop(env, ofd, th);
+        filter_trans_stop(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
 unlock:
         filter_write_unlock(env, fo);
         RETURN(rc);
@@ -257,6 +287,11 @@ int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
         if (!filter_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
+        /* VBR: version recovery check */
+        rc = filter_version_get_check(info, fo);
+        if (rc)
+                GOTO(unlock, rc);
+
         th = filter_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
@@ -281,7 +316,7 @@ int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
         rc = dt_attr_set(env, dob, la, th, filter_object_capa(env, fo));
 
 stop:
-        filter_trans_stop(env, ofd, th);
+        filter_trans_stop(env, ofd, fo, th);
 unlock:
         filter_write_unlock(env, fo);
         RETURN(rc);
@@ -313,7 +348,7 @@ int filter_object_destroy(const struct lu_env *env, struct filter_object *fo)
         dt_ref_del(env, filter_object_child(fo), th);
         dt_destroy(env, filter_object_child(fo), th);
 stop:
-        filter_trans_stop(env, filter_obj2dev(fo), th);
+        filter_trans_stop(env, filter_obj2dev(fo), NULL, th);
 unlock:
         filter_write_unlock(env, fo);
         RETURN(rc);

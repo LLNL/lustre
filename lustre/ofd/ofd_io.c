@@ -390,7 +390,7 @@ out_stop:
         if (rc == -ENOSPC)
                 th->th_sync = 1;
 
-        filter_trans_stop(env, ofd, th);
+        filter_trans_stop(env, ofd, fo, th);
         if (rc == -ENOSPC && retries++ < 3) {
                 CDEBUG(D_INODE, "retry after force commit, retries:%d\n",
                        retries);

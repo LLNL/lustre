@@ -118,7 +118,7 @@ repeat:
         CDEBUG(D_INFO, "wrote client lcd at idx %u off %llu (len %u)\n",
                cl_idx, ted->ted_lr_off, (unsigned) sizeof(*lcd));
 
-        filter_trans_stop(env, ofd, th);
+        filter_trans_stop(env, ofd, NULL, th);
 
         RETURN(err);
 }
@@ -217,7 +217,7 @@ int filter_client_free(struct lu_env *env, struct obd_export *exp)
                 /* update server's transno */
                 filter_last_rcvd_header_write(env, ofd, th);
 
-                filter_trans_stop(env, ofd, th);
+                filter_trans_stop(env, ofd, NULL, th);
 
                 CDEBUG(rc == 0 ? D_INFO : D_ERROR,
                        "zeroing out client %s at idx %u (%llu) in %s rc %d\n",
