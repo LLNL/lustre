@@ -264,6 +264,7 @@ struct filter_thread_info {
         struct obd_export         *fti_exp;
         __u64                      fti_xid;
         __u64                      fti_transno;
+        __u64                      fti_pre_version;
         __u32                      fti_has_trans:1, /* has txn already? */
                                    fti_no_need_trans:1;
 
@@ -273,7 +274,7 @@ struct filter_thread_info {
         struct ldlm_res_id         fti_resid;
         struct filter_fid          fti_mds_fid;
         struct ost_id              fti_ostid;
-
+        struct filter_object      *fti_obj;
         union {
                 char               name[64]; /* for obdfilter_init0()     */
                 struct obd_statfs  osfs;     /* for obdfilter_statfs()    */
@@ -319,6 +320,8 @@ struct filter_thread_info * filter_info_init(const struct lu_env *env,
 
         info->fti_env = env;
         info->fti_exp = exp;
+        info->fti_pre_version = 0;
+        info->fti_transno = 0;
         info->fti_has_trans = 0;
         return info;
 }
@@ -406,8 +409,8 @@ struct thandle *filter_trans_create(const struct lu_env *env,
                                     struct filter_device *ofd);
 int filter_trans_start(const struct lu_env *env,
                        struct filter_device *ofd, struct thandle *th);
-void filter_trans_stop(const struct lu_env *env,
-                       struct filter_device *ofd, struct thandle *th);
+void filter_trans_stop(const struct lu_env *env, struct filter_device *ofd,
+                       struct filter_object *fo, struct thandle *th);
 int filter_client_free(struct lu_env *env, struct obd_export *exp);
 int filter_client_new(const struct lu_env *env, struct filter_device *ofd,
                       struct obd_export *exp);
@@ -519,6 +522,7 @@ static inline void filter_oti2info(struct filter_thread_info *info,
 {
         info->fti_xid = oti->oti_xid;
         info->fti_transno = oti->oti_transno;
+        info->fti_pre_version = oti->oti_pre_version;
 }
 
 static inline void filter_info2oti(struct filter_thread_info *info,
@@ -526,6 +530,7 @@ static inline void filter_info2oti(struct filter_thread_info *info,
 {
         oti->oti_xid = info->fti_xid;
         oti->oti_transno = info->fti_transno;
+        oti->oti_pre_version = info->fti_pre_version;
 }
 
 /* sync on lock cancel is useless when we force a journal flush,
