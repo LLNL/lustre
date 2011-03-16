@@ -197,6 +197,8 @@ static inline struct filter_object *filter_obj(struct lu_object *o)
 static inline int filter_object_exists(struct filter_object *obj)
 {
         LASSERT(obj != NULL);
+        if (lu_object_is_dying(obj->ofo_obj.do_lu.lo_header))
+                return 0;
         return lu_object_exists(&obj->ofo_obj.do_lu);
 }
 
@@ -266,7 +268,8 @@ struct filter_thread_info {
         __u64                      fti_transno;
         __u64                      fti_pre_version;
         __u32                      fti_has_trans:1, /* has txn already? */
-                                   fti_no_need_trans:1;
+                                   fti_no_need_trans:1,
+                                   fti_mult_trans:1;
 
         struct lu_fid              fti_fid;
         struct lu_attr             fti_attr;
