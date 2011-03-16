@@ -208,38 +208,34 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 
 }
 
-int osp_sync_add(const struct lu_env *env, struct osp_object *o,
-                 llog_op_type type, struct thandle *th)
+static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
+                            struct ost_id *ostid, llog_op_type type,
+                            int count, struct thandle *th)
 {
         struct osp_thread_info *osi = osp_env_info(env);
-        struct osp_device      *d = lu2osp_dev(o->opo_obj.do_lu.lo_dev);
-        const struct lu_fid    *fid = lu_object_fid(&o->opo_obj.do_lu);
-        struct llog_ctxt       *ctxt;
-        struct osp_txn_info    *txn;
-        int                     rc;
+        struct llog_ctxt    *ctxt;
+        struct osp_txn_info *txn;
+        int                  rc;
         ENTRY;
 
         /* XXX: it's a layering violation, to access internals of th,
          * but we can do this as a sanity check, for a while */
         LASSERT(th->th_dev == d->opd_storage);
 
-        rc = fid_ostid_pack(fid, &osi->osi_oi);
-        LASSERT(rc == 0);
-
         switch (type) {
                 case MDS_UNLINK_REC:
                         osi->u.hdr.lrh_len = sizeof(osi->u.unlink);
                         osi->u.hdr.lrh_type = MDS_UNLINK_REC;
-                        osi->u.unlink.lur_oid  = osi->osi_oi.oi_id;
-                        osi->u.unlink.lur_oseq = osi->osi_oi.oi_seq;
-                        osi->u.unlink.lur_count = 1;
+                        osi->u.unlink.lur_oid  = ostid->oi_id;
+                        osi->u.unlink.lur_oseq = ostid->oi_seq;
+                        osi->u.unlink.lur_count = count;
                         break;
 
                 case MDS_SETATTR64_REC:
                         osi->u.hdr.lrh_len = sizeof(osi->u.setattr);
                         osi->u.hdr.lrh_type = MDS_SETATTR64_REC;
-                        osi->u.setattr.lsr_oid  = osi->osi_oi.oi_id;
-                        osi->u.setattr.lsr_oseq = osi->osi_oi.oi_seq;
+                        osi->u.setattr.lsr_oid  = ostid->oi_id;
+                        osi->u.setattr.lsr_oseq = ostid->oi_seq;
                         break;
 
                 default:
@@ -275,6 +271,25 @@ int osp_sync_add(const struct lu_env *env, struct osp_object *o,
         }
 
         RETURN(rc);
+}
+
+int osp_sync_add(const struct lu_env *env, struct osp_object *o,
+                 llog_op_type type, struct thandle *th)
+{
+        struct osp_thread_info *osi = osp_env_info(env);
+        int rc;
+
+        rc = fid_ostid_pack(lu_object_fid(&o->opo_obj.do_lu), &osi->osi_oi);
+        LASSERT(rc == 0);
+
+        return osp_sync_add_rec(env, lu2osp_dev(o->opo_obj.do_lu.lo_dev),
+                                &osi->osi_oi, type, 1, th);
+}
+
+int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
+                 struct ost_id *ostid, int lost, struct thandle *th)
+{
+        return osp_sync_add_rec(env, d, ostid, MDS_UNLINK_REC, lost, th);
 }
 
 /*
@@ -488,7 +503,8 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         LASSERT(body);
         body->oa.o_id  = rec->lur_oid;
         body->oa.o_seq = rec->lur_oseq;
-        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID;
+        body->oa.o_misc = rec->lur_count;
+        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_FL_COUNT;
 
         osp_sync_send_new_rpc(d, req);
         RETURN(0);

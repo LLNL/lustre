@@ -187,14 +187,17 @@ int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
 
         LASSERT(filter_exp(info->fti_exp) == ofd);
         if (info->fti_has_trans) {
-                /* XXX: currently there are allowed cases, but the wrong cases
-                 * are also possible, so better check is needed here */
-                CDEBUG(D_INFO, "More than one transaction "LPU64"\n",
-                       info->fti_transno);
-                RETURN(0);
+                if (info->fti_mult_trans == 0) {
+                        CERROR("More than one transaction "LPU64"\n",
+                               info->fti_transno);
+                        RETURN(0);
+                }
+                /* we need another transno to be assigned */
+                info->fti_transno = 0;
+        } else {
+                info->fti_has_trans = 1;
         }
 
-        info->fti_has_trans = 1;
         cfs_spin_lock(&ofd->ofd_transno_lock);
         if (txn->th_result != 0) {
                 if (info->fti_transno != 0) {
