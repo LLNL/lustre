@@ -163,6 +163,12 @@ static int osp_declare_object_create(const struct lu_env *env,
         LASSERT(d->opd_last_used_file);
         fid = lu_object_fid(&dt->do_lu);
 
+        /*
+         * There can be gaps in precreated ids and record to unlink llog
+         * XXX: can we distinguish cases when it is not needed?
+         */
+        rc = osp_sync_declare_add(env, o, MDS_UNLINK_REC, th);
+
         if (unlikely(!fid_is_zero(fid))) {
                 /* replace case: caller knows fid */
                 /* XXX: for compatibility use common for all OSPs file */
@@ -234,6 +240,15 @@ static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
         if (osi->osi_id > d->opd_last_used_id) {
                 cfs_spin_lock(&d->opd_pre_lock);
                 if (osi->osi_id > d->opd_last_used_id) {
+                        int lost = osi->osi_id - d->opd_last_used_id - 1;
+                        /* we might have lost precreated objects due to VBR */
+                        if (lost > 0) {
+                                CDEBUG(D_HA, "Gap in objids: %d, last = %llu\n",
+                                       lost, osi->osi_id);
+                                osi->osi_oi.oi_id = d->opd_last_used_id + 1;
+                                osi->osi_oi.oi_seq = FID_SEQ_OST_MDT0; /* XXX: CMD support */
+                                osp_sync_gap(env, d, &osi->osi_oi, lost, th);
+                        }
                         d->opd_last_used_id = osi->osi_id;
                         update = 1;
                 }

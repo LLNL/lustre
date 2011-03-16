@@ -2235,7 +2235,7 @@ test_89() {
         mkdir -p $DIR/$tdir
         rm -f $DIR/$tdir/$tfile
         wait_mds_ost_sync
-        wait_delete_complete
+        wait_delete_completed
         BLOCKS1=$(df -P $MOUNT | tail -n 1 | awk '{ print $3 }')
         lfs setstripe -i 0 -c 1 $DIR/$tdir/$tfile
         dd if=/dev/zero bs=1M count=10 of=$DIR/$tdir/$tfile
