@@ -864,7 +864,7 @@ int filter_destroy(struct obd_export *exp,
         struct lu_env *env = oti->oti_env;
         struct filter_device *ofd = filter_exp(exp);
         struct filter_thread_info *info;
-        struct llog_cookie *fcc = NULL;
+        obd_count count;
         int rc = 0;
         ENTRY;
 
@@ -877,40 +877,45 @@ int filter_destroy(struct obd_export *exp,
         if (!(oa->o_valid & OBD_MD_FLGROUP))
                 oa->o_seq = 0;
 
-        fid_ostid_unpack(&info->fti_fid, &oa->o_oi, 0);
-        rc = filter_destroy_by_fid(env, ofd, &info->fti_fid);
-        if (rc == -ENOENT) {
-                CDEBUG(D_INODE, "destroying non-existent object "LPU64"\n",
-                       oa->o_id);
-                /* If object already gone, cancel cookie right now */
-                if (oa->o_valid & OBD_MD_FLCOOKIE) {
-                        struct llog_ctxt *ctxt;
-                        struct obd_llog_group *olg;
-                        fcc = &oa->o_lcookie;
-                        olg = filter_find_olg(filter_obd(ofd), oa->o_seq);
-                        if (IS_ERR(olg))
-                                GOTO(out, rc = PTR_ERR(olg));
-                        llog_group_set_export(olg, exp);
+        /* check that o_misc makes sense */
+        if (oa->o_valid & OBD_FL_COUNT)
+                count = oa->o_misc;
+        else
+                count = 1; /* default case - single destroy */
 
-                        ctxt = llog_group_get_ctxt(olg, fcc->lgc_subsys + 1);
-                        llog_cancel(ctxt, NULL, 1, fcc, 0);
-                        llog_ctxt_put(ctxt);
-                        fcc = NULL; /* we didn't allocate fcc, don't free it */
+        /**
+         * There can be sequence of objects to destroy. Therefore this request
+         * may have multiple transaction involved in. It is OK, we need only
+         * the highest used transno to be reported back in reply but not for
+         * replays, they must report their transno
+         */
+        if (info->fti_transno == 0) /* not replay */
+                info->fti_mult_trans = 1;
+        while (count > 0) {
+                int lrc;
+
+                fid_ostid_unpack(&info->fti_fid, &oa->o_oi, 0);
+                lrc = filter_destroy_by_fid(env, ofd, &info->fti_fid);
+                if (lrc == -ENOENT)
+                        CDEBUG(D_INODE, "destroying non-existent object "LPU64"\n",
+                               oa->o_id);
+                else if (lrc != 0) {
+                        CEMERG("error destroying object "LPU64": %d\n",
+                               oa->o_id, rc);
+                        rc = lrc;
                 }
-        } else {
-                if (oa->o_valid & OBD_MD_FLCOOKIE) {
-                        struct llog_ctxt *ctxt;
-                        fcc = &oa->o_lcookie;
-                        ctxt = llog_get_context(filter_obd(ofd),
-                                                fcc->lgc_subsys + 1);
-                        llog_cancel(ctxt, NULL, 1, fcc, 0);
-                        llog_ctxt_put(ctxt);
-                        fcc = NULL; /* we didn't allocate fcc, don't free it */
-                }
+                count--;
+                oa->o_id++;
         }
+        /**
+         * If we have at least one transaction then llog record on server will
+         * be removed upon commit, so for rc != 0 we return no transno and
+         * llog record will be reprocessed.
+         */
+        if (rc != 0)
+                info->fti_transno = 0;
 
         filter_info2oti(info, oti);
-out:
         RETURN(rc);
 }
 
