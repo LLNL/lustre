@@ -1418,14 +1418,14 @@ static int llog_osd_close(struct llog_handle *handle)
         o = handle->lgh_obj;
         LASSERT(o);
 
+        lu_object_put(&env, &o->do_lu);
+
         lsb = handle->private_data;
         LASSERT(lsb);
         llog_osd_put_sb(&env, lsb);
 
         if (handle->lgh_name)
                 OBD_FREE(handle->lgh_name, strlen(handle->lgh_name) + 1);
-
-        lu_object_put(&env, &o->do_lu);
 
 out:
         lu_env_fini(&env);
