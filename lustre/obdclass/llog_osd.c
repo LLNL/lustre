@@ -1390,6 +1390,27 @@ out:
         RETURN(rc);
 }
 
+static int llog_osd_close_2(const struct lu_env *env,
+                            struct llog_handle *handle)
+{
+        struct llog_superblock *lsb;
+        int rc = 0;
+        ENTRY;
+
+        LASSERT(handle->lgh_obj);
+
+        lu_object_put(env, &handle->lgh_obj->do_lu);
+
+        lsb = handle->private_data;
+        LASSERT(lsb);
+        llog_osd_put_sb(env, lsb);
+
+        if (handle->lgh_name)
+                OBD_FREE(handle->lgh_name, strlen(handle->lgh_name) + 1);
+
+        RETURN(rc);
+}
+
 static int llog_osd_close(struct llog_handle *handle)
 {
         struct dt_object  *o;
@@ -1436,7 +1457,6 @@ out:
 static int llog_osd_destroy(const struct lu_env *env,
                             struct llog_handle *loghandle)
 {
-        struct llog_superblock *lsb;
         struct llog_ctxt       *ctxt;
         struct dt_object       *o;
         struct dt_device       *d;
@@ -1453,8 +1473,9 @@ static int llog_osd_destroy(const struct lu_env *env,
         o = loghandle->lgh_obj;
         LASSERT(o);
 
-        d = ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
+        d = lu2dt_dev(o->do_lu.lo_dev);
         LASSERT(d);
+        LASSERT(d == ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt);
 
         if (env == NULL) {
                 rc = lu_env_init(&_env, d->dd_lu_dev.ld_type->ldt_ctx_tags);
@@ -1507,11 +1528,8 @@ out_trans:
         rc = dt_trans_stop(env, d, th);
 
 out:
-        lsb = loghandle->private_data;
-        LASSERT(lsb);
-        llog_osd_put_sb(env, lsb);
-
-        lu_object_put(env, &o->do_lu);
+        /* XXX: shouldn't that be explicit? */
+        llog_osd_close_2(env, loghandle);
 
         if (env == &_env)
                 lu_env_fini(&_env);
@@ -1562,7 +1580,6 @@ static int llog_osd_create(struct llog_ctxt *ctxt, struct llog_handle **res,
         }
 
         dt_trans_stop(&env, dt, th);
-
 out:
         lu_env_fini(&env);
         RETURN(rc);
@@ -1708,6 +1725,7 @@ struct llog_operations llog_osd_ops = {
         lop_create_2:            llog_osd_create_2,
         lop_declare_write_rec_2: llog_osd_declare_write_rec_2,
         lop_write_rec_2:         llog_osd_write_rec_2,
+        lop_close_2:             llog_osd_close_2,
 };
 
 EXPORT_SYMBOL(llog_osd_ops);

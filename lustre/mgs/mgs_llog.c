@@ -319,12 +319,12 @@ static int mgs_llog_create(const struct lu_env *env,
                         rc = dt_trans_start(env, mgs->mgs_bottom, th);
                         if (rc == 0)
                                 rc = llog_create_2(env, *res, th);
-                        LASSERT(rc == 0);
                 }
 
                 dt_trans_stop(env, mgs->mgs_bottom, th);
+                if (rc)
+                        llog_close_2(env, *res);
         }
-
 out:
         RETURN(rc);
 }
@@ -338,7 +338,7 @@ static int mgs_get_fsdb_from_llog(const struct lu_env *env,
         struct llog_handle *loghandle;
         struct llog_ctxt *ctxt;
         struct mgs_fsdb_handler_data d = { fsdb, 0 };
-        int rc, rc2;
+        int rc;
         ENTRY;
 
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
@@ -356,12 +356,10 @@ static int mgs_get_fsdb_from_llog(const struct lu_env *env,
         if (llog_get_size(loghandle) <= 1)
                 cfs_set_bit(FSDB_LOG_EMPTY, &fsdb->fsdb_flags);
 
-        rc = llog_process(loghandle, mgs_fsdb_handler, (void *) &d, NULL);
+        rc = llog_process_2(env, loghandle, mgs_fsdb_handler, (void *)&d, NULL);
         CDEBUG(D_INFO, "get_db = %d\n", rc);
 out_close:
-        rc2 = llog_close(loghandle);
-        if (!rc)
-                rc = rc2;
+        llog_close_2(env, loghandle);
 out_pop:
         cfs_up(&fsdb->fsdb_sem);
         name_destroy(&logname);
@@ -733,7 +731,7 @@ static int mgs_modify(const struct lu_env *env, struct mgs_device *mgs,
         struct llog_handle *loghandle;
         struct llog_ctxt *ctxt;
         struct mgs_modify_lookup *mml;
-        int rc, rc2;
+        int rc;
         ENTRY;
 
         CDEBUG(D_MGS, "modify %s/%s/%s fl=%x\n", logname, devname, comment,
@@ -741,9 +739,13 @@ static int mgs_modify(const struct lu_env *env, struct mgs_device *mgs,
 
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         LASSERT(ctxt != NULL);
-        rc = mgs_llog_create(env, mgs, ctxt, &loghandle, logname);
+
+        rc = llog_open_2(env, ctxt, &loghandle, NULL, logname);
         if (rc)
                 GOTO(out_pop, rc);
+
+        if (!llog_exist_2(loghandle))
+                GOTO(out_close, rc = 0);
 
         rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
@@ -761,15 +763,13 @@ static int mgs_modify(const struct lu_env *env, struct mgs_device *mgs,
         mml->mml_marker.cm_flags = flags;
         mml->mml_marker.cm_canceltime = flags ? cfs_time_current_sec() : 0;
         mml->mml_modified = 0;
-        rc = llog_process(loghandle, mgs_modify_handler, (void *)mml, NULL);
+        rc = llog_process_2(env, loghandle, mgs_modify_handler, (void *)mml, NULL);
         if (!rc && !mml->mml_modified)
                 rc = -ENODEV;
         OBD_FREE_PTR(mml);
 
 out_close:
-        rc2 = llog_close(loghandle);
-        if (!rc)
-                rc = rc2;
+        llog_close_2(env, loghandle);
 out_pop:
         if (rc && rc != -ENODEV)
                 CERROR("modify %s/%s failed %d\n",
@@ -989,9 +989,8 @@ static int record_start_log(const struct lu_env *env,
         llog_ctxt_put(ctxt);
 
 out:
-        if (rc) {
+        if (rc)
                 CERROR("Can't start log %s: %d\n", name, rc);
-        }
         RETURN(rc);
 }
 
@@ -999,10 +998,10 @@ static int record_end_log(const struct lu_env *env, struct llog_handle **llh)
 {
         int rc = 0;
 
-        rc = llog_close(*llh);
+        rc = llog_close_2(env, *llh);
         *llh = NULL;
 
-        RETURN(rc);
+        return rc;
 }
 
 static int mgs_log_is_empty(const struct lu_env *env,
@@ -1014,11 +1013,13 @@ static int mgs_log_is_empty(const struct lu_env *env,
 
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         LASSERT(ctxt != NULL);
-        rc = mgs_llog_create(env, mgs, ctxt, &llh, name);
+        rc = llog_open_2(env, ctxt, &llh, NULL, name);
         if (rc == 0) {
-                llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
-                rc = llog_get_size(llh);
-                llog_close(llh);
+                if (llog_exist_2(llh)) {
+                        llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+                        rc = llog_get_size(llh);
+                }
+                llog_close_2(env, llh);
         }
         llog_ctxt_put(ctxt);
         /* header is record 1 */
@@ -1304,7 +1305,7 @@ static int mgs_steal_llog_for_mdt_from_client(const struct lu_env *env,
         struct llog_handle *loghandle;
         struct mgs_target_info *tmti;
         struct llog_ctxt *ctxt;
-        int rc, rc2;
+        int rc;
         ENTRY;
 
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
@@ -1317,20 +1318,21 @@ static int mgs_steal_llog_for_mdt_from_client(const struct lu_env *env,
         comp->comp_tmti = tmti;
         comp->comp_obd = mgs->mgs_obd;
 
-        rc = mgs_llog_create(env, mgs, ctxt, &loghandle, client_name);
+        rc = llog_open_2(env, ctxt, &loghandle, NULL, client_name);
         if (rc)
                 GOTO(out_pop, rc);
+
+        if (!llog_exist_2(loghandle))
+                GOTO(out_close, rc = 0);
 
         rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
-        rc = llog_process(loghandle, mgs_steal_llog_handler, (void *)comp, NULL);
+        rc = llog_process_2(env, loghandle, mgs_steal_llog_handler, (void *)comp, NULL);
         CDEBUG(D_MGS, "steal llog re = %d\n", rc);
 out_close:
-        rc2 = llog_close(loghandle);
-        if (!rc)
-                rc = rc2;
+        llog_close_2(env, loghandle);
 out_pop:
         OBD_FREE_PTR(tmti);
         llog_ctxt_put(ctxt);
@@ -2542,12 +2544,12 @@ int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env,
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         LASSERT(ctxt != NULL);
 
-        if (mgs_log_is_empty(env, mgs, logname))
-                GOTO(out, rc = 0);
-
-        rc = mgs_llog_create(env, mgs, ctxt, &llh, logname);
+        rc = llog_open_2(env, ctxt, &llh, NULL, logname);
         if (rc)
                 GOTO(out, rc);
+
+        if (!llog_exist_2(llh))
+                GOTO(out_close, rc = 0);
 
         rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
@@ -2559,10 +2561,10 @@ int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env,
         msrd.msrd_fsdb = fsdb;
         msrd.msrd_skip = 0;
 
-        rc = llog_process(llh, mgs_srpc_read_handler, (void *) &msrd, NULL);
+        rc = llog_process_2(env, llh, mgs_srpc_read_handler, (void *) &msrd, NULL);
 
 out_close:
-        llog_close(llh);
+        llog_close_2(env, llh);
 out:
         llog_ctxt_put(ctxt);
         name_destroy(&logname);
@@ -2598,9 +2600,9 @@ static int mgs_write_log_param(const struct lu_env *env,
         if (class_match_param(ptr, PARAM_MGSNODE, NULL) == 0)
                 GOTO(end, rc);
 
-	/* Processed in ost/mdt */
-	if (class_match_param(ptr, PARAM_NETWORK, NULL) == 0)
-		GOTO(end, rc);
+        /* Processed in ost/mdt */
+        if (class_match_param(ptr, PARAM_NETWORK, NULL) == 0)
+                GOTO(end, rc);
 
         /* Processed in mgs_write_log_ost */
         if (class_match_param(ptr, PARAM_FAILMODE, NULL) == 0) {
@@ -2667,7 +2669,7 @@ static int mgs_write_log_param(const struct lu_env *env,
                         if (rc)
                                 goto active_err;
                 }
-        active_err:
+active_err:
                 if (rc) {
                         LCONSOLE_ERROR_MSG(0x145, "Couldn't find %s in"
                                            "log (%d). No permanent "
@@ -2966,27 +2968,21 @@ out_up:
 int mgs_erase_log(const struct lu_env *env, struct mgs_device *mgs, char *name)
 {
         struct llog_ctxt *ctxt;
-        struct llog_handle *llh;
         int rc = 0;
 
-        if (name == NULL || strlen(name) == 0)
-                return 0;
-
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
-        LASSERT(ctxt != NULL);
-
-        rc = mgs_llog_create(env, mgs, ctxt, &llh, name);
-        if (rc == 0) {
-                llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
-                rc = llog_destroy(env, llh);
-                llog_free_handle(llh);
+        if (ctxt == NULL) {
+                CERROR("MGS config context doesn't exist\n");
+                rc = -ENODEV;
+        } else {
+                rc = llog_erase(env, ctxt, NULL, name);
+                llog_ctxt_put(ctxt);
         }
-        llog_ctxt_put(ctxt);
 
         if (rc)
                 CERROR("failed to clear log %s: %d\n", name, rc);
 
-        return(rc);
+        return (rc);
 }
 
 /* erase all logs for the given fs */
@@ -3111,7 +3107,7 @@ int mgs_setparam(const struct lu_env *env, struct mgs_device *mgs,
         if (rc)
                 RETURN(rc);
         if (!cfs_test_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags) &&
-            cfs_test_bit(FSDB_LOG_EMPTY, &fsdb->fsdb_flags)) {
+             cfs_test_bit(FSDB_LOG_EMPTY, &fsdb->fsdb_flags)) {
                 CERROR("No filesystem targets for %s.  cfg_device from lctl "
                        "is '%s'\n", fsname, devname);
                 mgs_free_fsdb(mgs, fsdb);
