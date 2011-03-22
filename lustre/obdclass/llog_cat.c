@@ -55,8 +55,9 @@
 #endif
 
 #include <obd_class.h>
-#include <lustre_log.h>
 #include <libcfs/list.h>
+
+#include "llog_internal.h"
 
 /* Create a new log handle and add it to the open list.
  * This log handle will be closed when all of the records in it are removed.
