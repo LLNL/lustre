@@ -885,10 +885,13 @@ int filter_destroy(struct obd_export *exp,
 
                 fid_ostid_unpack(&info->fti_fid, &oa->o_oi, 0);
                 lrc = filter_destroy_by_fid(env, ofd, &info->fti_fid);
-                if (lrc == -ENOENT)
+                if (lrc == -ENOENT) {
                         CDEBUG(D_INODE, "destroying non-existent object "LPU64"\n",
                                oa->o_id);
-                else if (lrc != 0) {
+                        /* rewrite rc with -ENOENT only if it is 0 */
+                        if (rc == 0)
+                                rc = lrc;
+                } else if (lrc != 0) {
                         CEMERG("error destroying object "LPU64": %d\n",
                                oa->o_id, rc);
                         rc = lrc;
