@@ -86,9 +86,9 @@ void llog_free_handle(struct llog_handle *loghandle)
                 cfs_list_del_init(&loghandle->u.phd.phd_entry);
         if (loghandle->lgh_hdr->llh_flags & LLOG_F_IS_CAT)
                 LASSERT(cfs_list_empty(&loghandle->u.chd.chd_head));
+        LASSERT(sizeof(*(loghandle->lgh_hdr)) == LLOG_CHUNK_SIZE);
         OBD_FREE(loghandle->lgh_hdr, LLOG_CHUNK_SIZE);
-
- out:
+out:
         OBD_FREE(loghandle, sizeof(*loghandle));
 }
 EXPORT_SYMBOL(llog_free_handle);
@@ -200,24 +200,6 @@ out:
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_init_handle);
-
-int llog_close(struct llog_handle *loghandle)
-{
-        struct llog_operations *lop;
-        int rc;
-        ENTRY;
-
-        rc = llog_handle2ops(loghandle, &lop);
-        if (rc)
-                GOTO(out, rc);
-        if (lop->lop_close == NULL)
-                GOTO(out, -EOPNOTSUPP);
-        rc = lop->lop_close(loghandle);
- out:
-        llog_free_handle(loghandle);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(llog_close);
 
 static int __llog_process_thread(void *arg)
 {
@@ -420,7 +402,6 @@ int __llog_process(const struct lu_env *env, struct llog_handle *loghandle,
         OBD_FREE_PTR(lpi);
         RETURN(rc);
 }
-EXPORT_SYMBOL(__llog_process);
 
 int llog_process(struct llog_handle *loghandle, llog_cb_t cb,
                  void *data, void *catdata)
@@ -428,6 +409,14 @@ int llog_process(struct llog_handle *loghandle, llog_cb_t cb,
         return __llog_process(NULL, loghandle, cb, data, catdata, 1);
 }
 EXPORT_SYMBOL(llog_process);
+
+int llog_process_2(const struct lu_env *env,
+                   struct llog_handle *loghandle, llog_cb_t cb,
+                   void *data, void *catdata)
+{
+        return __llog_process(env, loghandle, cb, data, catdata, 1);
+}
+EXPORT_SYMBOL(llog_process_2);
 
 inline int llog_get_size(struct llog_handle *loghandle)
 {

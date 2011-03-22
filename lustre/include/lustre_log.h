@@ -122,14 +122,13 @@ extern struct llog_handle *llog_alloc_handle(void);
 int llog_init_handle(struct llog_handle *handle, int flags,
                      struct obd_uuid *uuid);
 extern void llog_free_handle(struct llog_handle *handle);
-int __llog_process(const struct lu_env *, struct llog_handle *loghandle, llog_cb_t cb,
-                   void *data, void *catdata, int fork);
 int llog_process(struct llog_handle *loghandle, llog_cb_t cb,
                  void *data, void *catdata);
+int llog_process_2(const struct lu_env *, struct llog_handle *loghandle, llog_cb_t cb,
+                   void *data, void *catdata);
 int llog_reverse_process(const struct lu_env *, struct llog_handle *, llog_cb_t,
                          void *, void *);
 extern int llog_cancel_rec(const struct lu_env *, struct llog_handle *, int);
-extern int llog_close(struct llog_handle *cathandle);
 extern int llog_get_size(struct llog_handle *loghandle);
 
 /* llog_cat.c - catalog api */
@@ -311,6 +310,7 @@ struct llog_operations {
         int (*lop_add_2)(const struct lu_env *, struct llog_ctxt *, struct llog_rec_hdr *,
                          struct lov_stripe_md *, struct llog_cookie *,
                          int, struct thandle *);
+        int (*lop_close_2)(const struct lu_env *, struct llog_handle *handle);
 };
 
 /* llog_lvfs.c */
@@ -951,6 +951,66 @@ static inline int llog_declare_add_2(const struct lu_env *env,
         RETURN(rc);
 }
 
+static inline int llog_close_2(const struct lu_env *env,
+                               struct llog_handle *loghandle)
+{
+        struct llog_operations *lop;
+        int rc;
+        ENTRY;
+
+        rc = llog_handle2ops(loghandle, &lop);
+        if (rc)
+                GOTO(out, rc);
+        if (lop->lop_close_2 == NULL)
+                GOTO(out, -EOPNOTSUPP);
+        rc = lop->lop_close_2(env, loghandle);
+out:
+        llog_free_handle(loghandle);
+        RETURN(rc);
+}
+
+static inline int llog_close(struct llog_handle *loghandle)
+{
+        struct llog_operations *lop;
+        int rc;
+        ENTRY;
+
+        rc = llog_handle2ops(loghandle, &lop);
+        if (rc)
+                GOTO(out, rc);
+        if (lop->lop_close == NULL)
+                GOTO(out, -EOPNOTSUPP);
+        rc = lop->lop_close(loghandle);
+ out:
+        llog_free_handle(loghandle);
+        RETURN(rc);
+}
+
+static inline int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
+                             struct llog_logid *logid, char *name)
+{
+        struct llog_handle *handle;
+        int rc = 0;
+        ENTRY;
+
+        if (name == NULL || strlen(name) == 0)
+                RETURN(rc);
+
+        rc = llog_open_2(env, ctxt, &handle, logid, name);
+        if (rc)
+                RETURN(rc);
+
+        if (llog_exist_2(handle)) {
+                rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
+                if (rc == 0) {
+                        rc = llog_destroy(env, handle);
+                        llog_free_handle(handle);
+                } else {
+                        llog_close_2(env, handle);
+                }
+        }
+        RETURN(rc);
+}
 
 int lustre_log_process(struct lustre_sb_info *lsi, char *logname,
                        struct config_llog_instance *cfg);
