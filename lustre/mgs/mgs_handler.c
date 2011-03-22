@@ -1117,7 +1117,7 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
 		},
 		.psc_thr		= {
 			.tc_thr_name		= "ll_mgs",
-			.tc_nthrs_min		= MGS_NTHRS_INIT,
+			.tc_nthrs_init		= MGS_NTHRS_INIT,
 			.tc_nthrs_max		= MGS_NTHRS_MAX,
 			.tc_ctx_tags		= LCT_MD_THREAD,
 		},

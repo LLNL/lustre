@@ -654,7 +654,6 @@ static int mdd_changelog_ns_store(const struct lu_env  *env,
 				  const struct lu_name *tname,
 				  struct thandle *handle)
 {
-#ifdef XXX_MDD_CHANGELOG
 	struct llog_changelog_rec	*rec;
 	struct lu_buf			*buf;
 	int				 reclen;
@@ -695,7 +694,6 @@ static int mdd_changelog_ns_store(const struct lu_env  *env,
 			PFID(&rec->cr.cr_pfid));
 		RETURN(-EFAULT);
 	}
-#endif
 	RETURN(0);
 }
 
@@ -722,7 +720,6 @@ static int mdd_changelog_ext_ns_store(const struct lu_env  *env,
 				      const struct lu_name *sname,
 				      struct thandle *handle)
 {
-#ifdef XXX_MDD_CHANGELOG
 	struct llog_changelog_ext_rec *rec;
 	struct lu_buf *buf;
 	int reclen;
@@ -777,7 +774,6 @@ static int mdd_changelog_ext_ns_store(const struct lu_env  *env,
 			rc, type, tname->ln_name, PFID(sfid), PFID(tpfid));
 		return -EFAULT;
 	}
-#endif
 	return 0;
 }
 

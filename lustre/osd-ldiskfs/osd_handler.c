@@ -998,7 +998,6 @@ static void osd_conf_get(const struct lu_env *env,
         param->ddp_max_name_len = LDISKFS_NAME_LEN;
         param->ddp_max_nlink    = LDISKFS_LINK_MAX;
 	param->ddp_block_shift  = sb->s_blocksize_bits;
-        param->ddp_mnt          = osd_dt_dev(dev)->od_mnt;
         param->ddp_mount_type   = LDD_MT_LDISKFS;
         param->ddp_maxbytes     = sb->s_maxbytes;
         param->ddp_mntopts      = 0;
