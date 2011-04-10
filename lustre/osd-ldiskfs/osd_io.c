@@ -114,6 +114,7 @@ static void osd_iobuf_add_page(struct osd_iobuf *iobuf, struct page *page)
         iobuf->dr_pages[iobuf->dr_npages++] = page;
 }
 
+<<<<<<< HEAD
 void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf)
 {
         int rw = iobuf->dr_rw;
@@ -130,6 +131,8 @@ void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf)
         }
 }
 
+=======
+>>>>>>> ORI-110 Fix Jenkins build issues
 #ifdef HAVE_BIO_ENDIO_2ARG
 #define DIO_RETURN(a)
 static void dio_complete_routine(struct bio *bio, int error)
@@ -201,6 +204,7 @@ static int dio_complete_routine(struct bio *bio, unsigned int done, int error)
          * so the pool cannot be exhausted while IOs are competing. bug 10076 */
         bio_put(bio);
         DIO_RETURN(0);
+<<<<<<< HEAD
 }
 
 static void record_start_io(struct osd_iobuf *iobuf, int size)
@@ -224,6 +228,8 @@ static void record_start_io(struct osd_iobuf *iobuf, int size)
         } else {
                 LBUG();
         }
+=======
+>>>>>>> ORI-110 Fix Jenkins build issues
 }
 
 static void osd_submit_bio(int rw, struct bio *bio)
