@@ -439,6 +439,12 @@ static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
         return lu_context_key_get(&env->le_ctx, &osd_key);
 }
 
+#ifndef HAVE_PAGE_CONSTANT
+#define mapping_cap_page_constant_write(mapping) 0
+#define SetPageConstant(page) do {} while (0)
+#define ClearPageConstant(page) do {} while (0)
+#endif
+
 #ifdef LPROCFS
 enum {
         LPROC_OSD_READ_BYTES = 0,

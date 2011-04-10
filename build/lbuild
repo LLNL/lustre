@@ -1777,7 +1777,11 @@ while [ "$1" ]; do
                 LUSTRE_TESTS=false
             fi
             CONFIGURE_FLAGS=$@
-            CONFIGURE_FLAGS="$CONFIGURE_FLAGS --enable-liblustre --enable-liblustre-tests"
+            #
+            # This line is commented out to allow us to disable liblustre
+            # by default.
+            #
+            #CONFIGURE_FLAGS="$CONFIGURE_FLAGS --enable-liblustre --enable-liblustre-tests"
             break
             ;;
         *)
