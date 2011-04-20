@@ -285,6 +285,10 @@ AC_ARG_WITH([ldiskfs-inkernel],
 	AC_HELP_STRING([--with-ldiskfs-inkernel],
 			[use ldiskfs built in to the kernel]),
 	[with_ldiskfs=inkernel], [])
+AC_ARG_WITH([ldiskfs-devel],
+	AC_HELP_STRING([--with-ldiskfs-devel=path],
+			[set path to ldiskfs development headers]),
+	[with_ldiskfs=devel],[])
 AC_MSG_CHECKING([location of ldiskfs])
 case x$with_ldiskfs in
 	xyes)
@@ -304,6 +308,22 @@ case x$with_ldiskfs in
 			AC_MSG_ERROR([ldiskfs was not found in $LINUX/fs/ldiskfs/inode.c])
 		])
 		;;
+	xdevel)
+		LDISKFS_DIR=
+		if test x$with_ldiskfs_devel = xyes ; then
+			ldiskfs_src=$(ls -d /usr/src/lustre-ldiskfs-*/$LINUXRELEASE \
+					2>/dev/null | tail -1)
+		else
+			ldiskfs_src=$with_ldiskfs_devel
+		fi
+		LB_CHECK_FILE([$ldiskfs_src/ldiskfs/ldiskfs.h],[
+			LDISKFS_DIR=$(readlink -f $ldiskfs_src)
+		],[
+                        AC_MSG_ERROR([A complete ldiskfs development package was not found.])
+			ldiskfs_src=
+		])
+		AC_MSG_RESULT([$ldiskfs_src])
+		;;
 	*)
 		AC_MSG_RESULT([$with_ldiskfs])
 		LB_CHECK_FILE([$with_ldiskfs/ldiskfs/inode.c],[],[
@@ -316,6 +336,7 @@ AC_SUBST(LDISKFS_DIR)
 AC_SUBST(LDISKFS_SUBDIR)
 AM_CONDITIONAL(LDISKFS_ENABLED, test x$with_ldiskfs != xno)
 AM_CONDITIONAL(LDISKFS_IN_KERNEL, test x$with_ldiskfs = xinkernel)
+AM_CONDITIONAL(LDISKFS_DEVEL, test x$with_ldiskfs = xdevel)
 
 if test x$enable_ext4 = xyes ; then
 	AC_DEFINE(HAVE_EXT4_LDISKFS, 1, [build ext4 based ldiskfs])
