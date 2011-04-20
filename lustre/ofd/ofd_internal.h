@@ -329,31 +329,6 @@ struct filter_thread_info * filter_info_init(const struct lu_env *env,
         return info;
 }
 
-/*
- * Info allocated per-transaction.
- */
-#define OFD_MAX_COMMIT_CB       4
-struct filter_txn_info {
-        __u64                 txi_transno;
-        unsigned int          txi_cb_count;
-        struct lut_commit_cb  txi_cb[OFD_MAX_COMMIT_CB];
-};
-
-static inline void filter_trans_add_cb(const struct thandle *th,
-                                       lut_cb_t cb_func, void *cb_data)
-{
-        struct filter_txn_info *txi;
-
-        txi = lu_context_key_get(&th->th_ctx, &filter_txn_thread_key);
-        LASSERT(txi->txi_cb_count < ARRAY_SIZE(txi->txi_cb));
-
-        /* add new callback */
-        txi->txi_cb[txi->txi_cb_count].lut_cb_func = cb_func;
-        txi->txi_cb[txi->txi_cb_count].lut_cb_data = cb_data;
-        txi->txi_cb_count++;
-}
-
-
 extern void target_recovery_fini(struct obd_device *obd);
 extern void target_recovery_init(struct lu_target *lut,
                                  svc_handler_t handler);
@@ -441,7 +416,7 @@ void filter_trans_stop(const struct lu_env *env, struct filter_device *ofd,
                        struct filter_object *fo, struct thandle *th);
 int filter_client_free(struct lu_env *env, struct obd_export *exp);
 int filter_client_new(const struct lu_env *env, struct filter_device *ofd,
-                      struct filter_export_data *fed);
+                      struct obd_export *exp);
 int filter_client_add(const struct lu_env *env, struct filter_device *ofd,
                       struct filter_export_data *fed, int cl_idx);
 int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,

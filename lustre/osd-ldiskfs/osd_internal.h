@@ -116,6 +116,7 @@ struct osd_thandle {
         struct thandle          ot_super;
         handle_t               *ot_handle;
         struct journal_callback ot_jcb;
+        cfs_list_t              ot_dcb_list;
         /* Link to the device, for debugging. */
         struct lu_ref_link     *ot_dev_link;
         int                     ot_credits;
@@ -231,15 +232,6 @@ struct osd_device {
          * is named by its fid.
          */
         struct dt_object         *od_obj_area;
-
-        /* Environment for transaction commit callback.
-         * Currently, OSD is based on ext3/JBD. Transaction commit in ext3/JBD
-         * is serialized, that is there is no more than one transaction commit
-         * at a time (JBD journal_commit_transaction() is serialized).
-         * This means that it's enough to have _one_ lu_context.
-         */
-        struct lu_env             od_env_for_commit;
-
         /*
          * Fid Capability
          */

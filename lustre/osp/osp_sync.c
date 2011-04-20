@@ -990,9 +990,7 @@ struct osp_id_tracker {
 static CFS_DEFINE_MUTEX(osp_id_tracker_sem);
 static CFS_LIST_HEAD(osp_id_tracker_list);
 
-static int osp_sync_tracker_commit_cb(const struct lu_env *env,
-                                      struct thandle *th,
-                                      void *cookie)
+static void osp_sync_tracker_commit_cb(struct thandle *th, void *cookie)
 {
         struct osp_id_tracker *tr = cookie;
         struct osp_device     *d;
@@ -1001,11 +999,8 @@ static int osp_sync_tracker_commit_cb(const struct lu_env *env,
         LASSERT(tr);
 
         txn = osp_txn_info(&th->th_ctx);
-        if (txn == NULL)
-                return 0;
-
-        if (txn->oti_current_id < tr->otr_committed_id)
-                return 0;
+        if (txn == NULL || txn->oti_current_id < tr->otr_committed_id)
+                return;
 
         cfs_spin_lock(&tr->otr_lock);
         if (likely(txn->oti_current_id > tr->otr_committed_id)) {
@@ -1020,8 +1015,6 @@ static int osp_sync_tracker_commit_cb(const struct lu_env *env,
                 }
         }
         cfs_spin_unlock(&tr->otr_lock);
-
-        return 0;
 }
 
 static int osp_sync_id_traction_init(struct osp_device *d)

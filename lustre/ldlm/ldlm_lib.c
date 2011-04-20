@@ -641,21 +641,6 @@ static int target_handle_reconnect(struct lustre_handle *conn,
         RETURN(0);
 }
 
-void target_client_add_cb(struct obd_device *obd, __u64 transno, void *cb_data,
-                          int error)
-{
-        struct obd_export *exp = cb_data;
-
-        CDEBUG(D_RPCTRACE, "%s: committing for initial connect of %s\n",
-               obd->obd_name, exp->exp_client_uuid.uuid);
-
-        cfs_spin_lock(&exp->exp_lock);
-        exp->exp_need_sync = 0;
-        cfs_spin_unlock(&exp->exp_lock);
-        class_export_cb_put(exp);
-}
-EXPORT_SYMBOL(target_client_add_cb);
-
 static void
 target_start_and_reset_recovery_timer(struct obd_device *obd,
                                       struct ptlrpc_request *req,

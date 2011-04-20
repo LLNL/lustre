@@ -79,6 +79,21 @@ struct dt_device_param {
 };
 
 /**
+ * Per-transaction commit callback function
+ */
+struct dt_txn_commit_cb;
+typedef void (*dt_cb_t)(struct lu_env *env, struct thandle *th,
+                        struct dt_txn_commit_cb *cb, int err);
+/**
+ * Special per-transaction callback for cases when just commit callback
+ * is needed and per-device callback are not convenient to use
+ */
+struct dt_txn_commit_cb {
+        cfs_list_t dcb_linkage;
+        dt_cb_t    dcb_func;
+};
+
+/**
  * Operations on dt device.
  */
 struct dt_device_operations {
@@ -102,6 +117,11 @@ struct dt_device_operations {
          */
         int   (*dt_trans_stop)(const struct lu_env *env,
                                struct thandle *th);
+        /**
+         * Add commit callback to the transaction.
+         */
+        int   (*dt_trans_cb_add)(struct thandle *th,
+                                 struct dt_txn_commit_cb *dcb);
         /**
          * Return fid of root index object.
          */
@@ -663,8 +683,7 @@ struct dt_txn_callback {
                              struct thandle *txn, void *cookie);
         int (*dtc_txn_stop)(const struct lu_env *env,
                             struct thandle *txn, void *cookie);
-        int (*dtc_txn_commit)(const struct lu_env *env,
-                              struct thandle *txn, void *cookie);
+        void (*dtc_txn_commit)(struct thandle *txn, void *cookie);
         void                *dtc_cookie;
         __u32                dtc_tag;
         cfs_list_t           dtc_linkage;
@@ -676,7 +695,7 @@ void dt_txn_callback_del(struct dt_device *dev, struct dt_txn_callback *cb);
 int dt_txn_hook_start(const struct lu_env *env,
                       struct dt_device *dev, struct thandle *txn);
 int dt_txn_hook_stop(const struct lu_env *env, struct thandle *txn);
-int dt_txn_hook_commit(const struct lu_env *env, struct thandle *txn);
+void dt_txn_hook_commit(struct thandle *txn);
 
 int dt_try_as_dir(const struct lu_env *env, struct dt_object *obj);
 
@@ -751,19 +770,24 @@ static inline struct thandle *dt_trans_create(const struct lu_env *env,
 }
 
 static inline int dt_trans_start(const struct lu_env *env,
-                                             struct dt_device *d,
-                                             struct thandle *th)
+                                 struct dt_device *d, struct thandle *th)
 {
         LASSERT(d->dd_ops->dt_trans_start);
         return d->dd_ops->dt_trans_start(env, d, th);
 }
 
 static inline int dt_trans_stop(const struct lu_env *env,
-                                 struct dt_device *d,
-                                 struct thandle *th)
+                                struct dt_device *d, struct thandle *th)
 {
         LASSERT(d->dd_ops->dt_trans_stop);
         return d->dd_ops->dt_trans_stop(env, th);
+}
+
+static inline int dt_trans_cb_add(struct thandle *th,
+                                  struct dt_txn_commit_cb *dcb)
+{
+        LASSERT(th->th_dev->dd_ops->dt_trans_cb_add);
+        return th->th_dev->dd_ops->dt_trans_cb_add(th, dcb);
 }
 /** @} dt */
 

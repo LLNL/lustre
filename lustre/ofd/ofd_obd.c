@@ -243,7 +243,7 @@ static int filter_obd_connect(const struct lu_env *env, struct obd_export **_exp
                 struct tg_export_data *ted = &exp->exp_target_data;
                 memcpy(ted->ted_lcd->lcd_uuid, cluuid,
                        sizeof(ted->ted_lcd->lcd_uuid));
-                rc = filter_client_new(env, ofd, &exp->exp_filter_data);
+                rc = filter_client_new(env, ofd, exp);
                 if (rc != 0)
                         GOTO(out, rc);
         }

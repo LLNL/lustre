@@ -49,8 +49,9 @@
  * Otherwise, we have just read the data from the last_rcvd file and
  * we know its offset. */
 int filter_client_new(const struct lu_env *env, struct filter_device *ofd,
-                      struct filter_export_data *fed)
+                      struct obd_export *exp)
 {
+        struct filter_export_data *fed = &exp->exp_filter_data;
         struct obd_device *obd = filter_obd(ofd);
         unsigned long *bitmap = ofd->ofd_lut.lut_client_bitmap;
         struct tg_export_data *ted = &fed->fed_ted;
@@ -104,15 +105,21 @@ repeat:
         err = filter_trans_start(env, ofd, th);
         if (err)
                 RETURN(err);
-        /* XXX: until this operations will be committed the sync is needed for this
-         * export */
         /*
-        mdt_trans_add_cb(th, mdt_cb_new_client, mti->mti_exp);
-        cfs_spin_lock(&mti->mti_exp->exp_lock);
-        mti->mti_exp->exp_need_sync = 1;
-        cfs_spin_unlock(&mti->mti_exp->exp_lock);
-        */
-
+         * Until this operations will be committed the sync is needed
+         * for this export. This should be done _after_ starting the
+         * transaction so that many connecting clients will not bring
+         * server down with lots of sync writes.
+         */
+        err = lut_new_client_cb_add(th, exp);
+        if (err) {
+                /* can't add callback, do sync now */
+                th->th_sync = 1;
+        } else {
+                cfs_spin_lock(&exp->exp_lock);
+                exp->exp_need_sync = 1;
+                cfs_spin_unlock(&exp->exp_lock);
+        }
         err = filter_last_rcvd_write(env, ofd, lcd, &off, th);
 
         CDEBUG(D_INFO, "wrote client lcd at idx %u off %llu (len %u)\n",

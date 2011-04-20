@@ -128,7 +128,6 @@ struct mdd_device {
         struct lu_fid                    mdd_root_fid;
         struct dt_device_param           mdd_dt_conf;
         struct mdd_object               *mdd_orphans;
-        struct dt_txn_callback           mdd_txn_cb;
         cfs_proc_dir_entry_t            *mdd_proc_entry;
         struct lprocfs_stats            *mdd_stats;
         struct mdd_txn_op_descr          mdd_tod[MDD_TXN_LAST_OP];
@@ -458,15 +457,6 @@ int mdd_trans_start(const struct lu_env *env,
 
 void mdd_trans_stop(const struct lu_env *env, struct mdd_device *mdd,
                     int rc, struct thandle *handle);
-
-int mdd_txn_start_cb(const struct lu_env *env, struct thandle *th,
-                     void *cookie);
-
-int mdd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
-                    void *cookie);
-
-int mdd_txn_commit_cb(const struct lu_env *env, struct thandle *txn,
-                      void *cookie);
 
 struct mdd_thandle *mdd_tx_start(const struct lu_env *env, struct mdd_device *mdd);
 int mdd_tx_end(const struct lu_env *env, struct mdd_thandle *th);

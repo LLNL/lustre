@@ -134,13 +134,6 @@ static int mdd_init0(const struct lu_env *env, struct mdd_device *mdd,
         if (rc)
                 RETURN(rc);
 
-        /* Prepare transactions callbacks. */
-        mdd->mdd_txn_cb.dtc_txn_start = mdd_txn_start_cb;
-        mdd->mdd_txn_cb.dtc_txn_stop = mdd_txn_stop_cb;
-        mdd->mdd_txn_cb.dtc_txn_commit = mdd_txn_commit_cb;
-        mdd->mdd_txn_cb.dtc_cookie = mdd;
-        mdd->mdd_txn_cb.dtc_tag = LCT_MD_THREAD;
-        CFS_INIT_LIST_HEAD(&mdd->mdd_txn_cb.dtc_linkage);
         mdd->mdd_atime_diff = MAX_ATIME_DIFF;
         /* sync permission changes */
         mdd->mdd_sync_permission = 1;
@@ -163,7 +156,6 @@ static void mdd_device_shutdown(const struct lu_env *env,
 #ifdef XXX_MDD_CHANGELOG
         mdd_changelog_fini(env, m);
 #endif
-        dt_txn_callback_del(m->mdd_child, &m->mdd_txn_cb);
         orph_index_fini(env, m);
         if (m->mdd_dot_lustre_objs.mdd_obf)
                 mdd_object_put(env, m->mdd_dot_lustre_objs.mdd_obf);
@@ -1117,8 +1109,6 @@ static int mdd_prepare(const struct lu_env *env,
         if (rc)
                 GOTO(out, rc);
 
-        /* XXX: register at bottom device */ 
-        dt_txn_callback_add(mdd->mdd_child, &mdd->mdd_txn_cb);
         root = dt_store_open(env, mdd->mdd_child, "", mdd_root_dir_name,
                              &mdd->mdd_root_fid);
         if (!IS_ERR(root)) {

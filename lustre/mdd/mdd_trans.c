@@ -58,29 +58,11 @@
 
 #include "mdd_internal.h"
 
-int mdd_txn_start_cb(const struct lu_env *env, struct thandle *txn,
-                     void *cookie)
-{
-        return 0;
-}
-
-int mdd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
-                    void *cookie)
-{
-        return 0;
-}
-
-int mdd_txn_commit_cb(const struct lu_env *env, struct thandle *txn,
-                      void *cookie)
-{
-        return 0;
-}
-
 struct thandle* mdd_trans_create(const struct lu_env *env,
                                 struct mdd_device *mdd)
 {
         struct thandle *th;
- 
+
         th = mdd_child_ops(mdd)->dt_trans_create(env, mdd->mdd_child);
         return th;
 }
@@ -88,7 +70,6 @@ struct thandle* mdd_trans_create(const struct lu_env *env,
 int mdd_trans_start(const struct lu_env *env,
                                 struct mdd_device *mdd, struct thandle *handle)
 {
-                
         return mdd_child_ops(mdd)->dt_trans_start(env, mdd->mdd_child, handle);
 }
 

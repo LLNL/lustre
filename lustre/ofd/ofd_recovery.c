@@ -159,13 +159,6 @@ static int filter_last_rcvd_update(struct filter_thread_info *info,
         RETURN(err);
 }
 
-/* add credits for last_rcvd update */
-static int filter_txn_start_cb(const struct lu_env *env,
-                               struct thandle *handle, void *cookie)
-{
-        return 0;
-}
-
 /* Set new object versions */
 static void filter_version_set(struct filter_thread_info *info)
 {
@@ -182,18 +175,14 @@ int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
                        void *cookie)
 {
         struct filter_device *ofd = cookie;
-        struct filter_txn_info *txi;
         struct filter_thread_info *info;
         ENTRY;
 
-        /* transno in two contexts - for commit_cb and for thread */
-        txi = lu_context_key_get(&txn->th_ctx, &filter_txn_thread_key);
         info = lu_context_key_get(&env->le_ctx, &filter_thread_key);
 
         if (info->fti_exp == NULL || info->fti_no_need_trans ||
             info->fti_exp->exp_filter_data.fed_ted.ted_lcd == NULL) {
-                txi->txi_transno = 0;
-                RETURN(0);
+                 RETURN(0);
         }
 
         LASSERT(filter_exp(info->fti_exp) == ofd);
@@ -233,37 +222,12 @@ int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
         CDEBUG(D_INODE, "transno = %llu, last_committed = %llu\n",
                info->fti_transno, filter_obd(ofd)->obd_last_committed);
 
-        /* save transno for the commit callback */
-        txi->txi_transno = info->fti_transno;
-
-        filter_trans_add_cb(txn, lut_cb_last_committed,
-                            class_export_cb_get(info->fti_exp));
+        /* if can't add callback, do sync write */
+        txn->th_sync = !!lut_last_commit_cb_add(txn, &ofd->ofd_lut,
+                                                info->fti_exp,
+                                                info->fti_transno);
 
         return filter_last_rcvd_update(info, txn);
-}
-
-/* commit callback, need to update last_commited value */
-static int filter_txn_commit_cb(const struct lu_env *env,
-                                struct thandle *txn, void *cookie)
-{
-        struct filter_device *ofd = cookie;
-        struct filter_txn_info *txi;
-        int i;
-
-        txi = lu_context_key_get(&txn->th_ctx, &filter_txn_thread_key);
-
-        /*
-         * thandle with context could be created before filter
-         */
-        if (unlikely(txi == NULL))
-                return 0;
-
-        /* iterate through all additional callbacks */
-        for (i = 0; i < txi->txi_cb_count; i++) {
-                txi->txi_cb[i].lut_cb_func(&ofd->ofd_lut, txi->txi_transno,
-                                           txi->txi_cb[i].lut_cb_data, 0);
-        }
-        return 0;
 }
 
 int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
@@ -278,9 +242,9 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
                 RETURN (-ENOENT);
 
         /* prepare transactions callbacks */
-        ofd->ofd_txn_cb.dtc_txn_start = filter_txn_start_cb;
+        ofd->ofd_txn_cb.dtc_txn_start = NULL;
         ofd->ofd_txn_cb.dtc_txn_stop = filter_txn_stop_cb;
-        ofd->ofd_txn_cb.dtc_txn_commit = filter_txn_commit_cb;
+        ofd->ofd_txn_cb.dtc_txn_commit = NULL;
         ofd->ofd_txn_cb.dtc_cookie = ofd;
         ofd->ofd_txn_cb.dtc_tag = LCT_DT_THREAD;
         CFS_INIT_LIST_HEAD(&ofd->ofd_txn_cb.dtc_linkage);

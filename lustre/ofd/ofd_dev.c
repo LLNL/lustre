@@ -824,12 +824,8 @@ struct lu_context_key filter_thread_key = {
         .lct_exit = filter_key_exit
 };
 
-/* transaction context key */
-LU_KEY_INIT_FINI(filter_txn, struct filter_txn_info);
-LU_CONTEXT_KEY_DEFINE(filter_txn, LCT_TX_HANDLE);
-
 /* type constructor/destructor: mdt_type_init, mdt_type_fini */
-LU_TYPE_INIT_FINI(filter, &filter_thread_key, &filter_txn_thread_key);
+LU_TYPE_INIT_FINI(filter, &filter_thread_key);
 
 static struct lu_device_type_operations filter_device_type_ops = {
         .ldto_init         = filter_type_init,
