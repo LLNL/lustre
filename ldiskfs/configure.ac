@@ -2,7 +2,6 @@
 
 AC_INIT([Lustre ldiskfs], 3.3.0, [http://bugs.whamcloud.com/])
 AC_CONFIG_SRCDIR([lustre-ldiskfs.spec.in])
-ldiskfs_is_ext4=yes
 
 # Don't look for install-sh, etc. in ..
 AC_CONFIG_AUX_DIR([.])
@@ -94,26 +93,19 @@ if test x$enable_ldiskfs$PATCH$QUILT = xyesnono ; then
 fi
 
 AM_CONDITIONAL(USE_QUILT, test x$QUILT != xno)
+AM_CONDITIONAL(USE_EXT4, test x$enable_ext4 = xyes)
 
-LB_DEFINE_LDISKFS_OPTIONS
+if test x$enable_dist != xyes; then
+LB_LDISKFS_EXT_RELEASE
+LB_LDISKFS_EXT_DIR
+LB_LDISKFS_EXT_SOURCE
+LB_LDISKFS_DEFINE_OPTIONS
 
-LB_HAVE_EXT4_ENABLED
-
-if test x$enable_ext4 = xyes ; then
-	AC_DEFINE(HAVE_EXT4_LDISKFS, 1, [ldiskfs based on ext4])
-	BACKFS=ext4
-else
-	BACKFS=ext3
-fi
-
+BACKFS=$LDISKFS_BACKFS
 AC_SUBST(BACKFS)
 BACKFSU=${BACKFS/ext/EXT}
 AC_SUBST(BACKFSU) # We need a Upper string
 
-AM_CONDITIONAL(USE_EXT4, test x$enable_ext4 = xyes)
-
-if test x$enable_dist != xyes; then
-	# don't need to do this if only configuring for make dist
 AC_MSG_CHECKING([which ldiskfs series to use])
 case $LINUXRELEASE in
 2.6.5*) LDISKFS_SERIES="2.6-suse.series" ;;
