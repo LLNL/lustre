@@ -909,6 +909,8 @@ static int mdt_txn_start_cb(const struct lu_env *env,
         int rc;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
+	if (mti == NULL)
+		return 0;
 
         LASSERT(mdt->mdt_lut.lut_last_rcvd);
         off = mti->mti_exp ?
