@@ -102,7 +102,7 @@ repeat:
         /* off is changed, use tmp value */
         off = ted->ted_lr_off;
         dt_declare_record_write(env, ofd->ofd_last_rcvd, sizeof(*lcd), off, th);
-        err = filter_trans_start(env, ofd, th);
+        err = dt_trans_start_local(env, ofd->ofd_osd, th);
         if (err)
                 RETURN(err);
         /*
@@ -168,7 +168,6 @@ int filter_client_add(const struct lu_env *env, struct filter_device *ofd,
 int filter_client_free(struct lu_env *env, struct obd_export *exp)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
-        struct filter_thread_info *info;
         struct obd_device *obd = exp->exp_obd;
         struct filter_device *ofd = filter_exp(exp);
         struct tg_export_data *ted = &fed->fed_ted;
@@ -185,8 +184,7 @@ int filter_client_free(struct lu_env *env, struct obd_export *exp)
         if (!strcmp((char *)lcd->lcd_uuid, (char *)obd->obd_uuid.uuid))
                 GOTO(free, 0);
 
-        info = filter_info_init(env, exp);
-        info->fti_no_need_trans = 1;
+        filter_info_init(env, exp);
 
         CDEBUG(D_INFO, "freeing client at idx %u, offset %lld with UUID '%s'\n",
                ted->ted_lr_idx, ted->ted_lr_off, lcd->lcd_uuid);
@@ -212,7 +210,7 @@ int filter_client_free(struct lu_env *env, struct obd_export *exp)
                 dt_declare_record_write(env, ofd->ofd_last_rcvd,
                                         sizeof(ofd->ofd_fsd), 0, th);
 
-                rc = filter_trans_start(env, ofd, th);
+                rc = dt_trans_start_local(env, ofd->ofd_osd, th);
                 if (rc)
                         GOTO(free, rc);
                 memset(lcd->lcd_uuid, 0, sizeof(lcd->lcd_uuid));

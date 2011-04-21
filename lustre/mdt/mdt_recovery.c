@@ -80,38 +80,6 @@ const struct lu_buf *mdt_buf_const(const struct lu_env *env,
         return buf;
 }
 
-int mdt_record_read(const struct lu_env *env,
-                    struct dt_object *dt, struct lu_buf *buf, loff_t *pos)
-{
-        int rc;
-
-        LASSERTF(dt != NULL, "dt is NULL when we want to read record\n");
-
-        rc = dt->do_body_ops->dbo_read(env, dt, buf, pos, BYPASS_CAPA);
-
-        if (rc == buf->lb_len)
-                rc = 0;
-        else if (rc >= 0)
-                rc = -EFAULT;
-        return rc;
-}
-
-int mdt_record_write(const struct lu_env *env,
-                     struct dt_object *dt, const struct lu_buf *buf,
-                     loff_t *pos, struct thandle *th)
-{
-        int rc;
-
-        LASSERTF(dt != NULL, "dt is NULL when we want to write record\n");
-        LASSERT(th != NULL);
-        rc = dt->do_body_ops->dbo_write(env, dt, buf, pos, th, BYPASS_CAPA, 1);
-        if (rc == buf->lb_len)
-                rc = 0;
-        else if (rc >= 0)
-                rc = -EFAULT;
-        return rc;
-}
-
 void mdt_trans_stop(const struct lu_env *env,
                     struct mdt_device *mdt, struct thandle *th)
 {
@@ -347,7 +315,7 @@ static int mdt_truncate_last_rcvd(const struct lu_env *env,
         if (rc)
                 GOTO(cleanup, rc);
 
-        rc = dt_trans_start(env, mdt->mdt_bottom, th);
+        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
         if (rc)
                 GOTO(cleanup, rc);
 
@@ -540,12 +508,13 @@ static int mdt_server_data_update(const struct lu_env *env,
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
 
+        mti->mti_off = 0;
         rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
                                      sizeof(mti->mti_lsd), mti->mti_off, th);
         if (rc)
                 goto out;
 
-        rc = dt_trans_start(env, mdt->mdt_bottom, th);
+        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
         if (rc)
                 goto out;
 
@@ -627,7 +596,7 @@ int mdt_client_new(const struct lu_env *env, struct mdt_device *mdt)
         if (rc)
                 goto stop;
 
-        rc = dt_trans_start(env, mdt->mdt_bottom, th);
+        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
         if (rc)
                 goto stop;
 
@@ -770,7 +739,7 @@ int mdt_client_del(const struct lu_env *env, struct mdt_device *mdt)
         if (rc)
                 GOTO(stop, rc);
 
-        rc = dt_trans_start(env, mdt->mdt_bottom, th);
+        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
         if (rc)
                 GOTO(stop, rc);
 
@@ -900,8 +869,6 @@ static int mdt_txn_start_cb(const struct lu_env *env,
         int rc;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-	if (mti == NULL)
-		return 0;
 
         LASSERT(mdt->mdt_lut.lut_last_rcvd);
         off = mti->mti_exp ?
@@ -930,14 +897,10 @@ static int mdt_txn_stop_cb(const struct lu_env *env,
         struct ptlrpc_request *req;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        if (mti == NULL)
-                return 0;
         req = mdt_info_req(mti);
 
-        if (mti->mti_mdt == NULL || req == NULL || mti->mti_no_need_trans) {
-                mti->mti_no_need_trans = 0;
+        if (mti->mti_mdt == NULL || req == NULL)
                 return 0;
-        }
 
         if (mti->mti_has_trans) {
                 /* XXX: currently there are allowed cases, but the wrong cases

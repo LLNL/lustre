@@ -103,7 +103,7 @@ static int write_capa_keys(const struct lu_env *env,
         if (rc)
                 goto stop;
 
-        rc = dt_trans_start(env, mdt->mdt_bottom, th);
+        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
         if (rc)
                 goto stop;
 

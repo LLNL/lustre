@@ -149,15 +149,6 @@ struct fld_thread_info {
         struct lu_seq_range fti_irange;
 };
 
-
-struct thandle *fld_trans_create(struct lu_server_fld *fld,
-                                const struct lu_env *env);
-int fld_trans_start(struct lu_server_fld *fld,
-                    const struct lu_env *env, struct thandle *th);
-
-void fld_trans_stop(struct lu_server_fld *fld,
-                    const struct lu_env *env, struct thandle* th);
-
 int fld_index_init(struct lu_server_fld *fld,
                    const struct lu_env *env,
                    struct dt_device *dt);
