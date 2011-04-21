@@ -419,13 +419,12 @@ else
 		        #include <rdma/ib_verbs.h>
 		        #include <rdma/ib_fmr_pool.h>
 		],[
-		        struct rdma_cm_id          *cm_id;
-		        struct rdma_conn_param      conn_param;
-		        struct ib_device_attr       device_attr;
-		        struct ib_qp_attr           qp_attr;
-		        struct ib_pool_fmr          pool_fmr;
-		        enum   ib_cm_rej_reason     rej_reason;
-
+		        struct rdma_cm_id      *cm_id;
+		        struct rdma_conn_param  conn_param __attribute__ ((unused));
+		        struct ib_device_attr   device_attr __attribute__ ((unused));
+		        struct ib_qp_attr       qp_attr __attribute__ ((unused));
+		        struct ib_pool_fmr      pool_fmr __attribute__ ((unused));
+		        enum   ib_cm_rej_reason rej_reason __attribute__ ((unused));
 		        cm_id = rdma_create_id(NULL, NULL, RDMA_PS_TCP);
 		        return PTR_ERR(cm_id);
 		],[
@@ -531,13 +530,13 @@ AC_DEFUN([LN_5ARGS_SYSCTL_PROC_HANDLER],
 LB_LINUX_TRY_COMPILE([
        #include <linux/sysctl.h>
 ],[
-        struct ctl_table *table = NULL;
+       struct ctl_table *table = NULL;
        int write = 1;
        void __user *buffer = NULL;
        size_t *lenp = NULL;
        loff_t *ppos = NULL;
 
-       proc_handler *proc_handler;
+       proc_handler *proc_handler = NULL;
        proc_handler(table, write, buffer, lenp, ppos);
 
 ],[
