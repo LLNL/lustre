@@ -944,6 +944,8 @@ static int mdt_txn_stop_cb(const struct lu_env *env,
         /* transno in two contexts - for commit_cb and for thread */
         txi = lu_context_key_get(&txn->th_ctx, &mdt_txn_key);
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
+        if (mti == NULL)
+                return 0;
         req = mdt_info_req(mti);
 
         if (mti->mti_mdt == NULL || req == NULL || mti->mti_no_need_trans) {
