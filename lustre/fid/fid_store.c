@@ -137,7 +137,7 @@ int seq_store_update(const struct lu_env *env, struct lu_server_seq *seq,
                         GOTO(out, rc);
         }
 
-        rc = dt_trans_start(env, dt_dev, th);
+        rc = dt_trans_start_local(env, dt_dev, th);
         if (rc)
                 GOTO(out, rc);
 

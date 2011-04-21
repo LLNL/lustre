@@ -315,7 +315,7 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
                 rc = dt_declare_record_write(env, o, sizeof(sbd), 0, _th);
                 LASSERT(rc == 0);
 
-                rc = dt_trans_start(env, dev, _th);
+                rc = dt_trans_start_local(env, dev, _th);
                 LASSERT(rc == 0);
 
                 dt_write_lock(env, o, 0);
@@ -464,7 +464,7 @@ static int llog_osd_generate_fid(const struct lu_env *env0,
                 rc = dt_declare_record_write(env, o, sizeof(sbd), 0, _th);
                 LASSERT(rc == 0);
 
-                rc = dt_trans_start(env, dev, _th);
+                rc = dt_trans_start_local(env, dev, _th);
         } else
                 _th = th;
 
@@ -1504,7 +1504,7 @@ static int llog_osd_destroy(const struct lu_env *env,
                         GOTO(out, rc);
         }
 
-        rc = dt_trans_start(env, d, th);
+        rc = dt_trans_start_local(env, d, th);
         if (rc)
                 GOTO(out_trans, rc);
 
@@ -1572,7 +1572,7 @@ static int llog_osd_create(struct llog_ctxt *ctxt, struct llog_handle **res,
 
         rc = llog_osd_declare_create_2(&env, *res, th);
         if (rc == 0) {
-                rc = dt_trans_start(&env, dt, th);
+                rc = dt_trans_start_local(&env, dt, th);
                 if (rc == 0)
                         rc = llog_osd_create_2(&env, *res, th);
                 if (rc == -EEXIST)
@@ -1622,7 +1622,7 @@ static int llog_osd_write_rec(struct llog_handle *loghandle,
         if (rc)
                 GOTO(out_trans, rc);
 
-        rc = dt_trans_start(&env, dt, th);
+        rc = dt_trans_start_local(&env, dt, th);
         if (rc)
                 GOTO(out_trans, rc);
 
@@ -1779,7 +1779,7 @@ int llog_get_cat_list(struct obd_device *disk_obd,
                 if (rc)
                         GOTO(out_trans, rc);
 
-                rc = dt_trans_start(&env, d, th);
+                rc = dt_trans_start_local(&env, d, th);
                 if (rc)
                         GOTO(out_trans, rc);
 
@@ -1885,7 +1885,7 @@ int llog_put_cat_list(struct obd_device *disk_obd,
         if (rc)
                 GOTO(out, rc);
 
-        rc = dt_trans_start(&env, d, th);
+        rc = dt_trans_start_local(&env, d, th);
         if (rc)
                 GOTO(out_trans, rc);
 

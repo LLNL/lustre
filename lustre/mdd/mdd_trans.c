@@ -58,28 +58,6 @@
 
 #include "mdd_internal.h"
 
-struct thandle* mdd_trans_create(const struct lu_env *env,
-                                struct mdd_device *mdd)
-{
-        struct thandle *th;
-
-        th = mdd_child_ops(mdd)->dt_trans_create(env, mdd->mdd_child);
-        return th;
-}
-
-int mdd_trans_start(const struct lu_env *env,
-                                struct mdd_device *mdd, struct thandle *handle)
-{
-        return mdd_child_ops(mdd)->dt_trans_start(env, mdd->mdd_child, handle);
-}
-
-void mdd_trans_stop(const struct lu_env *env, struct mdd_device *mdd,
-                    int result, struct thandle *handle)
-{
-        handle->th_result = result;
-        mdd_child_ops(mdd)->dt_trans_stop(env, handle);
-}
-
 /*
  * Here is a short description of programming model used in MDD
  * to do with transactions and related error handling.
@@ -715,7 +693,7 @@ struct mdd_thandle *mdd_tx_start(const struct lu_env *env, struct mdd_device *md
 
         th->mtx_dev = mdd;
 
-        th->mtx_handle = mdd_trans_create(env, mdd);
+        th->mtx_handle = dt_trans_create(env, mdd->mdd_child);
         if (IS_ERR(th->mtx_handle)) {
                 CERROR("can't create transaction: %d\n",
                        (int) PTR_ERR(th->mtx_handle));
@@ -739,7 +717,7 @@ int mdd_tx_end(const struct lu_env *env, struct mdd_thandle *th)
                 GOTO(stop, rc);
         }
 
-        rc = mdd_trans_start(env, th->mtx_dev, th->mtx_handle);
+        rc = dt_trans_start(env, th->mtx_dev->mdd_child, th->mtx_handle);
         if (unlikely(rc))
                 GOTO(stop, rc);
 
@@ -761,7 +739,8 @@ int mdd_tx_end(const struct lu_env *env, struct mdd_thandle *th)
 
 stop:
         CDEBUG(D_OTHER, "executed %u/%u: %d\n", i, th->mtx_argno, rc);
-        mdd_trans_stop(env, th->mtx_dev, rc, th->mtx_handle);
+        th->mtx_handle->th_result = rc;
+        dt_trans_stop(env, th->mtx_dev->mdd_child, th->mtx_handle);
         th->mtx_handle = NULL;
         th->mtx_argno = 0;
         th->mtx_err = 0;

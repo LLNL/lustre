@@ -665,6 +665,8 @@ struct thandle {
 
         /** whether we need sync commit */
         int               th_sync;
+        /* local transation, no need to inform other layers */
+        int               th_local;
 };
 
 /**
@@ -773,6 +775,15 @@ static inline int dt_trans_start(const struct lu_env *env,
                                  struct dt_device *d, struct thandle *th)
 {
         LASSERT(d->dd_ops->dt_trans_start);
+        return d->dd_ops->dt_trans_start(env, d, th);
+}
+
+/* for this transaction hooks shouldn't be called */
+static inline int dt_trans_start_local(const struct lu_env *env,
+                                       struct dt_device *d, struct thandle *th)
+{
+        LASSERT(d->dd_ops->dt_trans_start);
+        th->th_local = 1;
         return d->dd_ops->dt_trans_start(env, d, th);
 }
 

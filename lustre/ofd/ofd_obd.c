@@ -206,7 +206,6 @@ static int filter_obd_connect(const struct lu_env *env, struct obd_export **_exp
                               struct obd_device *obd, struct obd_uuid *cluuid,
                               struct obd_connect_data *data, void *localdata)
 {
-        struct filter_thread_info *info;
         struct obd_export         *exp;
         struct filter_device      *ofd;
         struct lustre_handle       conn = { 0 };
@@ -230,8 +229,8 @@ static int filter_obd_connect(const struct lu_env *env, struct obd_export **_exp
                 CERROR("Failure to refill session: '%d'\n", rc);
                 GOTO(out, rc);
         }
-        info = filter_info_init(env, exp);
-        info->fti_no_need_trans = 1;
+
+        filter_info_init(env, exp);
 
         rc = filter_parse_connect_data(env, exp, data);
         if (rc)
@@ -814,7 +813,7 @@ out_env:
 
 static int filter_destroy_by_fid(const struct lu_env *env,
                                  struct filter_device *ofd,
-                                 const struct lu_fid *fid)
+                                 const struct lu_fid *fid, int orphan)
 {
         struct filter_thread_info *info = filter_info(env);
         struct lustre_handle lockh;
@@ -840,7 +839,7 @@ static int filter_destroy_by_fid(const struct lu_env *env,
                 RETURN(PTR_ERR(fo));
         LASSERT(fo != NULL);
 
-        rc = filter_object_destroy(env, fo);
+        rc = filter_object_destroy(env, fo, orphan);
 
         filter_object_put(env, fo);
         RETURN(rc);
@@ -884,7 +883,7 @@ int filter_destroy(struct obd_export *exp,
                 int lrc;
 
                 fid_ostid_unpack(&info->fti_fid, &oa->o_oi, 0);
-                lrc = filter_destroy_by_fid(env, ofd, &info->fti_fid);
+                lrc = filter_destroy_by_fid(env, ofd, &info->fti_fid, 0);
                 if (lrc == -ENOENT) {
                         CDEBUG(D_INODE, "destroying non-existent object "LPU64"\n",
                                oa->o_id);
@@ -923,7 +922,6 @@ static int filter_orphans_destroy(const struct lu_env *env,
         struct ost_id              oi = oa->o_oi;
         ENTRY;
 
-        info->fti_no_need_trans = 1;
         LASSERT(exp != NULL);
         skip_orphan = !!(exp->exp_connect_flags & OBD_CONNECT_SKIP_ORPHAN);
 
@@ -935,7 +933,7 @@ static int filter_orphans_destroy(const struct lu_env *env,
 
         for (oi.oi_id = last; oi.oi_id > oa->o_id; oi.oi_id--) {
                 fid_ostid_unpack(&info->fti_fid, &oi, 0);
-                rc = filter_destroy_by_fid(env, ofd, &info->fti_fid);
+                rc = filter_destroy_by_fid(env, ofd, &info->fti_fid, 1);
                 if (rc && rc != -ENOENT) /* this is pretty fatal... */
                         CEMERG("error destroying precreated id "LPU64": %d\n",
                                oi.oi_id, rc);
@@ -945,7 +943,7 @@ static int filter_orphans_destroy(const struct lu_env *env,
                          * restart * we don't need to re-scan all of the just
                          * deleted objects. */
                         if ((oi.oi_id & 511) == 0)
-                                filter_last_id_write(env, ofd, oa->o_seq, 0);
+                                filter_last_id_write(env, ofd, oa->o_seq, NULL);
                 }
         }
         CDEBUG(D_HA, "%s: after destroy: set last_objids["LPU64"] = "LPU64"\n",
@@ -973,7 +971,6 @@ int filter_create(struct obd_export *exp, struct obdo *oa,
         LASSERT(rc == 0);
 
         info = filter_info_init(env, exp);
-        info->fti_no_need_trans = 1;
         filter_oti2info(info, oti);
 
         LASSERT(oa->o_seq >= FID_SEQ_OST_MDT0);
@@ -1050,7 +1047,6 @@ int filter_create(struct obd_export *exp, struct obdo *oa,
                         if (rc)
                                 break;
                 }
-                filter_last_id_write(env, ofd, oa->o_seq, 0);
                 if (i > 0) {
                         /* some objects got created, we can return
                          * them, even if last creation failed */
