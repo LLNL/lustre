@@ -562,8 +562,9 @@ LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
         #include <linux/namei.h>
 ],[
-        struct open_intent intent;
-        &intent.file;
+        struct open_intent *intent = NULL;
+        struct file *file __attribute__ ((unused));
+        file = intent->file;
 ],[
         AC_MSG_RESULT([yes])
         AC_DEFINE(HAVE_FILE_IN_STRUCT_INTENT, 1, [struct open_intent has a file field])
@@ -732,8 +733,9 @@ AC_DEFUN([LC_QUOTA_READ],
 LB_LINUX_TRY_COMPILE([
 	#include <linux/fs.h>
 ],[
-	struct super_operations sp;
-        void *i = (void *)sp.quota_read;
+        struct super_operations *sp = NULL;
+        void *i __attribute__ ((unused));
+        i = (void *)sp->quota_read;
 ],[
 	AC_MSG_RESULT([yes])
 	AC_DEFINE(KERNEL_SUPPORTS_QUOTA_READ, 1, [quota_read found])
@@ -747,17 +749,16 @@ LB_LINUX_TRY_COMPILE([
 #
 # kernel 2.6.13+ ->follow_link returns a cookie
 #
-
 AC_DEFUN([LC_COOKIE_FOLLOW_LINK],
 [AC_MSG_CHECKING([if inode_operations->follow_link returns a cookie])
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
         #include <linux/namei.h>
 ],[
-        struct dentry dentry;
+        struct dentry *dentry = NULL;
         struct nameidata nd;
 
-        dentry.d_inode->i_op->put_link(&dentry, &nd, NULL);
+        dentry->d_inode->i_op->put_link(dentry, &nd, NULL);
 ],[
         AC_DEFINE(HAVE_COOKIE_FOLLOW_LINK, 1, [inode_operations->follow_link returns a cookie])
         AC_MSG_RESULT([yes])
@@ -839,9 +840,9 @@ AC_DEFUN([LC_S_TIME_GRAN],
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
 ],[
-	struct super_block sb;
+        struct super_block *sb = NULL;
 
-        return sb.s_time_gran;
+        return sb->s_time_gran;
 ],[
 	AC_MSG_RESULT([yes])
 	AC_DEFINE(HAVE_S_TIME_GRAN, 1, [super block has s_time_gran member])
@@ -928,12 +929,9 @@ AC_DEFUN([LC_SECURITY_PLUG],
 [AC_MSG_CHECKING([If kernel has security plug support])
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
+        #include <linux/stddef.h>
 ],[
-        struct dentry   *dentry;
-        struct vfsmount *mnt;
-        struct iattr    *iattr;
-
-        notify_change(dentry, mnt, iattr);
+        notify_change(NULL, NULL, NULL);
 ],[
         AC_MSG_RESULT(yes)
         AC_DEFINE(HAVE_SECURITY_PLUG, 1,
@@ -1051,7 +1049,8 @@ AC_DEFUN([LC_INVALIDATEPAGE_RETURN_INT],
 LB_LINUX_TRY_COMPILE([
         #include <linux/buffer_head.h>
 ],[
-	int rc = block_invalidatepage(NULL, 0);
+        int rc __attribute__ ((unused));
+        rc = block_invalidatepage(NULL, 0);
 ],[
 	AC_MSG_RESULT(yes)
 	AC_DEFINE(HAVE_INVALIDATEPAGE_RETURN_INT, 1,
@@ -1134,7 +1133,7 @@ LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
 ],[
         struct file_operations *fops = NULL;
-        fl_owner_t id;
+        fl_owner_t id = NULL;
         int i;
 
         i = fops->flush(NULL, id);
@@ -1175,7 +1174,7 @@ EXTRA_KCFLAGS="-I$LINUX/fs"
 LB_LINUX_TRY_COMPILE([
         #include <ext4/ext4.h>
 ],[
-        struct inode i;
+        struct inode i __attribute__ ((unused));
         ext4_discard_preallocations(&i);
 ],[
         AC_MSG_RESULT(yes)
@@ -1239,7 +1238,7 @@ LB_LINUX_TRY_COMPILE([
 #endif
 	#include <linux/page-flags.h>
 ],[
- 	struct page *p;
+        struct page *p = NULL;
 
         /* before 2.6.26 this define*/
         #ifndef PageChecked	
@@ -1461,7 +1460,7 @@ LB_LINUX_TRY_COMPILE([
         #include <linux/err.h>
         #include <linux/crypto.h>
 ],[
-        struct hash_desc foo;
+        struct hash_desc foo __attribute__ ((unused));
 ],[
         AC_MSG_RESULT([yes])
         AC_DEFINE(HAVE_STRUCT_HASH_DESC, 1, [kernel has struct hash_desc])
@@ -1479,7 +1478,7 @@ LB_LINUX_TRY_COMPILE([
         #include <linux/err.h>
         #include <linux/crypto.h>
 ],[
-        struct blkcipher_desc foo;
+        struct blkcipher_desc foo __attribute__ ((unused));
 ],[
         AC_MSG_RESULT([yes])
         AC_DEFINE(HAVE_STRUCT_BLKCIPHER_DESC, 1, [kernel has struct blkcipher_desc])
@@ -1496,7 +1495,8 @@ AC_DEFUN([LC_FS_RENAME_DOES_D_MOVE],
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
 ],[
-        int v = FS_RENAME_DOES_D_MOVE;
+        int v __attribute__ ((unused));
+        v = FS_RENAME_DOES_D_MOVE;
 ],[
         AC_MSG_RESULT([yes])
         AC_DEFINE(HAVE_FS_RENAME_DOES_D_MOVE, 1, [kernel has FS_RENAME_DOES_D_MOVE flag])
@@ -1513,7 +1513,8 @@ AC_DEFUN([LC_UNREGISTER_BLKDEV_RETURN_INT],
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
 ],[
-        int i = unregister_blkdev(0,NULL);
+        int i __attribute__ ((unused));
+        i = unregister_blkdev(0,NULL);
 ],[
         AC_MSG_RESULT([yes])
         AC_DEFINE(HAVE_UNREGISTER_BLKDEV_RETURN_INT, 1,
@@ -1744,8 +1745,9 @@ AC_DEFUN([LC_INODE_PERMISION_2ARGS],
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
 ],[
-        struct inode *inode;
+        struct inode *inode __attribute__ ((unused));
 
+        inode = NULL;
         inode->i_op->permission(NULL,0);
 ],[
         AC_DEFINE(HAVE_INODE_PERMISION_2ARGS, 1, 
@@ -1819,9 +1821,10 @@ AC_DEFINE(HAVE_EXPORT_INODE_PERMISSION, 1,
 AC_DEFUN([LC_QUOTA_ON_5ARGS],
 [AC_MSG_CHECKING([quota_on needs 5 parameters])
 LB_LINUX_TRY_COMPILE([
+        #include <linux/fs.h>
         #include <linux/quota.h>
 ],[
-        struct quotactl_ops *qop;
+        struct quotactl_ops *qop = NULL;
         qop->quota_on(NULL, 0, 0, NULL, 0);
 ],[
         AC_DEFINE(HAVE_QUOTA_ON_5ARGS, 1,
@@ -1836,9 +1839,10 @@ LB_LINUX_TRY_COMPILE([
 AC_DEFUN([LC_QUOTA_OFF_3ARGS],
 [AC_MSG_CHECKING([quota_off needs 3 parameters])
 LB_LINUX_TRY_COMPILE([
+        #include <linux/fs.h>
         #include <linux/quota.h>
 ],[
-        struct quotactl_ops *qop;
+        struct quotactl_ops *qop = NULL;
         qop->quota_off(NULL, 0, 0);
 ],[
         AC_DEFINE(HAVE_QUOTA_OFF_3ARGS, 1,
@@ -1926,11 +1930,7 @@ AC_DEFUN([LC_VFS_SYMLINK_5ARGS],
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
 ],[
-        struct inode *dir = NULL;
-        struct dentry *dentry = NULL;
-        struct vfsmount *mnt = NULL;
-        const char * path = NULL;
-        vfs_symlink(dir, dentry, mnt, path, 0);
+        vfs_symlink(NULL, NULL, NULL, NULL, 0);
 ],[
         AC_DEFINE(HAVE_VFS_SYMLINK_5ARGS, 1,
                 [vfs_symlink need 5 parameteres])
