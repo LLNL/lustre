@@ -2733,7 +2733,6 @@ static void mdt_thread_info_init(struct ptlrpc_request *req,
         info->mti_object = NULL;
         info->mti_dlm_req = NULL;
         info->mti_has_trans = 0;
-        info->mti_no_need_trans = 0;
         info->mti_cross_ref = 0;
         info->mti_opdata = 0;
 
@@ -2748,11 +2747,6 @@ static void mdt_thread_info_fini(struct mdt_thread_info *info)
 
         req_capsule_fini(info->mti_pill);
         if (info->mti_object != NULL) {
-                /*
-                 * freeing an object may lead to OSD level transaction, do not
-                 * let it mess with MDT. bz19385.
-                 */
-                info->mti_no_need_trans = 1;
                 mdt_object_put(info->mti_env, info->mti_object);
                 info->mti_object = NULL;
         }

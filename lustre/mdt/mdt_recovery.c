@@ -197,7 +197,7 @@ static int mdt_truncate_last_rcvd(const struct lu_env *env,
         if (rc)
                 GOTO(cleanup, rc);
 
-        rc = dt_trans_start(env, mdt->mdt_bottom, th);
+        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
         if (rc)
                 GOTO(cleanup, rc);
 
@@ -489,8 +489,6 @@ static int mdt_txn_start_cb(const struct lu_env *env,
 	ENTRY;
 
 	mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-	if (mti == NULL)
-		return 0;
 
 	LASSERT(mdt->mdt_lut.lut_last_rcvd);
 	if (mti->mti_exp == NULL)
@@ -523,14 +521,10 @@ static int mdt_txn_stop_cb(const struct lu_env *env,
         struct ptlrpc_request *req;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        if (mti == NULL)
-                return 0;
         req = mdt_info_req(mti);
 
-        if (mti->mti_mdt == NULL || req == NULL || mti->mti_no_need_trans) {
-                mti->mti_no_need_trans = 0;
+        if (mti->mti_mdt == NULL || req == NULL)
                 return 0;
-        }
 
         if (mti->mti_has_trans) {
                 /* XXX: currently there are allowed cases, but the wrong cases
