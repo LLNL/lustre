@@ -180,7 +180,7 @@ int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
 
         info = lu_context_key_get(&env->le_ctx, &filter_thread_key);
 
-        if (info->fti_exp == NULL || info->fti_no_need_trans ||
+        if (info->fti_exp == NULL ||
             info->fti_exp->exp_filter_data.fed_ted.ted_lcd == NULL) {
                  RETURN(0);
         }
@@ -301,11 +301,10 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
 
 void filter_fs_cleanup(const struct lu_env *env, struct filter_device *ofd)
 {
-        struct filter_thread_info *info = filter_info_init(env, NULL);
         int i;
         ENTRY;
 
-        info->fti_no_need_trans = 1;
+        filter_info_init(env, NULL);
 
         for (i = 0; i <= ofd->ofd_max_group; i++) {
                 if (ofd->ofd_lastid_obj[i]) {

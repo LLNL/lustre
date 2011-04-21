@@ -70,7 +70,7 @@ int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
                 rc = dt_declare_record_write(env, dt, info->fti_buf.lb_len,
                                              info->fti_off, th);
                 if (rc == 0) {
-                        rc = filter_trans_start(env, ofd, th);
+                        rc = dt_trans_start_local(env, ofd->ofd_osd, th);
                         if (rc == 0)
                                 rc = dt_record_write(env, dt, &info->fti_buf,
                                                      &info->fti_off, th);

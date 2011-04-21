@@ -812,7 +812,6 @@ static void filter_key_exit(const struct lu_context *ctx,
         info->fti_pre_version = 0;
         info->fti_obj = NULL;
         info->fti_has_trans = 0;
-        info->fti_no_need_trans = 0;
 
         memset(&info->fti_attr, 0, sizeof info->fti_attr);
 }
