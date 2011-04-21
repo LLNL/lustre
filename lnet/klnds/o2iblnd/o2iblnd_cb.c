@@ -1207,48 +1207,6 @@ kiblnd_queue_tx (kib_tx_t *tx, kib_conn_t *conn)
         kiblnd_check_sends(conn);
 }
 
-static int kiblnd_resolve_addr(struct rdma_cm_id *cmid,
-                               struct sockaddr_in *srcaddr,
-                               struct sockaddr_in *dstaddr,
-                               int timeout_ms)
-{
-        unsigned short port;
-        int rc;
-
-#ifdef HAVE_OFED_RDMA_SET_REUSE
-        /* allow the port to be reused */
-        rc = rdma_set_reuse(cmid, 1);
-        if (rc != 0) {
-                CERROR("Unable to set reuse on cmid: %d\n", rc);
-                return rc;
-        }
-#endif
-
-        /* look for a free privileged port */
-        for (port = PROT_SOCK-1; port > 0; port--) {
-                srcaddr->sin_port = htons(port);
-                rc = rdma_resolve_addr(cmid,
-                                       (struct sockaddr *)srcaddr,
-                                       (struct sockaddr *)dstaddr,
-                                       timeout_ms);
-                if (rc == 0) {
-                        CDEBUG(D_NET, "bound to port %hu\n", port);
-                        return 0;
-                } else if (rc == -EADDRINUSE || rc == -EADDRNOTAVAIL) {
-                        CDEBUG(D_NET, "bind to port %hu failed: %d\n",
-                               port, rc);
-                } else {
-                        return rc;
-                }
-        }
-
-        CERROR("Failed to bind to a free privileged port\n");
-#ifndef HAVE_OFED_RDMA_SET_REUSE
-        CERROR("You may need an OFED that supports rdma_set_reuse()\n");
-#endif
-        return rc;
-}
-
 void
 kiblnd_connect_peer (kib_peer_t *peer)
 {
@@ -1282,30 +1240,22 @@ kiblnd_connect_peer (kib_peer_t *peer)
 
         kiblnd_peer_addref(peer);               /* cmid's ref */
 
-        if (*kiblnd_tunables.kib_require_priv_port) {
-                rc = kiblnd_resolve_addr(cmid, &srcaddr, &dstaddr,
-                                         *kiblnd_tunables.kib_timeout * 1000);
-        } else {
-                rc = rdma_resolve_addr(cmid,
-                                       (struct sockaddr *)&srcaddr,
-                                       (struct sockaddr *)&dstaddr,
-                                       *kiblnd_tunables.kib_timeout * 1000);
-        }
-        if (rc != 0) {
-                /* Can't initiate address resolution:  */
-                CERROR("Can't resolve addr for %s: %d\n",
-                       libcfs_nid2str(peer->ibp_nid), rc);
-                goto failed2;
+        rc = rdma_resolve_addr(cmid,
+                               (struct sockaddr *)&srcaddr,
+                               (struct sockaddr *)&dstaddr,
+                               *kiblnd_tunables.kib_timeout * 1000);
+        if (rc == 0) {
+                LASSERT (cmid->device != NULL);
+                CDEBUG(D_NET, "%s: connection bound to %s:%u.%u.%u.%u:%s\n",
+                       libcfs_nid2str(peer->ibp_nid), dev->ibd_ifname,
+                       HIPQUAD(dev->ibd_ifip), cmid->device->name);
+                return;
         }
 
-        LASSERT (cmid->device != NULL);
-        CDEBUG(D_NET, "%s: connection bound to %s:%u.%u.%u.%u:%s\n",
-               libcfs_nid2str(peer->ibp_nid), dev->ibd_ifname,
-               HIPQUAD(dev->ibd_ifip), cmid->device->name);
+        /* Can't initiate address resolution:  */
+        CERROR("Can't resolve addr for %s: %d\n",
+               libcfs_nid2str(peer->ibp_nid), rc);
 
-        return;
-
- failed2:
         kiblnd_peer_decref(peer);               /* cmid's ref */
         rdma_destroy_id(cmid);
  failed:
@@ -2176,7 +2126,6 @@ kiblnd_passive_connect (struct rdma_cm_id *cmid, void *priv, int priv_nob)
         int                    version = IBLND_MSG_VERSION;
         unsigned long          flags;
         int                    rc;
-        struct sockaddr_in    *dst_addr;
 
         LASSERT (!cfs_in_interrupt());
 
@@ -2188,14 +2137,6 @@ kiblnd_passive_connect (struct rdma_cm_id *cmid, void *priv, int priv_nob)
         rej.ibr_magic                = IBLND_MSG_MAGIC;
         rej.ibr_why                  = IBLND_REJECT_FATAL;
         rej.ibr_cp.ibcp_max_msg_size = IBLND_MSG_SIZE;
-
-        dst_addr = (struct sockaddr_in *)&(cmid->route.addr.dst_addr);
-        if (*kiblnd_tunables.kib_require_priv_port &&
-            ntohs(dst_addr->sin_port) >= PROT_SOCK) {
-                CERROR("Peer's port (%hu) is not privileged\n",
-                       ntohs(dst_addr->sin_port));
-                goto failed;
-        }
 
         if (priv_nob < offsetof(kib_msg_t, ibm_type)) {
                 CERROR("Short connection request\n");
