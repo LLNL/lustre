@@ -268,7 +268,6 @@ struct filter_thread_info {
         __u64                      fti_transno;
         __u64                      fti_pre_version;
         __u32                      fti_has_trans:1, /* has txn already? */
-                                   fti_no_need_trans:1,
                                    fti_mult_trans:1;
 
         struct lu_fid              fti_fid;
@@ -463,7 +462,7 @@ int filter_attr_set(const struct lu_env *env, struct filter_object *fo,
                     const struct lu_attr *la);
 int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
                          __u64 start, __u64 end, const struct lu_attr *la);
-int filter_object_destroy(const struct lu_env *env, struct filter_object *fo);
+int filter_object_destroy(const struct lu_env *, struct filter_object *, int);
 int filter_attr_get(const struct lu_env *env, struct filter_object *fo,
                     struct lu_attr *la);
 

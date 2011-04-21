@@ -188,7 +188,7 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         if (rc)
                 GOTO(trans_stop, rc);
 
-        rc = filter_trans_start(env, ofd, th);
+        rc = dt_trans_start_local(env, ofd->ofd_osd, th);
         if (rc)
                 GOTO(trans_stop, rc);
 
@@ -320,11 +320,12 @@ stop:
 unlock:
         filter_write_unlock(env, fo);
         RETURN(rc);
-
 }
 
-int filter_object_destroy(const struct lu_env *env, struct filter_object *fo)
+int filter_object_destroy(const struct lu_env *env, struct filter_object *fo,
+                          int orphan)
 {
+        struct filter_device *ofd = filter_obj2dev(fo);
         struct thandle *th;
         int rc = 0;
         ENTRY;
@@ -333,13 +334,16 @@ int filter_object_destroy(const struct lu_env *env, struct filter_object *fo)
         if (!filter_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
-        th = filter_trans_create(env, filter_obj2dev(fo));
+        th = filter_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
         dt_declare_ref_del(env, filter_object_child(fo), th);
         dt_declare_destroy(env, filter_object_child(fo), th);
-        rc = filter_trans_start(env, filter_obj2dev(fo), th);
+        if (orphan)
+                rc = dt_trans_start_local(env, ofd->ofd_osd, th);
+        else
+                rc = filter_trans_start(env, ofd, th);
         if (rc)
                 GOTO(stop, rc);
 
@@ -348,7 +352,7 @@ int filter_object_destroy(const struct lu_env *env, struct filter_object *fo)
         dt_ref_del(env, filter_object_child(fo), th);
         dt_destroy(env, filter_object_child(fo), th);
 stop:
-        filter_trans_stop(env, filter_obj2dev(fo), NULL, th);
+        filter_trans_stop(env, ofd, NULL, th);
 unlock:
         filter_write_unlock(env, fo);
         RETURN(rc);

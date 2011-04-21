@@ -430,20 +430,20 @@ int llog_cat_add_rec(struct llog_handle *cathandle, struct llog_rec_hdr *rec,
         struct dt_device  *dt;
         struct thandle    *th;
         int                rc;
-        
+
         ctxt = cathandle->lgh_ctxt;
         LASSERT(ctxt);
         LASSERT(ctxt->loc_exp);
-        
+
         dt = ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
         LASSERT(dt);
-        
+
         rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
         if (rc) {
                 CERROR("can't initialize env: %d\n", rc);
                 GOTO(out, rc);
         }
-        
+
         th = dt_trans_create(&env, dt);
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
@@ -452,13 +452,13 @@ int llog_cat_add_rec(struct llog_handle *cathandle, struct llog_rec_hdr *rec,
         if (rc)
                 GOTO(out_trans, rc);
 
-        rc = dt_trans_start(&env, dt, th);
+        rc = dt_trans_start_local(&env, dt, th);
         if (rc == 0)
                 rc = llog_cat_add_rec_2(&env, cathandle, rec, reccookie, buf, th);
 
 out_trans:
         dt_trans_stop(&env, dt, th);
-        
+
 out:
         lu_env_fini(&env);
 

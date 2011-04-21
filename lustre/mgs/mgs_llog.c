@@ -318,7 +318,7 @@ static int mgs_llog_create(const struct lu_env *env,
 
                 rc = llog_declare_create_2(env, *res, th);
                 if (rc == 0) {
-                        rc = dt_trans_start(env, mgs->mgs_bottom, th);
+                        rc = dt_trans_start_local(env, mgs->mgs_bottom, th);
                         if (rc == 0)
                                 rc = llog_create_2(env, *res, th);
                 }

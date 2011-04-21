@@ -63,7 +63,7 @@ static int lut_last_rcvd_write(const struct lu_env *env, struct lu_target *lut,
         if (rc)
                 goto stop;
 
-        rc = dt_trans_start(env, lut->lut_bottom, th);
+        rc = dt_trans_start_local(env, lut->lut_bottom, th);
         if (rc)
                 goto stop;
 
