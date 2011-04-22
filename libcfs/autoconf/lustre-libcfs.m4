@@ -459,6 +459,8 @@ LB_LINUX_TRY_COMPILE([
 #
 # 2.6.23 exports dump_trace() so we can dump_stack() on any task
 # 2.6.24 has stacktrace_ops.address with "reliable" parameter
+# 2.6.37 removes base pointer argument from dump_trace()
+#        (backported to RHEL6.1)
 #
 AC_DEFUN([LIBCFS_FUNC_DUMP_TRACE],
 [LB_CHECK_SYMBOL_EXPORT([dump_trace],
@@ -492,6 +494,23 @@ AC_DEFUN([LIBCFS_FUNC_DUMP_TRACE],
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_TRACE_ADDRESS_RELIABLE, 1,
 			  [print_trace_address has reliable argument])
+	],[
+		AC_MSG_RESULT(no)
+	],[
+	])
+	AC_MSG_CHECKING([whether dump_trace has bp argument])
+	LB_LINUX_TRY_COMPILE([
+		struct task_struct;
+		struct pt_regs;
+		#include <linux/stddef.h>
+		#include <asm/stacktrace.h>
+	],[
+		unsigned long bp = 0;
+		dump_trace(0, 0, 0, bp, 0, 0);
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_DUMP_TRACE_BP, 1,
+			  [dump_trace has bp argument])
 	],[
 		AC_MSG_RESULT(no)
 	],[
