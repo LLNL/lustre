@@ -141,7 +141,7 @@ CFS_MODULE_PARM(dev_failover, "i", int, 0444,
                "HCA failover for bonding (0 off, 1 on, other values reserved)");
 
 
-static int require_privileged_port = 0;
+static int require_privileged_port = 1;
 CFS_MODULE_PARM(require_privileged_port, "i", int, 0644,
                 "require privileged port when accepting connection");
 
