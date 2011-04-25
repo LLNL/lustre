@@ -1035,6 +1035,40 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
         RETURN(rc == 0 ? rc2 : rc);
 }
 
+static int osd_fiemap_get(const struct lu_env *env, struct dt_object *dt,
+                          struct ll_user_fiemap *fm)
+{
+        struct inode *inode = osd_dt_obj(dt)->oo_inode;
+        struct osd_thread_info *info   = osd_oti_get(env);
+        struct dentry          *dentry = &info->oti_obj_dentry;
+        struct file            *file   = &info->oti_file;
+        mm_segment_t            saved_fs;
+        int rc;
+
+        LASSERT(inode);
+        dentry->d_inode = inode;
+        file->f_dentry = dentry;
+        file->f_mapping = inode->i_mapping;
+        file->f_op = inode->i_fop;
+
+        saved_fs = get_fs();
+        set_fs(get_ds());
+#ifdef HAVE_EXT4_LDISKFS
+        /* ldiskfs_ioctl does not have a inode argument */
+        if (inode->i_fop->unlocked_ioctl)
+                rc = inode->i_fop->unlocked_ioctl(file, FSFILT_IOC_FIEMAP,
+                                                  (long)fm);
+#else
+        if (inode->i_fop->ioctl)
+                rc = inode->i_fop->ioctl(inode, file, FSFILT_IOC_FIEMAP,
+                                         (long)fm);
+#endif
+        else
+                rc = -ENOTTY;
+        set_fs(saved_fs);
+        return rc;
+}
+
 /*
  * in some cases we may need declare methods for objects being created
  * e.g., when we create symlink
@@ -1055,5 +1089,6 @@ const struct dt_body_operations osd_body_ops = {
         .dbo_read_prep            = osd_read_prep,
         .do_declare_punch         = osd_declare_punch,
         .do_punch                 = osd_punch,
+        .dbo_fiemap_get           = osd_fiemap_get,
 };
 

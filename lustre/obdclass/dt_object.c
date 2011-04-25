@@ -446,11 +446,11 @@ struct dt_object *dt_find_or_create(const struct lu_env *env,
         rc = dt_declare_create(env, dto, at, NULL, dof, th);
         LASSERT(rc == 0);
 
-        rc = dt->dd_ops->dt_trans_start(env, dt, th);
+        rc = dt_trans_start_local(env, dt, th);
         if (rc)
                 GOTO(trans_stop, rc);
 
-        dto->do_ops->do_write_lock(env, dto, 0);
+        dt_write_lock(env, dto, 0);
         if (dt_object_exists(dto))
                 GOTO(unlock, rc = 0);
 
@@ -462,10 +462,10 @@ struct dt_object *dt_find_or_create(const struct lu_env *env,
         LASSERT(dt_object_exists(dto));
 
 unlock:
-        dto->do_ops->do_write_unlock(env, dto);
+        dt_write_unlock(env, dto);
 
 trans_stop:
-        dt->dd_ops->dt_trans_stop(env, th);
+        dt_trans_stop(env, dt, th);
 out:
         if (rc) {
                 lu_object_put(env, &dto->do_lu);
