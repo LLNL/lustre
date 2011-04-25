@@ -100,11 +100,6 @@ int mdt_procfs_init(struct mdt_device *mdt, const char *name)
 
         rc = lu_time_init(&mdt->mdt_stats, mdt->mdt_proc_entry,
                           mdt_proc_names, ARRAY_SIZE(mdt_proc_names));
-        if (rc == 0)
-                rc = lu_time_named_init(&ld->ld_site->ls_time_stats,
-                                        "site_time", mdt->mdt_proc_entry,
-                                         lu_time_names,
-                                         ARRAY_SIZE(lu_time_names));
         if (rc)
                 return rc;
 
@@ -127,7 +122,6 @@ int mdt_procfs_fini(struct mdt_device *mdt)
         struct obd_device *obd = ld->ld_obd;
 
         if (mdt->mdt_proc_entry) {
-                lu_time_fini(&ld->ld_site->ls_time_stats);
                 lu_time_fini(&mdt->mdt_stats);
                 mdt->mdt_proc_entry = NULL;
         }
