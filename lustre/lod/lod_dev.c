@@ -177,15 +177,14 @@ static int lod_recovery_complete(const struct lu_env *env,
         RETURN(rc);
 }
 
-static int lod_prepare(const struct lu_env *env,
-                       struct lu_device *pdev,
-                       struct lu_device *cdev)
+static int lod_start(const struct lu_env *env,
+                       struct lu_device *dev)
 {
-        struct lod_device *lod = lu2lod_dev(cdev);
+        struct lod_device *lod = lu2lod_dev(dev);
         struct lu_device  *next = &lod->lod_child->dd_lu_dev;
         int rc;
         ENTRY;
-        rc = next->ld_ops->ldo_prepare(env, pdev, next);
+        rc = next->ld_ops->ldo_start(env, next);
         RETURN(rc);
 }
 
@@ -193,7 +192,7 @@ const struct lu_device_operations lod_lu_ops = {
         .ldo_object_alloc      = lod_object_alloc,
         .ldo_process_config    = lod_process_config,
         .ldo_recovery_complete = lod_recovery_complete,
-        .ldo_prepare           = lod_prepare,
+        .ldo_start             = lod_start,
 };
 
 static int lod_root_get(const struct lu_env *env,

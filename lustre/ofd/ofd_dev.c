@@ -376,9 +376,33 @@ static int filter_object_print(const struct lu_env *env, void *cookie,
         return (*p)(env, cookie, LUSTRE_MDT_NAME"-object@%p", o);
 }
 
+extern int ost_handle(struct ptlrpc_request *req);
+
+static int filter_start(const struct lu_env *env,
+                        struct lu_device *dev)
+{
+        struct filter_device *d = filter_dev(dev);
+        struct lu_device     *next = &d->ofd_osd->dd_lu_dev;
+        struct obd_device    *obd = dev->ld_obd;
+        int rc;
+        ENTRY;
+
+        rc = next->ld_ops->ldo_start(env, next);
+        if (rc == 0) {
+                target_recovery_init(&d->ofd_lut, ost_handle);
+                LASSERT(obd->obd_no_conn);
+                cfs_spin_lock(&obd->obd_dev_lock);
+                obd->obd_no_conn = 0;
+                cfs_spin_unlock(&obd->obd_dev_lock);
+        }
+
+        RETURN(rc);
+}
+
 static struct lu_device_operations filter_lu_ops = {
         .ldo_object_alloc   = filter_object_alloc,
-        .ldo_process_config = filter_process_config
+        .ldo_process_config = filter_process_config,
+        .ldo_start          = filter_start,
 };
 
 struct lu_object_operations filter_obj_ops = {
@@ -432,8 +456,6 @@ static int filter_stack_init(const struct lu_env *env,
                              struct filter_device *m, struct lustre_cfg *cfg)
 {
         struct filter_thread_info *info = filter_info(env);
-        struct lu_device  *d = &m->ofd_dt_dev.dd_lu_dev;
-        struct lu_device  *tmp;
         int rc;
         ENTRY;
 
@@ -445,12 +467,6 @@ static int filter_stack_init(const struct lu_env *env,
         if (rc)
                 RETURN(rc);
 
-        tmp = &m->ofd_osd->dd_lu_dev;
-        rc = tmp->ld_ops->ldo_prepare(env, d, tmp);
-        if (rc) {
-                rc = obd_disconnect(m->ofd_osd_exp);
-                m->ofd_osd = NULL;
-        }
         RETURN(rc);
 }
 

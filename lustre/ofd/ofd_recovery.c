@@ -251,21 +251,13 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
 
         dt_txn_callback_add(ofd->ofd_osd, &ofd->ofd_txn_cb);
 
-        lu_local_obj_fid(&info->fti_fid, OFD_LAST_RECV_OID);
-        memset(&info->fti_attr, 0, sizeof(info->fti_attr));
-        info->fti_attr.la_valid = LA_MODE;
-        info->fti_attr.la_mode = S_IFREG | 0666;
-
-        fo = filter_object_find_or_create(env, ofd, &info->fti_fid, &info->fti_attr);
-        LASSERT(!IS_ERR(fo));
-
         LASSERT(ofd->ofd_osd);
-        rc = lut_init2(env, &ofd->ofd_lut, obd, ofd->ofd_osd, &info->fti_fid);
-        LASSERT(rc == 0);
+        rc = lut_init(env, &ofd->ofd_lut, obd, ofd->ofd_osd);
+        if (rc)
+                GOTO(out, rc);
 
         rc = filter_server_data_init(env, ofd);
         LASSERT(rc == 0);
-        lu_object_put(env, &ofd->ofd_last_rcvd->do_lu);
 
         lu_local_obj_fid(&info->fti_fid, OFD_LAST_GROUP_OID);
         memset(&info->fti_attr, 0, sizeof(info->fti_attr));
@@ -294,7 +286,7 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
 
         RETURN(0);
 
-//stop_recov:
+out:
         target_recovery_fini(obd);
         return rc;
 }
