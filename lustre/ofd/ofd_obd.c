@@ -522,7 +522,44 @@ static int filter_get_info(const struct lu_env *env,
                 }
                 *vallen = sizeof(*last_id);
         } else if (KEY_IS(KEY_FIEMAP)) {
-                rc = -EOPNOTSUPP;
+                struct filter_thread_info *info;
+                struct filter_device *ofd = filter_exp(exp);
+                struct filter_object *fo;
+                struct ll_fiemap_info_key *fm_key = key;
+
+                if (val == NULL) {
+                        *vallen = fiemap_count_to_size(
+                                                fm_key->fiemap.fm_extent_count);
+                        RETURN(0);
+                }
+
+                info = filter_info_init(env, exp);
+
+                fid_ostid_unpack(&info->fti_fid, &fm_key->oa.o_oi, 0);
+
+                CDEBUG(D_INODE, "get FIEMAP of object "DFID"\n",
+                       PFID(&info->fti_fid));
+
+                fo = filter_object_find(env, ofd, &info->fti_fid);
+                if (IS_ERR(fo)) {
+                        CERROR("error finding object "DFID"\n",
+                               PFID(&info->fti_fid));
+                        rc = PTR_ERR(fo);
+                } else {
+                        struct ll_user_fiemap *fiemap = val;
+
+                        filter_read_lock(env, fo);
+                        if (filter_object_exists(fo)) {
+                                *fiemap = fm_key->fiemap;
+                                rc = dt_fiemap_get(env,
+                                                   filter_object_child(fo),
+                                                   fiemap);
+                        } else {
+                                rc = -ENOENT;
+                        }
+                        filter_read_unlock(env, fo);
+                        filter_object_put(env, fo);
+                }
         } else if (KEY_IS(KEY_SYNC_LOCK_CANCEL)) {
                 *((__u32 *) val) = ofd->ofd_sync_lock_cancel;
                 *vallen = sizeof(__u32);
@@ -1123,7 +1160,6 @@ struct obd_ops filter_obd_ops = {
         .o_destroy        = filter_destroy,
         .o_init_export    = filter_init_export,
         .o_destroy_export = filter_destroy_export,
-        .o_init_export    = filter_init_export,
         .o_punch          = filter_punch,
         .o_getattr        = filter_getattr,
         .o_sync           = filter_sync,
