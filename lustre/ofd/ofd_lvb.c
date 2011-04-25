@@ -132,7 +132,6 @@ static int filter_lvbo_update(struct ldlm_resource *res,
 
         LASSERT(res);
 
-        lock_res(res);
         lvb = res->lr_lvb_data;
         if (lvb == NULL) {
                 CERROR("No lvb when running lvbo_update!\n");
@@ -155,6 +154,7 @@ static int filter_lvbo_update(struct ldlm_resource *res,
                         CERROR("lustre_swab_buf failed\n");
                         goto disk_update;
                 }
+                lock_res(res);
                 if (new->lvb_size > lvb->lvb_size || !increase_only) {
                         CDEBUG(D_DLMTRACE, "res: "LPU64" updating lvb size: "
                                LPU64" -> "LPU64"\n", res->lr_name.name[0],
@@ -179,6 +179,7 @@ static int filter_lvbo_update(struct ldlm_resource *res,
                                lvb->lvb_ctime, new->lvb_ctime);
                         lvb->lvb_ctime = new->lvb_ctime;
                 }
+                unlock_res(res);
         }
 
  disk_update:
@@ -195,6 +196,7 @@ static int filter_lvbo_update(struct ldlm_resource *res,
         if (rc)
                 GOTO(out_obj, rc);
 
+        lock_res(res);
         if (info->fti_attr.la_size > lvb->lvb_size || !increase_only) {
                 CDEBUG(D_DLMTRACE, "res: "LPU64" updating lvb size from disk: "
                        LPU64" -> %llu\n", res->lr_name.name[0],
@@ -227,13 +229,13 @@ static int filter_lvbo_update(struct ldlm_resource *res,
                        (unsigned long long)info->fti_attr.la_blocks);
                 lvb->lvb_blocks = info->fti_attr.la_blocks;
         }
+        unlock_res(res);
 
 out_obj:
         filter_object_put(&env, fo);
 out_env:
         lu_env_fini(&env);
 out_unlock:
-        unlock_res(res);
         return rc;
 }
 
