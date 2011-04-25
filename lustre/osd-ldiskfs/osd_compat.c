@@ -602,22 +602,51 @@ cleanup:
         RETURN(rc);
 }
 
+struct named_oid {
+        unsigned long  oid;
+        char          *name;
+};
+
+static const struct named_oid oids[] = {
+        { OFD_LAST_RECV_OID,  LAST_RCVD },
+        { OFD_LAST_GROUP_OID, "LAST_GROUP" },
+        { LLOG_CATALOGS_OID,  "CATALOGS" },
+        { FID_SEQ_SRV_OID,    "seq_srv" },
+        { FID_SEQ_CTL_OID,    "seq_ctl" },
+        { MDD_CAPA_KEYS_OID,  CAPA_KEYS },
+        { FLD_INDEX_OID,      "fld" },
+        { MDD_LOV_OBJ_OID,    LOV_OBJID },
+        { MDT_LAST_RECV_OID,  LAST_RCVD },
+        { MDD_ROOT_INDEX_OID, "" },
+        { MDD_ORPHAN_OID,     "" },
+        { 0,                  NULL }
+};
+
+static char * oid2name(const unsigned long oid)
+{
+        int i = 0;
+
+        while (oids[i].oid) {
+                if (oids[i].oid == oid)
+                        return oids[i].name;
+                i++;
+        }
+        return NULL;
+}
+
 int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
                            const struct lu_fid *fid, const struct osd_inode_id *id,
                            struct thandle *th)
 {
         struct osd_compat_objid *map = osd->od_ost_map;
         struct dentry           *root = osd_sb(osd)->s_root;
+        char                    *name;
         int                      rc = 0;
         int                      group;
         ENTRY;
 
-
-        if (fid_oid(fid) == OFD_LAST_RECV_OID) {
-                rc = osd_compat_add_entry(info, osd, root, LAST_RCVD, id,
-                                          th);
-        } else if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
-                        fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
+        if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
+            fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
                 /* on creation of LAST_ID we create O/<group> hierarchy */
                 LASSERT(map);
                 group = fid_oid(fid) - OFD_GROUP0_LAST_OID;
@@ -626,15 +655,12 @@ int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
                         GOTO(cleanup, rc);
                 rc = osd_compat_add_entry(info, osd, map->groups[group].groot,
                                           "LAST_ID", id, th);
-
-        } else if (fid_oid(fid) == OFD_LAST_GROUP_OID) {
-                /* on creation of LAST_GROUP we create legacy OST hierarchy */
-                rc = osd_compat_add_entry(info, osd, root, "LAST_GROUP", id,
-                                          th);
-        } else if (fid_oid(fid) == LLOG_CATALOGS_OID) {
-                rc = osd_compat_add_entry(info, osd, root, "CATALOGS", id, th);
         } else {
-                /* unknown special file: probably OI can handle this */
+                name = oid2name(fid_oid(fid));
+                if (name == NULL)
+                        CERROR("************ UNKNOWN COMPAT FID "DFID"\n", PFID(fid));
+                else if (name[0])
+                        rc = osd_compat_add_entry(info, osd, root, name, id, th);
         }
 
 cleanup:
@@ -645,8 +671,27 @@ int osd_compat_spec_lookup(struct osd_thread_info *info, struct osd_device *osd,
                            const struct lu_fid *fid, struct osd_inode_id *id)
 {
         struct dentry *dentry;
+        char          *name;
         int            rc = -ERESTART;
         ENTRY;
+
+        name = oid2name(fid_oid(fid));
+        if (name == NULL || strlen(name) == 0)
+                return -ERESTART;
+
+        dentry = ll_lookup_one_len(name, osd_sb(osd)->s_root, strlen(name));
+        if (!IS_ERR(dentry)) {
+                if (dentry->d_inode) {
+                        if (is_bad_inode(dentry->d_inode)) {
+                                rc = -EIO;
+                        } else {
+                                id->oii_ino = dentry->d_inode->i_ino;
+                                id->oii_gen = dentry->d_inode->i_generation;
+                                rc = 0;
+                        }
+                }
+                dput(dentry);
+        }
 
         RETURN(rc);
 }

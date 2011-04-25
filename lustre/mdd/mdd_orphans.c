@@ -430,29 +430,25 @@ out:
  */
 int orph_index_init(const struct lu_env *env, struct mdd_device *mdd)
 {
-        struct lu_fid fid;
-        struct dt_object *d;
         struct lu_attr *la = &mdd_env_info(env)->mti_la;
+        struct mdd_object *mdo;
+        struct lu_fid fid, pfid;
         int rc = 0;
         ENTRY;
 
-        d = dt_store_open(env, mdd->mdd_child, "", orph_index_name, &fid);
-        if (!IS_ERR(d)) {
-                struct lu_object *l;
+        rc = dt_root_get(env, mdd->mdd_child, &pfid);
+        LASSERT(rc == 0);
+        lu_local_obj_fid(&fid, MDD_ORPHAN_OID);
 
-                l = lu_object_locate(d->do_lu.lo_header,
-                                     mdd->mdd_md_dev.md_lu_dev.ld_type);
-                LASSERT(l);
-                mdd->mdd_orphans = lu2mdd_obj(l);
-                if (!dt_try_as_dir(env, d)) {
-                        rc = -ENOTDIR;
-                        CERROR("\"%s\" is not an index! : rc = %d\n",
-                                        orph_index_name, rc);
-                }
-        } else {
-                CERROR("cannot find \"%s\" obj %d\n",
-                       orph_index_name, (int)PTR_ERR(d));
-                rc = PTR_ERR(d);
+        mdo = mdd_open_index_internal(env, mdd, &pfid, orph_index_name, &fid);
+        if (IS_ERR(mdo))
+                RETURN(PTR_ERR(mdo));
+
+        mdd->mdd_orphans = mdo;
+        if (!dt_try_as_dir(env, mdd_object_child(mdd->mdd_orphans))) {
+                rc = -ENOTDIR;
+                CERROR("\"%s\" is not an index! : rc = %d\n",
+                       orph_index_name, rc);
         }
 
         /*

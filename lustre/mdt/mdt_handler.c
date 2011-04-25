@@ -4278,9 +4278,7 @@ static int mdt_stack_init(struct lu_env *env,
                           struct lustre_cfg *cfg)
 {
         struct lu_device  *d = &m->mdt_md_dev.md_lu_dev;
-        struct lu_device  *child_lu_dev;
         struct lu_site    *site;
-        int rc;
         ENTRY;
 
         site = m->mdt_md_dev.md_lu_dev.ld_site;
@@ -4288,21 +4286,7 @@ static int mdt_stack_init(struct lu_env *env,
         m->mdt_bottom = lu2dt_dev(site->ls_bottom_dev);
         site->ls_top_dev = d;
 
-        /* initialize local objects */
-        child_lu_dev = &m->mdt_child->md_lu_dev;
-
-        rc = child_lu_dev->ld_ops->ldo_prepare(env,
-                                               &m->mdt_md_dev.md_lu_dev,
-                                               child_lu_dev);
-
-        /* XXX: to simplify debugging */
-        LASSERT(rc == 0);
- 
-        /* fini from last known good lu_device */
-        if (rc)
-                mdt_stack_fini(env, m, d);
-
-        return rc;
+        return 0;
 }
 
 /**
@@ -4858,9 +4842,44 @@ static int mdt_object_print(const struct lu_env *env, void *cookie,
                     mdto->mot_ioepoch_count, mdto->mot_writecount);
 }
 
+static int mdt_start(const struct lu_env *env, struct lu_device *dev)
+{
+        struct mdt_device *mdt = mdt_dev(dev);
+        struct lu_device  *child_lu_dev;
+        struct obd_device *obd = dev->ld_obd;
+        int                rc;
+        ENTRY;
+
+        /* initialize local objects */
+        child_lu_dev = &mdt->mdt_child->md_lu_dev;
+
+        rc = child_lu_dev->ld_ops->ldo_start(env, child_lu_dev);
+        if (rc == 0) {
+                LASSERT(!cfs_test_bit(MDT_FL_CFGLOG, &mdt->mdt_state));
+                target_recovery_init(&mdt->mdt_lut, mdt_recovery_handle);
+                cfs_set_bit(MDT_FL_CFGLOG, &mdt->mdt_state);
+                LASSERT(obd->obd_no_conn);
+                cfs_spin_lock(&obd->obd_dev_lock);
+                obd->obd_no_conn = 0;
+                cfs_spin_unlock(&obd->obd_dev_lock);
+
+#ifdef HAVE_QUOTA_SUPPORT
+               /* quota_type has been processed, we can now handle
+                * incoming quota requests */
+                {
+                        struct md_device *next = mdt->mdt_child;
+                        next->md_ops->mdo_quota.mqo_notify(NULL, next);
+                }
+#endif
+        }
+
+        RETURN(rc);
+}
+
 static const struct lu_device_operations mdt_lu_ops = {
         .ldo_object_alloc   = mdt_object_alloc,
         .ldo_process_config = mdt_process_config,
+        .ldo_start          = mdt_start,
 };
 
 static const struct lu_object_operations mdt_obj_ops = {
@@ -5240,41 +5259,6 @@ static int mdt_destroy_export(struct obd_export *exp)
         RETURN(0);
 }
 
-static int mdt_obd_notify(struct obd_device *obd,
-                          struct obd_device *watched,
-                          enum obd_notify_event ev, void *data)
-{
-        struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
-#ifdef HAVE_QUOTA_SUPPORT
-        struct md_device *next = mdt->mdt_child;
-#endif
-        ENTRY;
-
-        switch (ev) {
-        case OBD_NOTIFY_CONFIG:
-                /* reset recovery timeout in case it has already started */
-                target_start_recovery_timer(obd);
-
-                LASSERT(!cfs_test_bit(MDT_FL_CFGLOG, &mdt->mdt_state));
-                target_recovery_init(&mdt->mdt_lut, mdt_recovery_handle);
-                cfs_set_bit(MDT_FL_CFGLOG, &mdt->mdt_state);
-                LASSERT(obd->obd_no_conn);
-                cfs_spin_lock(&obd->obd_dev_lock);
-                host->obd_no_conn = 0;
-                cfs_spin_unlock(&obd->obd_dev_lock);
-
-#ifdef HAVE_QUOTA_SUPPORT
-               /* quota_type has been processed, we can now handle
-                * incoming quota requests */
-                next->md_ops->mdo_quota.mqo_notify(NULL, next);
-#endif
-                break;
-        default:
-                CDEBUG(D_INFO, "Unhandled notification %#x\n", ev);
-        }
-        RETURN(0);
-}
-
 static int mdt_rpc_fid2path(struct mdt_thread_info *info, void *key,
                             void *val, int vallen)
 {
@@ -5595,7 +5579,6 @@ static struct obd_ops mdt_obd_device_ops = {
         .o_destroy_export = mdt_destroy_export,
         .o_iocontrol      = mdt_iocontrol,
         .o_postrecov      = mdt_obd_postrecov,
-        .o_notify         = mdt_obd_notify
 };
 
 static struct lu_device* mdt_device_fini(const struct lu_env *env,
@@ -5711,18 +5694,10 @@ static struct lu_device_type mdt_device_type = {
         .ldt_ctx_tags = LCT_MD_THREAD
 };
 
-static struct lu_local_obj_desc mdt_last_recv = {
-        .llod_name      = LAST_RCVD,
-        .llod_oid       = MDT_LAST_RECV_OID,
-        .llod_is_index  = 0,
-};
-
 static int __init mdt_mod_init(void)
 {
         struct lprocfs_static_vars lvars;
         int rc;
-
-        llo_local_obj_register(&mdt_last_recv);
 
         if (mdt_num_threads > 0) {
                 if (mdt_num_threads > MDT_MAX_THREADS)
@@ -5745,7 +5720,6 @@ static int __init mdt_mod_init(void)
 
 static void __exit mdt_mod_exit(void)
 {
-        llo_local_obj_unregister(&mdt_last_recv);
         class_unregister_type(LUSTRE_MDT_NAME);
 }
 
