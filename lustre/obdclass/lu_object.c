@@ -1746,9 +1746,6 @@ void lu_ref_global_fini(void);
 int dt_global_init(void);
 void dt_global_fini(void);
 
-int llo_global_init(void);
-void llo_global_fini(void);
-
 /**
  * Initialization of global lu_* data.
  */
@@ -1795,9 +1792,6 @@ int lu_global_init(void)
         if (result)
                 GOTO(out, result);
 
-        result = llo_global_init();
-        if (result)
-                GOTO(out, result);
 #endif
         result = cl_global_init();
 out:
@@ -1812,7 +1806,6 @@ void lu_global_fini(void)
 {
         cl_global_fini();
 #ifdef __KERNEL__
-        llo_global_fini();
         dt_global_fini();
 #endif
         lu_time_global_fini();

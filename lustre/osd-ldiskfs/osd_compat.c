@@ -603,21 +603,52 @@ cleanup:
 }
 
 
+struct named_oid {
+        unsigned long  oid;
+        char          *name;
+};
+
+static const struct named_oid oids[] = {
+        { OFD_LAST_RECV_OID,  LAST_RCVD },
+        { OFD_LAST_GROUP_OID, "LAST_GROUP" },
+        { LLOG_CATALOGS_OID,  "CATALOGS" },
+        { MGS_CONFIGS_OID,    MOUNT_CONFIGS_DIR },
+        { FID_SEQ_SRV_OID,    "seq_srv" },
+        { FID_SEQ_CTL_OID,    "seq_ctl" },
+        { MDD_CAPA_KEYS_OID,  CAPA_KEYS },
+        { FLD_INDEX_OID,      "fld" },
+        { MDD_LOV_OBJ_OID,    LOV_OBJID },
+        { MDT_LAST_RECV_OID,  LAST_RCVD },
+        { MDD_ROOT_INDEX_OID, "" },
+        { MDD_ORPHAN_OID,     "" },
+        { 0,                  NULL }
+};
+
+static char * oid2name(const unsigned long oid)
+{
+        int i = 0;
+
+        while (oids[i].oid) {
+                if (oids[i].oid == oid)
+                        return oids[i].name;
+                i++;
+        }
+        return NULL;
+}
+
 int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
                            const struct lu_fid *fid, const struct osd_inode_id *id,
                            struct thandle *th)
 {
         struct osd_compat_objid *map = osd->od_ost_map;
         struct dentry           *root = osd_sb(osd)->s_root;
+        char                    *name;
         int                      rc = 0;
         int                      group;
         ENTRY;
 
 
-        if (fid_oid(fid) == OFD_LAST_RECV_OID) {
-                rc = osd_compat_add_entry(info, osd, root, "last_rcvd", id, th);
-
-        } else if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
+        if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
                         fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
                 /* on creation of LAST_ID we create O/<group> hierarchy */
                 LASSERT(map);
@@ -627,26 +658,12 @@ int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
                         GOTO(cleanup, rc);
                 rc = osd_compat_add_entry(info, osd, map->groups[group].groot,
                                           "LAST_ID", id, th);
-
-        } else if (fid_oid(fid) == OFD_LAST_GROUP_OID) {
-                /* on creation of LAST_GROUP we create legacy OST hierarchy */
-                rc = osd_compat_add_entry(info, osd, root, "LAST_GROUP", id, th);
-        } else if (fid_oid(fid) == LLOG_CATALOGS_OID) {
-                rc = osd_compat_add_entry(info, osd, root, "CATALOGS", id, th);
-        } else if (fid_oid(fid) == MGS_CONFIGS_OID) {
-                rc = osd_compat_add_entry(info, osd, root, "CONFIGS", id, th);
-#if 0
-        } else if (fid_oid(fid) == QUOTA_SLAVE_UID_OID) {
-                /* on creation of user quota file we create legacy OST hierarchy */
-                rc = osd_compat_add_entry(info, osd, root, QUOTA_OP_USER_FILE,
-                                          id, th);
-        } else if (fid_oid(fid) == QUOTA_SLAVE_GID_OID) {
-                /* on creation of group quota file we create legacy OST hierarchy */
-                rc = osd_compat_add_entry(info, osd, root, QUOTA_OP_GROUP_FILE,
-                                          id, th);
-#endif
         } else {
-                /* unknown special file: probably OI can handle this */
+                name = oid2name(fid_oid(fid));
+                if (name == NULL)
+                        CERROR("************ UNKNOWN COMPAT FID "DFID"\n", PFID(fid));
+                else if (name[0])
+                        rc = osd_compat_add_entry(info, osd, root, name, id, th);
         }
 
 cleanup:
@@ -657,24 +674,28 @@ int osd_compat_spec_lookup(struct osd_thread_info *info, struct osd_device *osd,
                            const struct lu_fid *fid, struct osd_inode_id *id)
 {
         struct dentry *dentry;
+        char          *name;
         int            rc = -ERESTART;
         ENTRY;
 
-        if (fid_oid(fid) == MGS_CONFIGS_OID) {
-                dentry = ll_lookup_one_len("CONFIGS", osd_sb(osd)->s_root, 7);
-                if (!IS_ERR(dentry)) {
-                        if (dentry->d_inode) {
-                                if (is_bad_inode(dentry->d_inode)) {
-                                        rc = -EIO;
-                                } else {
-                                        id->oii_ino = dentry->d_inode->i_ino;
-                                        id->oii_gen = dentry->d_inode->i_generation;
-                                        rc = 0;
-                                }
+        name = oid2name(fid_oid(fid));
+        if (name == NULL || strlen(name) == 0)
+                return -ERESTART;
+
+        dentry = ll_lookup_one_len(name, osd_sb(osd)->s_root, strlen(name));
+        if (!IS_ERR(dentry)) {
+                if (dentry->d_inode) {
+                        if (is_bad_inode(dentry->d_inode)) {
+                                rc = -EIO;
+                        } else {
+                                id->oii_ino = dentry->d_inode->i_ino;
+                                id->oii_gen = dentry->d_inode->i_generation;
+                                rc = 0;
                         }
-                        dput(dentry);
                 }
+                dput(dentry);
         }
+
         RETURN(rc);
 }
 

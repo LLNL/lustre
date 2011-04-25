@@ -45,28 +45,6 @@
 
 #include "ofd_internal.h"
 
-extern int ost_handle(struct ptlrpc_request *req);
-
-static int filter_obd_notify(struct obd_device *host,
-                          struct obd_device *watched,
-                          enum obd_notify_event ev, void *owner)
-{
-        struct filter_device *ofd = filter_dev(host->obd_lu_dev);
-        ENTRY;
-
-        switch (ev) {
-        case OBD_NOTIFY_CONFIG:
-                target_recovery_init(&ofd->ofd_lut, ost_handle);
-                LASSERT(host->obd_no_conn);
-                cfs_spin_lock(&host->obd_dev_lock);
-                host->obd_no_conn = 0;
-                cfs_spin_unlock(&host->obd_dev_lock);
-        default:
-                CDEBUG(D_INFO, "Notification 0x%x\n", ev);
-        }
-        RETURN(0);
-}
-
 static int filter_parse_connect_data(const struct lu_env *env,
                                      struct obd_export *exp,
                                      struct obd_connect_data *data)
@@ -1183,7 +1161,6 @@ static int filter_precleanup(struct obd_device *obd,
 
 struct obd_ops filter_obd_ops = {
         .o_owner          = THIS_MODULE,
-        .o_notify         = filter_obd_notify,
         .o_connect        = filter_obd_connect,
         .o_reconnect      = filter_obd_reconnect,
         .o_disconnect     = filter_obd_disconnect,

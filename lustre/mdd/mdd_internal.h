@@ -524,6 +524,11 @@ void mdd_tx_set_error(struct mdd_thandle *, int);
 struct lu_object *mdd_object_alloc(const struct lu_env *env,
                                    const struct lu_object_header *hdr,
                                    struct lu_device *d);
+struct mdd_object *mdd_open_index_internal(const struct lu_env *env,
+                                           struct mdd_device *mdd,
+                                           const struct lu_fid *pfid,
+                                           const char *name,
+                                           const struct lu_fid *fid);
 #ifdef XXX_MDD_CHANGELOG
 struct llog_changelog_rec;
 int mdd_changelog_llog_write(struct mdd_device         *mdd,
