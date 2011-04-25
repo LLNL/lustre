@@ -1181,7 +1181,6 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 						  oa->o_seq);
 			if (rc)
 				break;
-			}
 		}
 		if (i > 0) {
 			/* some objects got created, we can return
@@ -1422,23 +1421,6 @@ out:
 	return !!rc;
 }
 
-static int ofd_obd_notify(struct obd_device *obd, struct obd_device *unused,
-			  enum obd_notify_event ev, void *data)
-{
-	switch (ev) {
-	case OBD_NOTIFY_CONFIG:
-		LASSERT(obd->obd_no_conn);
-		cfs_spin_lock(&obd->obd_dev_lock);
-		obd->obd_no_conn = 0;
-		cfs_spin_unlock(&obd->obd_dev_lock);
-		break;
-	default:
-		CDEBUG(D_INFO, "%s: Unhandled notification %#x\n",
-		       obd->obd_name, ev);
-	}
-	return 0;
-}
-
 /*
  * Handle quotacheck requests.
  * Although in-kernel quotacheck isn't supported any more, we still emulate it
@@ -1525,7 +1507,6 @@ struct obd_ops ofd_obd_ops = {
 	.o_precleanup		= ofd_precleanup,
 	.o_ping			= ofd_ping,
 	.o_health_check		= ofd_health_check,
-	.o_notify		= ofd_obd_notify,
 	.o_quotactl		= ofd_quotactl,
 	.o_quotacheck		= ofd_quotacheck,
 };

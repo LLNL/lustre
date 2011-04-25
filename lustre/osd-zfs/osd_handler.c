@@ -524,8 +524,7 @@ static int osd_mount(const struct lu_env *env,
 				&rootdb, root_tag);
 	if (rc) {
 		CERROR("udmu_obj2dbuf() failed with error %d\n", rc);
-		udmu_objset_close(&o->od_objset);
-		RETURN(rc);
+		GOTO(out_objset, rc);
 	}
 
 	o->od_root = rootdb->db_object;
@@ -702,8 +701,15 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
 		RETURN(ERR_PTR(rc));
 	}
 
-	if (o->od_objset.os)
+	if (o->od_objset.os) {
+		ds = dmu_objset_ds(o->od_objset.os);
+		rc = dsl_prop_unregister(ds, "xattr", osd_xattr_changed_cb, o);
+		if (rc) {
+			CERROR("dsl_prop_unregister xattr error %d\n", rc);
+			RETURN(ERR_PTR(rc));
+		}
 		osd_umount(env, o);
+	}
 
 	RETURN(NULL);
 }
@@ -791,8 +797,7 @@ static int osd_obd_disconnect(struct obd_export *exp)
 	RETURN(rc);
 }
 
-static int osd_prepare(const struct lu_env *env, struct lu_device *pdev,
-		       struct lu_device *dev)
+static int osd_start(const struct lu_env *env, struct lu_device *dev)
 {
 	return 0;
 }
@@ -801,7 +806,7 @@ struct lu_device_operations osd_lu_ops = {
 	.ldo_object_alloc	= osd_object_alloc,
 	.ldo_process_config	= osd_process_config,
 	.ldo_recovery_complete	= osd_recovery_complete,
-	.ldo_prepare		= osd_prepare,
+	.ldo_start		= osd_start,
 };
 
 static void osd_type_start(struct lu_device_type *t)

@@ -107,7 +107,7 @@ static int mdd_lfsck_main(void *args)
 	ENTRY;
 
 	cfs_daemonize("lfsck");
-	rc = lu_env_init(&env, LCT_MD_THREAD | LCT_DT_THREAD);
+	rc = lu_env_init(&env, LCT_MD_THREAD);
 	if (rc != 0) {
 		CERROR("%s: LFSCK, fail to init env, rc = %d\n",
 		       mdd_lfsck2name(lfsck), rc);
@@ -283,8 +283,6 @@ int mdd_lfsck_stop(const struct lu_env *env, struct md_lfsck *lfsck)
 	RETURN(0);
 }
 
-const char lfsck_bookmark_name[] = "lfsck_bookmark";
-
 static const struct lu_fid lfsck_it_fid = { .f_seq = FID_SEQ_LOCAL_FILE,
 					    .f_oid = OTABLE_IT_OID,
 					    .f_ver = 0 };
@@ -300,13 +298,6 @@ int mdd_lfsck_setup(const struct lu_env *env, struct mdd_device *mdd)
 	cfs_waitq_init(&lfsck->ml_thread.t_ctl_waitq);
 	cfs_mutex_init(&lfsck->ml_mutex);
 	cfs_spin_lock_init(&lfsck->ml_lock);
-
-	obj = dt_store_open(env, mdd->mdd_child, "", lfsck_bookmark_name,
-			    &mdd_env_info(env)->mti_fid);
-	if (IS_ERR(obj))
-		return PTR_ERR(obj);
-
-	lfsck->ml_bookmark_obj = obj;
 
 	obj = dt_locate(env, mdd->mdd_child, &lfsck_it_fid);
 	if (IS_ERR(obj))

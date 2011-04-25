@@ -847,15 +847,6 @@ struct dt_object *local_file_find_or_create_with_fid(const struct lu_env *env,
 						     const char *name,
 						     __u32 mode);
 
-static inline int dt_object_sync(const struct lu_env *env,
-                                 struct dt_object *o)
-{
-        LASSERT(o);
-        LASSERT(o->do_ops);
-        LASSERT(o->do_ops->do_object_sync);
-        return o->do_ops->do_object_sync(env, o);
-}
-
 int dt_declare_version_set(const struct lu_env *env, struct dt_object *o,
                            struct thandle *th);
 void dt_version_set(const struct lu_env *env, struct dt_object *o,

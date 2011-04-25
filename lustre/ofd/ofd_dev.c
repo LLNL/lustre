@@ -276,12 +276,19 @@ static int ofd_start(const struct lu_env *env, struct lu_device *dev)
 {
 	struct ofd_device	*ofd = ofd_dev(dev);
 	struct lu_device	*next = &ofd->ofd_osd->dd_lu_dev;
+	struct obd_device	*obd = dev->ld_obd;
 	int			 rc;
 
 	ENTRY;
 
-	/* initialize lower device */
-	rc = next->ld_ops->ldo_prepare(env, dev, next);
+        rc = next->ld_ops->ldo_start(env, next);
+        if (rc == 0) {
+                target_recovery_init(&ofd->ofd_lut, ost_handle);
+                LASSERT(obd->obd_no_conn);
+                cfs_spin_lock(&obd->obd_dev_lock);
+                obd->obd_no_conn = 0;
+                cfs_spin_unlock(&obd->obd_dev_lock);
+        }
 
 	RETURN(rc);
 }
@@ -309,6 +316,7 @@ static int ofd_recovery_complete(const struct lu_env *env,
 static struct lu_device_operations ofd_lu_ops = {
 	.ldo_object_alloc	= ofd_object_alloc,
 	.ldo_process_config	= ofd_process_config,
+	.ldo_start		= ofd_start,
 	.ldo_recovery_complete	= ofd_recovery_complete,
 };
 
@@ -524,10 +532,6 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 	 * not have more than ddp_grant_reserved% estimation error in them. */
 	m->ofd_grant_ratio =
 		ofd_grant_ratio_conv(m->ofd_dt_conf.ddp_grant_reserved);
-
-	rc = ofd_start(env, &m->ofd_dt_dev.dd_lu_dev);
-	if (rc)
-		GOTO(err_fini_stack, rc);
 
 	rc = lut_init(env, &m->ofd_lut, obd, m->ofd_osd);
 	if (rc)
