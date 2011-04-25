@@ -501,7 +501,8 @@ struct dt_body_operations {
          */
         int (*dbo_read_prep)(const struct lu_env *env, struct dt_object *dt,
                              struct niobuf_local *lb, int nr);
-
+        int (*dbo_fiemap_get)(const struct lu_env *env, struct dt_object *dt,
+                              struct ll_user_fiemap *fm);
 };
 
 /**
@@ -1067,6 +1068,16 @@ static inline int dt_read_prep(const struct lu_env *env, struct dt_object *d,
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_read_prep);
         return d->do_body_ops->dbo_read_prep(env, d, l, n);
+}
+
+static inline int dt_fiemap_get(const struct lu_env *env, struct dt_object *d,
+                                struct ll_user_fiemap *fm)
+{
+        LASSERT(d);
+        if (d->do_body_ops == NULL)
+                return -EPROTO;
+        LASSERT(d->do_body_ops->dbo_fiemap_get);
+        return d->do_body_ops->dbo_fiemap_get(env, d, fm);
 }
 
 static inline int dt_statfs(const struct lu_env *env, struct dt_device *dev,
