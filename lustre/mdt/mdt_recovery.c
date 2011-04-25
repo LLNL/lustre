@@ -954,6 +954,8 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
                  struct obd_device *obd,
                  struct lustre_sb_info *lsi)
 {
+        struct dt_object_format dof;
+        struct lu_attr          attr;
         struct lu_fid fid;
         struct dt_object *o;
         int rc = 0;
@@ -976,7 +978,13 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
         if (rc)
                 RETURN(rc);
 
-        o = dt_store_open(env, mdt->mdt_bottom, "", CAPA_KEYS, &fid);
+        lu_local_obj_fid(&fid, MDD_CAPA_KEYS_OID);
+        memset(&attr, 0, sizeof(attr));
+        attr.la_valid = LA_MODE;
+        attr.la_mode = S_IFREG | 0666;
+        dof.dof_type = DFT_REGULAR;
+
+        o = dt_find_or_create(env, mdt->mdt_bottom, &fid, &dof, &attr);
         if (!IS_ERR(o)) {
                 mdt->mdt_ck_obj = o;
                 rc = mdt_capa_keys_init(env, mdt);

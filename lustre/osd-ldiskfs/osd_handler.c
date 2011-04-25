@@ -4220,18 +4220,33 @@ static int osd_device_init0(const struct lu_env *env,
         if (rc < 0)
                 GOTO(out_mnt, rc);
 
+        rc = osd_compat_init(o);
+        if (rc != 0)
+                GOTO(out_oi, rc);
+
         rc = lu_site_init(&o->od_site, l);
         if (rc)
-                GOTO(out_oi, rc);
+                GOTO(out_compat, rc);
         o->od_site.ls_bottom_dev = l;
 
         strncpy(o->od_svname, lustre_cfg_string(cfg, 4),
                         sizeof(o->od_svname) - 1);
 
+        rc = osd_procfs_init(o, o->od_svname);
+        if (rc != 0) {
+                CERROR("can't initialize procfs entry for %s\n", o->od_svname);
+                GOTO(out_site, rc);
+        }
+
         RETURN(0);
+out_site:
+        lu_site_fini(&o->od_site);
+out_compat:
+        osd_compat_fini(o);
 out_oi:
         osd_oi_fini(info, o);
 out_mnt:
+        osd_shutdown(env, o);
         mntput(o->od_mnt);
         o->od_mnt = NULL;
 out_capa:
@@ -4307,37 +4322,6 @@ static int osd_recovery_complete(const struct lu_env *env,
         RETURN(0);
 }
 
-static int osd_prepare(const struct lu_env *env, struct lu_device *pdev,
-                       struct lu_device *dev)
-{
-        struct osd_device      *osd = osd_dev(dev);
-        struct osd_thread_info *oti = osd_oti_get(env);
-        int                     result;
-
-        ENTRY;
-
-        /* 1. initialize oi before any file create or file open */
-        result = osd_oi_init(oti, osd);
-        if (result < 0)
-                RETURN(result);
-
-        result = osd_procfs_init(osd, osd->od_svname);
-        if (result != 0) {
-                CERROR("can't initialize procfs entry for %s\n", osd->od_svname);
-                RETURN(result);
-        }
-
-        result = osd_compat_init(osd);
-        if (result != 0)
-                RETURN(result);
-
-        if (lu_device_is_md(pdev))
-                /* 2. setup local objects */
-                result = llo_local_objects_setup(env, lu2md_dev(pdev),
-                                                 lu2dt_dev(dev));
-        RETURN(result);
-}
-
 /*
  * we use exports to track all osd users
  */
@@ -4388,6 +4372,11 @@ static int osd_obd_disconnect(struct obd_export *exp)
         RETURN(rc);
 }
 
+static int osd_start(const struct lu_env *env, struct lu_device *dev)
+{
+        return 0;
+}
+
 static const struct lu_object_operations osd_lu_obj_ops = {
         .loo_object_init      = osd_object_init,
         .loo_object_delete    = osd_object_delete,
@@ -4401,7 +4390,7 @@ const struct lu_device_operations osd_lu_ops = {
         .ldo_object_alloc      = osd_object_alloc,
         .ldo_process_config    = osd_process_config,
         .ldo_recovery_complete = osd_recovery_complete,
-        .ldo_prepare           = osd_prepare,
+        .ldo_start             = osd_start,
 };
 
 static const struct lu_device_type_operations osd_device_type_ops = {

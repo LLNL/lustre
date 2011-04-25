@@ -880,8 +880,6 @@ enum obd_notify_event {
         /* Sync request */
         OBD_NOTIFY_SYNC_NONBLOCK,
         OBD_NOTIFY_SYNC,
-        /* Configuration event */
-        OBD_NOTIFY_CONFIG,
         /* Trigger quota recovery */
         OBD_NOTIFY_QUOTA,
         /* Administratively deactivate/activate event */

@@ -492,17 +492,17 @@ struct named_oid {
 };
 
 static const struct named_oid oids[] = {
-        { FLD_INDEX_OID,        "" /* "fld" */ },
-        { FID_SEQ_CTL_OID,      "" /* "seq_ctl" */ },
-        { FID_SEQ_SRV_OID,      "" /* "seq_srv" */ },
+        { FLD_INDEX_OID,        "fld" },
+        { FID_SEQ_CTL_OID,      "seq_ctl" },
+        { FID_SEQ_SRV_OID,      "seq_srv" },
         { MDD_ROOT_INDEX_OID,   "" /* "ROOT" */ },
         { MDD_ORPHAN_OID,       "" /* "PENDING" */ },
-        { MDD_LOV_OBJ_OID,      "" /* LOV_OBJID */ },
-        { MDD_CAPA_KEYS_OID,    "" /* CAPA_KEYS */ },
-        { MDT_LAST_RECV_OID,    "" /* LAST_RCVD */ },
-        { OFD_LAST_RECV_OID,    "" /* LAST_RCVD */ },
-        { OFD_LAST_GROUP_OID,   "" /* "LAST_GROUP" */ },
-        { LLOG_CATALOGS_OID,    "" /* "CATALOGS" */ },
+        { MDD_LOV_OBJ_OID,      LOV_OBJID },
+        { MDD_CAPA_KEYS_OID,    CAPA_KEYS },
+        { MDT_LAST_RECV_OID,    LAST_RCVD },
+        { OFD_LAST_RECV_OID,    LAST_RCVD },
+        { OFD_LAST_GROUP_OID,   "LAST_GROUP" },
+        { LLOG_CATALOGS_OID,    "CATALOGS" },
         { MGS_CONFIGS_OID,      "" /* MOUNT_CONFIGS_DIR */ },
         { OFD_HEALTH_CHECK_OID, "" /* HEALTH_CHECK */ },
         { 0,                    NULL }
@@ -531,11 +531,8 @@ int osd_compat_spec_insert(struct osd_thread_info *info,
         int                      seq;
         ENTRY;
 
-        if (fid_oid(fid) == OFD_LAST_RECV_OID) {
-                rc = osd_compat_add_entry(info, osd, root, LAST_RCVD, id,
-                                          th);
-        } else if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
-                   fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
+        if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
+            fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
                 /* on creation of LAST_ID we create O/<group> hierarchy */
                 LASSERT(map);
                 seq = fid_oid(fid) - OFD_GROUP0_LAST_OID;
@@ -543,12 +540,6 @@ int osd_compat_spec_insert(struct osd_thread_info *info,
                 LASSERT(map->groups[seq].groot);
                 rc = osd_compat_add_entry(info, osd, map->groups[seq].groot,
                                           "LAST_ID", id, th);
-        } else if (fid_oid(fid) == OFD_LAST_GROUP_OID) {
-                /* on creation of LAST_GROUP we create legacy OST hierarchy */
-                rc = osd_compat_add_entry(info, osd, root, "LAST_GROUP", id,
-                                          th);
-        } else if (fid_oid(fid) == LLOG_CATALOGS_OID) {
-                rc = osd_compat_add_entry(info, osd, root, "CATALOGS", id, th);
         } else {
                 name = oid2name(fid_oid(fid));
                 if (name == NULL)

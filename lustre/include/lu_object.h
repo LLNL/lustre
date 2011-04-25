@@ -164,9 +164,7 @@ struct lu_device_operations {
          * user requests.
          */
 
-        int (*ldo_prepare)(const struct lu_env *,
-                           struct lu_device *parent,
-                           struct lu_device *dev);
+        int (*ldo_start)(const struct lu_env *, struct lu_device *dev);
 
 };
 

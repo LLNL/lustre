@@ -924,6 +924,7 @@ static int server_start_targets(struct lustre_sb_info *lsi)
 {
         struct obd_device *obd;
         struct config_llog_instance cfg;
+        struct lu_env env;
         int rc;
         ENTRY;
 
@@ -995,7 +996,21 @@ static int server_start_targets(struct lustre_sb_info *lsi)
         server_calc_timeout(lsi, obd);
 
         /* log has been fully processed, let clients connect */
-        obd_notify(obd, NULL, OBD_NOTIFY_CONFIG, (void *)CONFIG_LOG);
+        rc = lu_env_init(&env, obd->obd_lu_dev->ld_type->ldt_ctx_tags);
+        if (rc == 0) {
+                struct lu_context  session_ctx;
+
+                lu_context_init(&session_ctx, LCT_SESSION);
+                session_ctx.lc_thread = NULL;
+                lu_context_enter(&session_ctx);
+                env.le_ses = &session_ctx;
+
+                obd->obd_lu_dev->ld_ops->ldo_start(&env, obd->obd_lu_dev);
+
+                lu_env_fini(&env);
+                lu_context_exit(&session_ctx);
+                lu_context_fini(&session_ctx);
+        }
 
         RETURN(rc);
 }

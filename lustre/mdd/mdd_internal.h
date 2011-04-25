@@ -387,6 +387,11 @@ int mdd_declare_object_create_internal(const struct lu_env *env,
 struct lu_object *mdd_object_alloc(const struct lu_env *env,
                                    const struct lu_object_header *hdr,
                                    struct lu_device *d);
+struct mdd_object *mdd_open_index_internal(const struct lu_env *env,
+                                           struct mdd_device *mdd,
+                                           const struct lu_fid *pfid,
+                                           const char *name,
+                                           const struct lu_fid *fid);
 #ifdef XXX_MDD_CHANGELOG
 int mdd_declare_llog_record(const struct lu_env *env, struct mdd_device *mdd,
                             int reclen, struct thandle *handle);
