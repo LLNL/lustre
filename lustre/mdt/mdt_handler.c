@@ -5314,11 +5314,8 @@ static int mdt_export_cleanup(struct obd_export *exp)
                 }
         }
         LASSERT(cfs_list_empty(&med->med_open_head));
-        info->mti_mdt = NULL;
-        /* cleanup client slot early */
-        /* Do not erase record for recoverable client. */
-        if (!(exp->exp_flags & OBD_OPT_FAILOVER) || exp->exp_failed)
-		lut_client_del(&env, exp);
+
+        lut_client_del(&env, exp);
         lu_env_fini(&env);
 
         RETURN(rc);
