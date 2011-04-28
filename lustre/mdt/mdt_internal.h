@@ -389,9 +389,6 @@ struct mdt_thread_info {
         struct mdt_ioepoch        *mti_ioepoch;
         __u64                      mti_replayepoch;
 
-        /* server and client data buffers */
-        struct lr_server_data      mti_lsd;
-        struct lsd_client_data     mti_lcd;
         loff_t                     mti_off;
         struct lu_buf              mti_buf;
         struct lustre_capa_key     mti_capa_key;

@@ -102,7 +102,7 @@ static int filter_parse_connect_data(const struct lu_env *env,
                         /* this will only happen on the first connect */
                         lsd->lsd_ost_index = data->ocd_index;
                         lsd->lsd_feature_compat |= OBD_COMPAT_OST;
-                        filter_server_data_update(env, ofd);
+                        lut_server_data_update(env, &ofd->ofd_lut, 0);
                 } else if (index != data->ocd_index) {
                         LCONSOLE_ERROR_MSG(0x136, "Connection from %s to index"
                                            " %u doesn't match actual OST index"
@@ -220,7 +220,7 @@ static int filter_obd_connect(const struct lu_env *env, struct obd_export **_exp
                 struct tg_export_data *ted = &exp->exp_target_data;
                 memcpy(ted->ted_lcd->lcd_uuid, cluuid,
                        sizeof(ted->ted_lcd->lcd_uuid));
-                rc = filter_client_new(env, ofd, exp);
+                rc = lut_client_new(env, exp);
                 if (rc != 0)
                         GOTO(out, rc);
         }
@@ -267,13 +267,11 @@ static int filter_obd_disconnect(struct obd_export *exp)
          */
         filter_grant_discard(exp);
 
-        /* Do not erase record for recoverable client. */
         rc = lu_env_init(&env, LCT_DT_THREAD);
         if (rc)
                 RETURN(rc);
-        if (exp->exp_obd->obd_replayable &&
-            (!exp->exp_obd->obd_fail || exp->exp_failed))
-                filter_client_free(&env, exp);
+
+        lut_client_del(&env, exp);
         lu_env_fini(&env);
 
         /* flush any remaining cancel messages out to the target */

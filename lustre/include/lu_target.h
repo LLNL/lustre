@@ -55,17 +55,8 @@ struct lu_target {
         __u64                    lut_last_transno;
         /** Lock protecting last transaction number */
         cfs_spinlock_t           lut_translock;
-        /** Lock protecting client bitmap */
-        cfs_spinlock_t           lut_client_bitmap_lock;
         /** Bitmap of known clients */
         unsigned long           *lut_client_bitmap;
-};
-
-typedef void (*lut_cb_t)(struct lu_target *lut, __u64 transno,
-                         void *data, int err);
-struct lut_commit_cb {
-        lut_cb_t  lut_cb_func;
-        void     *lut_cb_data;
 };
 
 void lut_boot_epoch_update(struct lu_target *);
@@ -77,4 +68,17 @@ int lut_init(const struct lu_env *, struct lu_target *,
 void lut_fini(const struct lu_env *, struct lu_target *);
 int lut_client_alloc(struct obd_export *);
 void lut_client_free(struct obd_export *);
+int lut_client_del(const struct lu_env *, struct obd_export *);
+int lut_client_add(const struct lu_env *, struct obd_export *, int);
+int lut_client_new(const struct lu_env *, struct obd_export *);
+int lut_client_data_read(const struct lu_env *, struct lu_target *,
+                         struct lsd_client_data *, loff_t *, int);
+int lut_client_data_write(const struct lu_env *, struct lu_target *,
+                          struct lsd_client_data *, loff_t *, struct thandle *);
+int lut_server_data_read(const struct lu_env *, struct lu_target *);
+int lut_server_data_write(const struct lu_env *, struct lu_target *,
+                          struct thandle *);
+int lut_server_data_update(const struct lu_env *, struct lu_target *, int);
+int lut_truncate_last_rcvd(const struct lu_env *, struct lu_target *, loff_t);
+
 #endif /* __LUSTRE_LU_TARGET_H */

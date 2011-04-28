@@ -256,78 +256,6 @@ cleanup:
         RETURN(rc);
 }
 
-static int filter_last_rcvd_header_read(const struct lu_env *env,
-                                        struct filter_device *ofd)
-{
-        struct filter_thread_info *info = filter_info(env);
-        int rc;
-
-        info->fti_off = 0;
-        info->fti_buf.lb_buf = &info->fti_fsd;
-        info->fti_buf.lb_len = sizeof(info->fti_fsd);
-
-        rc = dt_record_read(env, ofd->ofd_last_rcvd, &info->fti_buf,
-                            &info->fti_off);
-        if (rc == 0)
-                lsd_le_to_cpu(&info->fti_fsd, &ofd->ofd_fsd);
-        return rc;
-}
-
-int filter_last_rcvd_header_write(const struct lu_env *env,
-                                  struct filter_device *ofd,
-                                  struct thandle *th)
-{
-        struct filter_thread_info *info;
-        int                        rc;
-        ENTRY;
-
-        info = lu_context_key_get(&env->le_ctx, &filter_thread_key);
-        LASSERT(info);
-
-        lsd_cpu_to_le(&ofd->ofd_fsd, &info->fti_fsd);
-
-        rc = filter_record_write(env, ofd, ofd->ofd_last_rcvd,
-                                 &info->fti_fsd, 0, sizeof(info->fti_fsd), th);
-
-        CDEBUG(D_INFO, "write last_rcvd header rc = %d:\n"
-               "uuid = %s\nlast_transno = "LPU64"\n",
-               rc, ofd->ofd_fsd.lsd_uuid, ofd->ofd_fsd.lsd_last_transno);
-
-        RETURN(rc);
-}
-
-static int filter_last_rcvd_read(const struct lu_env *env,
-                                 struct filter_device *ofd,
-                                 struct lsd_client_data *lcd, loff_t *off)
-{
-        struct filter_thread_info *info = filter_info(env);
-        int                        rc;
-
-        info->fti_buf.lb_buf = &info->fti_fcd;
-        info->fti_buf.lb_len = sizeof(*lcd);
-
-        rc = dt_record_read(env, ofd->ofd_last_rcvd, &info->fti_buf, off);
-        if (rc == 0)
-                lcd_le_to_cpu((struct lsd_client_data *) &info->fti_fcd, lcd);
-        return rc;
-}
-
-int filter_last_rcvd_write(const struct lu_env *env,
-                           struct filter_device *ofd,
-                           struct lsd_client_data *lcd,
-                           loff_t *off, struct thandle *th)
-{
-        struct filter_thread_info *info = filter_info(env);
-        int                        rc;
-
-        lcd_cpu_to_le(lcd, &info->fti_fcd);
-
-        rc = filter_record_write(env, ofd, ofd->ofd_last_rcvd,
-                                 &info->fti_fcd, *off, sizeof(*lcd), th);
-
-        return rc;
-}
-
 static inline int filter_clients_data_init(const struct lu_env *env,
                                            struct filter_device *ofd,
                                            unsigned long fsize)
@@ -354,7 +282,7 @@ static inline int filter_clients_data_init(const struct lu_env *env,
                  * fsfilt_read_record(), in case sizeof(*lcd)
                  * isn't the same as fsd->lsd_client_size.  */
                 off = fsd->lsd_client_start + cl_idx * fsd->lsd_client_size;
-                rc = filter_last_rcvd_read(env, ofd, lcd, &off);
+                rc = lut_client_data_read(env, &ofd->ofd_lut, lcd, &off, cl_idx);
                 if (rc) {
                         CERROR("error reading FILT %s idx %d off %llu: rc %d\n",
                                LAST_RCVD, cl_idx, off, rc);
@@ -394,7 +322,7 @@ static inline int filter_clients_data_init(const struct lu_env *env,
                 fed->fed_group = lcd->lcd_group;
 #endif
                 filter_export_stats_init(ofd, exp, NULL);
-                rc = filter_client_add(env, ofd, fed, cl_idx);
+                rc = lut_client_add(env, exp, cl_idx);
                 LASSERTF(rc == 0, "rc = %d\n", rc); /* can't fail existing */
                 /* VBR: set export last committed version */
                 exp->exp_last_committed = last_rcvd;
@@ -423,29 +351,6 @@ err_out:
 void filter_free_server_data(void)
 {
         LBUG();
-}
-
-int filter_server_data_update(const struct lu_env *env,
-                              struct filter_device *ofd)
-{
-        int rc = 0;
-        ENTRY;
-
-        CDEBUG(D_SUPER, "OSS mount_count is "LPU64", last_transno is "LPU64"\n",
-               ofd->ofd_fsd.lsd_mount_count, ofd->ofd_fsd.lsd_last_transno);
-
-        cfs_spin_lock(&ofd->ofd_transno_lock);
-        ofd->ofd_fsd.lsd_last_transno = ofd->ofd_lut.lut_last_transno;
-        cfs_spin_unlock(&ofd->ofd_transno_lock);
-
-        /*
-         * This may be called from difficult reply handler and
-         * mdt->mdt_last_rcvd may be NULL that time.
-         */
-        if (ofd->ofd_last_rcvd != NULL)
-                rc = filter_last_rcvd_header_write(env, ofd, NULL);
-
-        RETURN(rc);
 }
 
 int filter_server_data_init(const struct lu_env *env,
@@ -483,7 +388,7 @@ int filter_server_data_init(const struct lu_env *env,
                 fsd->lsd_subdir_count = FILTER_SUBDIR_COUNT;
                 fsd->lsd_feature_incompat = OBD_INCOMPAT_OST;
         } else {
-                rc = filter_last_rcvd_header_read(env, ofd);
+                rc = lut_server_data_read(env, &ofd->ofd_lut);
                 if (rc) {
                         CDEBUG(D_INODE,"OBD filter: error reading %s: rc %d\n",
                                LAST_RCVD, rc);
@@ -544,7 +449,7 @@ int filter_server_data_init(const struct lu_env *env,
         cfs_spin_unlock(&ofd->ofd_transno_lock);
 
         /* save it, so mount count and last_transno is current */
-        rc = filter_server_data_update(env, ofd);
+        rc = lut_server_data_update(env, &ofd->ofd_lut, 0);
         if (rc)
                 GOTO(err_fsd, rc);
 

@@ -50,9 +50,6 @@
 
 #include "mdt_internal.h"
 
-static int mdt_server_data_update(const struct lu_env *env,
-                                  struct mdt_device *mdt);
-
 struct lu_buf *mdt_buf(const struct lu_env *env, void *area, ssize_t len)
 {
         struct lu_buf *buf;
@@ -91,109 +88,6 @@ void mdt_trans_stop(const struct lu_env *env,
         dt_trans_stop(env, mdt->mdt_bottom, th);
 }
 
-static inline int mdt_last_rcvd_header_read(const struct lu_env *env,
-                                            struct mdt_device *mdt)
-{
-        struct mdt_thread_info *mti;
-        int rc;
-
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-
-        mti->mti_off = 0;
-        rc = dt_record_read(env, mdt->mdt_lut.lut_last_rcvd,
-                            mdt_buf(env, &mti->mti_lsd, sizeof(mti->mti_lsd)),
-                            &mti->mti_off);
-        if (rc == 0)
-                lsd_le_to_cpu(&mti->mti_lsd, &mdt->mdt_lut.lut_lsd);
-
-        CDEBUG(D_INFO, "read last_rcvd header rc = %d, uuid = %s, "
-               "last_transno = "LPU64"\n", rc, mdt->mdt_lut.lut_lsd.lsd_uuid,
-               mdt->mdt_lut.lut_lsd.lsd_last_transno);
-        return rc;
-}
-
-static int mdt_last_rcvd_header_write(const struct lu_env *env,
-                                      struct mdt_device *mdt,
-                                      struct thandle *th)
-{
-        struct mdt_thread_info *mti;
-        int rc;
-        ENTRY;
-
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-
-        mti->mti_off = 0;
-        lsd_cpu_to_le(&mdt->mdt_lut.lut_lsd, &mti->mti_lsd);
-
-        rc = dt_record_write(env, mdt->mdt_lut.lut_last_rcvd,
-                             mdt_buf_const(env, &mti->mti_lsd,
-                                           sizeof(mti->mti_lsd)),
-                             &mti->mti_off, th);
-
-        CDEBUG(D_INFO, "write last_rcvd header rc = %d, uuid = %s, "
-               "last_transno = "LPU64"\n", rc, mdt->mdt_lut.lut_lsd.lsd_uuid,
-               mdt->mdt_lut.lut_lsd.lsd_last_transno);
-
-        RETURN(rc);
-}
-
-static int mdt_last_rcvd_read(const struct lu_env *env, struct mdt_device *mdt,
-                              struct lsd_client_data *lcd, loff_t *off,
-                              int index)
-{
-        struct mdt_thread_info *mti;
-        struct lsd_client_data *tmp;
-        int rc;
-
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        tmp = &mti->mti_lcd;
-        rc = dt_record_read(env, mdt->mdt_lut.lut_last_rcvd,
-                            mdt_buf(env, tmp, sizeof(*tmp)), off);
-        if (rc == 0) {
-                check_lcd(mdt2obd_dev(mdt)->obd_name, index, tmp);
-                lcd_le_to_cpu(tmp, lcd);
-        }
-
-        CDEBUG(D_INFO, "read lcd @%d rc = %d, uuid = %s, last_transno = "LPU64
-               ", last_xid = "LPU64", last_result = %u, last_data = %u, "
-               "last_close_transno = "LPU64", last_close_xid = "LPU64", "
-               "last_close_result = %u\n", (int)(*off - sizeof(*tmp)),
-               rc, lcd->lcd_uuid, lcd->lcd_last_transno, lcd->lcd_last_xid,
-               lcd->lcd_last_result, lcd->lcd_last_data,
-               lcd->lcd_last_close_transno, lcd->lcd_last_close_xid,
-               lcd->lcd_last_close_result);
-        return rc;
-}
-
-static int mdt_last_rcvd_write(const struct lu_env *env,
-                               struct mdt_device *mdt,
-                               struct lsd_client_data *lcd,
-                               loff_t *off, struct thandle *th)
-{
-        struct mdt_thread_info *mti;
-        struct lsd_client_data *tmp;
-        int rc;
-
-        LASSERT(th != NULL);
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        tmp = &mti->mti_lcd;
-
-        lcd_cpu_to_le(lcd, tmp);
-
-        rc = dt_record_write(env, mdt->mdt_lut.lut_last_rcvd,
-                             mdt_buf_const(env, tmp, sizeof(*tmp)), off, th);
-
-        CDEBUG(D_INFO, "write lcd @%d rc = %d, uuid = %s, last_transno = "LPU64
-               ", last_xid = "LPU64", last_result = %u, last_data = %u, "
-               "last_close_transno = "LPU64", last_close_xid = "LPU64" ,"
-               "last_close_result = %u\n", (int)(*off - sizeof(*tmp)),
-               rc, lcd->lcd_uuid, lcd->lcd_last_transno, lcd->lcd_last_xid,
-               lcd->lcd_last_result, lcd->lcd_last_data,
-               lcd->lcd_last_close_transno, lcd->lcd_last_close_xid,
-               lcd->lcd_last_close_result);
-        return rc;
-}
-
 static int mdt_clients_data_init(const struct lu_env *env,
                                  struct mdt_device *mdt,
                                  unsigned long last_size)
@@ -223,7 +117,7 @@ static int mdt_clients_data_init(const struct lu_env *env,
                 off = lsd->lsd_client_start +
                         cl_idx * lsd->lsd_client_size;
 
-                rc = mdt_last_rcvd_read(env, mdt, lcd, &off, cl_idx);
+                rc = lut_client_data_read(env, &mdt->mdt_lut, lcd, &off, cl_idx);
                 if (rc) {
                         CERROR("error reading MDS %s idx %d, off %llu: rc %d\n",
                                LAST_RCVD, cl_idx, off, rc);
@@ -263,7 +157,7 @@ static int mdt_clients_data_init(const struct lu_env *env,
                 mti->mti_exp = exp;
                 /* copy on-disk lcd to the export */
                 *exp->exp_target_data.ted_lcd = *lcd;
-                rc = mdt_client_add(env, mdt, cl_idx);
+                rc = lut_client_add(env, exp, cl_idx);
                 /* can't fail existing */
                 LASSERTF(rc == 0, "rc = %d\n", rc);
                 /* VBR: set export last committed version */
@@ -286,45 +180,6 @@ static int mdt_clients_data_init(const struct lu_env *env,
 
 err_client:
         OBD_FREE_PTR(lcd);
-        RETURN(rc);
-}
-
-static int mdt_truncate_last_rcvd(const struct lu_env *env,
-                                  struct mdt_device *mdt,
-                                  loff_t size)
-{
-        struct dt_object *dt = mdt->mdt_lut.lut_last_rcvd;
-        struct thandle   *th;
-        struct lu_attr    attr;
-        int               rc;
-        ENTRY;
-
-        attr.la_size = size;
-        attr.la_valid = LA_SIZE;
-
-        th = dt_trans_create(env, mdt->mdt_bottom);
-        if (IS_ERR(th))
-                RETURN(PTR_ERR(th));
-
-        rc = dt_declare_punch(env, dt, size, OBD_OBJECT_EOF, th);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = dt_declare_attr_set(env, dt, &attr, th);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = dt_punch(env, dt, size, OBD_OBJECT_EOF, th, BYPASS_CAPA);
-        if (rc == 0)
-                rc = dt_attr_set(env, dt, &attr, th, BYPASS_CAPA);
-
-cleanup:
-        dt_trans_stop(env, mdt->mdt_bottom, th);
-
         RETURN(rc);
 }
 
@@ -377,7 +232,7 @@ static int mdt_server_data_init(const struct lu_env *env,
                                             OBD_INCOMPAT_MULTI_OI;
         } else {
                 LCONSOLE_WARN("%s: used disk, loading\n", obd->obd_name);
-                rc = mdt_last_rcvd_header_read(env, mdt);
+                rc = lut_server_data_read(env, &mdt->mdt_lut);
                 if (rc) {
                         CERROR("error reading MDS %s: rc %d\n", LAST_RCVD, rc);
                         GOTO(out, rc);
@@ -414,7 +269,7 @@ static int mdt_server_data_init(const struct lu_env *env,
                         LCONSOLE_WARN("Mounting %s at first time on 1.8 FS, "
                                       "remove all clients for interop needs\n",
                                       obd->obd_name);
-                        rc = mdt_truncate_last_rcvd(env, mdt,
+                        rc = lut_truncate_last_rcvd(env, &mdt->mdt_lut,
                                                     lsd->lsd_client_start);
                         if (rc)
                                 GOTO(out, rc);
@@ -426,7 +281,8 @@ static int mdt_server_data_init(const struct lu_env *env,
         if (mdt->mdt_opts.mo_abort_recov) {
                 LCONSOLE_WARN("%s: abort recovery: remove all clients\n",
                               obd->obd_name);
-                rc = mdt_truncate_last_rcvd(env, mdt, lsd->lsd_client_start);
+                rc = lut_truncate_last_rcvd(env, &mdt->mdt_lut,
+                                            lsd->lsd_client_start);
                 if (rc)
                         GOTO(out, rc);
                 last_rcvd_size = lsd->lsd_client_start;
@@ -482,7 +338,7 @@ static int mdt_server_data_init(const struct lu_env *env,
         lsd->lsd_mount_count = obd->u.obt.obt_mount_count;
 
         /* save it, so mount count and last_transno is current */
-        rc = mdt_server_data_update(env, mdt);
+        rc = lut_server_data_update(env, &mdt->mdt_lut, 0);
         if (rc)
                 GOTO(err_client, rc);
 
@@ -492,269 +348,6 @@ err_client:
         class_disconnect_exports(obd);
 out:
         return rc;
-}
-
-static int mdt_server_data_update(const struct lu_env *env,
-                                  struct mdt_device *mdt)
-{
-        struct mdt_thread_info *mti;
-        struct thandle *th;
-        int rc;
-
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-
-        th = dt_trans_create(env, mdt->mdt_bottom);
-        if (IS_ERR(th))
-                RETURN(PTR_ERR(th));
-
-        mti->mti_off = 0;
-        rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
-                                     sizeof(mti->mti_lsd), mti->mti_off, th);
-        if (rc)
-                goto out;
-
-        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
-        if (rc)
-                goto out;
-
-        CDEBUG(D_SUPER, "MDS mount_count is "LPU64", last_transno is "LPU64"\n",
-               mdt->mdt_lut.lut_obd->u.obt.obt_mount_count,
-               mdt->mdt_lut.lut_last_transno);
-
-        cfs_spin_lock(&mdt->mdt_lut.lut_translock);
-        mdt->mdt_lut.lut_lsd.lsd_last_transno = mdt->mdt_lut.lut_last_transno;
-        cfs_spin_unlock(&mdt->mdt_lut.lut_translock);
-
-        rc = mdt_last_rcvd_header_write(env, mdt, th);
-
-out:
-        mdt_trans_stop(env, mdt, th);
-        return rc;
-}
-
-
-int mdt_client_new(const struct lu_env *env, struct mdt_device *mdt)
-{
-        unsigned long *bitmap = mdt->mdt_lut.lut_client_bitmap;
-        struct mdt_thread_info *mti;
-        struct tg_export_data *ted;
-        struct lr_server_data  *lsd = &mdt->mdt_lut.lut_lsd;
-        struct obd_device *obd = mdt2obd_dev(mdt);
-        struct thandle *th;
-        loff_t off;
-        int rc;
-        int cl_idx;
-        ENTRY;
-
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        LASSERT(mti != NULL);
-
-        ted = &mti->mti_exp->exp_target_data;
-
-        LASSERT(bitmap != NULL);
-        if (!strcmp(ted->ted_lcd->lcd_uuid, obd->obd_uuid.uuid))
-                RETURN(0);
-
-        /* the bitmap operations can handle cl_idx > sizeof(long) * 8, so
-         * there's no need for extra complication here
-         */
-        cfs_spin_lock(&mdt->mdt_lut.lut_client_bitmap_lock);
-        cl_idx = cfs_find_first_zero_bit(bitmap, LR_MAX_CLIENTS);
-        if (cl_idx >= LR_MAX_CLIENTS ||
-            OBD_FAIL_CHECK(OBD_FAIL_MDS_CLIENT_ADD)) {
-                CERROR("no room for %u clients - fix LR_MAX_CLIENTS\n",
-                       cl_idx);
-                cfs_spin_unlock(&mdt->mdt_lut.lut_client_bitmap_lock);
-                RETURN(-EOVERFLOW);
-        }
-        cfs_set_bit(cl_idx, bitmap);
-        cfs_spin_unlock(&mdt->mdt_lut.lut_client_bitmap_lock);
-
-        CDEBUG(D_INFO, "client at idx %d with UUID '%s' added\n",
-               cl_idx, ted->ted_lcd->lcd_uuid);
-
-        ted->ted_lr_idx = cl_idx;
-        ted->ted_lr_off = lsd->lsd_client_start +
-                          (cl_idx * lsd->lsd_client_size);
-        cfs_mutex_init(&ted->ted_lcd_lock);
-
-        LASSERTF(ted->ted_lr_off > 0, "ted_lr_off = %llu\n", ted->ted_lr_off);
-
-        /* Write new client data. */
-        off = ted->ted_lr_off;
-
-        if (OBD_FAIL_CHECK(OBD_FAIL_TGT_CLIENT_ADD))
-                RETURN(-ENOSPC);
-
-        th = dt_trans_create(env, mdt->mdt_bottom);
-        if (IS_ERR(th))
-                RETURN(PTR_ERR(th));
-
-        rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
-                                     sizeof(*ted->ted_lcd), off, th);
-        if (rc)
-                goto stop;
-
-        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
-        if (rc)
-                goto stop;
-
-        /*
-         * Until this operations will be committed the sync is needed
-         * for this export. This should be done _after_ starting the
-         * transaction so that many connecting clients will not bring
-         * server down with lots of sync writes.
-         */
-        rc = lut_new_client_cb_add(th, mti->mti_exp);
-        if (rc) {
-                /* can't add callback, do sync now */
-                th->th_sync = 1;
-        } else {
-                cfs_spin_lock(&mti->mti_exp->exp_lock);
-                mti->mti_exp->exp_need_sync = 1;
-                cfs_spin_unlock(&mti->mti_exp->exp_lock);
-        }
-
-        rc = mdt_last_rcvd_write(env, mdt, ted->ted_lcd, &off, th);
-        CDEBUG(D_INFO, "wrote client lcd at idx %u off %llu (len %u)\n",
-               cl_idx, ted->ted_lr_off, (int)sizeof(*(ted->ted_lcd)));
-
-stop:
-        dt_trans_stop(env, mdt->mdt_bottom, th);
-
-        RETURN(rc);
-}
-
-/* Add client data to the MDS.  We use a bitmap to locate a free space
- * in the last_rcvd file if cl_off is -1 (i.e. a new client).
- * Otherwise, we just have to read the data from the last_rcvd file and
- * we know its offset.
- *
- * It should not be possible to fail adding an existing client - otherwise
- * mdt_init_server_data() callsite needs to be fixed.
- */
-int mdt_client_add(const struct lu_env *env,
-                   struct mdt_device *mdt, int cl_idx)
-{
-        struct mdt_thread_info *mti;
-        struct tg_export_data  *ted;
-        unsigned long *bitmap = mdt->mdt_lut.lut_client_bitmap;
-        struct obd_device *obd = mdt2obd_dev(mdt);
-        struct lr_server_data *lsd = &mdt->mdt_lut.lut_lsd;
-        int rc = 0;
-        ENTRY;
-
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        LASSERT(mti != NULL);
-
-        ted = &mti->mti_exp->exp_target_data;
-
-        LASSERT(bitmap != NULL);
-        LASSERTF(cl_idx >= 0, "%d\n", cl_idx);
-
-        if (!strcmp(ted->ted_lcd->lcd_uuid, obd->obd_uuid.uuid))
-                RETURN(0);
-
-        cfs_spin_lock(&mdt->mdt_lut.lut_client_bitmap_lock);
-        if (cfs_test_and_set_bit(cl_idx, bitmap)) {
-                CERROR("MDS client %d: bit already set in bitmap!!\n",
-                       cl_idx);
-                LBUG();
-        }
-        cfs_spin_unlock(&mdt->mdt_lut.lut_client_bitmap_lock);
-
-        CDEBUG(D_INFO, "client at idx %d with UUID '%s' added\n",
-               cl_idx, ted->ted_lcd->lcd_uuid);
-
-        ted->ted_lr_idx = cl_idx;
-        ted->ted_lr_off = lsd->lsd_client_start +
-                          (cl_idx * lsd->lsd_client_size);
-        cfs_mutex_init(&ted->ted_lcd_lock);
-
-        LASSERTF(ted->ted_lr_off > 0, "ted_lr_off = %llu\n", ted->ted_lr_off);
-
-        RETURN(rc);
-}
-
-int mdt_client_del(const struct lu_env *env, struct mdt_device *mdt)
-{
-        struct mdt_thread_info *mti;
-        struct tg_export_data  *ted;
-        struct obd_device      *obd = mdt2obd_dev(mdt);
-        struct obd_export      *exp;
-        struct thandle         *th = NULL;
-        loff_t                  off;
-        int                     rc = 0;
-        ENTRY;
-
-        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
-        LASSERT(mti != NULL);
-
-        exp = mti->mti_exp;
-        ted = &exp->exp_target_data;
-        if (!ted->ted_lcd)
-                RETURN(0);
-
-        /* XXX: If lcd_uuid were a real obd_uuid, I could use obd_uuid_equals */
-        if (!strcmp(ted->ted_lcd->lcd_uuid, obd->obd_uuid.uuid))
-                GOTO(free, 0);
-
-        CDEBUG(D_INFO, "freeing client at idx %u, offset %lld\n",
-               ted->ted_lr_idx, ted->ted_lr_off);
-
-        off = ted->ted_lr_off;
-
-        /*
-         * Don't clear ted_lr_idx here as it is likely also unset.  At worst we
-         * leak a client slot that will be cleaned on the next recovery.
-         */
-        if (off <= 0) {
-                CERROR("client idx %d has offset %lld\n",
-                        ted->ted_lr_idx, off);
-                GOTO(free, rc = -EINVAL);
-        }
-
-        /*
-         * Clear the bit _after_ zeroing out the client so we don't race with
-         * mdt_client_add and zero out new clients.
-         */
-        if (!cfs_test_bit(ted->ted_lr_idx, mdt->mdt_lut.lut_client_bitmap)) {
-                CERROR("MDT client %u: bit already clear in bitmap!!\n",
-                       ted->ted_lr_idx);
-                LBUG();
-        }
-
-        /* Make sure the server's last_transno is up to date.
-         * This should be done before zeroing client slot so last_transno will
-         * be in server data or in client data in case of failure */
-        mdt_server_data_update(env, mdt);
-
-        th = dt_trans_create(env, mdt->mdt_bottom);
-        if (IS_ERR(th))
-                GOTO(free, rc = PTR_ERR(th));
-
-        rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
-                                     sizeof(*ted->ted_lcd), off, th);
-        if (rc)
-                GOTO(stop, rc);
-
-        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
-        if (rc)
-                GOTO(stop, rc);
-
-        cfs_mutex_lock(&ted->ted_lcd_lock);
-        memset(ted->ted_lcd->lcd_uuid, 0, sizeof ted->ted_lcd->lcd_uuid);
-        rc = mdt_last_rcvd_write(env, mdt, ted->ted_lcd, &off, th);
-        cfs_mutex_unlock(&ted->ted_lcd_lock);
-
-        EXIT;
-stop:
-        mdt_trans_stop(env, mdt, th);
-
-        CDEBUG(rc == 0 ? D_INFO : D_ERROR, "Zeroing out client idx %u in "
-               "%s, rc %d\n",  ted->ted_lr_idx, LAST_RCVD, rc);
-free:
-        return 0;
 }
 
 /*
@@ -786,7 +379,7 @@ static int mdt_last_rcvd_update(struct mdt_thread_info *mti,
                 cfs_mutex_unlock(&ted->ted_lcd_lock);
                 CWARN("commit transaction for disconnected client %s: rc %d\n",
                       req->rq_export->exp_client_uuid.uuid, rc);
-                err = mdt_last_rcvd_header_write(mti->mti_env, mdt, th);
+                err = lut_server_data_write(mti->mti_env, &mdt->mdt_lut, th);
                 RETURN(err);
         }
 
@@ -851,7 +444,8 @@ static int mdt_last_rcvd_update(struct mdt_thread_info *mti,
                 CERROR("client idx %d has offset %lld\n", ted->ted_lr_idx, off);
                 err = -EINVAL;
         } else {
-                err = mdt_last_rcvd_write(mti->mti_env, mdt, lcd, &off, th);
+                err = lut_client_data_write(mti->mti_env, &mdt->mdt_lut,
+                                            lcd, &off, th);
         }
         cfs_mutex_unlock(&ted->ted_lcd_lock);
         RETURN(err);
@@ -872,13 +466,13 @@ static int mdt_txn_start_cb(const struct lu_env *env,
 
         LASSERT(mdt->mdt_lut.lut_last_rcvd);
         off = mti->mti_exp ?
-                mti->mti_exp->exp_mdt_data.med_ted.ted_lr_off : 0;
+                mti->mti_exp->exp_target_data.ted_lr_off : 0;
         rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
                                      sizeof(struct lsd_client_data), off, th);
         if (rc)
                 return rc;
         rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
-                                     sizeof(mti->mti_lsd), 0, th);
+                                     sizeof(struct lr_server_data), 0, th);
         if (rc)
                 return rc;
 

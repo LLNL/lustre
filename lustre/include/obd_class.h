@@ -308,12 +308,6 @@ static inline struct lu_target *class_exp2tgt(struct obd_export *exp)
         return exp->exp_obd->u.obt.obt_lut;
 }
 
-static inline struct lr_server_data *class_server_data(struct obd_device *obd)
-{
-        LASSERT(obd->u.obt.obt_lut);
-        return &obd->u.obt.obt_lut->lut_lsd;
-}
-
 void obdo_cpy_md(struct obdo *dst, struct obdo *src, obd_flag valid);
 void obdo_to_ioobj(struct obdo *oa, struct obd_ioobj *ioobj);
 void obdo_from_iattr(struct obdo *oa, struct iattr *attr,
