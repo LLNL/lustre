@@ -148,4 +148,9 @@ static inline int ll_rpc_recoverable_error(int rc)
 {
         return (rc == -ENOTCONN || rc == -ENODEV);
 }
+
+/* target.c */
+int __init lut_mod_init(void);
+void __exit lut_mod_exit(void);
+
 #endif /* PTLRPC_INTERNAL_H */
