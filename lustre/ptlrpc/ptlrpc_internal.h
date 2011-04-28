@@ -160,4 +160,9 @@ static inline void ptlrpc_reqset_put(struct ptlrpc_request_set *set)
         if (cfs_atomic_dec_and_test(&set->set_refcount))
                 OBD_FREE_PTR(set);
 }
+
+/* target.c */
+int __init lut_mod_init(void);
+void __exit lut_mod_exit(void);
+
 #endif /* PTLRPC_INTERNAL_H */

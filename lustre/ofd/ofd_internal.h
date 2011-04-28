@@ -282,10 +282,6 @@ struct filter_thread_info {
                 struct obd_statfs  osfs;     /* for obdfilter_statfs()    */
         } fti_u;
 
-        /* server and client data buffers */
-        struct lr_server_data      fti_fsd;
-        struct lsd_client_data     fti_fcd;
-
         /* Ops object filename */
         struct lu_name             fti_name;
 
@@ -439,8 +435,6 @@ int filter_last_rcvd_write(const struct lu_env *env,
                            loff_t *off, struct thandle *th);
 int filter_server_data_init(const struct lu_env *env,
                             struct filter_device *ofd);
-int filter_server_data_update(const struct lu_env *env,
-                              struct filter_device *ofd);
 int filter_group_load(const struct lu_env *env,
                       struct filter_device *ofd, int group);
 int filter_last_group_write(const struct lu_env *env, struct filter_device *ofd);

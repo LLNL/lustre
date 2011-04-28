@@ -149,12 +149,13 @@ static int filter_last_rcvd_update(struct filter_thread_info *info,
                 cfs_spin_lock(&ofd->ofd_transno_lock);
                 ofd->ofd_fsd.lsd_last_transno = ofd->ofd_last_transno;
                 cfs_spin_unlock(&ofd->ofd_transno_lock);
-                filter_last_rcvd_header_write(info->fti_env, ofd, th);
+                lut_server_data_write(info->fti_env, &ofd->ofd_lut, th);
         }
 
         *transno_p = info->fti_transno;
         LASSERT(fed->fed_ted.ted_lr_off > 0);
-        err = filter_last_rcvd_write(info->fti_env, ofd, lcd, &off, th);
+        err = lut_client_data_write(info->fti_env, &ofd->ofd_lut, lcd,
+                                    &off, th);
 
         RETURN(err);
 }
