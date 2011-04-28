@@ -175,45 +175,6 @@ err_client:
         RETURN(rc);
 }
 
-static int mdt_truncate_last_rcvd(const struct lu_env *env,
-                                  struct mdt_device *mdt,
-                                  loff_t size)
-{
-        struct dt_object *dt = mdt->mdt_lut.lut_last_rcvd;
-        struct thandle   *th;
-        struct lu_attr    attr;
-        int               rc;
-        ENTRY;
-
-        attr.la_size = size;
-        attr.la_valid = LA_SIZE;
-
-        th = dt_trans_create(env, mdt->mdt_bottom);
-        if (IS_ERR(th))
-                RETURN(PTR_ERR(th));
-
-        rc = dt_declare_punch(env, dt, size, OBD_OBJECT_EOF, th);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = dt_declare_attr_set(env, dt, &attr, th);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = dt_trans_start_local(env, mdt->mdt_bottom, th);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = dt_punch(env, dt, size, OBD_OBJECT_EOF, th, BYPASS_CAPA);
-        if (rc == 0)
-                rc = dt_attr_set(env, dt, &attr, th, BYPASS_CAPA);
-
-cleanup:
-        dt_trans_stop(env, mdt->mdt_bottom, th);
-
-        RETURN(rc);
-}
-
 static int mdt_server_data_init(const struct lu_env *env,
                                 struct mdt_device *mdt,
                                 struct lustre_sb_info *lsi)
@@ -312,7 +273,8 @@ static int mdt_server_data_init(const struct lu_env *env,
         if (mdt->mdt_opts.mo_abort_recov) {
                 LCONSOLE_WARN("%s: abort recovery: remove all clients\n",
                               obd->obd_name);
-                rc = mdt_truncate_last_rcvd(env, mdt, lsd->lsd_client_start);
+                rc = lut_truncate_last_rcvd(env, &mdt->mdt_lut,
+                                            lsd->lsd_client_start);
                 if (rc)
                         GOTO(out, rc);
                 last_rcvd_size = lsd->lsd_client_start;
@@ -488,14 +450,15 @@ static int mdt_txn_start_cb(const struct lu_env *env,
 {
 	struct mdt_device *mdt = cookie;
 	struct mdt_thread_info *mti;
+	loff_t off;
 	int rc;
 	ENTRY;
 
 	mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
 
 	LASSERT(mdt->mdt_lut.lut_last_rcvd);
-	if (mti->mti_exp == NULL)
-		RETURN(0);
+	off = mti->mti_exp ?
+	      mti->mti_exp->exp_target_data.ted_lr_off : 0;
 
 	rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
 				     sizeof(struct lsd_client_data),

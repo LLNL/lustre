@@ -702,10 +702,6 @@ int lut_init(const struct lu_env *env, struct lu_target *lut,
         if (lut->lut_client_bitmap == NULL)
                 RETURN(-ENOMEM);
 
-        /** obdfilter has no lu_device stack yet */
-        if (dt == NULL)
-                RETURN(rc);
-
 	memset(&attr, 0, sizeof(attr));
 	attr.la_valid = LA_MODE;
 	attr.la_mode = S_IFREG | S_IRUGO | S_IWUSR;
@@ -761,4 +757,5 @@ void lut_mod_exit(void)
 {
 	lu_context_key_degister_many(&tg_thread_key, NULL);
 }
+
 

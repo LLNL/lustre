@@ -1,7 +1,7 @@
 MODULES := obdfilter
 
 obdfilter-objs := ofd_dev.o ofd_io.o ofd_llog.o ofd_obd.o ofd_objects.o
-obdfilter-objs += lproc_ofd.o ofd_lvb.o ofd_capa.o ofd_clients.o
-obdfilter-objs += ofd_grant.o ofd_recovery.o ofd_fs.o ofd_fmd.o 
+obdfilter-objs += lproc_ofd.o ofd_lvb.o ofd_capa.o
+obdfilter-objs += ofd_grant.o ofd_recovery.o ofd_fs.o ofd_fmd.o
 
 @INCLUDE_RULES@
