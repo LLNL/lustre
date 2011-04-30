@@ -2182,8 +2182,9 @@ kiblnd_passive_connect (struct rdma_cm_id *cmid, void *priv, int priv_nob)
         dst_addr = (struct sockaddr_in *)&(cmid->route.addr.dst_addr);
         if (*kiblnd_tunables.kib_require_priv_port &&
             ntohs(dst_addr->sin_port) >= PROT_SOCK) {
-                CERROR("Peer's port (%hu) is not privileged\n",
-                       ntohs(dst_addr->sin_port));
+                __u32 ip = ntohl(dst_addr->sin_addr.s_addr);
+                CERROR("Peer's port (%u.%u.%u.%u:%hu) is not privileged\n",
+                       HIPQUAD(ip), ntohs(dst_addr->sin_port));
                 goto failed;
         }
 
