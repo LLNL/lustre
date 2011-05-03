@@ -96,9 +96,9 @@ Requires: kernel
 Requires: kernel-%{flavor}
 %else
 %if %{_vendor}=="redhat" || %{_vendor}=="fedora"
-# for older RHEL (< RHEL6) we need to require the specific kernel still since weak-modules
-# support on RH is, well, weak, to be punny about it
-Requires: kernel = %{krequires}
+# for older RHEL (< RHEL6) we need to require the specific kernel still since
+# weak-modules support on RH is, well, weak, to be punny about it
+Requires: kernel = %{kversion}
 %endif
 %endif
 %endif
