@@ -179,9 +179,6 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
                                &info->fti_dof, th);
         if (rc)
                 GOTO(trans_stop, rc);
-        rc = dt_declare_attr_set(env, next, &info->fti_attr, th);
-        if (rc)
-                GOTO(trans_stop, rc);
 
         rc = dt_declare_record_write(env, ofd->ofd_lastid_obj[group],
                                      sizeof(tmp), info->fti_off, th);
@@ -199,11 +196,6 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         if (rc)
                 GOTO(trans_stop, rc);
         LASSERT(filter_object_exists(fo));
-
-        info->fti_attr.la_valid &= ~LA_TYPE;
-        rc = dt_attr_set(env, next, &info->fti_attr, th, BYPASS_CAPA);
-        if (rc)
-                GOTO(trans_stop, rc);
 
         filter_last_id_set(ofd, id, group);
 
