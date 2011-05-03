@@ -1671,7 +1671,7 @@ static int osd_mkdir(struct osd_thread_info *info, struct osd_object *obj,
         int result;
         struct osd_thandle *oth;
         struct osd_device *osd = osd_obj2dev(obj);
-        __u32 mode = (attr->la_mode & (S_IFMT | S_IRWXUGO | S_ISVTX));
+        __u32 mode = (attr->la_mode & (S_IFMT | S_IALLUGO | S_ISVTX));
 
         LASSERT(S_ISDIR(attr->la_mode));
 
@@ -1887,12 +1887,12 @@ static int __osd_object_create(struct osd_thread_info *info,
 		/* bz 24037 */
 		if (obj->oo_inode && (obj->oo_inode->i_state & I_NEW))
 			unlock_new_inode(obj->oo_inode);
-        }
+	}
 
 	/* restore previous umask value */
 	current->fs->umask = umask;
 
-        return result;
+	return result;
 }
 
 /**

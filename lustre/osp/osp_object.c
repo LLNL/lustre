@@ -120,16 +120,6 @@ static int osp_attr_set(const struct lu_env *env, struct dt_object *dt,
         int                 rc = 0;
         ENTRY;
 
-        /* 
-         * XXX: first ->attr_set() can be ignored, but this is a trick
-         * better would be to make ->do_create() to initialize attributes
-         * and not do the very first ->attr_set() at all
-         */
-        if (o->opo_no_attrs) {
-                o->opo_no_attrs = 0;
-                RETURN(0);
-        }
-
         /* we're interested in uid/gid changes only */
         if (!(attr->la_valid & (LA_UID | LA_GID)))
                 RETURN(0);
@@ -270,9 +260,6 @@ static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
                 rc = dt_record_write(env, d->opd_last_used_file, &osi->osi_lb,
                                      &osi->osi_off, th);
         }
-
-        /* object is created, we can ignore first attr_set from being logged */
-        o->opo_no_attrs = 1;
 
         RETURN(rc);
 }
