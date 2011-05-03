@@ -1381,16 +1381,6 @@ void mdd_object_initialize(const struct lu_env *env, const struct lu_fid *pfid,
         ENTRY;
 
         /*
-         * Update attributes for child.
-         *
-         * FIXME:
-         *  (1) the valid bits should be converted between Lustre and Linux;
-         *  (2) maybe, the child attributes should be set in OSD when creation.
-         */
-
-        mdd_attr_set_internal(env, child, &ma->ma_attr, handle, 0);
-
-        /*
          * in case of replay we just set LOVEA provided by the client
          */
         if (spec->no_create || (spec->sp_cr_flags & MDS_OPEN_HAS_EA)) {
