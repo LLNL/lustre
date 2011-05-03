@@ -1477,27 +1477,6 @@ static int osd_attr_set(const struct lu_env *env,
         return rc;
 }
 
-/*
- * Object creation.
- *
- * XXX temporary solution.
- */
-
-static int osd_create_pre(struct osd_thread_info *info, struct osd_object *obj,
-                          struct lu_attr *attr, struct thandle *th)
-{
-        return 0;
-}
-
-static int osd_create_post(struct osd_thread_info *info, struct osd_object *obj,
-                           struct lu_attr *attr, struct thandle *th)
-{
-        osd_object_init0(obj);
-        if (obj->oo_inode && (obj->oo_inode->i_state & I_NEW))
-                unlock_new_inode(obj->oo_inode);
-        return 0;
-}
-
 struct dentry *osd_child_dentry_get(const struct lu_env *env,
                                     struct osd_object *obj,
                                     const char *name, const int namelen)
@@ -1576,7 +1555,7 @@ static int osd_mkdir(struct osd_thread_info *info, struct osd_object *obj,
         int result;
         struct osd_thandle *oth;
         struct osd_device *osd = osd_obj2dev(obj);
-        __u32 mode = (attr->la_mode & (S_IFMT | S_IRWXUGO | S_ISVTX));
+        __u32 mode = (attr->la_mode & (S_IFMT | S_IALLUGO | S_ISVTX));
 
         LASSERT(S_ISDIR(attr->la_mode));
 
@@ -1606,7 +1585,7 @@ static int osd_mk_index(struct osd_thread_info *info, struct osd_object *obj,
         struct osd_thandle *oth;
         const struct dt_index_features *feat = dof->u.dof_idx.di_feat;
 
-        __u32 mode = (attr->la_mode & (S_IFMT | S_IRWXUGO | S_ISVTX));
+        __u32 mode = (attr->la_mode & (S_IFMT | S_IALLUGO | S_ISVTX));
 
         LASSERT(S_ISREG(attr->la_mode));
 
@@ -1641,7 +1620,7 @@ static int osd_mkreg(struct osd_thread_info *info, struct osd_object *obj,
 {
         LASSERT(S_ISREG(attr->la_mode));
         return osd_mkfile(info, obj, (attr->la_mode &
-                               (S_IFMT | S_IRWXUGO | S_ISVTX)), hint, th);
+                               (S_IFMT | S_IALLUGO | S_ISVTX)), hint, th);
 }
 
 static int osd_mksym(struct osd_thread_info *info, struct osd_object *obj,
@@ -1652,7 +1631,7 @@ static int osd_mksym(struct osd_thread_info *info, struct osd_object *obj,
 {
         LASSERT(S_ISLNK(attr->la_mode));
         return osd_mkfile(info, obj, (attr->la_mode &
-                              (S_IFMT | S_IRWXUGO | S_ISVTX)), hint, th);
+                              (S_IFMT | S_IALLUGO | S_ISVTX)), hint, th);
 }
 
 static int osd_mknod(struct osd_thread_info *info, struct osd_object *obj,
@@ -1661,7 +1640,7 @@ static int osd_mknod(struct osd_thread_info *info, struct osd_object *obj,
                      struct dt_object_format *dof,
                      struct thandle *th)
 {
-        cfs_umode_t mode = attr->la_mode & (S_IFMT | S_IRWXUGO | S_ISVTX);
+        cfs_umode_t mode = attr->la_mode & (S_IFMT | S_IALLUGO | S_ISVTX);
         int result;
 
         LINVRNT(osd_invariant(obj));
@@ -1672,6 +1651,10 @@ static int osd_mknod(struct osd_thread_info *info, struct osd_object *obj,
         result = osd_mkfile(info, obj, mode, hint, th);
         if (result == 0) {
                 LASSERT(obj->oo_inode != NULL);
+                /*
+                 * This inode should be marked dirty for i_rdev.  Currently
+                 * that is done in the osd_attr_init().
+                 */
                 init_special_inode(obj->oo_inode, mode, attr->la_rdev);
         }
         LINVRNT(osd_invariant(obj));
@@ -1724,6 +1707,43 @@ static void osd_ah_init(const struct lu_env *env, struct dt_allocation_hint *ah,
         ah->dah_mode = child_mode;
 }
 
+static void osd_attr_init(struct osd_thread_info *info, struct osd_object *obj,
+                          struct lu_attr *attr, struct dt_object_format *dof)
+{
+        struct inode   *inode = obj->oo_inode;
+        __u64           valid = attr->la_valid;
+        int             result;
+
+        attr->la_valid &= ~(LA_TYPE | LA_MODE);
+#ifdef HAVE_QUOTA_SUPPORT
+        attr->la_valid &= ~(LA_UID | LA_GID);
+#endif
+        if (dof->dof_type != DFT_NODE)
+                attr->la_valid &= ~LA_RDEV;
+        if ((valid & LA_ATIME) && (attr->la_atime == LTIME_S(inode->i_atime)))
+                attr->la_valid &= ~LA_ATIME;
+        if ((valid & LA_CTIME) && (attr->la_ctime == LTIME_S(inode->i_ctime)))
+                attr->la_valid &= ~LA_CTIME;
+        if ((valid & LA_MTIME) && (attr->la_mtime == LTIME_S(inode->i_mtime)))
+                attr->la_valid &= ~LA_MTIME;
+
+        if (attr->la_valid != 0) {
+                result = osd_inode_setattr(info->oti_env, inode, attr);
+                /*
+                 * The osd_inode_setattr() should always succeed here.  The
+                 * only error that could be returned is EDQUOT when we are
+                 * trying to change the UID or GID of the inode and
+                 * HAVE_QUOTA_SUPPORT is defined.  That is not the case here,
+                 * however, since the inode was created in osd_mkfile() with
+                 * the desired UID and GID already.
+                 */
+                LASSERTF(result == 0, "%d", result);
+                inode->i_sb->s_op->dirty_inode(inode);
+        }
+
+        attr->la_valid = valid;
+}
+
 /**
  * Helper function for osd_object_create()
  *
@@ -1738,12 +1758,14 @@ static int __osd_object_create(struct osd_thread_info *info,
 
         int result;
 
-        result = osd_create_pre(info, obj, attr, th);
+        result = osd_create_type_f(dof->dof_type)(info, obj, attr, hint, dof,
+                                                  th);
         if (result == 0) {
-                result = osd_create_type_f(dof->dof_type)(info, obj,
-                                           attr, hint, dof, th);
-                if (result == 0)
-                        result = osd_create_post(info, obj, attr, th);
+                osd_attr_init(info, obj, attr, dof);
+                osd_object_init0(obj);
+                /* bz 24037 */
+                if (obj->oo_inode && (obj->oo_inode->i_state & I_NEW))
+                        unlock_new_inode(obj->oo_inode);
         }
         return result;
 }
