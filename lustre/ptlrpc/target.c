@@ -132,10 +132,10 @@ int lut_client_data_read(const struct lu_env *env, struct lu_target *tg,
                 lcd_le_to_cpu(&tti->tti_lcd, lcd);
         }
 
-        CDEBUG(D_INFO, "read lcd @%d rc = %d, uuid = %s, last_transno = "LPU64
+        CDEBUG(D_INFO, "read lcd @%lld rc = %d, uuid = %s, last_transno = "LPU64
                ", last_xid = "LPU64", last_result = %u, last_data = %u, "
                "last_close_transno = "LPU64", last_close_xid = "LPU64", "
-               "last_close_result = %u\n", (int)off,
+               "last_close_result = %u\n", *off,
                rc, lcd->lcd_uuid, lcd->lcd_last_transno, lcd->lcd_last_xid,
                lcd->lcd_last_result, lcd->lcd_last_data,
                lcd->lcd_last_close_transno, lcd->lcd_last_close_xid,
