@@ -313,7 +313,7 @@ case x$with_ldiskfs in
 	xdevel)
 		LDISKFS_DIR=
 		if test x$with_ldiskfs_devel = xyes ; then
-			ldiskfs_src=$(ls -d /usr/src/lustre-ldiskfs-*/$LINUXRELEASE \
+			ldiskfs_src=$(ls -d /usr/src/lustre-ldiskfs-*/* \
 					2>/dev/null | tail -1)
 		else
 			ldiskfs_src=$with_ldiskfs_devel
