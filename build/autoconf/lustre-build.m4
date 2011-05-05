@@ -87,9 +87,11 @@ if git branch >/dev/null 2>&1; then
 
 
 	# only do this test for lustre (not ldiskfs)
-	if test "$PACKAGE" = "lustre" -a "$ver" != "$VERSION"; then
-		AC_MSG_ERROR([most recent tag found: $ver does not match current version $VERSION.])
-	fi
+	# Better yet, don't do it at all.  It prevents third parties
+        # from building at all. -CJM
+        #if test "$PACKAGE" = "lustre" -a "$ver" != "$VERSION"; then
+	#	AC_MSG_ERROR([most recent tag found: $ver does not match current version $VERSION.])
+	#fi
 
 	if test "$ffw" != "0"; then
 		BUILDID="$hash"
