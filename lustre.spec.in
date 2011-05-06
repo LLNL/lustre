@@ -79,6 +79,9 @@ Requires: %{name}-modules = %{version}
 # RHEL 6.x
 %if 0%{?el6}
 BuildRequires: kernel-devel
+%if 0%{?ch5} && ! %{is_client}
+BuildRequires: lustre-ldiskfs-devel
+%endif
 %endif
 
 %description
