@@ -49,7 +49,6 @@ if ($desc =~ /(.+?)(?:-(\d)+-g([0-9a-f]+))\n?/) {
 } else {
     # plain tag
     $tag = $desc;
-    chomp $tag;
     $fcoms = 0;
     $hash = "";
 }
