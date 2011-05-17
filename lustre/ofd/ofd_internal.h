@@ -131,6 +131,11 @@ struct filter_device {
         cfs_spinlock_t           ofd_objid_lock;
         unsigned long            ofd_destroys_in_progress;
 
+        /* statfs optimization: we cache a bit  */
+        struct obd_statfs        ofd_osfs;
+        __u64                    ofd_osfs_age;
+        cfs_spinlock_t           ofd_osfs_lock;
+
         /* grants: all values in bytes */
         cfs_spinlock_t           ofd_grant_lock;
         obd_size                 ofd_tot_dirty;

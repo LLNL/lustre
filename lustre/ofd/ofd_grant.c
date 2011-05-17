@@ -65,7 +65,7 @@ void filter_grant_sanity_check(struct obd_device *obd, const char *func)
         struct filter_export_data *fed;
         struct filter_device *ofd = filter_dev(obd->obd_lu_dev);
         struct obd_export *exp;
-        obd_size maxsize = obd->obd_osfs.os_blocks * obd->obd_osfs.os_bsize;
+        obd_size maxsize = ofd->ofd_osfs.os_blocks * ofd->ofd_osfs.os_bsize;
         obd_size tot_dirty = 0, tot_pending = 0, tot_granted = 0;
         obd_size fo_tot_dirty, fo_tot_pending, fo_tot_granted;
 
@@ -265,20 +265,38 @@ obd_size filter_grant_space_left(const struct lu_env *env,
         struct obd_device *obd = exp->exp_obd;
         struct filter_thread_info *info = filter_info(env);
         obd_size tot_granted = ofd->ofd_tot_granted, avail, left = 0;
-        int statfs_done = 0;
+        int rc, statfs_done = 0;
         long frsize;
 
         LASSERT_SEM_LOCKED(&ofd->ofd_grant_sem);
 
-        if (cfs_time_before_64(obd->obd_osfs_age,
-                               cfs_time_current_64() - CFS_HZ)) {
-restat:
-                dt_statfs(env, ofd->ofd_osd, &info->fti_u.osfs);
-                obd->obd_osfs = info->fti_u.osfs;
+        /** cache statfs information for 1s */
+        if (cfs_time_before_64(ofd->ofd_osfs_age,
+                               cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS))) {
+refresh:
+                /** get fresh statfs information from backend device */
+                rc = dt_statfs(env, ofd->ofd_osd, &info->fti_u.osfs);
+                if (unlikely(rc)) {
+                        CERROR("%s: statfs failed with %d, cannot return any  "
+                               "grants back to client %s which will switch to "
+                               "synchronous I/Os\n", obd->obd_name, rc,
+                               exp->exp_client_uuid.uuid);
+                        return 0;
+                }
+                cfs_spin_lock(&ofd->ofd_osfs_lock);
+                ofd->ofd_osfs = info->fti_u.osfs;
+                ofd->ofd_osfs_age = cfs_time_current_64();
+                cfs_spin_unlock(&ofd->ofd_osfs_lock);
                 statfs_done = 1;
+        } else {
+                /** use cached statfs data */
+                cfs_spin_lock(&ofd->ofd_osfs_lock);
+                info->fti_u.osfs = ofd->ofd_osfs;
+                cfs_spin_unlock(&ofd->ofd_osfs_lock);
         }
-        frsize = obd->obd_osfs.os_bsize;
-        avail = obd->obd_osfs.os_bavail; /* in fragments */
+
+        frsize = info->fti_u.osfs.os_bsize;
+        avail = info->fti_u.osfs.os_bavail; /* in fragments */
         LASSERT(frsize);
         /*
          * Consider metadata overhead for allocating new blocks while
@@ -296,7 +314,7 @@ restat:
 
         if (!statfs_done && left < 32 * FILTER_GRANT_CHUNK + tot_granted) {
                 CDEBUG(D_CACHE, "fs has no space left and statfs too old\n");
-                goto restat;
+                goto refresh;
         }
 
         /* bytes now, is obd_size enough for 'left'? */
@@ -315,7 +333,7 @@ restat:
         CDEBUG(D_CACHE, "%s: cli %s/%p free: "LPU64" avail: "LPU64" grant "LPU64
                " left: "LPU64" pending: "LPU64"\n", obd->obd_name,
                exp->exp_client_uuid.uuid, exp,
-               obd->obd_osfs.os_bfree * frsize, avail * frsize,
+               ofd->ofd_osfs.os_bfree * frsize, avail * frsize,
                tot_granted, left, ofd->ofd_tot_pending);
 
         return left;
@@ -341,6 +359,14 @@ int filter_grant_check(const struct lu_env *env, struct obd_export *exp,
         struct filter_device *ofd = filter_exp(exp);
         unsigned long ungranted = 0;
         int i, rc = -ENOSPC, bytes, using = 0;
+        int resend = 0;
+
+        if ((oa->o_valid & OBD_MD_FLFLAGS) &&
+            (oa->o_flags & OBD_FL_RECOV_RESEND)) {
+                resend = 1;
+                CDEBUG(D_CACHE, "Recoverable resend arrived, skipping "
+                                "accounting\n");
+        }
 
         LASSERT_SEM_LOCKED(&ofd->ofd_grant_sem);
         *used = 0;
@@ -351,7 +377,12 @@ int filter_grant_check(const struct lu_env *env, struct obd_export *exp,
 
                 if ((lnb[i].flags & OBD_BRW_FROM_GRANT) &&
                                 (oa->o_valid & OBD_MD_FLGRANT)) {
-                        if (fed->fed_grant < *used + bytes) {
+                        if (resend) {
+                                /* this is a recoverable resent */
+                                lnb[i].flags |= OBD_BRW_GRANTED;
+                                rc = 0;
+                                continue;
+                        } else if (fed->fed_grant < *used + bytes) {
                                 CDEBUG(D_CACHE, "%s: cli %s/%p claims %ld+%d "
                                        "GRANT, real grant %lu idx %d\n",
                                        exp->exp_obd->obd_name,
@@ -404,12 +435,14 @@ int filter_grant_check(const struct lu_env *env, struct obd_export *exp,
 
         /* Rough calc in case we don't refresh cached statfs data,
          * in fragments */
-        LASSERT(obd->obd_osfs.os_bsize);
-        using = ((*used + ungranted + 1 ) / obd->obd_osfs.os_bsize);
-        if (obd->obd_osfs.os_bavail > using)
-                obd->obd_osfs.os_bavail -= using;
+        LASSERT(ofd->ofd_osfs.os_bsize);
+        cfs_spin_lock(&ofd->ofd_osfs_lock);
+        using = ((*used + ungranted + 1 ) / ofd->ofd_osfs.os_bsize);
+        if (ofd->ofd_osfs.os_bavail > using)
+                ofd->ofd_osfs.os_bavail -= using;
         else
-                obd->obd_osfs.os_bavail = 0;
+                ofd->ofd_osfs.os_bavail = 0;
+        cfs_spin_unlock(&ofd->ofd_osfs_lock);
 
         if (fed->fed_dirty < *used) {
                 CWARN("%s: cli %s/%p claims used %lu > fed_dirty %lu\n",
@@ -442,7 +475,7 @@ long _filter_grant(const struct lu_env *env, struct obd_export *exp,
         struct obd_device          *obd = exp->exp_obd;
         struct filter_device       *ofd = filter_exp(exp);
         struct filter_export_data  *fed = &exp->exp_filter_data;
-        long                        frsize = obd->obd_osfs.os_bsize;
+        long                        frsize = ofd->ofd_osfs.os_bsize;
         __u64                       grant = 0;
 
         LASSERT_SEM_LOCKED(&ofd->ofd_grant_sem);

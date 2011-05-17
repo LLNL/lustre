@@ -220,12 +220,6 @@ struct osd_device {
 
         cfs_proc_dir_entry_t     *od_proc_entry;
         struct lprocfs_stats     *od_stats;
-        /*
-         * statfs optimization: we cache a bit.
-         */
-        cfs_time_t                od_osfs_age;
-        struct obd_statfs         od_statfs;
-        cfs_spinlock_t            od_osfs_lock;
 
         /**
          * The following flag indicates, if it is interop mode or not.
@@ -534,11 +528,7 @@ void osd_brw_stats_update(struct osd_device *osd, struct osd_iobuf *iobuf);
 
 #endif
 int osd_statfs(const struct lu_env *env, struct dt_device *dev,
-<<<<<<< HEAD
                struct obd_statfs *sfs);
-=======
-               struct obd_statfs *osfs);
->>>>>>> b=18345, 24325, 24326, 24327, 24328, 24329, 24330, 24331
 int osd_object_auth(const struct lu_env *env, struct dt_object *dt,
                     struct lustre_capa *capa, __u64 opc);
 void osd_declare_qid(struct dt_object *dt, struct osd_thandle *oh,
