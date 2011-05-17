@@ -273,12 +273,6 @@ struct osd_device {
 
         cfs_proc_dir_entry_t     *od_proc_entry;
         struct lprocfs_stats     *od_stats;
-        /*
-         * statfs optimization: we cache a bit.
-         */
-        cfs_time_t                od_osfs_age;
-        struct obd_statfs         od_statfs;
-        cfs_spinlock_t            od_osfs_lock;
 
         /**
          * The following flag indicates, if it is interop mode or not.
