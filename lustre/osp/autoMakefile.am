@@ -34,41 +34,9 @@
 # Lustre is a trademark of Sun Microsystems, Inc.
 #
 
-if LIBLUSTRE
-noinst_LIBRARIES = libosp.a
-libosp_a_SOURCES = osp_internal.h osp_dev.c osp_object.c osp_sync.c osp_precreate.c
-libosp_a_CPPFLAGS = $(LLCPPFLAGS)
-libosp_a_CFLAGS = $(LLCFLAGS)
-endif
-
 if MODULES
-if LINUX
 modulefs_DATA = osp$(KMODEXT)
 endif
 
-if DARWIN
-macos_PROGRAMS := osp
-
-osp_SOURCES :=          \
-        osp_dev.c       \
-        osp_object.c    \
-        osp_precreate.c      \
-        osp_sync.c      \
-        osp_internal.h
-
-osp_CFLAGS := $(EXTRA_KCFLAGS)
-osp_LDFLAGS := $(EXTRA_KLDFLAGS)
-osp_LDADD := $(EXTRA_KLIBS)
-
-plist_DATA := Info.plist
-
-install_data_hook := fix-kext-ownership
-
-endif # DARWIN
-
-endif # MODULES
-
-install-data-hook: $(install_data_hook)
-
-MOSTLYCLEANFILES := @MOSTLYCLEANFILES@ 
+MOSTLYCLEANFILES := @MOSTLYCLEANFILES@
 DIST_SOURCES := $(osp-objs:%.o=%.c) osp_internal.h
