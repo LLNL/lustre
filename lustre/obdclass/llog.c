@@ -349,6 +349,7 @@ repeat:
         return 0;
 }
 
+#ifdef __KERNEL__
 static int llog_process_thread(void *arg)
 {
         struct llog_process_info *lpi = (struct llog_process_info *)arg;
@@ -358,11 +359,10 @@ static int llog_process_thread(void *arg)
 
         rc = __llog_process_thread(arg);
 
-#ifdef __KERNEL__
         cfs_complete(&lpi->lpi_completion);
-#endif
         return rc;
 }
+#endif
 
 int __llog_process(const struct lu_env *env, struct llog_handle *loghandle,
                    llog_cb_t cb, void *data, void *catdata, int fork)

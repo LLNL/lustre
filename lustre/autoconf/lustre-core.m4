@@ -2384,7 +2384,7 @@ AC_DEFUN([LC_CONFIG_LIBLUSTRE],
 AC_ARG_ENABLE([liblustre],
 	AC_HELP_STRING([--disable-liblustre],
 			[disable building of Lustre library]),
-	[],[enable_liblustre=no])
+	[],[enable_liblustre=$with_sysio])
 AC_MSG_RESULT([$enable_liblustre])
 # only build sysio if liblustre is built
 with_sysio="$enable_liblustre"

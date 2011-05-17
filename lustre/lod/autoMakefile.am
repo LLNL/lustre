@@ -34,42 +34,9 @@
 # Lustre is a trademark of Sun Microsystems, Inc.
 #
 
-if LIBLUSTRE
-noinst_LIBRARIES = liblod.a
-liblod_a_SOURCES = lod_pool.c lod_dev.c lod_qos.c lod_internal.h lod_object.c lod_lov.c
-liblov_a_CPPFLAGS = $(LLCPPFLAGS)
-liblov_a_CFLAGS = $(LLCFLAGS)
-endif
-
 if MODULES
-if LINUX
 modulefs_DATA = lod$(KMODEXT)
 endif
 
-if DARWIN
-macos_PROGRAMS := lod
-
-lod_SOURCES :=          \
-        lod_pool.c      \
-        lod_qos.c       \
-        lod_dev.c       \
-        lod_object.c    \
-        lod_lov.c      \
-        lod_internal.h
-
-lod_CFLAGS := $(EXTRA_KCFLAGS)
-lod_LDFLAGS := $(EXTRA_KLDFLAGS)
-lod_LDADD := $(EXTRA_KLIBS)
-
-plist_DATA := Info.plist
-
-install_data_hook := fix-kext-ownership
-
-endif # DARWIN
-
-endif # MODULES
-
-install-data-hook: $(install_data_hook)
-
-MOSTLYCLEANFILES := @MOSTLYCLEANFILES@ 
+MOSTLYCLEANFILES := @MOSTLYCLEANFILES@
 DIST_SOURCES := $(lod-objs:%.o=%.c) lod_internal.h
