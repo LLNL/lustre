@@ -833,23 +833,14 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
         struct osd_device *osd = osd_dt_dev(d);
         struct super_block *sb = osd_sb(osd);
         int result = 0;
+        cfs_kstatfs_t kfs;
 
-        cfs_spin_lock(&osd->od_osfs_lock);
-        /* cache 1 second */
-        if (cfs_time_before_64(osd->od_osfs_age, cfs_time_shift_64(-1))) {
-                cfs_kstatfs_t kfs;
+        kfs.f_frsize = 0;
+        result = ll_do_statfs(sb, &kfs);
+        if (unlikely(result != 0)) /* N.B. statfs can't really fail */
+                return result;
 
-                kfs.f_frsize = 0;
-                result = ll_do_statfs(sb, &kfs);
-                if (likely(result == 0)) { /* N.B. statfs can't really fail */
-                       osd->od_osfs_age = cfs_time_current_64();
-                       statfs_pack(&osd->od_osfs, &kfs);
-                }
-        }
-
-        if (likely(result == 0))
-                *osfs = osd->od_osfs;
-        cfs_spin_unlock(&osd->od_osfs_lock);
+        statfs_pack(osfs, &kfs);
 
         return result;
 }
@@ -4222,8 +4213,6 @@ static int osd_device_init0(const struct lu_env *env,
         l->ld_ops = &osd_lu_ops;
         o->od_dt_dev.dd_ops = &osd_dt_ops;
 
-        cfs_spin_lock_init(&o->od_osfs_lock);
-        o->od_osfs_age = cfs_time_shift_64(-1000);
         o->od_capa_hash = init_capa_hash();
         if (o->od_capa_hash == NULL)
                 GOTO(out, rc = -ENOMEM);

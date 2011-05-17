@@ -597,7 +597,6 @@ static int filter_statfs(struct obd_device *obd,
                          struct obd_statfs *osfs, __u64 max_age, __u32 flags)
 {
         struct filter_device      *ofd = filter_dev(obd->obd_lu_dev);
-        struct filter_thread_info *info;
         struct lu_env env;
         int rc, blockbits;
         ENTRY;
@@ -605,16 +604,28 @@ static int filter_statfs(struct obd_device *obd,
         rc = lu_env_init(&env, LCT_DT_THREAD);
         if (rc)
                 RETURN(rc);
-        info = filter_info_init(&env, NULL);
 
-        /* at least try to account for cached pages.  its still racey and
+        /** cache statfs information for 1s */
+        if (cfs_time_before_64(ofd->ofd_osfs_age,
+                               cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS))) {
+                /** statfs data are too old, get up-to-date one */
+                rc = dt_statfs(&env, ofd->ofd_osd, osfs);
+                if (unlikely(rc))
+                        GOTO(out, rc);
+                cfs_spin_lock(&ofd->ofd_osfs_lock);
+                ofd->ofd_osfs = *osfs;
+                ofd->ofd_osfs_age = cfs_time_current_64();
+                cfs_spin_unlock(&ofd->ofd_osfs_lock);
+        } else {
+                /** use cached statfs data */
+                cfs_spin_lock(&ofd->ofd_osfs_lock);
+                *osfs = ofd->ofd_osfs;
+                cfs_spin_unlock(&ofd->ofd_osfs_lock);
+        }
+
+        /* at least try to account for cached pages.  its still racy and
          * might be under-reporting if clients haven't announced their
          * caches with brw recently */
-        rc = dt_statfs(&env, ofd->ofd_osd, &info->fti_u.osfs);
-        if (rc)
-                GOTO(out, rc);
-
-        *osfs = info->fti_u.osfs;
 
         LASSERTF(IS_PO2(osfs->os_bsize), "%u\n", osfs->os_bsize);
         blockbits = cfs_fls(osfs->os_bsize) - 1;

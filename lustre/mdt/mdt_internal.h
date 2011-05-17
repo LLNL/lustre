@@ -162,6 +162,11 @@ struct mdt_device {
         unsigned int               mdt_capa_conf:1,
                                    mdt_som_conf:1;
 
+        /* statfs optimization: we cache a bit  */
+        struct obd_statfs          mdt_osfs;
+        __u64                      mdt_osfs_age;
+        cfs_spinlock_t             mdt_osfs_lock;
+
         /* root squash */
         uid_t                      mdt_squash_uid;
         gid_t                      mdt_squash_gid;

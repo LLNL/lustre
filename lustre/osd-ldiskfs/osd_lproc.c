@@ -298,16 +298,17 @@ int lprocfs_osd_rd_blksize(char *page, char **start, off_t off, int count,
                            int *eof, void *data)
 {
         struct osd_device *osd = data;
+        struct obd_statfs osfs;
         int rc;
 
         if (unlikely(osd->od_mnt == NULL))
                 return -EINPROGRESS;
 
-        rc = osd_statfs(NULL, &osd->od_dt_dev, &osd->od_osfs);
+        rc = osd_statfs(NULL, &osd->od_dt_dev, &osfs);
         if (!rc) {
                 *eof = 1;
                 rc = snprintf(page, count, "%d\n",
-                              (unsigned) osd->od_osfs.os_bsize);
+                              (unsigned) osfs.os_bsize);
         }
         return rc;
 }
@@ -316,15 +317,16 @@ int lprocfs_osd_rd_kbytestotal(char *page, char **start, off_t off, int count,
                                int *eof, void *data)
 {
         struct osd_device *osd = data;
+        struct obd_statfs osfs;
         int rc;
 
         if (unlikely(osd->od_mnt == NULL))
                 return -EINPROGRESS;
 
-        rc = osd_statfs(NULL, &osd->od_dt_dev, &osd->od_osfs);
+        rc = osd_statfs(NULL, &osd->od_dt_dev, &osfs);
         if (!rc) {
-                __u32 blk_size = osd->od_osfs.os_bsize >> 10;
-                __u64 result = osd->od_osfs.os_blocks;
+                __u32 blk_size = osfs.os_bsize >> 10;
+                __u64 result = osfs.os_blocks;
 
                 while (blk_size >>= 1)
                         result <<= 1;
@@ -339,15 +341,16 @@ int lprocfs_osd_rd_kbytesfree(char *page, char **start, off_t off, int count,
                               int *eof, void *data)
 {
         struct osd_device *osd = data;
+        struct obd_statfs osfs;
         int rc;
 
         if (unlikely(osd->od_mnt == NULL))
                 return -EINPROGRESS;
 
-        rc = osd_statfs(NULL, &osd->od_dt_dev, &osd->od_osfs);
+        rc = osd_statfs(NULL, &osd->od_dt_dev, &osfs);
         if (!rc) {
-                __u32 blk_size = osd->od_osfs.os_bsize >> 10;
-                __u64 result = osd->od_osfs.os_bfree;
+                __u32 blk_size = osfs.os_bsize >> 10;
+                __u64 result = osfs.os_bfree;
 
                 while (blk_size >>= 1)
                         result <<= 1;
@@ -362,15 +365,16 @@ int lprocfs_osd_rd_kbytesavail(char *page, char **start, off_t off, int count,
                                int *eof, void *data)
 {
         struct osd_device *osd = data;
+        struct obd_statfs osfs;
         int rc;
 
         if (unlikely(osd->od_mnt == NULL))
                 return -EINPROGRESS;
 
-        rc = osd_statfs(NULL, &osd->od_dt_dev, &osd->od_osfs);
+        rc = osd_statfs(NULL, &osd->od_dt_dev, &osfs);
         if (!rc) {
-                __u32 blk_size = osd->od_osfs.os_bsize >> 10;
-                __u64 result = osd->od_osfs.os_bavail;
+                __u32 blk_size = osfs.os_bsize >> 10;
+                __u64 result = osfs.os_bavail;
 
                 while (blk_size >>= 1)
                         result <<= 1;
@@ -385,15 +389,16 @@ int lprocfs_osd_rd_filestotal(char *page, char **start, off_t off, int count,
                               int *eof, void *data)
 {
         struct osd_device *osd = data;
+        struct obd_statfs osfs;
         int rc;
 
         if (unlikely(osd->od_mnt == NULL))
                 return -EINPROGRESS;
 
-        rc = osd_statfs(NULL, &osd->od_dt_dev, &osd->od_osfs);
+        rc = osd_statfs(NULL, &osd->od_dt_dev, &osfs);
         if (!rc) {
                 *eof = 1;
-                rc = snprintf(page, count, LPU64"\n", osd->od_osfs.os_files);
+                rc = snprintf(page, count, LPU64"\n", osfs.os_files);
         }
 
         return rc;
@@ -403,15 +408,16 @@ int lprocfs_osd_rd_filesfree(char *page, char **start, off_t off, int count,
                              int *eof, void *data)
 {
         struct osd_device *osd = data;
+        struct obd_statfs osfs;
         int rc;
 
         if (unlikely(osd->od_mnt == NULL))
                 return -EINPROGRESS;
 
-        rc = osd_statfs(NULL, &osd->od_dt_dev, &osd->od_osfs);
+        rc = osd_statfs(NULL, &osd->od_dt_dev, &osfs);
         if (!rc) {
                 *eof = 1;
-                rc = snprintf(page, count, LPU64"\n", osd->od_osfs.os_ffree);
+                rc = snprintf(page, count, LPU64"\n", osfs.os_ffree);
         }
         return rc;
 }

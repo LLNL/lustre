@@ -614,6 +614,10 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         m->ofd_syncjournal = 0;
         filter_slc_set(m);
 
+        /* statfs data */
+        cfs_spin_lock_init(&m->ofd_osfs_lock);
+        m->ofd_osfs_age = cfs_time_shift_64(-1000);
+
         /* grant data */
         cfs_spin_lock_init(&m->ofd_grant_lock);
         cfs_sema_init(&m->ofd_grant_sem, 1);

@@ -344,14 +344,14 @@ static int mdt_getstatus(struct mdt_thread_info *info)
 static int mdt_statfs(struct mdt_thread_info *info)
 {
         struct ptlrpc_request *req = mdt_info_req(info);
-        struct md_device      *next  = info->mti_mdt->mdt_child;
+        struct md_device      *next = info->mti_mdt->mdt_child;
         struct ptlrpc_service *svc;
         struct obd_statfs     *osfs;
         int                    rc;
 
         ENTRY;
 
-        svc = info->mti_pill->rc_req->rq_rqbd->rqbd_service;
+        svc = req->rq_rqbd->rqbd_service;
 
         /* This will trigger a watchdog timeout */
         OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_STATFS_LCW_SLEEP,
@@ -362,11 +362,29 @@ static int mdt_statfs(struct mdt_thread_info *info)
         if (rc)
                 RETURN(err_serious(rc));
 
-        if (OBD_FAIL_CHECK(OBD_FAIL_MDS_STATFS_PACK)) {
-                rc = err_serious(-ENOMEM);
-        } else {
-                osfs = req_capsule_server_get(info->mti_pill, &RMF_OBD_STATFS);
+        if (OBD_FAIL_CHECK(OBD_FAIL_MDS_STATFS_PACK))
+                RETURN(err_serious(-ENOMEM));
+
+        osfs = req_capsule_server_get(info->mti_pill, &RMF_OBD_STATFS);
+        if (!osfs)
+                RETURN(-EPROTO);
+
+        /** statfs information are cached in the mdt_device */
+        if (cfs_time_before_64(info->mti_mdt->mdt_osfs_age,
+                               cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS))) {
+                /** statfs data is too old, get up-to-date one */
                 rc = next->md_ops->mdo_statfs(info->mti_env, next, osfs);
+                if (rc)
+                        RETURN(rc);
+                cfs_spin_lock(&info->mti_mdt->mdt_osfs_lock);
+                info->mti_mdt->mdt_osfs = *osfs;
+                info->mti_mdt->mdt_osfs_age = cfs_time_current_64();
+                cfs_spin_unlock(&info->mti_mdt->mdt_osfs_lock);
+        } else {
+                /** use cached statfs data */
+                cfs_spin_lock(&info->mti_mdt->mdt_osfs_lock);
+                *osfs = info->mti_mdt->mdt_osfs;
+                cfs_spin_unlock(&info->mti_mdt->mdt_osfs_lock);
         }
 
         if (rc == 0)
@@ -4542,6 +4560,8 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         m->mdt_nosquash_str = NULL;
         m->mdt_nosquash_strlen = 0;
         cfs_init_rwsem(&m->mdt_squash_sem);
+        cfs_spin_lock_init(&m->mdt_osfs_lock);
+        m->mdt_osfs_age = cfs_time_shift_64(-1000);
 
         mite = &m->mdt_mite;
         s->ld_md_site = mite;
