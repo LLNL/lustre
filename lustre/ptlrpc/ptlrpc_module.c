@@ -115,17 +115,20 @@ __init int ptlrpc_init(void)
         if (rc)
                 GOTO(cleanup, rc);
 
+#ifdef __KERNEL__
         cleanup_phase = 7;
         rc = lut_mod_init();
         if (rc)
                 GOTO(cleanup, rc);
-
+#endif
         RETURN(0);
 
 cleanup:
         switch(cleanup_phase) {
+#ifdef __KERNEL__
         case 7:
                 lut_mod_exit();
+#endif
         case 6:
                 sptlrpc_fini();
         case 5:
