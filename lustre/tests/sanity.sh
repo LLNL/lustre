@@ -20,11 +20,9 @@ ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 
 # Orion: to be fixed
 # 60a -- llog_osd_create()) ASSERTION(dt) failed
-# 64b -- oss.sh failed
 # 160 -- (bug 22448) changelogs don't work yet
-# 180 -- ofd doesn't work with obdecho
 # 225 - md_echo needs fixes
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 60a 64b 160 180b 225"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 60a 160 225"
 
 SRCDIR=$(cd $(dirname $0); echo $PWD)
 export PATH=$PATH:/sbin
