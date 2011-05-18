@@ -369,9 +369,7 @@ kdist_config: prep-deb-files patch-stamp
 		    --disable-snmp \
 		    --enable-ldiskfs \
 		    --disable-zerocopy \
-		    --disable-tests \
-		    --enable-quota
-
+		    --disable-tests
 kdist_configure: kdist_config 
 
 # the binary-modules rule is invoked by module-assistant while processing the
