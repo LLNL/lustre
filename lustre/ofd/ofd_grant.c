@@ -380,6 +380,7 @@ int filter_grant_check(const struct lu_env *env, struct obd_export *exp,
                         if (resend) {
                                 /* this is a recoverable resent */
                                 lnb[i].flags |= OBD_BRW_GRANTED;
+                                lnb[i].lnb_grant_used = 0;
                                 rc = 0;
                                 continue;
                         } else if (fed->fed_grant < *used + bytes) {
