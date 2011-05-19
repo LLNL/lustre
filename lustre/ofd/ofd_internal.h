@@ -120,10 +120,6 @@ struct ofd_device {
 
         int                      ofd_subdir_count;
 
-        cfs_list_t               ofd_llog_list;
-        cfs_spinlock_t           ofd_llog_list_lock;
-        void                    *ofd_lcm;
-
         /* XXX: make the following dynamic */
         int                      ofd_max_group;
         obd_id                   ofd_last_objids[OFD_MAX_GROUPS];
@@ -282,7 +278,7 @@ struct ofd_thread_info {
         struct ldlm_res_id         fti_resid;
         struct filter_fid          fti_mds_fid;
         struct ost_id              fti_ostid;
-        struct ofd_object      *fti_obj;
+        struct ofd_object         *fti_obj;
         union {
                 char               name[64]; /* for obdofd_init0()     */
                 struct obd_statfs  osfs;     /* for obdofd_statfs()    */
@@ -382,21 +378,6 @@ int ofd_direct_io(int rw, struct dentry *dchild, struct ofd_iobuf *iobuf,
                   struct obd_export *exp, struct iattr *attr,
                   struct obd_trans_info *oti, void **wait_handle);
 int ofd_clear_truncated_page(struct inode *inode);
-
-/* ofd_log.c */
-
-struct ost_ofddata {
-        __u32  ofd_epoch;
-};
-int ofd_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
-                  struct obd_device *tgt, int *idx);
-int ofd_llog_finish(struct obd_device *obd, int count);
-int ofd_recov_log_mds_ost_cb(struct llog_handle *llh,
-                             struct llog_rec_hdr *rec, void *data);
-struct obd_llog_group *ofd_find_create_olg(struct obd_device *obd, int group);
-struct obd_llog_group *ofd_find_olg(struct obd_device *obd, int group);
-
-extern struct ldlm_valblock_ops ofd_lvbo;
 
 /* ofd_recovery.c */
 struct thandle *ofd_trans_create0(const struct lu_env *env,

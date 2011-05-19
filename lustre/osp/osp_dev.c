@@ -46,7 +46,6 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
 #include <obd_class.h>
 #include <lustre_param.h>
 
