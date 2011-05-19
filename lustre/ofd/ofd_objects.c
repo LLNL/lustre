@@ -161,7 +161,7 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
 
         info->fti_buf.lb_buf = &tmp;
         info->fti_buf.lb_len = sizeof(tmp);
-        info->fti_off = group * sizeof(tmp);
+        info->fti_off = 0;
 
         ofd_write_lock(env, fo);
         if (ofd_object_exists(fo)) {
@@ -199,7 +199,9 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
 
         ofd_last_id_set(ofd, id, group);
 
-        rc = ofd_last_id_write(env, ofd, group, th);
+        tmp = cpu_to_le64(ofd_last_id(ofd, group));
+        rc = dt_record_write(env, ofd->ofd_lastid_obj[group], &info->fti_buf,
+                             &info->fti_off, th);
 
 trans_stop:
         ofd_trans_stop(env, ofd, fo, th);
