@@ -266,6 +266,15 @@ static int ofd_obd_disconnect(struct obd_export *exp)
          * interaction with the client is possible
          */
         ofd_grant_discard(exp);
+        ofd_fmd_cleanup(exp);
+
+        if (exp->exp_connect_flags & OBD_CONNECT_GRANT_SHRINK) {
+                if (ofd->ofd_tot_granted_clients > 0)
+                        ofd->ofd_tot_granted_clients --;
+        }
+
+        if (!(exp->exp_flags & OBD_OPT_FORCE))
+                ofd_grant_sanity_check(exp->exp_obd, __FUNCTION__);
 
         rc = lu_env_init(&env, LCT_DT_THREAD);
         if (rc)
@@ -274,26 +283,8 @@ static int ofd_obd_disconnect(struct obd_export *exp)
         lut_client_del(&env, exp);
         lu_env_fini(&env);
 
-        /* flush any remaining cancel messages out to the target */
-        /* XXX: filter_sync_llogs(obd, exp); */
         class_export_put(exp);
         RETURN(rc);
-}
-
-/* reverse import is changed, sync all cancels */
-static void ofd_revimp_update(struct obd_export *exp)
-{
-        ENTRY;
-
-        LASSERT(exp);
-        class_export_get(exp);
-
-        /* flush any remaining cancel messages out to the target */
-#if 0
-        ofd_sync_llogs(exp->exp_obd, exp);
-#endif
-        class_export_put(exp);
-        EXIT;
 }
 
 static int ofd_init_export(struct obd_export *exp)
@@ -313,74 +304,19 @@ static int ofd_init_export(struct obd_export *exp)
 
 static int ofd_destroy_export(struct obd_export *exp)
 {
-        struct obd_device *obd = exp->exp_obd;
-        struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
-        struct lu_env env;
-        int rc;
         ENTRY;
 
         if (exp->exp_filter_data.fed_pending)
                 CERROR("%s: cli %s/%p has %lu pending on destroyed export\n",
-                       obd->obd_name, exp->exp_client_uuid.uuid,
+                       exp->exp_obd->obd_name, exp->exp_client_uuid.uuid,
                        exp, exp->exp_filter_data.fed_pending);
-
-        /* Not ported yet the b1_6 quota functionality
-         * lquota_clearinfo(ofd_quota_interface_ref, exp, exp->exp_obd);
-         */
 
         target_destroy_export(exp);
         ldlm_destroy_export(exp);
         lut_client_free(exp);
 
-        if (obd_uuid_equals(&exp->exp_client_uuid, &obd->obd_uuid))
-                RETURN(0);
-
-        rc = lu_env_init(&env, LCT_DT_THREAD);
-        if (rc)
-                RETURN(rc);
-
-        ofd_info_init(&env, exp);
-        lprocfs_exp_cleanup(exp);
-
-        if (!obd->obd_replayable)
-                dt_sync(&env, ofd->ofd_osd);
-
-        /* FIXME Check if cleanup is required here once complete
-         * UOSS functionality is implemented. */
-        ofd_fmd_cleanup(exp);
-
-        if (exp->exp_connect_flags & OBD_CONNECT_GRANT_SHRINK) {
-                if (ofd->ofd_tot_granted_clients > 0)
-                        ofd->ofd_tot_granted_clients --;
-        }
-
-        if (!(exp->exp_flags & OBD_OPT_FORCE))
-                ofd_grant_sanity_check(exp->exp_obd, __FUNCTION__);
-
-        lu_env_fini(&env);
+        LASSERT(cfs_list_empty(&exp->exp_filter_data.fed_mod_list));
         RETURN(0);
-}
-
-static inline int ofd_setup_llog_group(struct obd_export *exp,
-                                          struct obd_device *obd,
-                                           int group)
-{
-        struct obd_llog_group *olg;
-        struct llog_ctxt *ctxt;
-        int rc;
-
-        olg = ofd_find_create_olg(obd, group);
-        if (IS_ERR(olg))
-                RETURN(PTR_ERR(olg));
-
-        llog_group_set_export(olg, exp);
-
-        ctxt = llog_group_get_ctxt(olg, LLOG_MDS_OST_REPL_CTXT);
-        LASSERTF(ctxt != NULL, "ctxt is null\n");
-
-        rc = llog_receptor_accept(ctxt, exp->exp_imp_reverse);
-        llog_ctxt_put(ctxt);
-        return rc;
 }
 
 static int ofd_adapt_sptlrpc_conf(struct obd_device *obd, int initial)
@@ -409,39 +345,17 @@ static int ofd_adapt_sptlrpc_conf(struct obd_device *obd, int initial)
 
 static int ofd_set_mds_conn(struct obd_export *exp, void *val)
 {
-        int rc = 0, group;
+        int rc = 0;
         ENTRY;
 
         LCONSOLE_WARN("%s: received MDS connection from %s\n",
                       exp->exp_obd->obd_name, obd_export_nid2str(exp));
-        //obd->u.ofd.fo_mdc_conn.cookie = exp->exp_handle.h_cookie;
-
-        /* setup llog imports */
-        if (val != NULL)
-                group = (int)(*(__u32 *)val);
-        else
-                group = 0; /* default value */
-
-#if 0
-        LASSERT_SEQ_IS_MDT(group);
-        rc = ofd_setup_llog_group(exp, obd, group);
-        if (rc)
-                goto out;
-
-        if (group == FID_SEQ_OST_MDT0) {
-                /* setup llog group 1 for interop */
-                ofd_setup_llog_group(exp, obd, FID_SEQ_LLOG);
-        }
-
-        lquota_setinfo(ofd_quota_interface_ref, obd, exp);
-out:
-#endif
         RETURN(rc);
 }
 
 static int ofd_set_info_async(struct obd_export *exp, __u32 keylen,
-                                 void *key, __u32 vallen, void *val,
-                                 struct ptlrpc_request_set *set)
+                              void *key, __u32 vallen, void *val,
+                              struct ptlrpc_request_set *set)
 {
         struct ofd_device *ofd = ofd_exp(exp);
         struct obd_device    *obd;
@@ -458,8 +372,6 @@ static int ofd_set_info_async(struct obd_export *exp, __u32 keylen,
                 rc = ofd_update_capa_key(ofd, (struct lustre_capa_key *)val);
                 if (rc)
                         CERROR("ofd update capability key failed: %d\n", rc);
-        } else if (KEY_IS(KEY_REVIMP_UPD)) {
-                ofd_revimp_update(exp);
         } else if (KEY_IS(KEY_SPTLRPC_CONF)) {
                 ofd_adapt_sptlrpc_conf(obd, 0);
         } else if (KEY_IS(KEY_MDS_CONN)) {
@@ -641,30 +553,25 @@ static int ofd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
                         cfs_fail_loc &= ~OBD_FAILED; /* reset flag */
         }
 
+        /* OS_STATE_READONLY can be set by OSD already */
         if (ofd->ofd_raid_degraded)
                 osfs->os_state |= OS_STATE_DEGRADED;
-#if 0
-        /* set EROFS to state field if FS is mounted as RDONLY. The goal is to
-         * stop creating files on MDS if OST is not good shape to create
-         * objects.*/
-        osfs->os_state = (ofd->fo_obt.obt_sb->s_flags & MS_RDONLY) ?  EROFS : 0;
-#endif
 out:
         lu_env_fini(&env);
         RETURN(rc);
 }
 
-int ofd_setattr(struct obd_export *exp,
-                   struct obd_info *oinfo, struct obd_trans_info *oti)
+int ofd_setattr(struct obd_export *exp, struct obd_info *oinfo,
+                struct obd_trans_info *oti)
 {
         struct ofd_thread_info *info;
         struct ofd_device      *ofd = ofd_exp(exp);
-        struct ldlm_namespace     *ns = ofd->ofd_namespace;
-        struct ldlm_resource      *res;
+        struct ldlm_namespace  *ns = ofd->ofd_namespace;
+        struct ldlm_resource   *res;
         struct ofd_object      *fo;
-        struct obdo               *oa = oinfo->oi_oa;
-        struct lu_env             *env = oti->oti_env;
-        int                        rc = 0;
+        struct obdo            *oa = oinfo->oi_oa;
+        struct lu_env          *env = oti->oti_env;
+        int                     rc = 0;
         ENTRY;
 
         rc = lu_env_refill(env);
@@ -1214,7 +1121,6 @@ static int ofd_precleanup(struct obd_device *obd,
                 break;
         case OBD_CLEANUP_EXPORTS:
                 target_cleanup_recovery(obd);
-                ofd_llog_finish(obd, 0);
                 break;
         }
         RETURN(rc);
@@ -1288,8 +1194,6 @@ struct obd_ops ofd_obd_ops = {
         .o_disconnect     = ofd_obd_disconnect,
         .o_set_info_async = ofd_set_info_async,
         .o_get_info       = ofd_get_info,
-        .o_llog_init      = ofd_llog_init,
-        .o_llog_finish    = ofd_llog_finish,
         .o_create         = ofd_create,
         .o_statfs         = ofd_statfs,
         .o_setattr        = ofd_setattr,

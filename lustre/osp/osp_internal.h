@@ -41,7 +41,6 @@
 #ifndef _OSP_INTERNAL_H
 #define _OSP_INTERNAL_H
 
-#include <lustre/lustre_idl.h>
 #include <obd.h>
 #include <dt_object.h>
 #include <lustre_fid.h>

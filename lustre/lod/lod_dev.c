@@ -639,7 +639,7 @@ static void __exit lod_mod_exit(void)
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
-MODULE_DESCRIPTION("Lustre Multi-oBject Device ("LUSTRE_MDD_NAME")");
+MODULE_DESCRIPTION("Lustre Logical Object Device ("LUSTRE_LOD_NAME")");
 MODULE_LICENSE("GPL");
 
 cfs_module(lod, "0.1.0", lod_mod_init, lod_mod_exit);
