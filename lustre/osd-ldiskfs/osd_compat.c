@@ -619,6 +619,7 @@ static const struct named_oid oids[] = {
         { MDT_LAST_RECV_OID,  LAST_RCVD },
         { MDD_ROOT_INDEX_OID, "" },
         { MDD_ORPHAN_OID,     "" },
+        { OFD_HEALTH_CHECK_OID, HEALTH_CHECK },
         { 0,                  NULL }
 };
 

@@ -887,6 +887,8 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
                 return result;
 
         statfs_pack(osfs, &kfs);
+        if (sb->s_flags & MS_RDONLY)
+                osfs->os_state = OS_STATE_READONLY;
 
         return result;
 }

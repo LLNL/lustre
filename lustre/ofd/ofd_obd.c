@@ -1124,6 +1124,8 @@ static int ofd_sync(struct obd_export *exp, struct obd_info *oinfo,
 {
         struct ofd_device *ofd = ofd_exp(exp);
         struct lu_env env;
+        struct ofd_thread_info *info;
+        struct ofd_object *fo;
         int rc;
 
         ENTRY;
@@ -1132,16 +1134,50 @@ static int ofd_sync(struct obd_export *exp, struct obd_info *oinfo,
         if (rc)
                 RETURN(rc);
 
-        rc = dt_sync(&env, ofd->ofd_osd);
-        /* TODO: see ofd.c in obdofd/
-        ofd_sync_llogs(exp->exp_obd, exp);
-        */
+        /* An objid of zero is taken to mean "sync whole filesystem" */
+        if (!oinfo->oi_oa || !(oinfo->oi_oa->o_valid & OBD_MD_FLID)) {
+                rc = dt_sync(&env, ofd->ofd_osd);
+                GOTO(out, rc);
+        }
+
+        info = ofd_info_init(&env, exp);
+        fid_ostid_unpack(&info->fti_fid, &oinfo->oi_oa->o_oi, 0);
+
+        rc = ofd_auth_capa(ofd, &info->fti_fid, oinfo->oi_oa->o_seq,
+                           oinfo_capa(oinfo), CAPA_OPC_OSS_TRUNC);
+        if (rc)
+                GOTO(out, rc);
+
+        fo = ofd_object_find(&env, ofd, &info->fti_fid);
+        if (IS_ERR(fo)) {
+                CERROR("error finding object %lu:%llu: %ld\n",
+                       (unsigned long) info->fti_fid.f_oid,
+                       info->fti_fid.f_seq, PTR_ERR(fo));
+                GOTO(out, rc = PTR_ERR(fo));
+        }
+
+        ofd_write_lock(&env, fo);
+        if (!ofd_object_exists(fo))
+                GOTO(unlock, rc = -ENOENT);
+
+        rc = dt_object_sync(&env, ofd_object_child(fo));
+        if (rc)
+                GOTO(unlock, rc);
+
+        oinfo->oi_oa->o_valid = OBD_MD_FLID;
+        rc = ofd_attr_get(&env, fo, &info->fti_attr);
+        obdo_from_la(oinfo->oi_oa, &info->fti_attr,
+                     OFD_VALID_FLAGS);
+unlock:
+        ofd_write_unlock(&env, fo);
+        ofd_object_put(&env, fo);
+out:
         lu_env_fini(&env);
         RETURN(rc);
 }
 
 int ofd_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
-                     void *karg, void *uarg)
+                  void *karg, void *uarg)
 {
         struct lu_env env;
         struct ofd_device *ofd = ofd_exp(exp);
@@ -1195,6 +1231,67 @@ static int ofd_precleanup(struct obd_device *obd,
         RETURN(rc);
 }
 
+static int ofd_ping(struct obd_export *exp)
+{
+        ofd_fmd_expire(exp);
+        return 0;
+}
+
+static int ofd_health_check(struct obd_device *obd)
+{
+        struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
+        struct lu_env env;
+        struct ofd_thread_info *info;
+#ifdef USE_HEALTH_CHECK_WRITE
+        struct thandle *th;
+#endif
+        int rc = 0;
+
+        rc = lu_env_init(&env, LCT_DT_THREAD);
+        if (rc)
+                RETURN(rc);
+
+        info = ofd_info(&env);
+        rc = dt_statfs(&env, ofd->ofd_osd, &info->fti_u.osfs);
+        if (unlikely(rc))
+                GOTO(out, rc);
+
+        if (info->fti_u.osfs.os_state == OS_STATE_READONLY)
+                GOTO(out, rc = -EROFS);
+
+#ifdef USE_HEALTH_CHECK_WRITE
+        OBD_ALLOC(info->fti_buf.lb_buf, CFS_PAGE_SIZE);
+        if (info->fti_buf.lb_buf == NULL)
+                GOTO(out, rc = -ENOMEM);
+
+        info->fti_buf.lb_len = CFS_PAGE_SIZE;
+        info->fti_off = 0;
+
+        th = dt_trans_create(&env, ofd->ofd_osd);
+        if (IS_ERR(th))
+                GOTO(out, rc = PTR_ERR(th));
+
+        rc = dt_declare_record_write(&env, ofd->ofd_health_check_file,
+                                     info->fti_buf.lb_len, info->fti_off, th);
+        if (rc == 0) {
+                th->th_sync = 1; /* sync IO is needed */
+                rc = dt_trans_start_local(&env, ofd->ofd_osd, th);
+                if (rc == 0)
+                        rc = dt_record_write(&env, ofd->ofd_health_check_file,
+                                             &info->fti_buf, &info->fti_off,
+                                             th);
+        }
+        dt_trans_stop(&env, ofd->ofd_osd, th);
+
+        OBD_FREE(info->fti_buf.lb_buf, CFS_PAGE_SIZE);
+
+        CDEBUG(D_INFO, "write 1 page synchronously for checking io rc %d\n",rc);
+#endif
+out:
+        lu_env_fini(&env);
+        return !!rc;
+}
+
 struct obd_ops ofd_obd_ops = {
         .o_owner          = THIS_MODULE,
         .o_connect        = ofd_obd_connect,
@@ -1216,15 +1313,8 @@ struct obd_ops ofd_obd_ops = {
         .o_getattr        = ofd_getattr,
         .o_sync           = ofd_sync,
         .o_iocontrol      = ofd_iocontrol,
-        .o_precleanup     = ofd_precleanup
-
-/*        .o_setup          = ofd_setup,
-        .o_cleanup        = ofd_cleanup,
+        .o_precleanup     = ofd_precleanup,
         .o_ping           = ofd_ping,
-
-        .o_llog_connect   = ofd_llog_connect,
         .o_health_check   = ofd_health_check,
-        .o_process_config = ofd_process_config,*/
 };
-
 
