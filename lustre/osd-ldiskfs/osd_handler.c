@@ -964,8 +964,11 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
         }
 
         result = sb->s_op->statfs(sb->s_root, ksfs);
-        if (likely(result == 0)) /* N.B. statfs can't really fail */
+        if (likely(result == 0)) { /* N.B. statfs can't really fail */
                 statfs_pack(sfs, ksfs);
+                if (sb->s_flags & MS_RDONLY)
+                        sfs->os_state = OS_STATE_READONLY;
+        }
 
         if (unlikely(env == NULL))
                 OBD_FREE_PTR(ksfs);
