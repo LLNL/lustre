@@ -116,7 +116,8 @@ enum local_oid {
         OFD_GROUP4K_LAST_OID    = 20UL+4096,
         OFD_LAST_GROUP_OID      = 4117UL,
         LLOG_CATALOGS_OID       = 4118UL,
-        MGS_CONFIGS_OID         = 4119UL
+        MGS_CONFIGS_OID         = 4119UL,
+        OFD_HEALTH_CHECK_OID    = 4120UL,
 };
 
 static inline void lu_local_obj_fid(struct lu_fid *fid, __u32 oid)

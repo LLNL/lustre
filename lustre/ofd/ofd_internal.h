@@ -116,6 +116,7 @@ struct ofd_device {
         /* last_rcvd file */
         struct lu_target         ofd_lut;
         struct dt_object        *ofd_last_group_file;
+        struct dt_object        *ofd_health_check_file;
 
         int                      ofd_subdir_count;
 
