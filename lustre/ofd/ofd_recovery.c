@@ -312,8 +312,8 @@ void ofd_fs_cleanup(const struct lu_env *env, struct ofd_device *ofd)
 
         for (i = 0; i <= ofd->ofd_max_group; i++) {
                 if (ofd->ofd_lastid_obj[i]) {
-                        ofd_last_id_write(env, ofd, i, NULL);
-                        lu_object_put(env, &ofd->ofd_lastid_obj[i]->do_lu);
+                        ofd_last_id_write(env, ofd, i);
+                        ofd_group_fini(env, ofd, i);
                 }
         }
 
