@@ -43,19 +43,19 @@
 
 #include "ofd_internal.h"
 
-static int filter_lvbo_free(struct ldlm_resource *res) {
+static int ofd_lvbo_free(struct ldlm_resource *res) {
         if (res->lr_lvb_data)
                 OBD_FREE(res->lr_lvb_data, res->lr_lvb_len);
         return 0;
 }
 
 /* Called with res->lr_lvb_sem held */
-static int filter_lvbo_init(struct ldlm_resource *res)
+static int ofd_lvbo_init(struct ldlm_resource *res)
 {
         struct ost_lvb *lvb = NULL;
-        struct filter_device *ofd;
-        struct filter_object *fo;
-        struct filter_thread_info *info;
+        struct ofd_device *ofd;
+        struct ofd_object *fo;
+        struct ofd_thread_info *info;
         struct lu_env env;
         int rc = 0;
         ENTRY;
@@ -79,13 +79,13 @@ static int filter_lvbo_init(struct ldlm_resource *res)
         res->lr_lvb_data = lvb;
         res->lr_lvb_len = sizeof(*lvb);
 
-        info = filter_info_init(&env, NULL);
+        info = ofd_info_init(&env, NULL);
         ofd_fid_from_resid(&info->fti_fid, &res->lr_name);
-        fo = filter_object_find(&env, ofd, &info->fti_fid);
+        fo = ofd_object_find(&env, ofd, &info->fti_fid);
         if (IS_ERR(fo))
                 GOTO(out, rc = PTR_ERR(fo));
 
-        rc = filter_attr_get(&env, fo, &info->fti_attr);
+        rc = ofd_attr_get(&env, fo, &info->fti_attr);
         if (rc)
                 GOTO(out_put, rc);
 
@@ -102,7 +102,7 @@ static int filter_lvbo_init(struct ldlm_resource *res)
 
         EXIT;
 out_put:
-        filter_object_put(&env, fo);
+        ofd_object_put(&env, fo);
 out:
         lu_env_fini(&env);
         if (rc)
@@ -114,17 +114,17 @@ out:
 /* This will be called in two ways:
  *
  *   r != NULL : called by the DLM itself after a glimpse callback
- *   r == NULL : called by the filter after a disk write
+ *   r == NULL : called by the ofd after a disk write
  *
  *   If 'increase_only' is true, don't allow values to move backwards.
  */
-static int filter_lvbo_update(struct ldlm_resource *res,
+static int ofd_lvbo_update(struct ldlm_resource *res,
                               struct ptlrpc_request *r,
                               int increase_only)
 {
-        struct filter_device *ofd;
-        struct filter_object *fo;
-        struct filter_thread_info *info;
+        struct ofd_device *ofd;
+        struct ofd_object *fo;
+        struct ofd_thread_info *info;
         struct ost_lvb *lvb;
         struct lu_env env;
         int rc = 0;
@@ -143,7 +143,7 @@ static int filter_lvbo_update(struct ldlm_resource *res,
         if (rc)
                 GOTO(out_unlock, rc);
 
-        info = filter_info_init(&env, NULL);
+        info = ofd_info_init(&env, NULL);
         /* Update the LVB from the network message */
         if (r != NULL) {
                 struct ost_lvb *new;
@@ -188,11 +188,11 @@ static int filter_lvbo_update(struct ldlm_resource *res,
         LASSERT(ofd != NULL);
 
         ofd_fid_from_resid(&info->fti_fid, &res->lr_name);
-        fo = filter_object_find(&env, ofd, &info->fti_fid);
+        fo = ofd_object_find(&env, ofd, &info->fti_fid);
         if (IS_ERR(fo))
                 GOTO(out_env, rc = PTR_ERR(fo));
 
-        rc = filter_attr_get(&env, fo, &info->fti_attr);
+        rc = ofd_attr_get(&env, fo, &info->fti_attr);
         if (rc)
                 GOTO(out_obj, rc);
 
@@ -232,15 +232,15 @@ static int filter_lvbo_update(struct ldlm_resource *res,
         unlock_res(res);
 
 out_obj:
-        filter_object_put(&env, fo);
+        ofd_object_put(&env, fo);
 out_env:
         lu_env_fini(&env);
 out_unlock:
         return rc;
 }
 
-struct ldlm_valblock_ops filter_lvbo = {
-        lvbo_init:   filter_lvbo_init,
-        lvbo_update: filter_lvbo_update,
-        lvbo_free:   filter_lvbo_free,
+struct ldlm_valblock_ops ofd_lvbo = {
+        lvbo_init:   ofd_lvbo_init,
+        lvbo_update: ofd_lvbo_update,
+        lvbo_free:   ofd_lvbo_free,
 };

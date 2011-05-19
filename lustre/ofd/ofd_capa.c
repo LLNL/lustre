@@ -51,12 +51,12 @@
 #include <lustre_capa.h>
 #include "ofd_internal.h"
 
-static inline __u32 filter_ck_keyid(struct filter_capa_key *key)
+static inline __u32 ofd_ck_keyid(struct filter_capa_key *key)
 {
         return key->k_key.lk_keyid;
 }
 
-int filter_update_capa_key(struct filter_device *ofd, struct lustre_capa_key *new)
+int ofd_update_capa_key(struct ofd_device *ofd, struct lustre_capa_key *new)
 {
         struct filter_capa_key *k, *keys[2] = { NULL, NULL };
         int i;
@@ -68,7 +68,7 @@ int filter_update_capa_key(struct filter_device *ofd, struct lustre_capa_key *ne
 
                 if (keys[0]) {
                         keys[1] = k;
-                        if (filter_ck_keyid(keys[1]) > filter_ck_keyid(keys[0]))
+                        if (ofd_ck_keyid(keys[1]) > ofd_ck_keyid(keys[0]))
                                 keys[1] = keys[0], keys[0] = k;
                 } else {
                         keys[0] = k;
@@ -79,7 +79,7 @@ int filter_update_capa_key(struct filter_device *ofd, struct lustre_capa_key *ne
         for (i = 0; i < 2; i++) {
                 if (!keys[i])
                         continue;
-                if (filter_ck_keyid(keys[i]) != new->lk_keyid)
+                if (ofd_ck_keyid(keys[i]) != new->lk_keyid)
                         continue;
                 /* maybe because of recovery or other reasons, MDS sent the
                  * the old capability key again.
@@ -111,7 +111,7 @@ int filter_update_capa_key(struct filter_device *ofd, struct lustre_capa_key *ne
         RETURN(0);
 }
 
-int filter_auth_capa(struct filter_device *ofd, struct lu_fid *fid,
+int ofd_auth_capa(struct ofd_device *ofd, struct lu_fid *fid,
                      __u64 mdsid, struct lustre_capa *capa, __u64 opc)
 {
 #if 0
@@ -138,7 +138,7 @@ int filter_auth_capa(struct filter_device *ofd, struct lu_fid *fid,
                 RETURN(-EACCES);
         }
 
-#warning "enable fid check in filter_auth_capa() when fid stored in OSS object"
+#warning "enable fid check in ofd_auth_capa() when fid stored in OSS object"
 
         if (opc == CAPA_OPC_OSS_READ) {
                 if (!(capa->lc_opc & CAPA_OPC_OSS_RW))
@@ -165,7 +165,7 @@ int filter_auth_capa(struct filter_device *ofd, struct lu_fid *fid,
         }
 
         cfs_spin_lock(&capa_lock);
-        cfs_list_for_each_entry(k, &ofd->ofd_capa_keys, k_list)
+        cfs_list_for_each_entry(k, &ofd->filter_capa_keys, k_list)
                 if (k->k_key.lk_mdsid == mdsid) {
                         keys_ready = 1;
                         if (k->k_key.lk_keyid == capa_keyid(capa)) {
@@ -213,7 +213,7 @@ int filter_auth_capa(struct filter_device *ofd, struct lu_fid *fid,
         RETURN(0);
 }
 
-void filter_free_capa_keys(struct filter_device *ofd)
+void ofd_free_capa_keys(struct ofd_device *ofd)
 {
         struct filter_capa_key *key, *n;
 
