@@ -258,7 +258,8 @@ int ofd_fs_setup(const struct lu_env *env, struct ofd_device *ofd,
                 GOTO(out, rc);
 
         rc = ofd_server_data_init(env, ofd);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(out_lut, rc);
 
         lu_local_obj_fid(&info->fti_fid, OFD_HEALTH_CHECK_OID);
         memset(&info->fti_attr, 0, sizeof(info->fti_attr));
@@ -267,7 +268,9 @@ int ofd_fs_setup(const struct lu_env *env, struct ofd_device *ofd,
 
         fo = ofd_object_find_or_create(env, ofd, &info->fti_fid,
                                        &info->fti_attr);
-        LASSERT(!IS_ERR(fo));
+        if (IS_ERR(fo))
+                GOTO(out_lut, rc = PTR_ERR(fo));
+
         ofd->ofd_health_check_file = ofd_object_child(fo);
 
         lu_local_obj_fid(&info->fti_fid, OFD_LAST_GROUP_OID);
@@ -277,28 +280,24 @@ int ofd_fs_setup(const struct lu_env *env, struct ofd_device *ofd,
 
         fo = ofd_object_find_or_create(env, ofd, &info->fti_fid,
                                        &info->fti_attr);
-        LASSERT(!IS_ERR(fo));
+        if (IS_ERR(fo))
+                GOTO(out_hc, rc = PTR_ERR(fo));
+
         ofd->ofd_last_group_file = ofd_object_child(fo);
+
         rc = ofd_groups_init(env, ofd);
-        LASSERT(rc == 0);
-
-#if 0
-        for (i = CFS_USRQUOTA; i < CFS_MAXQUOTAS; ++i) {
-                lu_local_obj_fid(&fid, (i == CFS_USRQUOTA) ? QUOTA_SLAVE_UID_OID :
-                                                             QUOTA_SLAVE_GID_OID);
-                memset(&attr, 0, sizeof(attr));
-                attr.la_valid = LA_MODE;
-                attr.la_mode = S_IFREG | 0666;
-
-                fo = ofd_object_find_or_create(env, ofd, &fid, &attr);
-                LASSERT(!IS_ERR(fo));
-                ofd_object_put(env, fo);
-        }
-#endif
+        if (rc)
+                GOTO(out_lg, rc);
 
         RETURN(0);
-
+out_lg:
+        lu_object_put(env, &ofd->ofd_last_group_file->do_lu);
+out_hc:
+        lu_object_put(env, &ofd->ofd_health_check_file->do_lu);
+out_lut:
+        lut_fini(env, &ofd->ofd_lut);
 out:
+        dt_txn_callback_del(ofd->ofd_osd, &ofd->ofd_txn_cb);
         target_recovery_fini(obd);
         return rc;
 }

@@ -585,13 +585,12 @@ static int ofd_procfs_fini(struct ofd_device *ofd)
 }
 
 static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
-                        struct lu_device_type *ldt, struct lustre_cfg *cfg)
+                     struct lu_device_type *ldt, struct lustre_cfg *cfg)
 {
         const char *dev = lustre_cfg_string(cfg, 0);
         struct ofd_thread_info *info = NULL;
         struct filter_obd *ofd;
         struct obd_device *obd;
-        struct dt_device  *next;
         int rc;
         ENTRY;
 
@@ -604,7 +603,6 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         rc = lu_env_refill((struct lu_env *)env);
         if (rc != 0)
                 RETURN(rc);
-        LASSERT(env);
 
         m->ofd_fmd_max_num = OFD_FMD_MAX_NUM_DEFAULT;
         m->ofd_fmd_max_age = OFD_FMD_MAX_AGE_DEFAULT;
@@ -642,9 +640,6 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         if (m->ofd_capa_hash == NULL)
                 RETURN(-ENOMEM);
 
-        CFS_INIT_LIST_HEAD(&m->ofd_llog_list);
-        cfs_spin_lock_init(&m->ofd_llog_list_lock);
-        m->ofd_lcm = NULL;
         m->ofd_dt_dev.dd_lu_dev.ld_ops = &ofd_lu_ops;
         m->ofd_dt_dev.dd_lu_dev.ld_obd = obd;
         /* set this lu_device to obd, because error handling need it */
@@ -702,36 +697,11 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         if (rc)
                 GOTO(err_free_ns, rc);
 
-        rc = obd_llog_init(obd, &obd->obd_olg, obd, NULL);
-        if (rc) {
-                CERROR("failed to setup llogging subsystems\n");
-                GOTO(err_fs_cleanup, rc);
-        }
-
-
-#if 0
-        lvfs_init_ctxt(&obd->obd_lvfs_ctxt, lmi->lmi_mnt, &null_ops);
-
-        LASSERT(obd->obd_olg.olg_group == OBD_LLOG_GROUP);
-        rc = llog_cat_initialize(obd, &obd->obd_olg, 1, NULL);
-        LASSERT(rc == 0);
-#endif
-
-        next = m->ofd_osd;
-        rc = next->dd_ops->dt_quota.dt_setup(env, next, NULL);
-        if (rc) {
-                CERROR("failed to setup quota\n");
-                GOTO(err_fs_cleanup, rc);
-        }
-
         if (ldlm_timeout == LDLM_TIMEOUT_DEFAULT)
                 ldlm_timeout = 6;
 
         RETURN(0);
 
-err_fs_cleanup:
-        lut_fini(env, &m->ofd_lut);
-        ofd_fs_cleanup(env, m);
 err_free_ns:
         ldlm_namespace_free(m->ofd_namespace, 0, obd->obd_force);
         obd->obd_namespace = m->ofd_namespace = NULL;
@@ -748,9 +718,6 @@ static void ofd_fini(const struct lu_env *env, struct ofd_device *m)
         struct lu_device  *d = &m->ofd_dt_dev.dd_lu_dev;
 
         target_recovery_fini(obd);
-#if 0
-        ofd_obd_llog_cleanup(obd);
-#endif
         obd_exports_barrier(obd);
         obd_zombie_barrier();
 
@@ -766,10 +733,8 @@ static void ofd_fini(const struct lu_env *env, struct ofd_device *m)
         sptlrpc_rule_set_free(&m->mdt_sptlrpc_rset);
 #endif
 
-        m->ofd_osd->dd_ops->dt_quota.dt_cleanup(env, m->ofd_osd);
-
-        /* 
-         * Finish the stack 
+        /*
+         * Finish the stack
          */
         ofd_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
         ofd_procfs_fini(m);
