@@ -219,16 +219,16 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         int rc;
         ENTRY;
 
+        ofd_write_lock(env, fo);
+        if (!ofd_object_exists(fo))
+                GOTO(unlock, rc = -ENOENT);
+
         if (la->la_valid & (LA_ATIME | LA_MTIME | LA_CTIME)) {
                 fmd = ofd_fmd_get(info->fti_exp, &fo->ofo_header.loh_fid);
                 if (fmd && fmd->fmd_mactime_xid < info->fti_xid)
                         fmd->fmd_mactime_xid = info->fti_xid;
                 ofd_fmd_put(info->fti_exp, fmd);
         }
-
-        ofd_write_lock(env, fo);
-        if (!ofd_object_exists(fo))
-                GOTO(unlock, rc = -ENOENT);
 
         /* VBR: version recovery check */
         rc = ofd_version_get_check(info, fo);
