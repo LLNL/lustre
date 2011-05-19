@@ -420,7 +420,7 @@ void ofd_fs_cleanup(const struct lu_env *env, struct ofd_device *ofd);
 obd_id ofd_last_id(struct ofd_device *ofd, obd_seq seq);
 void ofd_last_id_set(struct ofd_device *ofd, obd_id id, obd_seq seq);
 int ofd_last_id_write(const struct lu_env *env, struct ofd_device *ofd,
-                      obd_seq seq, struct thandle *th);
+                      obd_seq seq);
 int ofd_last_id_read(const struct lu_env *env, struct ofd_device *ofd,
                      obd_seq seq);
 int ofd_groups_init(const struct lu_env *env, struct ofd_device *ofd);
@@ -433,9 +433,10 @@ int ofd_last_rcvd_write(const struct lu_env *env,
                         loff_t *off, struct thandle *th);
 int ofd_server_data_init(const struct lu_env *env,
                          struct ofd_device *ofd);
-int ofd_group_load(const struct lu_env *env,
-                   struct ofd_device *ofd, int group);
-int ofd_last_group_write(const struct lu_env *env, struct ofd_device *ofd);
+int ofd_group_load(const struct lu_env *env, struct ofd_device *ofd, int);
+void ofd_group_fini(const struct lu_env *env, struct ofd_device *ofd, int);
+int ofd_record_write(const struct lu_env *env, struct ofd_device *ofd,
+                     struct dt_object *dt, struct lu_buf *buf, loff_t *off);
 
 /* ofd_objects.c */
 struct ofd_object *ofd_object_find(const struct lu_env *env,

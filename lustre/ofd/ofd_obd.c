@@ -957,13 +957,13 @@ static int ofd_orphans_destroy(const struct lu_env *env,
                          * restart * we don't need to re-scan all of the just
                          * deleted objects. */
                         if ((oi.oi_id & 511) == 0)
-                                ofd_last_id_write(env, ofd, oa->o_seq, NULL);
+                                ofd_last_id_write(env, ofd, oa->o_seq);
                 }
         }
         CDEBUG(D_HA, "%s: after destroy: set last_objids["LPU64"] = "LPU64"\n",
                ofd_obd(ofd)->obd_name, oa->o_seq, oa->o_id);
         if (!skip_orphan) {
-                rc = ofd_last_id_write(env, ofd, oa->o_seq, NULL);
+                rc = ofd_last_id_write(env, ofd, oa->o_seq);
         } else {
                 /* don't reuse orphan object, return last used objid */
                 oa->o_id = last;
