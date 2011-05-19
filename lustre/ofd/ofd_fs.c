@@ -321,9 +321,7 @@ static inline int ofd_clients_data_init(const struct lu_env *env,
 
                 fed = &exp->exp_filter_data;
                 *fed->fed_ted.ted_lcd = *lcd;
-#if 0
-                fed->fed_group = lcd->lcd_group;
-#endif
+
                 ofd_export_stats_init(ofd, exp, NULL);
                 rc = lut_client_add(env, exp, cl_idx);
                 LASSERTF(rc == 0, "rc = %d\n", rc); /* can't fail existing */
@@ -357,15 +355,12 @@ void ofd_free_server_data(void)
 }
 
 int ofd_server_data_init(const struct lu_env *env,
-                            struct ofd_device *ofd)
+                         struct ofd_device *ofd)
 {
         struct ofd_thread_info *info = ofd_info(env);
         struct lr_server_data *fsd = &ofd->ofd_fsd;
         struct obd_device *obd = ofd_obd(ofd);
         unsigned long last_rcvd_size;
-#if 0
-        __u64 mount_count;
-#endif
         int rc;
 
         rc = dt_attr_get(env, ofd->ofd_last_rcvd, &info->fti_attr, BYPASS_CAPA);
