@@ -33,7 +33,7 @@
  * This file is part of Lustre, http://www.lustre.org/
  * Lustre is a trademark of Sun Microsystems, Inc.
  *
- * lustre/ofd/filter_fs.c
+ * lustre/ofd/ofd_fs.c
  *
  * Author: Peter Braam <braam@clusterfs.com>
  * Author: Andreas Dilger <adilger@clusterfs.com>
@@ -45,11 +45,11 @@
 
 #include "ofd_internal.h"
 
-int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
+int ofd_record_write(const struct lu_env *env, struct ofd_device *ofd,
                         struct dt_object *dt, void *data, loff_t _off, int len,
                         struct thandle *_th)
 {
-        struct filter_thread_info *info = filter_info(env);
+        struct ofd_thread_info *info = ofd_info(env);
         int             rc;
         ENTRY;
 
@@ -64,7 +64,7 @@ int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
 
         if (_th == NULL) {
                 struct thandle *th;
-                th = filter_trans_create(env, ofd);
+                th = ofd_trans_create(env, ofd);
                 if (IS_ERR(th))
                         RETURN(PTR_ERR(th));
                 rc = dt_declare_record_write(env, dt, info->fti_buf.lb_len,
@@ -75,7 +75,7 @@ int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
                                 rc = dt_record_write(env, dt, &info->fti_buf,
                                                      &info->fti_off, th);
                 }
-                filter_trans_stop(env, ofd, NULL, th);
+                ofd_trans_stop(env, ofd, NULL, th);
         } else {
                 rc = dt_record_write(env, dt, &info->fti_buf, &info->fti_off,
                                      _th);
@@ -84,7 +84,7 @@ int filter_record_write(const struct lu_env *env, struct filter_device *ofd,
         RETURN(rc);
 }
 
-obd_id filter_last_id(struct filter_device *ofd, obd_seq group)
+obd_id ofd_last_id(struct ofd_device *ofd, obd_seq group)
 {
         obd_id id;
 
@@ -97,7 +97,7 @@ obd_id filter_last_id(struct filter_device *ofd, obd_seq group)
         return id;
 }
 
-void filter_last_id_set(struct filter_device *ofd, obd_id id, obd_seq group)
+void ofd_last_id_set(struct ofd_device *ofd, obd_id id, obd_seq group)
 {
         LASSERT(group <= ofd->ofd_max_group);
         cfs_spin_lock(&ofd->ofd_objid_lock);
@@ -106,7 +106,7 @@ void filter_last_id_set(struct filter_device *ofd, obd_id id, obd_seq group)
         cfs_spin_unlock(&ofd->ofd_objid_lock);
 }
 
-int filter_last_id_write(const struct lu_env *env, struct filter_device *ofd,
+int ofd_last_id_write(const struct lu_env *env, struct ofd_device *ofd,
                          obd_seq group, struct thandle *th)
 {
         obd_id          tmp;
@@ -114,17 +114,17 @@ int filter_last_id_write(const struct lu_env *env, struct filter_device *ofd,
         ENTRY;
 
         CDEBUG(D_INODE, "%s: write last_objid for group "LPU64": "LPU64"\n",
-               filter_obd(ofd)->obd_name, group, filter_last_id(ofd, group));
+               ofd_obd(ofd)->obd_name, group, ofd_last_id(ofd, group));
 
-        tmp = cpu_to_le64(filter_last_id(ofd, group));
+        tmp = cpu_to_le64(ofd_last_id(ofd, group));
 
-        rc = filter_record_write(env, ofd, ofd->ofd_lastid_obj[group],
+        rc = ofd_record_write(env, ofd, ofd->ofd_lastid_obj[group],
                                  &tmp, 0, sizeof(tmp), th);
 
         RETURN(rc);
 }
 
-int filter_last_group_write(const struct lu_env *env, struct filter_device *ofd)
+int ofd_last_group_write(const struct lu_env *env, struct ofd_device *ofd)
 {
         __u32   tmp;
         int     rc;
@@ -132,16 +132,16 @@ int filter_last_group_write(const struct lu_env *env, struct filter_device *ofd)
 
         tmp = cpu_to_le32(ofd->ofd_max_group);
 
-        rc = filter_record_write(env, ofd, ofd->ofd_last_group_file,
+        rc = ofd_record_write(env, ofd, ofd->ofd_last_group_file,
                                  &tmp, 0, sizeof(tmp), NULL);
 
         RETURN(rc);
 }
 
-int filter_group_load(const struct lu_env *env,
-                      struct filter_device *ofd, int group)
+int ofd_group_load(const struct lu_env *env,
+                      struct ofd_device *ofd, int group)
 {
-        struct filter_object      *fo;
+        struct ofd_object      *fo;
         struct dt_object          *dob;
         struct lu_fid              fid;
         struct lu_attr             attr;
@@ -162,9 +162,9 @@ int filter_group_load(const struct lu_env *env,
 
         /* create object tracking per-group last created
          * id to be used by orphan recovery mechanism */
-        fo = filter_object_find_or_create(env, ofd, &fid, &attr);
+        fo = ofd_object_find_or_create(env, ofd, &fid, &attr);
         LASSERT(!IS_ERR(fo));
-        dob = filter_object_child(fo);
+        dob = ofd_object_child(fo);
         ofd->ofd_lastid_obj[group] = dob;
         cfs_sema_init(&ofd->ofd_create_locks[group], 1);
 
@@ -174,10 +174,10 @@ int filter_group_load(const struct lu_env *env,
 
         if (attr.la_size == 0) {
                 /* object is just created, initialize last id */
-                ofd->ofd_last_objids[group] = FILTER_INIT_OBJID;
-                filter_last_id_set(ofd, FILTER_INIT_OBJID, group);
-                filter_last_id_write(env, ofd, group, NULL);
-                filter_last_group_write(env, ofd);
+                ofd->ofd_last_objids[group] = OFD_INIT_OBJID;
+                ofd_last_id_set(ofd, OFD_INIT_OBJID, group);
+                ofd_last_id_write(env, ofd, group, NULL);
+                ofd_last_group_write(env, ofd);
         } else if (attr.la_size == sizeof(lastid)) {
                 off = 0;
                 buf.lb_buf = &lastid;
@@ -199,10 +199,10 @@ cleanup:
         RETURN(rc);
 }
 
-/* filter groups managements */
-int filter_groups_init(const struct lu_env *env, struct filter_device *ofd)
+/* ofd groups managements */
+int ofd_groups_init(const struct lu_env *env, struct ofd_device *ofd)
 {
-        struct filter_thread_info *info = filter_info(env);
+        struct ofd_thread_info *info = ofd_info(env);
         unsigned long              groups_size;
         __u32                      last_group;
         int rc = 0, i;
@@ -238,11 +238,11 @@ int filter_groups_init(const struct lu_env *env, struct filter_device *ofd)
         }
 
         ofd->ofd_max_group = le32_to_cpu(last_group);
-        LASSERT(ofd->ofd_max_group <= FILTER_MAX_GROUPS); /* XXX: dynamic? */
+        LASSERT(ofd->ofd_max_group <= OFD_MAX_GROUPS); /* XXX: dynamic? */
 
 skip_read:
         for (i = 0; i <= ofd->ofd_max_group; i++) {
-               rc = filter_group_load(env, ofd, i);
+               rc = ofd_group_load(env, ofd, i);
                if (rc) {
                         CERROR("can't load group %d: %d\n", i, rc);
                         GOTO(cleanup, rc);
@@ -250,17 +250,17 @@ skip_read:
         }
 
         CWARN("%s: %u groups initialized\n",
-              filter_obd(ofd)->obd_name, ofd->ofd_max_group + 1);
+              ofd_obd(ofd)->obd_name, ofd->ofd_max_group + 1);
 
 cleanup:
         RETURN(rc);
 }
 
-static inline int filter_clients_data_init(const struct lu_env *env,
-                                           struct filter_device *ofd,
+static inline int ofd_clients_data_init(const struct lu_env *env,
+                                           struct ofd_device *ofd,
                                            unsigned long fsize)
 {
-        struct obd_device *obd = filter_obd(ofd);
+        struct obd_device *obd = ofd_obd(ofd);
         struct lr_server_data *fsd = &ofd->ofd_fsd;
         struct lsd_client_data *lcd = NULL;
         struct filter_export_data *fed;
@@ -298,8 +298,8 @@ static inline int filter_clients_data_init(const struct lu_env *env,
 
                 last_rcvd = lcd->lcd_last_transno;
 
-                /* These exports are cleaned up by filter_disconnect(), so they
-                 * need to be set up like real exports as filter_connect() does.
+                /* These exports are cleaned up by ofd_disconnect(), so they
+                 * need to be set up like real exports as ofd_connect() does.
                  */
                 exp = class_new_export(obd, (struct obd_uuid *)lcd->lcd_uuid);
 
@@ -321,7 +321,7 @@ static inline int filter_clients_data_init(const struct lu_env *env,
 #if 0
                 fed->fed_group = lcd->lcd_group;
 #endif
-                filter_export_stats_init(ofd, exp, NULL);
+                ofd_export_stats_init(ofd, exp, NULL);
                 rc = lut_client_add(env, exp, cl_idx);
                 LASSERTF(rc == 0, "rc = %d\n", rc); /* can't fail existing */
                 /* VBR: set export last committed version */
@@ -348,17 +348,17 @@ err_out:
         RETURN(rc);
 }
 
-void filter_free_server_data(void)
+void ofd_free_server_data(void)
 {
         LBUG();
 }
 
-int filter_server_data_init(const struct lu_env *env,
-                            struct filter_device *ofd)
+int ofd_server_data_init(const struct lu_env *env,
+                            struct ofd_device *ofd)
 {
-        struct filter_thread_info *info = filter_info(env);
+        struct ofd_thread_info *info = ofd_info(env);
         struct lr_server_data *fsd = &ofd->ofd_fsd;
-        struct obd_device *obd = filter_obd(ofd);
+        struct obd_device *obd = ofd_obd(ofd);
         unsigned long last_rcvd_size;
 #if 0
         __u64 mount_count;
@@ -390,7 +390,7 @@ int filter_server_data_init(const struct lu_env *env,
         } else {
                 rc = lut_server_data_read(env, &ofd->ofd_lut);
                 if (rc) {
-                        CDEBUG(D_INODE,"OBD filter: error reading %s: rc %d\n",
+                        CDEBUG(D_INODE,"OBD ofd: error reading %s: rc %d\n",
                                LAST_RCVD, rc);
                         GOTO(err_fsd, rc);
                 }
@@ -407,16 +407,16 @@ int filter_server_data_init(const struct lu_env *env,
         obd->u.obt.obt_mount_count = fsd->lsd_mount_count;
         ofd->ofd_subdir_count = fsd->lsd_subdir_count;
 
-        if (fsd->lsd_feature_incompat & ~FILTER_INCOMPAT_SUPP) {
+        if (fsd->lsd_feature_incompat & ~OFD_INCOMPAT_SUPP) {
                 CERROR("%s: unsupported incompat filesystem feature(s) %x\n",
                        obd->obd_name,
-                       fsd->lsd_feature_incompat & ~FILTER_INCOMPAT_SUPP);
+                       fsd->lsd_feature_incompat & ~OFD_INCOMPAT_SUPP);
                 GOTO(err_fsd, rc = -EINVAL);
         }
-        if (fsd->lsd_feature_rocompat & ~FILTER_ROCOMPAT_SUPP) {
+        if (fsd->lsd_feature_rocompat & ~OFD_ROCOMPAT_SUPP) {
                 CERROR("%s: unsupported read-only filesystem feature(s) %x\n",
                        obd->obd_name, 
-                       fsd->lsd_feature_rocompat & ~FILTER_ROCOMPAT_SUPP);
+                       fsd->lsd_feature_rocompat & ~OFD_ROCOMPAT_SUPP);
                 /* Do something like remount filesystem read-only */
                 GOTO(err_fsd, rc = -EINVAL);
         }
@@ -442,7 +442,7 @@ int filter_server_data_init(const struct lu_env *env,
                 CWARN("%s: recovery support OFF\n", obd->obd_name);
         }
 
-        rc = filter_clients_data_init(env, ofd, last_rcvd_size);
+        rc = ofd_clients_data_init(env, ofd, last_rcvd_size);
 
         cfs_spin_lock(&ofd->ofd_transno_lock);
         obd->obd_last_committed = fsd->lsd_last_transno;

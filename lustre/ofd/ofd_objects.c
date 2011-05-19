@@ -45,15 +45,15 @@
 #include <libcfs/libcfs.h>
 #include "ofd_internal.h"
 
-int filter_version_get_check(struct filter_thread_info *info,
-                             struct filter_object *fo)
+int ofd_version_get_check(struct ofd_thread_info *info,
+                             struct ofd_object *fo)
 {
         dt_obj_version_t curr_version;
 
-        LASSERT(filter_object_exists(fo));
+        LASSERT(ofd_object_exists(fo));
         LASSERT(info->fti_exp);
 
-        curr_version = dt_version_get(info->fti_env, filter_object_child(fo));
+        curr_version = dt_version_get(info->fti_env, ofd_object_child(fo));
         if ((__s64)curr_version == -EOPNOTSUPP)
                 RETURN(0);
         /* VBR: version is checked always because costs nothing */
@@ -70,28 +70,28 @@ int filter_version_get_check(struct filter_thread_info *info,
         RETURN(0);
 }
 
-struct filter_object *filter_object_find(const struct lu_env *env,
-                                         struct filter_device *ofd,
+struct ofd_object *ofd_object_find(const struct lu_env *env,
+                                         struct ofd_device *ofd,
                                          const struct lu_fid *fid)
 {
-        struct filter_object *fo;
+        struct ofd_object *fo;
         struct lu_object *o;
         ENTRY;
 
         o = lu_object_find(env, &ofd->ofd_dt_dev.dd_lu_dev, fid, NULL);
         if (likely(!IS_ERR(o)))
-                fo = filter_obj(o);
+                fo = ofd_obj(o);
         else
-                fo = (struct filter_object *)o; /* return error */
+                fo = (struct ofd_object *)o; /* return error */
         RETURN(fo);
 }
 
-struct filter_object *filter_object_find_or_create(const struct lu_env *env,
-                                                   struct filter_device *ofd,
+struct ofd_object *ofd_object_find_or_create(const struct lu_env *env,
+                                                   struct ofd_device *ofd,
                                                    const struct lu_fid *fid,
                                                    struct lu_attr *attr)
 {
-        struct filter_thread_info *info = filter_info(env);
+        struct ofd_thread_info *info = ofd_info(env);
         struct lu_object *fo_obj;
         struct dt_object *dto;
         ENTRY;
@@ -100,23 +100,23 @@ struct filter_object *filter_object_find_or_create(const struct lu_env *env,
 
         dto = dt_find_or_create(env, ofd->ofd_osd, fid, &info->fti_dof, attr);
         if (IS_ERR(dto))
-                RETURN((struct filter_object *)dto);
+                RETURN((struct ofd_object *)dto);
 
         fo_obj = lu_object_locate(dto->do_lu.lo_header,
                                   ofd->ofd_dt_dev.dd_lu_dev.ld_type);
-        RETURN(filter_obj(fo_obj));
+        RETURN(ofd_obj(fo_obj));
 }
 
-void filter_object_put(const struct lu_env *env, struct filter_object *fo)
+void ofd_object_put(const struct lu_env *env, struct ofd_object *fo)
 {
         lu_object_put(env, &fo->ofo_obj.do_lu);
 }
 
-int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
+int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
                             obd_id id, obd_seq group)
 {
-        struct filter_thread_info *info = filter_info(env);
-        struct filter_object    *fo;
+        struct ofd_thread_info *info = ofd_info(env);
+        struct ofd_object    *fo;
         struct dt_object        *next;
         struct thandle          *th;
         obd_id                   tmp;
@@ -126,18 +126,18 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         /* Don't create objects beyond the valid range for this SEQ */
         if (unlikely(fid_seq_is_mdt0(group) && id >= IDIF_MAX_OID)) {
                 CERROR("%s:"POSTID" hit the IDIF_MAX_OID (1<<48)!\n",
-                       filter_name(ofd), id, group);
+                       ofd_name(ofd), id, group);
                 RETURN(rc = -ENOSPC);
         } else if (unlikely(!fid_seq_is_mdt0(group) && id >= OBIF_MAX_OID)) {
                 CERROR("%s:"POSTID" hit the OBIF_MAX_OID (1<<32)!\n",
-                       filter_name(ofd), id, group);
+                       ofd_name(ofd), id, group);
                 RETURN(rc = -ENOSPC);
         }
         info->fti_ostid.oi_id = id;
         info->fti_ostid.oi_seq = group;
         fid_ostid_unpack(&info->fti_fid, &info->fti_ostid, 0);
 
-        fo = filter_object_find(env, ofd, &info->fti_fid);
+        fo = ofd_object_find(env, ofd, &info->fti_fid);
         if (IS_ERR(fo))
                 RETURN(PTR_ERR(fo));
 
@@ -151,27 +151,27 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
          * always be newer and update the inode.
          * See LU-221 for details.
          */
-        attr.la_valid |= LA_ATIME | LA_MTIME | LA_CTIME;
-        attr.la_atime = INT_MIN + 24 * 3600;
-        attr.la_mtime = INT_MIN + 24 * 3600;
-        attr.la_ctime = INT_MIN + 24 * 3600;
+        info->fti_attr.la_valid |= LA_ATIME | LA_MTIME | LA_CTIME;
+        info->fti_attr.la_atime = INT_MIN + 24 * 3600;
+        info->fti_attr.la_mtime = INT_MIN + 24 * 3600;
+        info->fti_attr.la_ctime = INT_MIN + 24 * 3600;
 
-        next = filter_object_child(fo);
+        next = ofd_object_child(fo);
         LASSERT(next != NULL);
 
         info->fti_buf.lb_buf = &tmp;
         info->fti_buf.lb_len = sizeof(tmp);
         info->fti_off = group * sizeof(tmp);
 
-        filter_write_lock(env, fo);
-        if (filter_object_exists(fo)) {
+        ofd_write_lock(env, fo);
+        if (ofd_object_exists(fo)) {
                 /* underlying filesystem is broken - object must not exist */
                 CERROR("object %u/"LPD64" exists: "DFID"\n",
                        (unsigned) group, id, PFID(&info->fti_fid));
                 GOTO(out_unlock, rc = -EEXIST);
         }
 
-        th = filter_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(out_unlock, rc = PTR_ERR(th));
 
@@ -195,74 +195,74 @@ int filter_precreate_object(const struct lu_env *env, struct filter_device *ofd,
         rc = dt_create(env, next, &info->fti_attr, NULL, &info->fti_dof, th);
         if (rc)
                 GOTO(trans_stop, rc);
-        LASSERT(filter_object_exists(fo));
+        LASSERT(ofd_object_exists(fo));
 
-        filter_last_id_set(ofd, id, group);
+        ofd_last_id_set(ofd, id, group);
 
-        rc = filter_last_id_write(env, ofd, group, th);
+        rc = ofd_last_id_write(env, ofd, group, th);
 
 trans_stop:
-        filter_trans_stop(env, ofd, fo, th);
+        ofd_trans_stop(env, ofd, fo, th);
 out_unlock:
-        filter_write_unlock(env, fo);
-        filter_object_put(env, fo);
+        ofd_write_unlock(env, fo);
+        ofd_object_put(env, fo);
         RETURN(rc);
 }
 
-int filter_attr_set(const struct lu_env *env, struct filter_object *fo,
+int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
                     const struct lu_attr *la)
 {
         struct thandle *th;
-        struct filter_device *ofd = filter_obj2dev(fo);
-        struct filter_thread_info *info = filter_info(env);
-        struct filter_mod_data *fmd;
+        struct ofd_device *ofd = ofd_obj2dev(fo);
+        struct ofd_thread_info *info = ofd_info(env);
+        struct ofd_mod_data *fmd;
         int rc;
         ENTRY;
 
         if (la->la_valid & (LA_ATIME | LA_MTIME | LA_CTIME)) {
-                fmd = filter_fmd_get(info->fti_exp, &fo->ofo_header.loh_fid);
+                fmd = ofd_fmd_get(info->fti_exp, &fo->ofo_header.loh_fid);
                 if (fmd && fmd->fmd_mactime_xid < info->fti_xid)
                         fmd->fmd_mactime_xid = info->fti_xid;
-                filter_fmd_put(info->fti_exp, fmd);
+                ofd_fmd_put(info->fti_exp, fmd);
         }
 
-        filter_write_lock(env, fo);
-        if (!filter_object_exists(fo))
+        ofd_write_lock(env, fo);
+        if (!ofd_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
         /* VBR: version recovery check */
-        rc = filter_version_get_check(info, fo);
+        rc = ofd_version_get_check(info, fo);
         if (rc)
                 GOTO(unlock, rc);
 
-        th = filter_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
-        rc = dt_declare_attr_set(env, filter_object_child(fo), la, th);
+        rc = dt_declare_attr_set(env, ofd_object_child(fo), la, th);
         if (rc)
                 GOTO(stop, rc);
 
-        rc = filter_trans_start(env, ofd, th);
+        rc = ofd_trans_start(env, ofd, th);
         if (rc)
                 GOTO(stop, rc);
 
-        rc = dt_attr_set(env, filter_object_child(fo), la, th,
-                        filter_object_capa(env, fo));
+        rc = dt_attr_set(env, ofd_object_child(fo), la, th,
+                        ofd_object_capa(env, fo));
 stop:
-        filter_trans_stop(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
+        ofd_trans_stop(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
 unlock:
-        filter_write_unlock(env, fo);
+        ofd_write_unlock(env, fo);
         RETURN(rc);
 }
 
-int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
+int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
                         __u64 start, __u64 end, const struct lu_attr *la)
 {
-        struct filter_thread_info *info = filter_info(env);
-        struct filter_device      *ofd = filter_obj2dev(fo);
-        struct filter_mod_data    *fmd;
-        struct dt_object          *dob = filter_object_child(fo);
+        struct ofd_thread_info *info = ofd_info(env);
+        struct ofd_device      *ofd = ofd_obj2dev(fo);
+        struct ofd_mod_data    *fmd;
+        struct dt_object          *dob = ofd_object_child(fo);
         struct thandle            *th;
         int rc;
         ENTRY;
@@ -270,21 +270,21 @@ int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
         /* we support truncate, not punch yet */
         LASSERT(end == OBD_OBJECT_EOF);
 
-        fmd = filter_fmd_get(info->fti_exp, &fo->ofo_header.loh_fid);
+        fmd = ofd_fmd_get(info->fti_exp, &fo->ofo_header.loh_fid);
         if (fmd && fmd->fmd_mactime_xid < info->fti_xid)
                 fmd->fmd_mactime_xid = info->fti_xid;
-        filter_fmd_put(info->fti_exp, fmd);
+        ofd_fmd_put(info->fti_exp, fmd);
 
-        filter_write_lock(env, fo);
-        if (!filter_object_exists(fo))
+        ofd_write_lock(env, fo);
+        if (!ofd_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
         /* VBR: version recovery check */
-        rc = filter_version_get_check(info, fo);
+        rc = ofd_version_get_check(info, fo);
         if (rc)
                 GOTO(unlock, rc);
 
-        th = filter_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
@@ -296,69 +296,69 @@ int filter_object_punch(const struct lu_env *env, struct filter_object *fo,
         if (rc)
                 GOTO(stop, rc);
 
-        rc = filter_trans_start(env, ofd, th);
+        rc = ofd_trans_start(env, ofd, th);
         if (rc)
                 GOTO(stop, rc);
 
         rc = dt_punch(env, dob, start, OBD_OBJECT_EOF, th,
-                      filter_object_capa(env, fo));
+                      ofd_object_capa(env, fo));
         if (rc)
                 GOTO(stop, rc);
 
-        rc = dt_attr_set(env, dob, la, th, filter_object_capa(env, fo));
+        rc = dt_attr_set(env, dob, la, th, ofd_object_capa(env, fo));
 
 stop:
-        filter_trans_stop(env, ofd, fo, th);
+        ofd_trans_stop(env, ofd, fo, th);
 unlock:
-        filter_write_unlock(env, fo);
+        ofd_write_unlock(env, fo);
         RETURN(rc);
 }
 
-int filter_object_destroy(const struct lu_env *env, struct filter_object *fo,
+int ofd_object_destroy(const struct lu_env *env, struct ofd_object *fo,
                           int orphan)
 {
-        struct filter_device *ofd = filter_obj2dev(fo);
+        struct ofd_device *ofd = ofd_obj2dev(fo);
         struct thandle *th;
         int rc = 0;
         ENTRY;
 
-        filter_write_lock(env, fo);
-        if (!filter_object_exists(fo))
+        ofd_write_lock(env, fo);
+        if (!ofd_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
-        th = filter_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
-        dt_declare_ref_del(env, filter_object_child(fo), th);
-        dt_declare_destroy(env, filter_object_child(fo), th);
+        dt_declare_ref_del(env, ofd_object_child(fo), th);
+        dt_declare_destroy(env, ofd_object_child(fo), th);
         if (orphan)
                 rc = dt_trans_start_local(env, ofd->ofd_osd, th);
         else
-                rc = filter_trans_start(env, ofd, th);
+                rc = ofd_trans_start(env, ofd, th);
         if (rc)
                 GOTO(stop, rc);
 
-        filter_fmd_drop(filter_info(env)->fti_exp, &fo->ofo_header.loh_fid);
+        ofd_fmd_drop(ofd_info(env)->fti_exp, &fo->ofo_header.loh_fid);
 
-        dt_ref_del(env, filter_object_child(fo), th);
-        dt_destroy(env, filter_object_child(fo), th);
+        dt_ref_del(env, ofd_object_child(fo), th);
+        dt_destroy(env, ofd_object_child(fo), th);
 stop:
-        filter_trans_stop(env, ofd, NULL, th);
+        ofd_trans_stop(env, ofd, NULL, th);
 unlock:
-        filter_write_unlock(env, fo);
+        ofd_write_unlock(env, fo);
         RETURN(rc);
 }
 
-int filter_attr_get(const struct lu_env *env, struct filter_object *fo,
+int ofd_attr_get(const struct lu_env *env, struct ofd_object *fo,
                     struct lu_attr *la)
 {
         int rc = 0;
         ENTRY;
 
-        if (filter_object_exists(fo)) {
-                rc = dt_attr_get(env, filter_object_child(fo), la,
-                                 filter_object_capa(env, fo));
+        if (ofd_object_exists(fo)) {
+                rc = dt_attr_get(env, ofd_object_child(fo), la,
+                                 ofd_object_capa(env, fo));
         } else {
                 rc = -ENOENT;
         }
