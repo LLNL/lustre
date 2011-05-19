@@ -44,10 +44,10 @@
 
 #include "ofd_internal.h"
 
-struct thandle *filter_trans_create(const struct lu_env *env,
-                                    struct filter_device *ofd)
+struct thandle *ofd_trans_create(const struct lu_env *env,
+                                    struct ofd_device *ofd)
 {
-        struct filter_thread_info *info = filter_info(env);
+        struct ofd_thread_info *info = ofd_info(env);
         struct thandle *th;
         struct filter_export_data *fed;
         struct tg_export_data *ted;
@@ -83,21 +83,21 @@ struct thandle *filter_trans_create(const struct lu_env *env,
         return th;
 }
 
-int filter_trans_start(const struct lu_env *env,
-                       struct filter_device *ofd,
+int ofd_trans_start(const struct lu_env *env,
+                       struct ofd_device *ofd,
                        struct thandle *th)
 {
         return dt_trans_start(env, ofd->ofd_osd, th);
 }
 
-void filter_trans_stop(const struct lu_env *env,
-                       struct filter_device *ofd,
-                       struct filter_object *obj,
+void ofd_trans_stop(const struct lu_env *env,
+                       struct ofd_device *ofd,
+                       struct ofd_object *obj,
                        struct thandle *th)
 {
         /* version change is required for this object */
         if (obj)
-                filter_info(env)->fti_obj = obj;
+                ofd_info(env)->fti_obj = obj;
 
         dt_trans_stop(env, ofd->ofd_osd, th);
 }
@@ -105,10 +105,10 @@ void filter_trans_stop(const struct lu_env *env,
 /*
  * last_rcvd & last_committed update callbacks
  */
-static int filter_last_rcvd_update(struct filter_thread_info *info,
+static int ofd_last_rcvd_update(struct ofd_thread_info *info,
                                    struct thandle *th)
 {
-        struct filter_device *ofd = filter_exp(info->fti_exp);
+        struct ofd_device *ofd = ofd_exp(info->fti_exp);
         struct filter_export_data *fed;
         struct lsd_client_data *lcd;
         __s32 rc = th->th_result;
@@ -161,32 +161,32 @@ static int filter_last_rcvd_update(struct filter_thread_info *info,
 }
 
 /* Set new object versions */
-static void filter_version_set(struct filter_thread_info *info)
+static void ofd_version_set(struct ofd_thread_info *info)
 {
         if (info->fti_obj != NULL) {
                 dt_version_set(info->fti_env,
-                               filter_object_child(info->fti_obj),
+                               ofd_object_child(info->fti_obj),
                                info->fti_transno);
                 info->fti_obj = NULL;
         }
 }
 
 /* Update last_rcvd records with latests transaction data */
-int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
+int ofd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
                        void *cookie)
 {
-        struct filter_device *ofd = cookie;
-        struct filter_thread_info *info;
+        struct ofd_device *ofd = cookie;
+        struct ofd_thread_info *info;
         ENTRY;
 
-        info = lu_context_key_get(&env->le_ctx, &filter_thread_key);
+        info = lu_context_key_get(&env->le_ctx, &ofd_thread_key);
 
         if (info->fti_exp == NULL ||
             info->fti_exp->exp_filter_data.fed_ted.ted_lcd == NULL) {
                  RETURN(0);
         }
 
-        LASSERT(filter_exp(info->fti_exp) == ofd);
+        LASSERT(ofd_exp(info->fti_exp) == ofd);
         if (info->fti_has_trans) {
                 if (info->fti_mult_trans == 0) {
                         CERROR("More than one transaction "LPU64"\n",
@@ -217,25 +217,25 @@ int filter_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
 
         /** VBR: set new versions */
         if (txn->th_result == 0)
-                filter_version_set(info);
+                ofd_version_set(info);
 
         /* filling reply data */
         CDEBUG(D_INODE, "transno = %llu, last_committed = %llu\n",
-               info->fti_transno, filter_obd(ofd)->obd_last_committed);
+               info->fti_transno, ofd_obd(ofd)->obd_last_committed);
 
         /* if can't add callback, do sync write */
         txn->th_sync = !!lut_last_commit_cb_add(txn, &ofd->ofd_lut,
                                                 info->fti_exp,
                                                 info->fti_transno);
 
-        return filter_last_rcvd_update(info, txn);
+        return ofd_last_rcvd_update(info, txn);
 }
 
-int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
+int ofd_fs_setup(const struct lu_env *env, struct ofd_device *ofd,
                     struct obd_device *obd)
 {
-        struct filter_thread_info *info = filter_info(env);
-        struct filter_object *fo;
+        struct ofd_thread_info *info = ofd_info(env);
+        struct ofd_object *fo;
         int rc = 0;
         ENTRY;
 
@@ -244,7 +244,7 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
 
         /* prepare transactions callbacks */
         ofd->ofd_txn_cb.dtc_txn_start = NULL;
-        ofd->ofd_txn_cb.dtc_txn_stop = filter_txn_stop_cb;
+        ofd->ofd_txn_cb.dtc_txn_stop = ofd_txn_stop_cb;
         ofd->ofd_txn_cb.dtc_txn_commit = NULL;
         ofd->ofd_txn_cb.dtc_cookie = ofd;
         ofd->ofd_txn_cb.dtc_tag = LCT_DT_THREAD;
@@ -257,7 +257,7 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
         if (rc)
                 GOTO(out, rc);
 
-        rc = filter_server_data_init(env, ofd);
+        rc = ofd_server_data_init(env, ofd);
         LASSERT(rc == 0);
 
         lu_local_obj_fid(&info->fti_fid, OFD_LAST_GROUP_OID);
@@ -265,10 +265,10 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
         info->fti_attr.la_valid = LA_MODE;
         info->fti_attr.la_mode = S_IFREG | 0666;
 
-        fo = filter_object_find_or_create(env, ofd, &info->fti_fid, &info->fti_attr);
+        fo = ofd_object_find_or_create(env, ofd, &info->fti_fid, &info->fti_attr);
         LASSERT(!IS_ERR(fo));
-        ofd->ofd_last_group_file = filter_object_child(fo);
-        rc = filter_groups_init(env, ofd);
+        ofd->ofd_last_group_file = ofd_object_child(fo);
+        rc = ofd_groups_init(env, ofd);
         LASSERT(rc == 0);
 
 #if 0
@@ -279,9 +279,9 @@ int filter_fs_setup(const struct lu_env *env, struct filter_device *ofd,
                 attr.la_valid = LA_MODE;
                 attr.la_mode = S_IFREG | 0666;
 
-                fo = filter_object_find_or_create(env, ofd, &fid, &attr);
+                fo = ofd_object_find_or_create(env, ofd, &fid, &attr);
                 LASSERT(!IS_ERR(fo));
-                filter_object_put(env, fo);
+                ofd_object_put(env, fo);
         }
 #endif
 
@@ -292,16 +292,16 @@ out:
         return rc;
 }
 
-void filter_fs_cleanup(const struct lu_env *env, struct filter_device *ofd)
+void ofd_fs_cleanup(const struct lu_env *env, struct ofd_device *ofd)
 {
         int i;
         ENTRY;
 
-        filter_info_init(env, NULL);
+        ofd_info_init(env, NULL);
 
         for (i = 0; i <= ofd->ofd_max_group; i++) {
                 if (ofd->ofd_lastid_obj[i]) {
-                        filter_last_id_write(env, ofd, i, NULL);
+                        ofd_last_id_write(env, ofd, i, NULL);
                         lu_object_put(env, &ofd->ofd_lastid_obj[i]->do_lu);
                 }
         }
@@ -318,7 +318,7 @@ void filter_fs_cleanup(const struct lu_env *env, struct filter_device *ofd)
 
         ofd->ofd_last_group_file = NULL;
 
-        filter_free_capa_keys(ofd);
+        ofd_free_capa_keys(ofd);
         cleanup_capa_hash(ofd->ofd_capa_hash);
 
         EXIT;

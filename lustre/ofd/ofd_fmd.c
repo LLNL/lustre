@@ -33,7 +33,7 @@
  * This file is part of Lustre, http://www.lustre.org/
  * Lustre is a trademark of Sun Microsystems, Inc.
  *
- *  lustre/obdfilter/filter_fmd.c
+ *  lustre/ofd/filter_fmd.c
  */
 
 #define DEBUG_SUBSYSTEM S_FILTER
@@ -43,8 +43,8 @@
 cfs_mem_cache_t *ll_fmd_cachep;
 
 /* drop fmd reference, free it if last ref. must be called with fed_lock held.*/
-static inline void filter_fmd_put_nolock(struct obd_export *exp,
-                                         struct filter_mod_data *fmd)
+static inline void ofd_fmd_put_nolock(struct obd_export *exp,
+                                         struct ofd_mod_data *fmd)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
 
@@ -59,7 +59,7 @@ static inline void filter_fmd_put_nolock(struct obd_export *exp,
 }
 
 /* drop fmd reference, free it if last ref */
-void filter_fmd_put(struct obd_export *exp, struct filter_mod_data *fmd)
+void ofd_fmd_put(struct obd_export *exp, struct ofd_mod_data *fmd)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
 
@@ -67,19 +67,19 @@ void filter_fmd_put(struct obd_export *exp, struct filter_mod_data *fmd)
                 return;
 
         cfs_spin_lock(&fed->fed_lock);
-        filter_fmd_put_nolock(exp, fmd); /* caller reference */
+        ofd_fmd_put_nolock(exp, fmd); /* caller reference */
         cfs_spin_unlock(&fed->fed_lock);
 }
 
 /* expire entries from the end of the list if there are too many
  * or they are too old */
-static void filter_fmd_expire_nolock(struct obd_export *exp,
-                                     struct filter_mod_data *keep)
+static void ofd_fmd_expire_nolock(struct obd_export *exp,
+                                     struct ofd_mod_data *keep)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
-        struct filter_device *ofd = filter_exp(exp);
+        struct ofd_device *ofd = ofd_exp(exp);
 
-        struct filter_mod_data *fmd, *tmp;
+        struct ofd_mod_data *fmd, *tmp;
         cfs_time_t now = cfs_time_current();
 
         cfs_list_for_each_entry_safe(fmd, tmp, &fed->fed_mod_list, fmd_list) {
@@ -91,27 +91,27 @@ static void filter_fmd_expire_nolock(struct obd_export *exp,
                         break;
 
                 cfs_list_del_init(&fmd->fmd_list);
-                filter_fmd_put_nolock(exp, fmd); /* list reference */
+                ofd_fmd_put_nolock(exp, fmd); /* list reference */
         }
 }
 
-void filter_fmd_expire(struct obd_export *exp)
+void ofd_fmd_expire(struct obd_export *exp)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
 
         cfs_spin_lock(&fed->fed_lock);
-        filter_fmd_expire_nolock(exp, NULL);
+        ofd_fmd_expire_nolock(exp, NULL);
         cfs_spin_unlock(&fed->fed_lock);
 }
 
 /* find specified fid in fed_fmd_list.
  * caller must hold fed_lock and take fmd reference itself */
-static struct filter_mod_data *filter_fmd_find_nolock(struct obd_export *exp,
+static struct ofd_mod_data *ofd_fmd_find_nolock(struct obd_export *exp,
 						      const struct lu_fid *fid)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
-        struct filter_mod_data *found = NULL, *fmd;
-        struct filter_device *ofd = filter_exp(exp);
+        struct ofd_mod_data *found = NULL, *fmd;
+        struct ofd_device *ofd = ofd_exp(exp);
         cfs_time_t now = cfs_time_current();
 
         LASSERT_SPIN_LOCKED(&fed->fed_lock);
@@ -126,20 +126,20 @@ static struct filter_mod_data *filter_fmd_find_nolock(struct obd_export *exp,
                 }
         }
 
-        filter_fmd_expire_nolock(exp, found);
+        ofd_fmd_expire_nolock(exp, found);
 
         return found;
 }
 
 /* Find fmd based on fid or return NULL if not found. */
-struct filter_mod_data *filter_fmd_find(struct obd_export *exp,
+struct ofd_mod_data *ofd_fmd_find(struct obd_export *exp,
                                         struct lu_fid *fid)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
-        struct filter_mod_data *fmd;
+        struct ofd_mod_data *fmd;
 
         cfs_spin_lock(&fed->fed_lock);
-        fmd = filter_fmd_find_nolock(exp, fid);
+        fmd = ofd_fmd_find_nolock(exp, fid);
         if (fmd)
                 fmd->fmd_refcount++;    /* caller reference */
         cfs_spin_unlock(&fed->fed_lock);
@@ -152,18 +152,18 @@ struct filter_mod_data *filter_fmd_find(struct obd_export *exp,
  * or if fid = 0 is passed (which will only cause old entries to expire).
  * Currently this is not fatal because any fmd state is transient and
  * may also be freed when it gets sufficiently old. */
-struct filter_mod_data *filter_fmd_get(struct obd_export *exp,
+struct ofd_mod_data *ofd_fmd_get(struct obd_export *exp,
                                        struct lu_fid *fid)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
-        struct filter_device *ofd = filter_exp(exp);
-        struct filter_mod_data *found = NULL, *fmd_new = NULL;
+        struct ofd_device *ofd = ofd_exp(exp);
+        struct ofd_mod_data *found = NULL, *fmd_new = NULL;
         cfs_time_t now = cfs_time_current();
 
         OBD_SLAB_ALLOC(fmd_new, ll_fmd_cachep, CFS_ALLOC_IO, sizeof(*fmd_new));
 
         cfs_spin_lock(&fed->fed_lock);
-        found = filter_fmd_find_nolock(exp, fid);
+        found = ofd_fmd_find_nolock(exp, fid);
         if (fmd_new) {
                 if (found == NULL) {
                         cfs_list_add_tail(&fmd_new->fmd_list, &fed->fed_mod_list);
@@ -190,26 +190,26 @@ struct filter_mod_data *filter_fmd_get(struct obd_export *exp,
  * This isn't so critical because it would in fact only affect the one client
  * that is doing the unlink and at worst we have an stale entry referencing
  * an object that should never be used again. */
-void filter_fmd_drop(struct obd_export *exp, struct lu_fid *fid)
+void ofd_fmd_drop(struct obd_export *exp, struct lu_fid *fid)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
-        struct filter_mod_data *found = NULL;
+        struct ofd_mod_data *found = NULL;
 
         cfs_spin_lock(&fed->fed_lock);
-        found = filter_fmd_find_nolock(exp, fid);
+        found = ofd_fmd_find_nolock(exp, fid);
         if (found) {
                 cfs_list_del_init(&found->fmd_list);
-                filter_fmd_put_nolock(exp, found);
+                ofd_fmd_put_nolock(exp, found);
         }
         cfs_spin_unlock(&fed->fed_lock);
 }
 #endif
 
 /* remove all entries from fmd list */
-void filter_fmd_cleanup(struct obd_export *exp)
+void ofd_fmd_cleanup(struct obd_export *exp)
 {
         struct filter_export_data *fed = &exp->exp_filter_data;
-        struct filter_mod_data *fmd = NULL, *tmp;
+        struct ofd_mod_data *fmd = NULL, *tmp;
 
         cfs_spin_lock(&fed->fed_lock);
         cfs_list_for_each_entry_safe(fmd, tmp, &fed->fed_mod_list, fmd_list) {
@@ -218,7 +218,7 @@ void filter_fmd_cleanup(struct obd_export *exp)
                         CDEBUG(D_INFO, "fmd %p still referenced (refcount = %d)\n",
                                fmd, fmd->fmd_refcount);
                 }
-                filter_fmd_put_nolock(exp, fmd);
+                ofd_fmd_put_nolock(exp, fmd);
         }
         cfs_spin_unlock(&fed->fed_lock);
 }
@@ -226,7 +226,7 @@ void filter_fmd_cleanup(struct obd_export *exp)
 int ofd_fmd_init(void)
 {
         ll_fmd_cachep = cfs_mem_cache_create("ll_fmd_cache",
-                                             sizeof(struct filter_mod_data),
+                                             sizeof(struct ofd_mod_data),
                                              0, 0);
         if (!ll_fmd_cachep)
                 return -ENOMEM;

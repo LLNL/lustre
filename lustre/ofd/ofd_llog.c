@@ -45,19 +45,19 @@
 
 #define OBD_LLOG_GROUP  0
 
-static struct llog_operations filter_mds_ost_repl_logops /* initialized below*/;
+static struct llog_operations ofd_mds_ost_repl_logops /* initialized below*/;
 #if 0
-static struct llog_operations filter_size_orig_logops = {
+static struct llog_operations ofd_size_orig_logops = {
         lop_setup: llog_obd_origin_setup,
         lop_cleanup: llog_obd_origin_cleanup,
         lop_add: llog_obd_origin_add
 };
 #endif
 
-int filter_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
+int ofd_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
                      struct obd_device *tgt, int *idx)
 {
-        struct filter_device *ofd = filter_dev(obd->obd_lu_dev);
+        struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
         struct llog_ctxt *ctxt;
         int rc;
         ENTRY;
@@ -68,24 +68,24 @@ int filter_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
                 if (!ofd->ofd_lcm)
                         RETURN(-ENOMEM);
 
-                filter_mds_ost_repl_logops = llog_client_ops;
-                filter_mds_ost_repl_logops.lop_cancel = llog_obd_repl_cancel;
-                filter_mds_ost_repl_logops.lop_connect = llog_obd_repl_connect;
-                filter_mds_ost_repl_logops.lop_sync = llog_obd_repl_sync;
+                ofd_mds_ost_repl_logops = llog_client_ops;
+                ofd_mds_ost_repl_logops.lop_cancel = llog_obd_repl_cancel;
+                ofd_mds_ost_repl_logops.lop_connect = llog_obd_repl_connect;
+                ofd_mds_ost_repl_logops.lop_sync = llog_obd_repl_sync;
         } else {
                 LASSERT(ofd->ofd_lcm != NULL);
         }
         rc = llog_setup(obd, olg, LLOG_MDS_OST_REPL_CTXT, tgt, 0, NULL,
-                        &filter_mds_ost_repl_logops);
+                        &ofd_mds_ost_repl_logops);
         if (rc)
                 GOTO(cleanup, rc);
 
-        /* FIXME - assign unlink_cb for filter's recovery */
+        /* FIXME - assign unlink_cb for ofd's recovery */
         LASSERT(olg);
         ctxt = llog_group_get_ctxt(olg, LLOG_MDS_OST_REPL_CTXT);
 
         LASSERT(ctxt != NULL);
-        ctxt->llog_proc_cb = filter_recov_log_mds_ost_cb;
+        ctxt->llog_proc_cb = ofd_recov_log_mds_ost_cb;
         ctxt->loc_lcm = lcm_get(ofd->ofd_lcm);
         llog_ctxt_put(ctxt);
 
@@ -97,7 +97,7 @@ cleanup:
         RETURN(rc);
 }
 
-static int filter_group_llog_finish(struct obd_llog_group *olg)
+static int ofd_group_llog_finish(struct obd_llog_group *olg)
 {
         struct llog_ctxt *ctxt;
         int rc = 0;
@@ -118,9 +118,9 @@ static int filter_group_llog_finish(struct obd_llog_group *olg)
         RETURN(rc);
 }
 
-int filter_llog_finish(struct obd_device *obd, int count)
+int ofd_llog_finish(struct obd_device *obd, int count)
 {
-        struct filter_device *ofd = filter_dev(obd->obd_lu_dev);
+        struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
         int rc;
         ENTRY;
 
@@ -129,15 +129,15 @@ int filter_llog_finish(struct obd_device *obd, int count)
                 ofd->ofd_lcm = NULL;
         }
         /* finish obd llog group */
-        rc = filter_group_llog_finish(&obd->obd_olg);
+        rc = ofd_group_llog_finish(&obd->obd_olg);
 
         RETURN(rc);
 }
 
 
-struct obd_llog_group *filter_find_olg(struct obd_device *obd, int group)
+struct obd_llog_group *ofd_find_olg(struct obd_device *obd, int group)
 {
-        struct filter_device *ofd = filter_dev(obd->obd_lu_dev);
+        struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
         struct obd_llog_group *olg, *nolg;
         int rc;
 
@@ -185,7 +185,7 @@ struct obd_llog_group *filter_find_olg(struct obd_device *obd, int group)
 
 /* Callback for processing the setattr log record received from MDS by
  * llog_client_api. */
-static int filter_recov_log_setattr_cb(struct llog_ctxt *ctxt,
+static int ofd_recov_log_setattr_cb(struct llog_ctxt *ctxt,
                                        struct llog_rec_hdr *rec,
                                        struct llog_cookie *cookie)
 {
@@ -224,7 +224,7 @@ static int filter_recov_log_setattr_cb(struct llog_ctxt *ctxt,
         oinfo.oi_oa->o_lcookie = *cookie;
         oid = oinfo.oi_oa->o_id;
 
-        rc = filter_setattr(exp, &oinfo, NULL);
+        rc = ofd_setattr(exp, &oinfo, NULL);
         OBDO_FREE(oinfo.oi_oa);
 
         if (rc == -ENOENT) {
@@ -242,7 +242,7 @@ exit:
 
 /* Callback for processing the unlink log record received from MDS by 
  * llog_client_api. */
-int filter_recov_log_unlink_cb(struct llog_ctxt *ctxt,
+int ofd_recov_log_unlink_cb(struct llog_ctxt *ctxt,
                                       struct llog_rec_hdr *rec,
                                       struct llog_cookie *cookie)
 {
@@ -265,7 +265,7 @@ int filter_recov_log_unlink_cb(struct llog_ctxt *ctxt,
         oa->o_lcookie = *cookie;
         oid = oa->o_id;
 
-        rc = filter_destroy(exp, oa, NULL, NULL, NULL, NULL);
+        rc = ofd_destroy(exp, oa, NULL, NULL, NULL, NULL);
         OBDO_FREE(oa);
         if (rc == -ENOENT) {
                 CDEBUG(D_HA, "object already removed, send cookie\n");
@@ -280,7 +280,7 @@ exit:
         RETURN(rc);
 }
 
-int filter_recov_log_mds_ost_cb(struct llog_handle *llh,
+int ofd_recov_log_mds_ost_cb(struct llog_handle *llh,
                                struct llog_rec_hdr *rec, void *data)
 {
         struct llog_ctxt *ctxt = llh->lgh_ctxt;
@@ -303,10 +303,10 @@ int filter_recov_log_mds_ost_cb(struct llog_handle *llh,
 
         switch (rec->lrh_type) {
         case MDS_UNLINK_REC:
-                rc = filter_recov_log_unlink_cb(ctxt, rec, &cookie);
+                rc = ofd_recov_log_unlink_cb(ctxt, rec, &cookie);
                 break;
         case MDS_SETATTR_REC:
-                rc = filter_recov_log_setattr_cb(ctxt, rec, &cookie);
+                rc = ofd_recov_log_setattr_cb(ctxt, rec, &cookie);
                 break;
         case LLOG_GEN_REC: {
                 struct llog_gen_rec *lgr = (struct llog_gen_rec *)rec;
@@ -329,12 +329,12 @@ int filter_recov_log_mds_ost_cb(struct llog_handle *llh,
 }
 
 static struct obd_llog_group *
-filter_find_olg_internal(struct filter_obd *filter, int group)
+ofd_find_olg_internal(struct filter_obd *ofd, int group)
 {
         struct obd_llog_group *olg;
 
-        LASSERT_SPIN_LOCKED(&filter->fo_llog_list_lock);
-        cfs_list_for_each_entry(olg, &filter->fo_llog_list, olg_list) {
+        LASSERT_SPIN_LOCKED(&ofd->fo_llog_list_lock);
+        cfs_list_for_each_entry(olg, &ofd->fo_llog_list, olg_list) {
                 if (olg->olg_seq == group)
                         RETURN(olg);
         }
@@ -343,23 +343,23 @@ filter_find_olg_internal(struct filter_obd *filter, int group)
 
 
 /**
- * Find the llog_group of the filter according to the group. If it can not
+ * Find the llog_group of the ofd according to the group. If it can not
  * find, create the llog_group, which only happens when mds is being synced
  * with OST.
  */
-struct obd_llog_group *filter_find_create_olg(struct obd_device *obd, int group)
+struct obd_llog_group *ofd_find_create_olg(struct obd_device *obd, int group)
 {
         struct obd_llog_group *olg = NULL;
-        struct filter_obd *filter;
+        struct filter_obd *ofd;
         int rc;
 
-        filter = &obd->u.filter;
+        ofd = &obd->u.filter;
 
         if (group == FID_SEQ_LLOG)
                 RETURN(&obd->obd_olg);
 
-        cfs_spin_lock(&filter->fo_llog_list_lock);
-        olg = filter_find_olg_internal(filter, group);
+        cfs_spin_lock(&ofd->fo_llog_list_lock);
+        olg = ofd_find_olg_internal(ofd, group);
         if (olg) {
                 if (olg->olg_initializing) {
                         GOTO(out_unlock, olg = ERR_PTR(-EBUSY));
@@ -372,28 +372,28 @@ struct obd_llog_group *filter_find_create_olg(struct obd_device *obd, int group)
                GOTO(out_unlock, olg = ERR_PTR(-ENOMEM));
 
         llog_group_init(olg, group);
-        cfs_list_add(&olg->olg_list, &filter->fo_llog_list);
+        cfs_list_add(&olg->olg_list, &ofd->fo_llog_list);
         olg->olg_initializing = 1;
-        cfs_spin_unlock(&filter->fo_llog_list_lock);
+        cfs_spin_unlock(&ofd->fo_llog_list_lock);
 
         rc = obd_llog_init(obd, olg, obd, NULL);
         if (rc) {
-               cfs_spin_lock(&filter->fo_llog_list_lock);
+               cfs_spin_lock(&ofd->fo_llog_list_lock);
                cfs_list_del(&olg->olg_list);
-               cfs_spin_unlock(&filter->fo_llog_list_lock);
+               cfs_spin_unlock(&ofd->fo_llog_list_lock);
                OBD_FREE_PTR(olg);
                GOTO(out, olg = ERR_PTR(-ENOMEM));
         }
-        cfs_spin_lock(&filter->fo_llog_list_lock);
+        cfs_spin_lock(&ofd->fo_llog_list_lock);
         olg->olg_initializing = 0;
-        cfs_spin_unlock(&filter->fo_llog_list_lock);
+        cfs_spin_unlock(&ofd->fo_llog_list_lock);
         CDEBUG(D_OTHER, "%s: new llog group %u (0x%p)\n",
               obd->obd_name, group, olg);
 out:
         RETURN(olg);
 
 out_unlock:
-        cfs_spin_unlock(&filter->fo_llog_list_lock);
+        cfs_spin_unlock(&ofd->fo_llog_list_lock);
         GOTO(out, olg);
 }
 

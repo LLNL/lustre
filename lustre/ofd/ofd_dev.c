@@ -48,20 +48,20 @@
 
 #include "ofd_internal.h"
 
-struct lu_object_operations filter_obj_ops;
-struct lu_context_key filter_thread_key;
+struct lu_object_operations ofd_obj_ops;
+struct lu_context_key ofd_thread_key;
 
-struct filter_intent_args {
+struct ofd_intent_args {
         struct ldlm_lock **victim;
         __u64 size;
         int *liblustre;
 };
 
-static enum interval_iter filter_intent_cb(struct interval_node *n,
+static enum interval_iter ofd_intent_cb(struct interval_node *n,
                                            void *args)
 {
         struct ldlm_interval *node = (struct ldlm_interval *)n;
-        struct filter_intent_args *arg = (struct filter_intent_args*)args;
+        struct ofd_intent_args *arg = (struct ofd_intent_args*)args;
         __u64 size = arg->size;
         struct ldlm_lock **v = arg->victim;
         struct ldlm_lock *lck;
@@ -98,7 +98,7 @@ static enum interval_iter filter_intent_cb(struct interval_node *n,
         return INTERVAL_ITER_CONT;
 }
 
-static int filter_intent_policy(struct ldlm_namespace *ns,
+static int ofd_intent_policy(struct ldlm_namespace *ns,
                                 struct ldlm_lock **lockp, void *req_cookie,
                                 ldlm_mode_t mode, int flags, void *data)
 {
@@ -111,7 +111,7 @@ static int filter_intent_policy(struct ldlm_namespace *ns,
         ldlm_error_t err;
         int idx, rc, tmpflags = 0, only_liblustre = 1;
         struct ldlm_interval_tree *tree;
-        struct filter_intent_args arg;
+        struct ofd_intent_args arg;
         __u32 repsize[3] = { [MSG_PTLRPC_BODY_OFF] = sizeof(struct ptlrpc_body),
                            [DLM_LOCKREPLY_OFF]   = sizeof(*rep),
                            [DLM_REPLY_REC_OFF]   = sizeof(*reply_lvb) };
@@ -200,7 +200,7 @@ static int filter_intent_policy(struct ldlm_namespace *ns,
                         continue;
 
                 interval_iterate_reverse(tree->lit_root,
-                                         filter_intent_cb, &arg);
+                                         ofd_intent_cb, &arg);
         }
         unlock_res(res);
 
@@ -223,7 +223,7 @@ static int filter_intent_policy(struct ldlm_namespace *ns,
         }
 
         /*
-         * This check is for lock taken in filter_prepare_destroy() that does
+         * This check is for lock taken in ofd_prepare_destroy() that does
          * not have l_glimpse_ast set. So the logic is: if there is a lock
          * with no l_glimpse_ast set, this object is being destroyed already.
          *
@@ -250,10 +250,10 @@ static int filter_intent_policy(struct ldlm_namespace *ns,
 }
 
 /* used by MGS to process specific configurations */
-static int filter_process_config(const struct lu_env *env,
+static int ofd_process_config(const struct lu_env *env,
                                  struct lu_device *d, struct lustre_cfg *cfg)
 {
-        struct filter_device *m = filter_dev(d);
+        struct ofd_device *m = ofd_dev(d);
         struct dt_device *dt_next = m->ofd_osd;
         struct lu_device *next = &dt_next->dd_lu_dev;
         int rc = 0;
@@ -263,7 +263,7 @@ static int filter_process_config(const struct lu_env *env,
         case LCFG_PARAM: {
                 struct lprocfs_static_vars lvars;
 
-                lprocfs_filter_init_vars(&lvars);
+                lprocfs_ofd_init_vars(&lvars);
                 rc = class_process_proc_param(PARAM_OST, lvars.obd_vars, cfg,
                                               d->ld_obd);
                 if (rc)
@@ -308,11 +308,11 @@ static int filter_process_config(const struct lu_env *env,
         RETURN(rc);
 }
 
-static struct lu_object *filter_object_alloc(const struct lu_env *env,
+static struct lu_object *ofd_object_alloc(const struct lu_env *env,
                                           const struct lu_object_header *hdr,
                                           struct lu_device *d)
 {
-        struct filter_object *of;
+        struct ofd_object *of;
 
         ENTRY;
 
@@ -326,16 +326,16 @@ static struct lu_object *filter_object_alloc(const struct lu_env *env,
                 lu_object_header_init(h);
                 lu_object_init(o, h, d);
                 lu_object_add_top(h, o);
-                o->lo_ops = &filter_obj_ops;
+                o->lo_ops = &ofd_obj_ops;
                 RETURN(o);
         } else
                 RETURN(NULL);
 }
 
-static int filter_object_init(const struct lu_env *env, struct lu_object *o,
+static int ofd_object_init(const struct lu_env *env, struct lu_object *o,
                               const struct lu_object_conf *conf)
 {
-        struct filter_device *d = filter_dev(o->lo_dev);
+        struct ofd_device *d = ofd_dev(o->lo_dev);
         struct lu_device  *under;
         struct lu_object  *below;
         int                rc = 0;
@@ -354,9 +354,9 @@ static int filter_object_init(const struct lu_env *env, struct lu_object *o,
         RETURN(rc);
 }
 
-static void filter_object_free(const struct lu_env *env, struct lu_object *o)
+static void ofd_object_free(const struct lu_env *env, struct lu_object *o)
 {
-        struct filter_object *of = filter_obj(o);
+        struct ofd_object *of = ofd_obj(o);
         struct lu_object_header *h;
         ENTRY;
 
@@ -370,7 +370,7 @@ static void filter_object_free(const struct lu_env *env, struct lu_object *o)
         EXIT;
 }
 
-static int filter_object_print(const struct lu_env *env, void *cookie,
+static int ofd_object_print(const struct lu_env *env, void *cookie,
                             lu_printer_t p, const struct lu_object *o)
 {
         return (*p)(env, cookie, LUSTRE_MDT_NAME"-object@%p", o);
@@ -378,10 +378,10 @@ static int filter_object_print(const struct lu_env *env, void *cookie,
 
 extern int ost_handle(struct ptlrpc_request *req);
 
-static int filter_start(const struct lu_env *env,
+static int ofd_start(const struct lu_env *env,
                         struct lu_device *dev)
 {
-        struct filter_device *d = filter_dev(dev);
+        struct ofd_device *d = ofd_dev(dev);
         struct lu_device     *next = &d->ofd_osd->dd_lu_dev;
         struct obd_device    *obd = dev->ld_obd;
         int rc;
@@ -399,19 +399,19 @@ static int filter_start(const struct lu_env *env,
         RETURN(rc);
 }
 
-static struct lu_device_operations filter_lu_ops = {
-        .ldo_object_alloc   = filter_object_alloc,
-        .ldo_process_config = filter_process_config,
-        .ldo_start          = filter_start,
+static struct lu_device_operations ofd_lu_ops = {
+        .ldo_object_alloc   = ofd_object_alloc,
+        .ldo_process_config = ofd_process_config,
+        .ldo_start          = ofd_start,
 };
 
-struct lu_object_operations filter_obj_ops = {
-        .loo_object_init    = filter_object_init,
-        .loo_object_free    = filter_object_free,
-        .loo_object_print   = filter_object_print
+struct lu_object_operations ofd_obj_ops = {
+        .loo_object_init    = ofd_object_init,
+        .loo_object_free    = ofd_object_free,
+        .loo_object_print   = ofd_object_print
 };
 
-static int filter_connect_to_next(const struct lu_env *env, struct filter_device *m,
+static int ofd_connect_to_next(const struct lu_env *env, struct ofd_device *m,
                                   const char *nextdev)
 {
         struct obd_connect_data *data = NULL;
@@ -452,10 +452,10 @@ out:
         RETURN(rc);
 }
 
-static int filter_stack_init(const struct lu_env *env,
-                             struct filter_device *m, struct lustre_cfg *cfg)
+static int ofd_stack_init(const struct lu_env *env,
+                             struct ofd_device *m, struct lustre_cfg *cfg)
 {
-        struct filter_thread_info *info = filter_info(env);
+        struct ofd_thread_info *info = ofd_info(env);
         int rc;
         ENTRY;
 
@@ -463,17 +463,17 @@ static int filter_stack_init(const struct lu_env *env,
         snprintf(info->fti_u.name, sizeof(info->fti_u.name),
                  "%s-dsk", lustre_cfg_string(cfg, 0));
 
-        rc = filter_connect_to_next(env, m, info->fti_u.name);
+        rc = ofd_connect_to_next(env, m, info->fti_u.name);
         if (rc)
                 RETURN(rc);
 
         RETURN(rc);
 }
 
-static void filter_stack_fini(const struct lu_env *env,
-                              struct filter_device *m, struct lu_device *top)
+static void ofd_stack_fini(const struct lu_env *env,
+                              struct ofd_device *m, struct lu_device *top)
 {
-        struct obd_device       *obd = filter_obd(m);
+        struct obd_device       *obd = ofd_obd(m);
         struct lustre_cfg_bufs   bufs;
         struct lustre_cfg       *lcfg;
         struct lu_device        *d = &m->ofd_dt_dev.dd_lu_dev;
@@ -509,17 +509,17 @@ static void filter_stack_fini(const struct lu_env *env,
         EXIT;
 }
 
-static int filter_procfs_init(struct filter_device *ofd)
+static int ofd_procfs_init(struct ofd_device *ofd)
 {
         struct lprocfs_static_vars lvars;
-        struct obd_device *obd = filter_obd(ofd);
+        struct obd_device *obd = ofd_obd(ofd);
         cfs_proc_dir_entry_t *entry;
         int rc = 0;
         ENTRY;
 
         /* lprocfs must be setup before the ofd so state can be safely added
          * to /proc incrementally as the ofd is setup */
-        lprocfs_filter_init_vars(&lvars);
+        lprocfs_ofd_init_vars(&lvars);
         rc = lprocfs_obd_setup(obd, lvars.obd_vars);
         if (rc) {
                 CERROR("%s: lprocfs_obd_setup failed: %d.\n",
@@ -527,7 +527,7 @@ static int filter_procfs_init(struct filter_device *ofd)
                 RETURN(rc);
         }
 
-        rc = lprocfs_alloc_obd_stats(obd, LPROC_FILTER_LAST);
+        rc = lprocfs_alloc_obd_stats(obd, LPROC_OFD_LAST);
         if (rc) {
                 CERROR("%s: lprocfs_alloc_obd_stats failed: %d.\n",
                        obd->obd_name, rc);
@@ -535,12 +535,12 @@ static int filter_procfs_init(struct filter_device *ofd)
         }
 
         /* Init obdofd private stats here */
-        lprocfs_counter_init(obd->obd_stats, LPROC_FILTER_READ_BYTES,
+        lprocfs_counter_init(obd->obd_stats, LPROC_OFD_READ_BYTES,
                              LPROCFS_CNTR_AVGMINMAX, "read_bytes", "bytes");
-        lprocfs_counter_init(obd->obd_stats, LPROC_FILTER_WRITE_BYTES,
+        lprocfs_counter_init(obd->obd_stats, LPROC_OFD_WRITE_BYTES,
                              LPROCFS_CNTR_AVGMINMAX, "write_bytes", "bytes");
 
-        rc = lproc_filter_attach_seqstat(obd);
+        rc = lproc_ofd_attach_seqstat(obd);
         if (rc) {
                 CERROR("%s: create seqstat failed: %d.\n", obd->obd_name, rc);
                 GOTO(free_obd_stats, rc);
@@ -573,9 +573,9 @@ obd_cleanup:
         return rc;
 }
 
-static int filter_procfs_fini(struct filter_device *ofd)
+static int ofd_procfs_fini(struct ofd_device *ofd)
 {
-        struct obd_device *obd = filter_obd(ofd);
+        struct obd_device *obd = ofd_obd(ofd);
 
         lprocfs_remove_proc_entry("clear", obd->obd_proc_exports_entry);
         lprocfs_free_per_client_stats(obd);
@@ -584,12 +584,12 @@ static int filter_procfs_fini(struct filter_device *ofd)
         return 0;
 }
 
-static int filter_init0(const struct lu_env *env, struct filter_device *m,
+static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
                         struct lu_device_type *ldt, struct lustre_cfg *cfg)
 {
         const char *dev = lustre_cfg_string(cfg, 0);
-        struct filter_thread_info *info = NULL;
-        struct filter_obd *filter;
+        struct ofd_thread_info *info = NULL;
+        struct filter_obd *ofd;
         struct obd_device *obd;
         struct dt_device  *next;
         int rc;
@@ -606,13 +606,13 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
                 RETURN(rc);
         LASSERT(env);
 
-        m->ofd_fmd_max_num = FILTER_FMD_MAX_NUM_DEFAULT;
-        m->ofd_fmd_max_age = FILTER_FMD_MAX_AGE_DEFAULT;
+        m->ofd_fmd_max_num = OFD_FMD_MAX_NUM_DEFAULT;
+        m->ofd_fmd_max_age = OFD_FMD_MAX_AGE_DEFAULT;
 
         cfs_spin_lock_init(&m->ofd_flags_lock);
         m->ofd_raid_degraded = 0;
         m->ofd_syncjournal = 0;
-        filter_slc_set(m);
+        ofd_slc_set(m);
 
         /* statfs data */
         cfs_spin_lock_init(&m->ofd_osfs_lock);
@@ -631,9 +631,9 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         cfs_rwlock_init(&m->ofd_sptlrpc_lock);
         sptlrpc_rule_set_init(&m->ofd_sptlrpc_rset);
 #else
-        filter = &obd->u.filter;
-        cfs_rwlock_init(&filter->fo_sptlrpc_lock);
-        sptlrpc_rule_set_init(&filter->fo_sptlrpc_rset);
+        ofd = &obd->u.filter;
+        cfs_rwlock_init(&ofd->fo_sptlrpc_lock);
+        sptlrpc_rule_set_init(&ofd->fo_sptlrpc_rset);
 #endif
 
         m->ofd_fl_oss_capa = 0;
@@ -645,14 +645,14 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         CFS_INIT_LIST_HEAD(&m->ofd_llog_list);
         cfs_spin_lock_init(&m->ofd_llog_list_lock);
         m->ofd_lcm = NULL;
-        m->ofd_dt_dev.dd_lu_dev.ld_ops = &filter_lu_ops;
+        m->ofd_dt_dev.dd_lu_dev.ld_ops = &ofd_lu_ops;
         m->ofd_dt_dev.dd_lu_dev.ld_obd = obd;
         /* set this lu_device to obd, because error handling need it */
         obd->obd_lu_dev = &m->ofd_dt_dev.dd_lu_dev;
 
-        rc = filter_procfs_init(m);
+        rc = ofd_procfs_init(m);
         if (rc) {
-                CERROR("Can't init filter lprocfs, rc %d\n", rc);
+                CERROR("Can't init ofd lprocfs, rc %d\n", rc);
                 RETURN(rc);
         }
 
@@ -668,11 +668,11 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
                 }
         }
 
-        info = filter_info_init(env, NULL);
+        info = ofd_info_init(env, NULL);
         LASSERT(info != NULL);
 
         /* init the stack */
-        rc = filter_stack_init(env, m, cfg);
+        rc = ofd_stack_init(env, m, cfg);
         if (rc) {
                 CERROR("Can't init device stack, rc %d\n", rc);
                 GOTO(err_fini_proc, rc);
@@ -689,8 +689,8 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
 
         dt_conf_get(env, m->ofd_osd, &m->ofd_dt_conf);
 
-        ldlm_register_intent(m->ofd_namespace, filter_intent_policy);
-        m->ofd_namespace->ns_lvbo = &filter_lvbo;
+        ldlm_register_intent(m->ofd_namespace, ofd_intent_policy);
+        m->ofd_namespace->ns_lvbo = &ofd_lvbo;
         m->ofd_namespace->ns_lvbp = m;
         /* set obd_namespace for compatibility with old code */
         obd->obd_namespace = m->ofd_namespace;
@@ -698,7 +698,7 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
         ptlrpc_init_client(LDLM_CB_REQUEST_PORTAL, LDLM_CB_REPLY_PORTAL,
                            "filter_ldlm_cb_client", &obd->obd_ldlm_client);
 
-        rc = filter_fs_setup(env, m, obd);
+        rc = ofd_fs_setup(env, m, obd);
         if (rc)
                 GOTO(err_free_ns, rc);
 
@@ -731,31 +731,31 @@ static int filter_init0(const struct lu_env *env, struct filter_device *m,
 
 err_fs_cleanup:
         lut_fini(env, &m->ofd_lut);
-        filter_fs_cleanup(env, m);
+        ofd_fs_cleanup(env, m);
 err_free_ns:
         ldlm_namespace_free(m->ofd_namespace, 0, obd->obd_force);
         obd->obd_namespace = m->ofd_namespace = NULL;
 err_stack_fini:
-        filter_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
+        ofd_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
 err_fini_proc:
-        filter_procfs_fini(m);
+        ofd_procfs_fini(m);
         return (rc);
 }
 
-static void filter_fini(const struct lu_env *env, struct filter_device *m)
+static void ofd_fini(const struct lu_env *env, struct ofd_device *m)
 {
-        struct obd_device *obd = filter_obd(m);
+        struct obd_device *obd = ofd_obd(m);
         struct lu_device  *d = &m->ofd_dt_dev.dd_lu_dev;
 
         target_recovery_fini(obd);
 #if 0
-        filter_obd_llog_cleanup(obd);
+        ofd_obd_llog_cleanup(obd);
 #endif
         obd_exports_barrier(obd);
         obd_zombie_barrier();
 
         lut_fini(env, &m->ofd_lut);
-        filter_fs_cleanup(env, m);
+        ofd_fs_cleanup(env, m);
 
         if (m->ofd_namespace != NULL) {
                 ldlm_namespace_free(m->ofd_namespace, NULL, d->ld_obd->obd_force);
@@ -771,35 +771,35 @@ static void filter_fini(const struct lu_env *env, struct filter_device *m)
         /* 
          * Finish the stack 
          */
-        filter_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
-        filter_procfs_fini(m);
+        ofd_stack_fini(env, m, &m->ofd_osd->dd_lu_dev);
+        ofd_procfs_fini(m);
         LASSERT(cfs_atomic_read(&d->ld_ref) == 0);
         EXIT;
 }
 
-static struct lu_device* filter_device_fini(const struct lu_env *env,
+static struct lu_device* ofd_device_fini(const struct lu_env *env,
                                             struct lu_device *d)
 {
         ENTRY;
-        filter_fini(env, filter_dev(d));
+        ofd_fini(env, ofd_dev(d));
         RETURN(NULL);
 }
 
-static struct lu_device *filter_device_free(const struct lu_env *env,
+static struct lu_device *ofd_device_free(const struct lu_env *env,
                                             struct lu_device *d)
 {
-        struct filter_device *m = filter_dev(d);
+        struct ofd_device *m = ofd_dev(d);
 
         dt_device_fini(&m->ofd_dt_dev);
         OBD_FREE_PTR(m);
         RETURN(NULL);
 }
 
-static struct lu_device *filter_device_alloc(const struct lu_env *env,
+static struct lu_device *ofd_device_alloc(const struct lu_env *env,
                                           struct lu_device_type *t,
                                           struct lustre_cfg *cfg)
 {
-        struct filter_device *m;
+        struct ofd_device *m;
         struct lu_device  *l;
         int rc;
 
@@ -809,9 +809,9 @@ static struct lu_device *filter_device_alloc(const struct lu_env *env,
 
         l = &m->ofd_dt_dev.dd_lu_dev;
         dt_device_init(&m->ofd_dt_dev, t);
-        rc = filter_init0(env, m, t, cfg);
+        rc = ofd_init0(env, m, t, cfg);
         if (rc != 0) {
-                filter_device_free(env, l);
+                ofd_device_free(env, l);
                 l = ERR_PTR(rc);
         }
 
@@ -819,11 +819,11 @@ static struct lu_device *filter_device_alloc(const struct lu_env *env,
 }
 
 /* thread context key constructor/destructor */
-LU_KEY_INIT_FINI(filter, struct filter_thread_info);
-static void filter_key_exit(const struct lu_context *ctx,
+LU_KEY_INIT_FINI(ofd, struct ofd_thread_info);
+static void ofd_key_exit(const struct lu_context *ctx,
                             struct lu_context_key *key, void *data)
 {
-        struct filter_thread_info *info = data;
+        struct ofd_thread_info *info = data;
         info->fti_exp = NULL;
         info->fti_env = NULL;
 
@@ -836,50 +836,50 @@ static void filter_key_exit(const struct lu_context *ctx,
         memset(&info->fti_attr, 0, sizeof info->fti_attr);
 }
 
-struct lu_context_key filter_thread_key = {
+struct lu_context_key ofd_thread_key = {
         .lct_tags = LCT_DT_THREAD,
-        .lct_init = filter_key_init,
-        .lct_fini = filter_key_fini,
-        .lct_exit = filter_key_exit
+        .lct_init = ofd_key_init,
+        .lct_fini = ofd_key_fini,
+        .lct_exit = ofd_key_exit
 };
 
 /* type constructor/destructor: mdt_type_init, mdt_type_fini */
-LU_TYPE_INIT_FINI(filter, &filter_thread_key);
+LU_TYPE_INIT_FINI(ofd, &ofd_thread_key);
 
-static struct lu_device_type_operations filter_device_type_ops = {
-        .ldto_init         = filter_type_init,
-        .ldto_fini         = filter_type_fini,
+static struct lu_device_type_operations ofd_device_type_ops = {
+        .ldto_init         = ofd_type_init,
+        .ldto_fini         = ofd_type_fini,
 
-        .ldto_start        = filter_type_start,
-        .ldto_stop         = filter_type_stop,
+        .ldto_start        = ofd_type_start,
+        .ldto_stop         = ofd_type_stop,
 
-        .ldto_device_alloc = filter_device_alloc,
-        .ldto_device_free  = filter_device_free,
-        .ldto_device_fini  = filter_device_fini
+        .ldto_device_alloc = ofd_device_alloc,
+        .ldto_device_free  = ofd_device_free,
+        .ldto_device_fini  = ofd_device_fini
 };
 
-static struct lu_device_type filter_device_type = {
+static struct lu_device_type ofd_device_type = {
         .ldt_tags     = LU_DEVICE_DT,
         .ldt_name     = LUSTRE_OST_NAME,
-        .ldt_ops      = &filter_device_type_ops,
+        .ldt_ops      = &ofd_device_type_ops,
         .ldt_ctx_tags = LCT_DT_THREAD
 };
 
-extern struct obd_ops filter_obd_ops;
+extern struct obd_ops ofd_obd_ops;
 
 int __init ofd_init(void)
 {
         struct lprocfs_static_vars lvars;
         int rc;
 
-        lprocfs_filter_init_vars(&lvars);
+        lprocfs_ofd_init_vars(&lvars);
 
         rc = ofd_fmd_init();
         if (rc)
                 return(rc);
 
-        rc = class_register_type(&filter_obd_ops, NULL, lvars.module_vars,
-                                 LUSTRE_OST_NAME, &filter_device_type);
+        rc = class_register_type(&ofd_obd_ops, NULL, lvars.module_vars,
+                                 LUSTRE_OST_NAME, &ofd_device_type);
         if (rc) {
                 ofd_fmd_exit();
         }
