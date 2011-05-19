@@ -116,6 +116,7 @@ struct ofd_device {
         /* last_rcvd file */
         struct lu_target         ofd_lut;
         struct dt_object        *ofd_last_group_file;
+        struct dt_object        *ofd_health_check_file;
 
         int                      ofd_subdir_count;
 
@@ -311,7 +312,7 @@ static inline struct ofd_thread_info * ofd_info(const struct lu_env *env)
 
 static inline
 struct ofd_thread_info * ofd_info_init(const struct lu_env *env,
-                                             struct obd_export *exp)
+                                       struct obd_export *exp)
 {
         struct ofd_thread_info *info;
 

@@ -260,12 +260,23 @@ int ofd_fs_setup(const struct lu_env *env, struct ofd_device *ofd,
         rc = ofd_server_data_init(env, ofd);
         LASSERT(rc == 0);
 
+        lu_local_obj_fid(&info->fti_fid, OFD_HEALTH_CHECK_OID);
+        memset(&info->fti_attr, 0, sizeof(info->fti_attr));
+        info->fti_attr.la_valid = LA_MODE;
+        info->fti_attr.la_mode = S_IFREG | 0666;
+
+        fo = ofd_object_find_or_create(env, ofd, &info->fti_fid,
+                                       &info->fti_attr);
+        LASSERT(!IS_ERR(fo));
+        ofd->ofd_health_check_file = ofd_object_child(fo);
+
         lu_local_obj_fid(&info->fti_fid, OFD_LAST_GROUP_OID);
         memset(&info->fti_attr, 0, sizeof(info->fti_attr));
         info->fti_attr.la_valid = LA_MODE;
         info->fti_attr.la_mode = S_IFREG | 0666;
 
-        fo = ofd_object_find_or_create(env, ofd, &info->fti_fid, &info->fti_attr);
+        fo = ofd_object_find_or_create(env, ofd, &info->fti_fid,
+                                       &info->fti_attr);
         LASSERT(!IS_ERR(fo));
         ofd->ofd_last_group_file = ofd_object_child(fo);
         rc = ofd_groups_init(env, ofd);
@@ -313,10 +324,15 @@ void ofd_fs_cleanup(const struct lu_env *env, struct ofd_device *ofd)
         /* Remove transaction callback */
         dt_txn_callback_del(ofd->ofd_osd, &ofd->ofd_txn_cb);
 
-        if (ofd->ofd_last_group_file)
+        if (ofd->ofd_last_group_file) {
                 lu_object_put(env, &ofd->ofd_last_group_file->do_lu);
+                ofd->ofd_last_group_file = NULL;
+        }
 
-        ofd->ofd_last_group_file = NULL;
+        if (ofd->ofd_health_check_file) {
+                lu_object_put(env, &ofd->ofd_health_check_file->do_lu);
+                ofd->ofd_health_check_file = NULL;
+        }
 
         ofd_free_capa_keys(ofd);
         cleanup_capa_hash(ofd->ofd_capa_hash);
