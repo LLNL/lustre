@@ -1153,11 +1153,6 @@ dont_check_exports:
         conn = *tmp;
 
         if (export->exp_imp_reverse != NULL) {
-                /* destroyed import can be still referenced in ctxt */
-                obd_set_info_async(req->rq_svc_thread->t_env, export,
-                                   sizeof(KEY_REVIMP_UPD), KEY_REVIMP_UPD,
-                                   0, NULL, NULL);
-
                 client_destroy_import(export->exp_imp_reverse);
         }
 
