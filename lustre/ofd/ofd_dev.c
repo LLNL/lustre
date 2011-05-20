@@ -679,7 +679,7 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         }
 
         snprintf(info->fti_u.name, sizeof(info->fti_u.name),
-                 "ofd-%p", m);
+                 "filter-%p", m);
         m->ofd_namespace = ldlm_namespace_new(obd, info->fti_u.name,
                                               LDLM_NAMESPACE_SERVER,
                                               LDLM_NAMESPACE_GREEDY,
@@ -696,7 +696,7 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         obd->obd_namespace = m->ofd_namespace;
 
         ptlrpc_init_client(LDLM_CB_REQUEST_PORTAL, LDLM_CB_REPLY_PORTAL,
-                           "ofd_ldlm_cb_client", &obd->obd_ldlm_client);
+                           "filter_ldlm_cb_client", &obd->obd_ldlm_client);
 
         rc = ofd_fs_setup(env, m, obd);
         if (rc)
