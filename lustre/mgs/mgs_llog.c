@@ -302,33 +302,7 @@ static int mgs_llog_create(const struct lu_env *env,
                            struct llog_handle **res,
                            char *name)
 {
-        struct thandle    *th;
-        int                rc;
-        ENTRY;
-
-        rc = llog_open_2(env, ctxt, res, NULL, name);
-        if (rc)
-                GOTO(out, rc);
-
-        if (!llog_exist_2(*res)) {
-
-                th = dt_trans_create(env, mgs->mgs_bottom);
-                if (IS_ERR(th))
-                        GOTO(out, rc = PTR_ERR(th));
-
-                rc = llog_declare_create_2(env, *res, th);
-                if (rc == 0) {
-                        rc = dt_trans_start_local(env, mgs->mgs_bottom, th);
-                        if (rc == 0)
-                                rc = llog_create_2(env, *res, th);
-                }
-
-                dt_trans_stop(env, mgs->mgs_bottom, th);
-                if (rc)
-                        llog_close_2(env, *res);
-        }
-out:
-        RETURN(rc);
+        return llog_open_create(env, ctxt, res, NULL, name);
 }
 
 /* fsdb->fsdb_sem is already held  in mgs_find_or_make_fsdb*/
