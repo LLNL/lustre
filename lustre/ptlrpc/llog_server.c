@@ -38,6 +38,7 @@
  * remote api for llog - server side
  *
  * Author: Andreas Dilger <adilger@clusterfs.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #define DEBUG_SUBSYSTEM S_LOG
@@ -49,8 +50,6 @@
 #include <obd_class.h>
 #include <lustre_log.h>
 #include <lustre_net.h>
-#include <libcfs/list.h>
-#include <lustre_fsfilt.h>
 
 #if defined(__KERNEL__) && defined(LUSTRE_LOG_SERVER)
 
@@ -58,13 +57,12 @@ int llog_origin_handle_create(struct ptlrpc_request *req)
 {
         struct obd_export    *exp = req->rq_export;
         struct obd_device    *obd = exp->exp_obd;
-        struct obd_device    *disk_obd;
         struct llog_handle   *loghandle;
         struct llogd_body    *body;
         struct llog_logid    *logid = NULL;
         struct llog_ctxt     *ctxt;
         char                 *name = NULL;
-        int                   rc, rc2;
+        int                   rc;
         ENTRY;
 
         body = req_capsule_client_get(&req->rq_pill, &RMF_LLOGD_BODY);
@@ -87,9 +85,8 @@ int llog_origin_handle_create(struct ptlrpc_request *req)
                        obd->obd_name, &obd->obd_olg, body->lgd_ctxt_idx, name);
                 RETURN(-ENODEV);
         }
-        disk_obd = ctxt->loc_exp->exp_obd;
 
-        rc = llog_create(ctxt, &loghandle, logid, name);
+        rc = llog_open_create(req->rq_svc_thread->t_env, ctxt, &loghandle, logid, name);
         if (rc)
                 GOTO(out_pop, rc);
 
@@ -100,27 +97,21 @@ int llog_origin_handle_create(struct ptlrpc_request *req)
         body = req_capsule_server_get(&req->rq_pill, &RMF_LLOGD_BODY);
         body->lgd_logid = loghandle->lgh_id;
 
-        GOTO(out_close, rc);
 out_close:
-        rc2 = llog_close(loghandle);
-        if (!rc)
-                rc = rc2;
+        llog_close_2(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
-        return rc;
+        RETURN(rc);
 }
 EXPORT_SYMBOL(llog_origin_handle_create);
 
 int llog_origin_handle_destroy(struct ptlrpc_request *req)
 {
-        struct obd_export    *exp = req->rq_export;
-        struct obd_device    *obd = exp->exp_obd;
-        struct obd_device    *disk_obd;
-        struct llog_handle   *loghandle;
-        struct llogd_body    *body;
-        struct llog_logid    *logid = NULL;
-        struct llog_ctxt     *ctxt;
-        int                   rc;
+        struct llogd_body *body;
+        struct llog_logid *logid = NULL;
+        struct llog_ctxt  *ctxt;
+        int                rc;
+
         ENTRY;
 
         body = req_capsule_client_get(&req->rq_pill, &RMF_LLOGD_BODY);
@@ -130,34 +121,15 @@ int llog_origin_handle_destroy(struct ptlrpc_request *req)
         if (body->lgd_logid.lgl_oid > 0)
                 logid = &body->lgd_logid;
 
-        ctxt = llog_get_context(obd, body->lgd_ctxt_idx);
+        LASSERT(body->lgd_llh_flags == LLOG_F_IS_PLAIN);
+        ctxt = llog_get_context(req->rq_export->exp_obd, body->lgd_ctxt_idx);
         if (ctxt == NULL)
                 RETURN(-ENODEV);
 
-        disk_obd = ctxt->loc_exp->exp_obd;
-
-        rc = llog_create(ctxt, &loghandle, logid, NULL);
-        if (rc)
-                GOTO(out_pop, rc);
-
         rc = req_capsule_server_pack(&req->rq_pill);
-        if (rc)
-                GOTO(out_close, rc = -ENOMEM);
-
-        body = req_capsule_server_get(&req->rq_pill, &RMF_LLOGD_BODY);
-        body->lgd_logid = loghandle->lgh_id;
-        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
-        if (rc)
-                GOTO(out_close, rc);
-        rc = llog_destroy(req->rq_svc_thread->t_env, loghandle);
-        if (rc)
-                GOTO(out_close, rc);
-        llog_free_handle(loghandle);
-        GOTO(out_close, rc);
-out_close:
-        if (rc)
-                llog_close(loghandle);
-out_pop:
+        /* erase only if no error and logid is valid */
+        if (rc == 0 && logid != NULL)
+                rc = llog_erase(req->rq_svc_thread->t_env, ctxt, logid, NULL);
         llog_ctxt_put(ctxt);
         return rc;
 }
@@ -165,46 +137,32 @@ EXPORT_SYMBOL(llog_origin_handle_destroy);
 
 int llog_origin_handle_next_block(struct ptlrpc_request *req)
 {
-        struct obd_export   *exp = req->rq_export;
-        struct obd_device   *obd = exp->exp_obd;
-        struct obd_device   *disk_obd;
         struct llog_handle  *loghandle;
-        struct llogd_body   *body;
-        struct llogd_body   *repbody;
+        struct llogd_body   *body,  *repbody;
         struct llog_ctxt    *ctxt;
         __u32                flags;
-        __u8                *buf;
         void                *ptr;
-        int                  rc, rc2;
+        int                  rc;
         ENTRY;
 
         body = req_capsule_client_get(&req->rq_pill, &RMF_LLOGD_BODY);
         if (body == NULL)
                 RETURN(-EFAULT);
 
-        OBD_ALLOC(buf, LLOG_CHUNK_SIZE);
-        if (!buf)
-                RETURN(-ENOMEM);
-
-        ctxt = llog_get_context(obd, body->lgd_ctxt_idx);
+        ctxt = llog_get_context(req->rq_export->exp_obd, body->lgd_ctxt_idx);
         if (ctxt == NULL)
-                GOTO(out_free, rc = -ENODEV);
-        disk_obd = ctxt->loc_exp->exp_obd;
+                RETURN(-ENODEV);
 
-        rc = llog_create(ctxt, &loghandle, &body->lgd_logid, NULL);
+        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle,
+                         &body->lgd_logid, NULL);
         if (rc)
                 GOTO(out_pop, rc);
 
+        if (!llog_exist_2(loghandle))
+                GOTO(out_close, rc = -ENOENT);
+
         flags = body->lgd_llh_flags;
         rc = llog_init_handle(loghandle, flags, NULL);
-        if (rc)
-                GOTO(out_close, rc);
-
-        memset(buf, 0, LLOG_CHUNK_SIZE);
-        rc = llog_next_block(req->rq_svc_thread->t_env,
-                             loghandle, &body->lgd_saved_index,
-                             body->lgd_index,
-                             &body->lgd_cur_offset, buf, LLOG_CHUNK_SIZE);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -218,61 +176,47 @@ int llog_origin_handle_next_block(struct ptlrpc_request *req)
         *repbody = *body;
 
         ptr = req_capsule_server_get(&req->rq_pill, &RMF_EADATA);
-        memcpy(ptr, buf, LLOG_CHUNK_SIZE);
-        GOTO(out_close, rc);
+
+        rc = llog_next_block(req->rq_svc_thread->t_env,
+                             loghandle, &repbody->lgd_saved_index,
+                             repbody->lgd_index, &repbody->lgd_cur_offset,
+                             ptr, LLOG_CHUNK_SIZE);
 out_close:
-        rc2 = llog_close(loghandle);
-        if (!rc)
-                rc = rc2;
+        llog_close_2(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
-out_free:
-        OBD_FREE(buf, LLOG_CHUNK_SIZE);
         return rc;
 }
 EXPORT_SYMBOL(llog_origin_handle_next_block);
 
 int llog_origin_handle_prev_block(struct ptlrpc_request *req)
 {
-        struct obd_export    *exp = req->rq_export;
-        struct obd_device    *obd = exp->exp_obd;
         struct llog_handle   *loghandle;
-        struct llogd_body    *body;
-        struct llogd_body    *repbody;
-        struct obd_device    *disk_obd;
+        struct llogd_body    *body, *repbody;
         struct llog_ctxt     *ctxt;
         __u32                 flags;
-        __u8                 *buf;
         void                 *ptr;
-        int                   rc, rc2;
+        int                   rc;
         ENTRY;
 
         body = req_capsule_client_get(&req->rq_pill, &RMF_LLOGD_BODY);
         if (body == NULL)
                 RETURN(-EFAULT);
 
-        OBD_ALLOC(buf, LLOG_CHUNK_SIZE);
-        if (!buf)
-                RETURN(-ENOMEM);
-
-        ctxt = llog_get_context(obd, body->lgd_ctxt_idx);
+        ctxt = llog_get_context(req->rq_export->exp_obd, body->lgd_ctxt_idx);
         if (ctxt == NULL)
-                GOTO(out_free, rc = -ENODEV);
+                RETURN(-ENODEV);
 
-        disk_obd = ctxt->loc_exp->exp_obd;
-
-        rc = llog_create(ctxt, &loghandle, &body->lgd_logid, NULL);
+        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle,
+                         &body->lgd_logid, NULL);
         if (rc)
                 GOTO(out_pop, rc);
 
+        if (!llog_exist_2(loghandle))
+                GOTO(out_close, rc = -ENOENT);
+
         flags = body->lgd_llh_flags;
         rc = llog_init_handle(loghandle, flags, NULL);
-        if (rc)
-                GOTO(out_close, rc);
-
-        memset(buf, 0, LLOG_CHUNK_SIZE);
-        rc = llog_prev_block(req->rq_svc_thread->t_env, loghandle,
-                             body->lgd_index, buf, LLOG_CHUNK_SIZE);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -286,17 +230,12 @@ int llog_origin_handle_prev_block(struct ptlrpc_request *req)
         *repbody = *body;
 
         ptr = req_capsule_server_get(&req->rq_pill, &RMF_EADATA);
-        memcpy(ptr, buf, LLOG_CHUNK_SIZE);
-        GOTO(out_close, rc);
+        rc = llog_prev_block(req->rq_svc_thread->t_env, loghandle,
+                             body->lgd_index, ptr, LLOG_CHUNK_SIZE);
 out_close:
-        rc2 = llog_close(loghandle);
-        if (!rc)
-                rc = rc2;
-
+        llog_close_2(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
-out_free:
-        OBD_FREE(buf, LLOG_CHUNK_SIZE);
         return rc;
 }
 EXPORT_SYMBOL(llog_origin_handle_prev_block);
@@ -305,13 +244,12 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
 {
         struct obd_export    *exp = req->rq_export;
         struct obd_device    *obd = exp->exp_obd;
-        struct obd_device    *disk_obd;
         struct llog_handle   *loghandle;
         struct llogd_body    *body;
         struct llog_log_hdr  *hdr;
         struct llog_ctxt     *ctxt;
         __u32                 flags;
-        int                   rc, rc2;
+        int                   rc;
         ENTRY;
 
         body = req_capsule_client_get(&req->rq_pill, &RMF_LLOGD_BODY);
@@ -322,9 +260,7 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         if (ctxt == NULL)
                 RETURN(-ENODEV);
 
-        disk_obd = ctxt->loc_exp->exp_obd;
-
-        rc = llog_create(ctxt, &loghandle, &body->lgd_logid, NULL);
+        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle, &body->lgd_logid, NULL);
         if (rc)
                 GOTO(out_pop, rc);
 
@@ -344,9 +280,7 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         *hdr = *loghandle->lgh_hdr;
         GOTO(out_close, rc);
 out_close:
-        rc2 = llog_close(loghandle);
-        if (!rc)
-                rc = rc2;
+        llog_close_2(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;
@@ -363,14 +297,10 @@ EXPORT_SYMBOL(llog_origin_handle_close);
 
 int llog_origin_handle_cancel(struct ptlrpc_request *req)
 {
-        struct obd_device *obd = req->rq_export->exp_obd;
-        int num_cookies, rc = 0, err, i, failed = 0;
-        struct obd_device *disk_obd;
         struct llog_cookie *logcookies;
         struct llog_ctxt *ctxt = NULL;
         struct llog_handle *cathandle;
-        struct inode *inode;
-        void *handle;
+        int num_cookies, rc = 0;
         ENTRY;
 
         logcookies = req_capsule_client_get(&req->rq_pill, &RMF_LOGCOOKIES);
@@ -381,62 +311,33 @@ int llog_origin_handle_cancel(struct ptlrpc_request *req)
                 RETURN(-EFAULT);
         }
 
-        ctxt = llog_get_context(obd, logcookies->lgc_subsys);
+        ctxt = llog_get_context(req->rq_export->exp_obd, logcookies->lgc_subsys);
         if (ctxt == NULL)
                 RETURN(-ENODEV);
 
-        disk_obd = ctxt->loc_exp->exp_obd;
-        for (i = 0; i < num_cookies; i++, logcookies++) {
-                cathandle = ctxt->loc_handle;
-                LASSERT(cathandle != NULL);
-                inode = cathandle->lgh_file->f_dentry->d_inode;
+        cathandle = ctxt->loc_handle;
+        LASSERT(cathandle != NULL);
 
-                handle = fsfilt_start_log(disk_obd, inode,
-                                          FSFILT_OP_CANCEL_UNLINK, NULL, 1);
-                if (IS_ERR(handle)) {
-                        CERROR("fsfilt_start_log() failed: %ld\n",
-                               PTR_ERR(handle));
-                        GOTO(pop_ctxt, rc = PTR_ERR(handle));
-                }
-
-                rc = llog_cat_cancel_records(cathandle, 1, logcookies);
-
+        rc = llog_cat_cancel_records_2(req->rq_svc_thread->t_env, cathandle,
+                                       num_cookies, logcookies);
+        /*
+         * Do not raise -ENOENT errors for resent rpcs. This rec already
+         * might be killed.
+         */
+        if (rc == -ENOENT &&
+            lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT) {
                 /*
-                 * Do not raise -ENOENT errors for resent rpcs. This rec already
-                 * might be killed.
+                 * Do not change this message, reply-single.sh test_59b
+                 * expects to find this in log.
                  */
-                if (rc == -ENOENT &&
-                    (lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT)) {
-                        /*
-                         * Do not change this message, reply-single.sh test_59b
-                         * expects to find this in log.
-                         */
-                        CDEBUG(D_RPCTRACE, "RESENT cancel req %p - ignored\n",
-                               req);
-                        rc = 0;
-                } else if (rc == 0) {
-                        CDEBUG(D_RPCTRACE, "Canceled %d llog-records\n",
-                               num_cookies);
-                }
-
-                err = fsfilt_commit(disk_obd, inode, handle, 0);
-                if (err) {
-                        CERROR("Error committing transaction: %d\n", err);
-                        if (!rc)
-                                rc = err;
-                        failed++;
-                        GOTO(pop_ctxt, rc);
-                } else if (rc)
-                        failed++;
+                CDEBUG(D_RPCTRACE, "RESENT cancel req %p - ignored\n", req);
+                rc = 0;
+        } else if (rc == 0) {
+                CDEBUG(D_RPCTRACE, "Canceled %d llog-records\n", num_cookies);
         }
-        GOTO(pop_ctxt, rc);
-pop_ctxt:
-        if (rc)
-                CERROR("Cancel %d of %d llog-records failed: %d\n",
-                       failed, num_cookies, rc);
 
         llog_ctxt_put(ctxt);
-        return rc;
+        RETURN(rc);
 }
 EXPORT_SYMBOL(llog_origin_handle_cancel);
 
