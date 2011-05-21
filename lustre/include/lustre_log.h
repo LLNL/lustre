@@ -985,36 +985,15 @@ static inline int llog_close(struct llog_handle *loghandle)
         RETURN(rc);
 }
 
-static inline int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
-                             struct llog_logid *logid, char *name)
-{
-        struct llog_handle *handle;
-        int rc = 0;
-        ENTRY;
-
-        if (name == NULL || strlen(name) == 0)
-                RETURN(rc);
-
-        rc = llog_open_2(env, ctxt, &handle, logid, name);
-        if (rc)
-                RETURN(rc);
-
-        if (llog_exist_2(handle)) {
-                rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
-                if (rc == 0) {
-                        rc = llog_destroy(env, handle);
-                        llog_free_handle(handle);
-                } else {
-                        llog_close_2(env, handle);
-                }
-        }
-        RETURN(rc);
-}
-
 int lustre_log_process(struct lustre_sb_info *lsi, char *logname,
                        struct config_llog_instance *cfg);
 int lustre_log_end(struct lustre_sb_info *lsi, char *logname,
                    struct config_llog_instance *cfg);
+int llog_open_create(const struct lu_env *env, struct llog_ctxt *ctxt,
+                     struct llog_handle **res, struct llog_logid *logid,
+                     char *name);
+int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
+               struct llog_logid *logid, char *name);
 
 /** @} log */
 

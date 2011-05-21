@@ -508,3 +508,68 @@ out:
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_reverse_process);
+
+int llog_open_create(const struct lu_env *env, struct llog_ctxt *ctxt,
+                     struct llog_handle **res, struct llog_logid *logid,
+                     char *name)
+{
+        struct thandle    *th;
+        int                rc;
+        ENTRY;
+
+        rc = llog_open_2(env, ctxt, res, logid, name);
+        if (rc)
+                RETURN(rc);
+
+        if (!llog_exist_2(*res)) {
+                struct dt_device *d;
+
+                d = lu2dt_dev((*res)->lgh_obj->do_lu.lo_dev);
+
+                th = dt_trans_create(env, d);
+                if (IS_ERR(th))
+                        GOTO(out, rc = PTR_ERR(th));
+
+                rc = llog_declare_create_2(env, *res, th);
+                if (rc == 0) {
+                        rc = dt_trans_start_local(env, d, th);
+                        if (rc == 0)
+                                rc = llog_create_2(env, *res, th);
+                }
+                dt_trans_stop(env, d, th);
+out:
+                if (rc)
+                        llog_close_2(env, *res);
+        }
+        RETURN(rc);
+}
+EXPORT_SYMBOL(llog_open_create);
+
+int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
+               struct llog_logid *logid, char *name)
+{
+        struct llog_handle *handle;
+        int rc = 0;
+        ENTRY;
+
+        /* nothing to erase */
+        if (name == NULL && logid == NULL)
+                RETURN(0);
+
+        rc = llog_open_2(env, ctxt, &handle, logid, name);
+        if (rc)
+                RETURN(rc);
+
+        if (llog_exist_2(handle)) {
+                rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
+                if (rc == 0) {
+                        rc = llog_destroy(env, handle);
+                        llog_free_handle(handle);
+                        RETURN(rc);
+                }
+        }
+        llog_close_2(env, handle);
+        RETURN(rc);
+}
+EXPORT_SYMBOL(llog_erase);
+

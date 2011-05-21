@@ -172,7 +172,7 @@ static int llog_client_destroy(const struct lu_env *env, struct llog_handle *log
 
         ptlrpc_request_set_replen(req);
         rc = ptlrpc_queue_wait(req);
-        
+
         ptlrpc_req_finished(req);
 err_exit:
         LLOG_CLIENT_EXIT(loghandle->lgh_ctxt, imp);
@@ -198,7 +198,7 @@ static int llog_client_next_block(const struct lu_env *env,
                                         LLOG_ORIGIN_HANDLE_NEXT_BLOCK);
         if (req == NULL)
                 GOTO(err_exit, rc =-ENOMEM);
-                
+
         body = req_capsule_client_get(&req->rq_pill, &RMF_LLOGD_BODY);
         body->lgd_logid = loghandle->lgh_id;
         body->lgd_ctxt_idx = loghandle->lgh_ctxt->loc_idx - 1;
