@@ -519,7 +519,8 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         RETURN(rc);
 }
 
-static int osp_sync_process_record(struct osp_device *d,
+static int osp_sync_process_record(const struct lu_env *env,
+                                   struct osp_device *d,
                                    struct llog_handle *llh,
                                    struct llog_rec_hdr *rec)
 {
@@ -541,8 +542,8 @@ static int osp_sync_process_record(struct osp_device *d,
                 }
 
                 /* cancel any generation record */
-                rc = llog_cat_cancel_records(llh->u.phd.phd_cat_handle, 1,
-                                             &cookie);
+                rc = llog_cat_cancel_records_2(env, llh->u.phd.phd_cat_handle,
+                                               1, &cookie);
 
                 return rc;
         }
@@ -705,7 +706,7 @@ static int osp_sync_process_queues(const struct lu_env *env,
                          * processing till we can send this request
                          */
                         {
-                                rc = osp_sync_process_record(d, llh, rec);
+                                rc = osp_sync_process_record(env, d, llh, rec);
                                 /*
                                  * XXX: probably different handling is needed
                                  * for some bugs, like immediate exit or if
