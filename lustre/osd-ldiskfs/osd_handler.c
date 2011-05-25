@@ -1458,13 +1458,13 @@ static int osd_declare_punch(const struct lu_env *env, struct dt_object *dt,
         RETURN(0);
 }
 
-
 static int osd_punch(const struct lu_env *env, struct dt_object *dt,
                      __u64 start, __u64 end, struct thandle *th,
                      struct lustre_capa *capa)
 {
         struct osd_thandle *oh;
         struct osd_object  *obj = osd_dt_obj(dt);
+        struct inode       *inode = obj->oo_inode;
         handle_t           *h;
         tid_t               tid;
         int                 rc, rc2 = 0;
@@ -1482,7 +1482,14 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
 
         tid = oh->ot_handle->h_transaction->t_tid;
 
-        rc = vmtruncate(obj->oo_inode, start);
+        rc = vmtruncate(inode, start);
+
+        /*
+         * For a partial-page truncate, flush the page to disk immediately to
+         * avoid data corruption during direct disk write.  b=17397
+         */
+        if (rc == 0 && (start & ~CFS_PAGE_MASK) != 0)
+                rc = filemap_fdatawrite_range(inode->i_mapping, start, start+1);
 
         h = journal_current_handle();
         LASSERT(h != NULL);
@@ -1502,7 +1509,7 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
                 }
         }
 
-        RETURN(rc == 0 ? rc2 : 0);
+        RETURN(rc == 0 ? rc2 : rc);
 }
 
 struct dentry * osd_child_dentry_by_inode(const struct lu_env *env,

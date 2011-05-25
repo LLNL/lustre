@@ -621,13 +621,13 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                 if (lb[i].file_offset + lb[i].len > isize)
                         isize = lb[i].file_offset + lb[i].len;
 
-                /* preceding filemap_write_and_wait() should have clean pages */
-#if 0
-                /* XXX */
-                if (fo->fo_writethrough_cache)
-#endif
-                clear_page_dirty_for_io(lb[i].page);
+                /*
+                 * Since write and truncate are serialized by oo_sem, even
+                 * partial-page truncate should not leave dirty pages in the
+                 * page cache.
+                 */
                 LASSERT(!PageDirty(lb[i].page));
+
                 SetPageUptodate(lb[i].page);
 
                 filter_iobuf_add_page(iobuf, lb[i].page);
