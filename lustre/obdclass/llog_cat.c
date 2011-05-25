@@ -636,13 +636,21 @@ int llog_cat_process_thread(void *data)
                 rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
                 if (rc)
                         RETURN(rc);
+        } else {
+                /* XXX: env for network llog processing */
         }
 
         logid = *(struct llog_logid *)(args->lpca_arg);
-        rc = llog_create(ctxt, &llh, &logid, NULL);
+        rc = llog_open_2(&env, ctxt, &llh, &logid, NULL);
         if (rc) {
-                CERROR("llog_create() failed %d\n", rc);
+                CERROR("Cannot open llog "LPX64":%x (%d)\n",
+                       logid.lgl_oid, logid.lgl_ogen, rc);
                 GOTO(out, rc);
+        }
+        if (!llog_exist_2(llh)) {
+                CERROR("No such llog "LPX64":%x (%d)\n",
+                       logid.lgl_oid, logid.lgl_ogen, rc);
+                GOTO(release_llh, rc);
         }
         rc = llog_init_handle(llh, LLOG_F_IS_CAT, NULL);
         if (rc) {
@@ -663,7 +671,6 @@ int llog_cat_process_thread(void *data)
          * Make sure that all cached data is sent.
          */
         llog_sync(ctxt, NULL);
-        GOTO(release_llh, rc);
 release_llh:
         rc = llog_cat_put(llh);
         if (rc)
@@ -671,8 +678,7 @@ release_llh:
 out:
         llog_ctxt_put(ctxt);
         OBD_FREE_PTR(args);
-        if (dt)
-                lu_env_fini(&env);
+        lu_env_fini(&env);
         return rc;
 }
 EXPORT_SYMBOL(llog_cat_process_thread);
@@ -706,25 +712,15 @@ static int llog_cat_reverse_process_cb(const struct lu_env *env,
         RETURN(rc);
 }
 
-int llog_cat_reverse_process(struct llog_handle *cat_llh,
+int llog_cat_reverse_process(const struct lu_env *env,
+                             struct llog_handle *cat_llh,
                              llog_cb_t cb, void *data)
 {
         struct llog_process_data d;
         struct llog_process_cat_data cd;
         struct llog_log_hdr *llh = cat_llh->lgh_hdr;
-        struct dt_device    *dt = NULL;
-        struct lu_env        env;
         int rc;
         ENTRY;
-
-        LASSERT(cat_llh->lgh_ctxt);
-        LASSERT(cat_llh->lgh_ctxt->loc_obd);
-        if (cat_llh->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt) {
-                dt = cat_llh->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt;
-                rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-                if (rc)
-                        RETURN(rc);
-        }
 
         LASSERT(llh->llh_flags & LLOG_F_IS_CAT);
         d.lpd_data = data;
@@ -736,23 +732,21 @@ int llog_cat_reverse_process(struct llog_handle *cat_llh,
 
                 cd.lpcd_first_idx = 0;
                 cd.lpcd_last_idx = cat_llh->lgh_last_idx;
-                rc = llog_reverse_process(&env, cat_llh, llog_cat_reverse_process_cb,
+                rc = llog_reverse_process(env, cat_llh, llog_cat_reverse_process_cb,
                                           &d, &cd);
                 if (rc != 0)
                         GOTO(out, rc);
 
                 cd.lpcd_first_idx = le32_to_cpu(llh->llh_cat_idx);
                 cd.lpcd_last_idx = 0;
-                rc = llog_reverse_process(&env, cat_llh, llog_cat_reverse_process_cb,
+                rc = llog_reverse_process(env, cat_llh, llog_cat_reverse_process_cb,
                                           &d, &cd);
         } else {
-                rc = llog_reverse_process(&env, cat_llh, llog_cat_reverse_process_cb,
+                rc = llog_reverse_process(env, cat_llh, llog_cat_reverse_process_cb,
                                           &d, NULL);
         }
 
 out:
-        if (dt)
-                lu_env_fini(&env);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cat_reverse_process);
