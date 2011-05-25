@@ -506,7 +506,7 @@ static int llog_test_5(struct obd_device *obd)
 
         CWARN("5f: print plain log entries reversely.. expect 6\n");
         plain_counter = 0;
-        rc = llog_cat_reverse_process(llh, plain_print_cb, "foobar");
+        rc = llog_cat_reverse_process(NULL, llh, plain_print_cb, "foobar");
         if (rc) {
                 CERROR("5f: reversely process with plain_print_cb failed: %d\n", rc);
                 GOTO(out, rc);
