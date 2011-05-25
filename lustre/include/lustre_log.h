@@ -185,8 +185,6 @@ int llog_cat_add_rec(struct llog_handle *, struct llog_rec_hdr *,
 int llog_cat_add_rec_2(const struct lu_env *, struct llog_handle *,
                        struct llog_rec_hdr *, struct llog_cookie *, void *,
                        struct thandle *);
-int llog_cat_cancel_records(struct llog_handle *cathandle, int count,
-                            struct llog_cookie *cookies);
 int llog_cat_cancel_records_2(const struct lu_env *, struct llog_handle *, int,
                             struct llog_cookie *cookies);
 int __llog_cat_process(const struct lu_env *, struct llog_handle *cat_llh,

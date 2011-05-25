@@ -320,7 +320,7 @@ static int llog_test_4(struct obd_device *obd)
                 GOTO(ctxt_release, rc);
 
         CWARN("4c: cancel 1 log record\n");
-        rc = llog_cat_cancel_records(cath, 1, &cookie);
+        rc = llog_cat_cancel_records_2(NULL, cath, 1, &cookie);
         if (rc) {
                 CERROR("4c: cancel 1 catalog based record failed: %d\n", rc);
                 GOTO(out, rc);
@@ -424,7 +424,7 @@ static int llog_cancel_rec_cb(const struct lu_env *env, struct llog_handle *llh,
         cookie.lgc_lgl = llh->lgh_id;
         cookie.lgc_index = rec->lrh_index;
 
-        llog_cat_cancel_records(llh->u.phd.phd_cat_handle, 1, &cookie);
+        llog_cat_cancel_records_2(env, llh->u.phd.phd_cat_handle, 1, &cookie);
         i++;
         if (i == LLOG_TEST_RECNUM)
                 RETURN(-4711);
