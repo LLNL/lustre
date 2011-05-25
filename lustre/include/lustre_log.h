@@ -187,12 +187,15 @@ int llog_cat_add_rec_2(const struct lu_env *, struct llog_handle *,
                        struct thandle *);
 int llog_cat_cancel_records_2(const struct lu_env *, struct llog_handle *, int,
                             struct llog_cookie *cookies);
-int __llog_cat_process(const struct lu_env *, struct llog_handle *cat_llh,
-                       llog_cb_t cb, void *data, int startcat, int startidx, int fork);
-int llog_cat_process(const struct lu_env *, struct llog_handle *, llog_cb_t, void *,
-                     int, int);
+int __llog_cat_process(const struct lu_env *env, struct llog_handle *cat_llh,
+                       llog_cb_t cb, void *data, int startcat, int startidx,
+                       int fork);
+int llog_cat_process(const struct lu_env *env, struct llog_handle *cat_llh,
+                     llog_cb_t cb, void *data, int startcat, int startidx);
 int llog_cat_process_thread(void *data);
-int llog_cat_reverse_process(struct llog_handle *cat_llh, llog_cb_t cb, void *data);
+int llog_cat_reverse_process(const struct lu_env *env,
+                             struct llog_handle *cat_llh, llog_cb_t cb,
+                             void *data);
 int llog_cat_set_first_idx(struct llog_handle *cathandle, int index);
 
 /* llog_obd.c */
