@@ -177,7 +177,7 @@ struct llog_process_cat_args {
         void                *lpca_arg;
 };
 
-int llog_cat_put(struct llog_handle *cathandle);
+int llog_cat_close(const struct lu_env *env,struct llog_handle *cathandle);
 int llog_cat_declare_add_rec(const struct lu_env *env,
                              struct llog_handle *cathandle,
                              struct llog_rec_hdr *rec,

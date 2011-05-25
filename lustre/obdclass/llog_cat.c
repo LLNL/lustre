@@ -201,7 +201,7 @@ out:
         RETURN(rc);
 }
 
-int llog_cat_put(struct llog_handle *cathandle)
+int llog_cat_close(const struct lu_env *env, struct llog_handle *cathandle)
 {
         struct llog_handle *loghandle, *n;
         int rc;
@@ -211,13 +211,13 @@ int llog_cat_put(struct llog_handle *cathandle)
                                      u.phd.phd_entry) {
                 /* unlink open-not-created llogs */
                 cfs_list_del_init(&loghandle->u.phd.phd_entry);
-                if (llog_close(loghandle))
+                if (llog_close_2(env, loghandle))
                         CERROR("error closing loghandle\n");
         }
-        rc = llog_close(cathandle);
+        rc = llog_close_2(env, cathandle);
         RETURN(rc);
 }
-EXPORT_SYMBOL(llog_cat_put);
+EXPORT_SYMBOL(llog_cat_close);
 
 /**
  * lockdep markers for nested struct llog_handle::lgh_lock locking.
@@ -672,9 +672,9 @@ int llog_cat_process_thread(void *data)
          */
         llog_sync(ctxt, NULL);
 release_llh:
-        rc = llog_cat_put(llh);
+        rc = llog_cat_close(&env, llh);
         if (rc)
-                CERROR("llog_cat_put() failed %d\n", rc);
+                CERROR("llog_cat_close() failed %d\n", rc);
 out:
         llog_ctxt_put(ctxt);
         OBD_FREE_PTR(args);

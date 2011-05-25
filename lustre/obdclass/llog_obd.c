@@ -446,7 +446,7 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
                                                index,cathandle->lgh_id.lgl_oid);
                         }
                 }
-                llog_cat_put(ctxt->loc_handle);
+                llog_cat_close(&env, ctxt->loc_handle);
         }
         lu_env_fini(&env);
         RETURN(0);
