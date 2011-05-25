@@ -390,7 +390,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 if (!(handle->lgh_hdr->llh_flags & LLOG_F_IS_CAT))
                         GOTO(out_close, err = -EINVAL);
 
-                err = llog_cat_cancel_records(handle, 1, &cookie);
+                err = llog_cat_cancel_records_2(&env, handle, 1, &cookie);
                 GOTO(out_close, err);
         }
         case OBD_IOC_LLOG_REMOVE: {

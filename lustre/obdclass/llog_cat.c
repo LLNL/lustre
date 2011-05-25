@@ -42,6 +42,7 @@
  *   if an OST or MDS fails it need only look at log(s) relevant to itself
  *
  * Author: Andreas Dilger <adilger@clusterfs.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #define DEBUG_SUBSYSTEM S_LOG
@@ -380,7 +381,7 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
                         }
                 }
                 cfs_up_write(&cathandle->lgh_lock);
-        
+
         } else if (cathandle->u.chd.chd_next_log == NULL) {
                         /* declare next plain llog */
                 cfs_down_write(&cathandle->lgh_lock);
@@ -478,11 +479,12 @@ EXPORT_SYMBOL(llog_cat_add_rec);
 int llog_cat_cancel_records_2(const struct lu_env *env, struct llog_handle *cathandle,
                               int count, struct llog_cookie *cookies)
 {
-        int i, index, rc = 0;
+        int i, index, rc = 0, failed = 0;
         ENTRY;
 
         cfs_down_write_nested(&cathandle->lgh_lock, LLOGH_CAT);
         for (i = 0; i < count; i++, cookies++) {
+                int lrc;
                 struct llog_handle *loghandle;
                 struct llog_logid *lgl = &cookies->lgc_lgl;
 
@@ -493,10 +495,10 @@ int llog_cat_cancel_records_2(const struct lu_env *env, struct llog_handle *cath
                 }
 
                 cfs_down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
-                rc = llog_cancel_rec(env, loghandle, cookies->lgc_index);
+                lrc = llog_cancel_rec(env, loghandle, cookies->lgc_index);
                 cfs_up_write(&loghandle->lgh_lock);
 
-                if (rc == 1) {          /* log has been destroyed */
+                if (lrc == 1) { /* log has been destroyed */
                         index = loghandle->u.phd.phd_cookie.lgc_index;
                         if (cathandle->u.chd.chd_current_log == loghandle)
                                 cathandle->u.chd.chd_current_log = NULL;
@@ -504,47 +506,26 @@ int llog_cat_cancel_records_2(const struct lu_env *env, struct llog_handle *cath
 
                         LASSERT(index);
                         llog_cat_set_first_idx(cathandle, index);
-                        rc = llog_cancel_rec(env, cathandle, index);
-                        if (rc == 0)
+                        lrc = llog_cancel_rec(env, cathandle, index);
+                        if (lrc == 0)
                                 CDEBUG(D_RPCTRACE,"cancel plain log at index %u"
                                        " of catalog "LPX64"\n",
                                        index, cathandle->lgh_id.lgl_oid);
+                } else if (lrc == -ENOENT) {
+                        if (rc == 0) /* ENOENT shouldn't rewrite any error */
+                                rc = lrc;
+                } else if (lrc < 0) {
+                        failed++;
+                        rc = lrc;
                 }
         }
         cfs_up_write(&cathandle->lgh_lock);
-
+        if (rc)
+                CERROR("Cancel %d of %d llog-records failed: %d\n",
+                       failed, count, rc);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cat_cancel_records_2);
-
-int llog_cat_cancel_records(struct llog_handle *cathandle, int count,
-                            struct llog_cookie *cookies)
-{
-        struct llog_ctxt *ctxt;
-        struct dt_device *dt;
-        struct lu_env     env;
-        int               rc;
-
-        ctxt = cathandle->lgh_ctxt;
-        LASSERT(ctxt);
-        LASSERT(ctxt->loc_exp);
-
-        dt = ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
-
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                GOTO(out, rc);
-        }
-        rc = llog_cat_cancel_records_2(&env, cathandle, count, cookies);
-
-out:
-        lu_env_fini(&env);
-
-        return rc;
-}
-EXPORT_SYMBOL(llog_cat_cancel_records);
 
 int llog_cat_process_cb(const struct lu_env *env, struct llog_handle *cat_llh,
                         struct llog_rec_hdr *rec, void *data)
