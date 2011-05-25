@@ -363,7 +363,7 @@ static int llog_test_4(struct obd_device *obd)
 
  out:
         CWARN("4f: put newly-created catalog\n");
-        rc = llog_cat_put(cath);
+        rc = llog_cat_close(NULL, cath);
 ctxt_release:
         llog_ctxt_put(ctxt);
         if (rc)
@@ -519,7 +519,7 @@ static int llog_test_5(struct obd_device *obd)
  out:
         CWARN("5: close re-opened catalog\n");
         if (llh)
-                rc = llog_cat_put(llh);
+                rc = llog_cat_close(NULL, llh);
         if (rc)
                 CERROR("1b: close log %s failed: %d\n", name, rc);
         llog_ctxt_put(ctxt);

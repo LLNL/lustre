@@ -1321,7 +1321,7 @@ static int mdc_changelog_send_thread(void *csdata)
 out:
         cfs_put_file(cs->cs_fp);
         if (llh)
-                llog_cat_put(llh);
+                llog_cat_close(NULL, llh);
         if (ctxt)
                 llog_ctxt_put(ctxt);
         if (cs->cs_buf)

@@ -125,7 +125,7 @@ cleanup:
         switch(cleanup_phase) {
 #ifdef __KERNEL__
         case 7:
-                lut_mod_exit();
+                llog_recov_fini();
 #endif
         case 6:
                 sptlrpc_fini();
