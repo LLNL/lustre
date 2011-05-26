@@ -1823,6 +1823,11 @@ static int __osd_object_create(struct osd_thread_info *info,
 
         int result;
 
+        /*
+         * we drop umask so that permissions we pass are not affected
+         */
+        current->fs->umask = 0;
+
         result = osd_create_type_f(dof->dof_type)(info, obj, attr, hint, dof,
                                                   th);
         if (result == 0) {
