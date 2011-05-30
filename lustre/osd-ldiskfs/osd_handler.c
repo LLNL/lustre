@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  *
  * Copyright (c) 2011 Whamcloud, Inc.
@@ -787,6 +788,19 @@ static int osd_object_print(const struct lu_env *env, void *cookie,
                     d ? d->id_ops->id_name : "plain");
 }
 
+/**
+ * Estimate space needed for file creations. We assume the largest filename
+ * which is 2^64 - 1, hence a filename of 20 chars.
+ * This is 28 bytes per object which is 28MB for 1M objects ... no so bad.
+ */
+#ifdef __LDISKFS_DIR_REC_LEN
+#define PER_OBJ_USAGE __LDISKFS_DIR_REC_LEN(20)
+#else
+#define PER_OBJ_USAGE LDISKFS_DIR_REC_LEN(20)
+#endif
+
+#define GRANT_FOR_LOCAL_OIDS 32 /* 128kB for last_rcvd, quota files, ... */
+
 /*
  * Concurrency: shouldn't matter.
  */
@@ -796,6 +810,7 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
         struct osd_device *osd = osd_dt_dev(d);
         struct super_block *sb = osd_sb(osd);
         int result = 0;
+        obd_size blocks_used, objects_est;
         cfs_kstatfs_t kfs;
 
         kfs.f_frsize = 0;
@@ -807,7 +822,40 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
         if (sb->s_flags & MS_RDONLY)
                 osfs->os_state = OS_STATE_READONLY;
 
-        return result;
+        /* Reserve a small amount of space for local objects like last_rcvd,
+         * llog, quota files, ... */
+        if (osfs->os_bavail <= GRANT_FOR_LOCAL_OIDS) {
+                osfs->os_bavail = 0;
+                return 0;
+        }
+        osfs->os_bavail -= GRANT_FOR_LOCAL_OIDS;
+
+        /* Object creations consume data blocks to store directory entries
+         * Use mean object size to estimate how many objects will fill the
+         * remaining blocks available for use in the filesystem:
+         *
+         * objects_est = blocks_avail * (inodes_used / blocks_used);
+         * inodes_used = (osfs->os_files - osfs->os_ffree); */
+        blocks_used = osfs->os_blocks - osfs->os_bfree;
+        objects_est = osfs->os_bavail * (osfs->os_files - osfs->os_ffree);
+        if (objects_est && blocks_used) {
+                do_div(objects_est, blocks_used);
+                if (objects_est > osfs->os_ffree)
+                        objects_est = osfs->os_ffree;
+                osfs->os_bavail -= min_t(obd_size, osfs->os_bavail,
+                                         (objects_est * PER_OBJ_USAGE)
+                                                       >> sb->s_blocksize_bits);
+        }
+
+        /** Take out metadata overhead for indirect blocks */
+        osfs->os_bavail -= osfs->os_bavail >> (sb->s_blocksize_bits - 3);
+
+        /**
+         * If delayed allocation is used one day, ext4_statfs() already takes
+         * into account space reservation via sbi->s_dirtyblocks_counter
+         */
+
+        return 0;
 }
 
 /*
@@ -820,13 +868,16 @@ static void osd_conf_get(const struct lu_env *env,
         /*
          * XXX should be taken from not-yet-existing fs abstraction layer.
          */
-        param->ddp_max_name_len  = LDISKFS_NAME_LEN;
-        param->ddp_max_nlink     = LDISKFS_LINK_MAX;
-        param->ddp_block_shift   = osd_sb(osd_dt_dev(dev))->s_blocksize_bits;
+        param->ddp_max_name_len   = LDISKFS_NAME_LEN;
+        param->ddp_max_nlink      = LDISKFS_LINK_MAX;
+        param->ddp_block_shift    = osd_sb(osd_dt_dev(dev))->s_blocksize_bits;
         /* XXX: remove when new llog/mountconf over osd are ready -bzzz */
-        param->ddp_mnt           = osd_dt_dev(dev)->od_mnt;
-        param->ddp_mount_type    = LDD_MT_LDISKFS;
-        param->ddp_maxbytes      = sb->s_maxbytes;
+        param->ddp_mnt            = osd_dt_dev(dev)->od_mnt;
+        param->ddp_mount_type     = LDD_MT_LDISKFS;
+        param->ddp_maxbytes       = sb->s_maxbytes;
+        /* Unlike DMU, we don't need an error margin for ldiskfs since the
+         * overhead estimate is fairly accurate */
+        param->ddp_grant_reserved = 0;
 }
 
 /**

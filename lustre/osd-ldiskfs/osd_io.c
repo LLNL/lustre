@@ -357,7 +357,6 @@ static int osd_map_remote_to_local(loff_t offset, ssize_t len, int *nrpages,
                 lb->flags = 0;
                 lb->page = NULL;
                 lb->rc = 0;
-                lb->lnb_grant_used = 4096;
 
                 LASSERTF(plen <= len, "plen %u, len %lld\n", plen,
                          (long long) len);
@@ -471,7 +470,7 @@ static int osd_put_bufs(const struct lu_env *env, struct dt_object *dt,
 }
 
 static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
-                struct niobuf_local *lb, int npages, unsigned long *used)
+                          struct niobuf_local *lb, int npages)
 {
         struct osd_thread_info *oti = osd_oti_get(env);
         struct filter_iobuf *iobuf = &oti->oti_iobuf;

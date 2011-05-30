@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -98,10 +99,9 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                                struct niobuf_local *res,
                                struct obd_trans_info *oti)
 {
-        unsigned long used = 0;
-        obd_size left;
         struct ofd_object *fo;
         int i, j, k, rc = 0, tot_bytes = 0;
+        int from_grant = 1;
 
         ENTRY;
         LASSERT(env != NULL);
@@ -162,6 +162,8 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                         res[j+k].flags = nb[i].flags;
                         if (!(nb[i].flags & OBD_BRW_ASYNC))
                                 oti->oti_sync_write = 1;
+                        if (!(nb[i].flags & OBD_BRW_FROM_GRANT))
+                                from_grant = 0;
                 }
                 j += rc;
                 LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
@@ -170,31 +172,16 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
         *nr_local = j;
         LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
 
-        cfs_mutex_down(&ofd->ofd_grant_sem);
-        ofd_grant_incoming(env, exp, oa);
-        left = ofd_grant_space_left(env, exp);
-
-        rc = ofd_grant_check(env, exp, oa, res, *nr_local, &left, &used);
-
-        /* XXX: how do we calculate used ? */
-
-        /* do not zero out oa->o_valid as it is used in ofd_commitrw_write()
-         * for setting UID/GID and fid EA in first write time. */
-        /* If OBD_FL_SHRINK_GRANT is set, the client just returned us some grant
-         * so no sense in allocating it some more. We either return the grant
-         * back to the client if we have plenty of space or we don't return
-         * anything if we are short. This was decided in ofd_grant_incoming*/
-        if (oa->o_valid & OBD_MD_FLGRANT &&
-            (!(oa->o_valid & OBD_MD_FLFLAGS) ||
-             !(oa->o_flags & OBD_FL_SHRINK_GRANT)))
-                oa->o_grant = ofd_grant(env, exp, oa->o_grant,
-                                           oa->o_undirty, left);
-        cfs_mutex_up(&ofd->ofd_grant_sem);
+        /**
+         * check grant, can return ENOSPC if writes not done from grant
+         * cache (flag OBD_BRW_FROM_GRANT not set) and not enough free space
+         * remains.
+         */
+        rc = ofd_grant_prepare_write(env, exp, oa, res, *nr_local, from_grant);
         if (rc == 0) {
                 lprocfs_counter_add(ofd_obd(ofd)->obd_stats,
                                     LPROC_OFD_WRITE_BYTES, tot_bytes);
-                rc = dt_write_prep(env, ofd_object_child(fo), res,
-                                   *nr_local, &used);
+                rc = dt_write_prep(env, ofd_object_child(fo), res, *nr_local);
         }
 
         if (unlikely(rc != 0)) {
@@ -249,17 +236,10 @@ int ofd_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
                 rc = ofd_auth_capa(ofd, &info->fti_fid, oa->o_seq,
                                       capa, CAPA_OPC_OSS_READ);
                 if (rc == 0) {
-                        if (oa && oa->o_valid & OBD_MD_FLGRANT) {
-                                cfs_mutex_down(&ofd->ofd_grant_sem);
-                                ofd_grant_incoming(env, exp, oa);
-                                if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
-                                    !(oa->o_flags & OBD_FL_SHRINK_GRANT))
-                                        oa->o_grant = 0;
-                                cfs_mutex_up(&ofd->ofd_grant_sem);
-                        }
+                        ofd_grant_prepare_read(env, exp, oa);
                         rc = ofd_preprw_read(env, ofd, &info->fti_fid,
-                                                &info->fti_attr, obj->ioo_bufcnt,
-                                                nb, nr_local, res);
+                                             &info->fti_attr, obj->ioo_bufcnt,
+                                             nb, nr_local, res);
                         obdo_from_la(oa, &info->fti_attr, LA_ATIME);
                 }
         } else {
@@ -296,7 +276,7 @@ static int
 ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
                       struct lu_fid *fid, struct lu_attr *la,
                       struct filter_fid *ff, int objcount,
-                      int niocount, struct niobuf_local *res, 
+                      int niocount, struct niobuf_local *res,
                       struct obd_trans_info *oti, int old_rc)
 {
         struct ofd_thread_info *info = ofd_info(env);
@@ -397,7 +377,7 @@ out_stop:
                 goto retry;
         }
 out:
-        ofd_grant_commit(info->fti_exp, niocount, res);
+        ofd_grant_commit(env, info->fti_exp, old_rc);
         dt_bufs_put(env, o, res, niocount);
         ofd_read_unlock(env, fo);
         ofd_object_put(env, fo);

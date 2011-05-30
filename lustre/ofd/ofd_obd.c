@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -50,7 +51,6 @@ static int ofd_parse_connect_data(const struct lu_env *env,
                                      struct obd_connect_data *data)
 {
         struct ofd_device *ofd = ofd_exp(exp);
-        struct filter_export_data *fed = &exp->exp_filter_data;
         int rc = 0;
 
         if (!data)
@@ -76,23 +76,8 @@ static int ofd_parse_connect_data(const struct lu_env *env,
         }
 #endif
 
-        if (exp->exp_connect_flags & OBD_CONNECT_GRANT) {
-                obd_size left, want;
-
-                cfs_mutex_down(&ofd->ofd_grant_sem);
-                left = ofd_grant_space_left(env, exp);
-                want = data->ocd_grant;
-                ofd_grant(env, exp, fed->fed_grant, want, left);
-                data->ocd_grant = fed->fed_grant;
-                cfs_mutex_up(&ofd->ofd_grant_sem);
-
-                CDEBUG(D_CACHE, "%s: cli %s/%p ocd_grant: %d want: "
-                       LPU64" left: "LPU64"\n", exp->exp_obd->obd_name,
-                       exp->exp_client_uuid.uuid, exp,
-                       data->ocd_grant, want, left);
-
-                ofd->ofd_tot_granted_clients ++;
-        }
+        if (exp->exp_connect_flags & OBD_CONNECT_GRANT)
+                data->ocd_grant = ofd_grant_connect(env, exp, data->ocd_grant);
 
         if (data->ocd_connect_flags & OBD_CONNECT_INDEX) {
                 struct lr_server_data *lsd = &ofd->ofd_fsd;
@@ -383,12 +368,10 @@ static int ofd_set_info_async(struct obd_export *exp, __u32 keylen,
                 rc = lu_env_init(&env, LCT_DT_THREAD);
                 if (rc)
                         RETURN(rc);
-                ofd_info_init(&env, exp);
-                /* handle shrink grant */
-                cfs_mutex_down(&ofd->ofd_grant_sem);
-                ofd_grant_incoming(&env, exp, &body->oa);
-                cfs_mutex_up(&ofd->ofd_grant_sem);
 
+                ofd_info_init(&env, exp);
+                /** handle grant shrink, similar to a read request */
+                ofd_grant_prepare_read(&env, exp, &body->oa);
                 lu_env_fini(&env);
         } else {
                 CERROR("Invalid key %s\n", (char*)key);
@@ -491,52 +474,119 @@ static int ofd_get_info(struct obd_export *exp, __u32 keylen, void *key,
         RETURN(rc);
 }
 
+/** helper function for statfs, also used by grant code */
+int ofd_statfs_internal(const struct lu_env *env, struct ofd_device *ofd,
+                        struct obd_statfs *osfs, __u64 max_age, int *from_cache)
+{
+        int rc;
+
+        cfs_spin_lock(&ofd->ofd_osfs_lock);
+        if (cfs_time_before_64(ofd->ofd_osfs_age, max_age) || max_age == 0) {
+                obd_size unstable;
+
+                /* statfs data are too old, get up-to-date one.
+                 * we must be cautious here since multiple threads might be
+                 * willing to update statfs data concurrently and we must
+                 * grant that cached statfs data are always consistent */
+
+                if (ofd->ofd_statfs_inflight == 0)
+                        /* clear inflight counter if no users, although it would
+                         * take a while to overflow this 64-bit counter ... */
+                        ofd->ofd_osfs_inflight = 0;
+                /* notify ofd_grant_commit() that we want to track writes
+                 * completed as of now */
+                ofd->ofd_statfs_inflight++;
+                /* record value of inflight counter before running statfs to
+                 * compute the diff once statfs is completed */
+                unstable = ofd->ofd_osfs_inflight;
+                cfs_spin_unlock(&ofd->ofd_osfs_lock);
+
+                /* statfs can sleep ... hopefully not for too long since we can
+                 * call it fairly often as space fills up */
+                rc = dt_statfs(env, ofd->ofd_osd, osfs);
+                if (unlikely(rc))
+                        return rc;
+
+                cfs_spin_lock(&ofd->ofd_grant_lock);
+                cfs_spin_lock(&ofd->ofd_osfs_lock);
+                /* calculate how much space was written while we released the
+                 * ofd_osfs_lock */
+                unstable = ofd->ofd_osfs_inflight - unstable;
+                ofd->ofd_osfs_unstable = 0;
+                if (unstable) {
+                        /* some writes completed while we were running statfs
+                         * w/o the ofd_osfs_lock. Those ones got added to
+                         * the cached statfs data that we are about to crunch.
+                         * Take them into account in the new statfs data */
+                        osfs->os_bavail -= min_t(obd_size,
+                                                 osfs->os_bavail,
+                                                unstable >> ofd->ofd_blockbits);
+                        /* However, we don't really know if those writes got
+                         * accounted in the statfs call, so tell
+                         * ofd_grant_space_left() there is some uncertainty
+                         * on the accounting of those writes.
+                         * The purpose is to prevent spurious error messages in
+                         * ofd_grant_space_left() since those writes might be
+                         * accounted twice. */
+                        ofd->ofd_osfs_unstable += unstable;
+                }
+                /* similarly, there is some uncertainty on write requests
+                 * between prepare & commit */
+                ofd->ofd_osfs_unstable += ofd->ofd_tot_pending;
+                cfs_spin_unlock(&ofd->ofd_grant_lock);
+
+                /* finally udpate cached statfs data */
+                ofd->ofd_osfs = *osfs;
+                ofd->ofd_osfs_age = cfs_time_current_64();
+
+                ofd->ofd_statfs_inflight--; /* stop tracking */
+                if (ofd->ofd_statfs_inflight == 0)
+                        ofd->ofd_osfs_inflight = 0;
+                cfs_spin_unlock(&ofd->ofd_osfs_lock);
+
+                if (from_cache)
+                        *from_cache = 0;
+        } else {
+                /* use cached statfs data */
+                *osfs = ofd->ofd_osfs;
+                cfs_spin_unlock(&ofd->ofd_osfs_lock);
+                if (from_cache)
+                        *from_cache = 1;
+        }
+        return 0;
+}
+
 static int ofd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
                       __u64 max_age, __u32 flags)
 {
         struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
         struct lu_env env;
-        int rc, blockbits;
+        int rc;
         ENTRY;
 
         rc = lu_env_init(&env, LCT_DT_THREAD);
         if (rc)
                 RETURN(rc);
 
-        /** cache statfs information for 1s */
-        if (cfs_time_before_64(ofd->ofd_osfs_age,
-                               cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS))) {
-                /** statfs data are too old, get up-to-date one */
-                rc = dt_statfs(&env, ofd->ofd_osd, osfs);
-                if (unlikely(rc))
-                        GOTO(out, rc);
-                cfs_spin_lock(&ofd->ofd_osfs_lock);
-                ofd->ofd_osfs = *osfs;
-                ofd->ofd_osfs_age = cfs_time_current_64();
-                cfs_spin_unlock(&ofd->ofd_osfs_lock);
-        } else {
-                /** use cached statfs data */
-                cfs_spin_lock(&ofd->ofd_osfs_lock);
-                *osfs = ofd->ofd_osfs;
-                cfs_spin_unlock(&ofd->ofd_osfs_lock);
-        }
+        rc = ofd_statfs_internal(&env, ofd, osfs, max_age, NULL);
+        if (unlikely(rc))
+                GOTO(out, rc);
 
         /* at least try to account for cached pages.  its still racy and
          * might be under-reporting if clients haven't announced their
          * caches with brw recently */
 
-        LASSERTF(IS_PO2(osfs->os_bsize), "%u\n", osfs->os_bsize);
-        blockbits = cfs_fls(osfs->os_bsize) - 1;
-
         CDEBUG(D_SUPER | D_CACHE, "blocks cached "LPU64" granted "LPU64
                " pending "LPU64" free "LPU64" avail "LPU64"\n",
                ofd->ofd_tot_dirty, ofd->ofd_tot_granted, ofd->ofd_tot_pending,
-               osfs->os_bfree << blockbits, osfs->os_bavail << blockbits);
+               osfs->os_bfree << ofd->ofd_blockbits,
+               osfs->os_bavail << ofd->ofd_blockbits);
 
+        osfs->os_bavail -= min_t(obd_size, osfs->os_bavail,
+                                 ofd_grant_reserved(ofd, osfs->os_bavail) +
+                                 ((ofd->ofd_tot_dirty + ofd->ofd_tot_pending +
+                                   osfs->os_bsize - 1) >> ofd->ofd_blockbits));
         ofd_grant_sanity_check(obd, __FUNCTION__);
-        osfs->os_bavail -= min(osfs->os_bavail, GRANT_FOR_LLOG +
-                        ((ofd->ofd_tot_dirty + ofd->ofd_tot_pending +
-                          osfs->os_bsize - 1) >> blockbits));
         CDEBUG(D_CACHE, LPU64" blocks: "LPU64" free, "LPU64" avail; "
                LPU64" objects: "LPU64" free; state %x\n",
                osfs->os_blocks, osfs->os_bfree, osfs->os_bavail,

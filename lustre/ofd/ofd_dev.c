@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -591,6 +592,7 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         struct ofd_thread_info *info = NULL;
         struct filter_obd *ofd;
         struct obd_device *obd;
+        struct obd_statfs *osfs;
         int rc;
         ENTRY;
 
@@ -615,10 +617,12 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         /* statfs data */
         cfs_spin_lock_init(&m->ofd_osfs_lock);
         m->ofd_osfs_age = cfs_time_shift_64(-1000);
+        m->ofd_osfs_unstable = 0;
+        m->ofd_statfs_inflight = 0;
+        m->ofd_osfs_inflight = 0;
 
         /* grant data */
         cfs_spin_lock_init(&m->ofd_grant_lock);
-        cfs_sema_init(&m->ofd_grant_sem, 1);
         m->ofd_tot_dirty = 0;
         m->ofd_tot_granted = 0;
         m->ofd_tot_pending = 0;
@@ -673,6 +677,20 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
                 GOTO(err_fini_proc, rc);
         }
 
+        /* populate cached statfs data */
+        osfs = &ofd_info(env)->fti_u.osfs;
+        rc = ofd_statfs_internal(env, m, osfs, 0, NULL);
+        if (rc != 0) {
+                CERROR("%s: can't get statfs data, rc %d\n", obd->obd_name, rc);
+                GOTO(err_stack_fini, rc);
+        }
+        if (!IS_PO2(osfs->os_bsize)) {
+                CERROR("%s: blocksize (%d) is not a power of 2\n",
+                       obd->obd_name, osfs->os_bsize);
+                GOTO(err_stack_fini, rc = -EPROTO);
+        }
+        m->ofd_blockbits = cfs_fls(osfs->os_bsize) - 1;
+
         snprintf(info->fti_u.name, sizeof(info->fti_u.name),
                  "filter-%p", m);
         m->ofd_namespace = ldlm_namespace_new(obd, info->fti_u.name,
@@ -683,6 +701,14 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
                 GOTO(err_stack_fini, rc = -ENOMEM);
 
         dt_conf_get(env, m->ofd_osd, &m->ofd_dt_conf);
+
+        /* Allow at most ddp_grant_reserved% of the available filesystem space
+         * to be granted to clients, so that any errors in the grant overhead
+         * calculations do not allow granting more space to clients than can be
+         * written. Assumes that in aggregate the grant overhead calculations do
+         * not have more than ddp_grant_reserved% estimation error in them. */
+        m->ofd_grant_ratio =
+                        ofd_grant_ratio_conv(m->ofd_dt_conf.ddp_grant_reserved);
 
         ldlm_register_intent(m->ofd_namespace, ofd_intent_policy);
         m->ofd_namespace->ns_lvbo = &ofd_lvbo;

@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -76,6 +77,8 @@ struct dt_device_param {
         void              *ddp_mnt; /* XXX: old code can retrieve mnt -bzzz */
         int                ddp_mount_type;
         unsigned long long ddp_maxbytes;
+        /* percentage of available space to reserve for grant error margin */
+        int                ddp_grant_reserved;
 };
 
 /**
@@ -482,8 +485,7 @@ struct dt_body_operations {
          * precondition: dt_object_exists(dt);
          */
         int (*dbo_write_prep)(const struct lu_env *env, struct dt_object *dt,
-                              struct niobuf_local *lb, int nr,
-                              unsigned long *used);
+                              struct niobuf_local *lb, int nr);
         /*
          * precondition: dt_object_exists(dt);
          */
@@ -1031,13 +1033,12 @@ static inline int dt_bufs_put(const struct lu_env *env, struct dt_object *d,
 }
 
 static inline int dt_write_prep(const struct lu_env *env, struct dt_object *d,
-                                struct niobuf_local *l, int n,
-                                unsigned long *used)
+                                struct niobuf_local *l, int n)
 {
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_write_prep);
-        return d->do_body_ops->dbo_write_prep(env, d, l, n, used);
+        return d->do_body_ops->dbo_write_prep(env, d, l, n);
 }
 
 static inline int dt_declare_write_commit(const struct lu_env *env,
