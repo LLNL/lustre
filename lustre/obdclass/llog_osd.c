@@ -96,20 +96,6 @@ struct llog_superblock {
 static CFS_LIST_HEAD(lsb_list_head);
 static CFS_DEFINE_MUTEX(lsb_list_mutex);
 
-static void logid_to_fid(struct llog_logid *id, struct lu_fid *fid)
-{
-        fid->f_seq = id->lgl_oseq;
-        fid->f_oid = id->lgl_oid;
-        fid->f_ver = 0;
-}
-
-static void fid_to_logid(struct lu_fid *fid, struct llog_logid *id)
-{
-        id->lgl_oseq = fid->f_seq;
-        id->lgl_oid = fid->f_oid;
-        id->lgl_ogen = 0;
-}
-
 struct llog_osd_object {
         struct lu_object_header llo_header;
         struct dt_object        llo_obj;
