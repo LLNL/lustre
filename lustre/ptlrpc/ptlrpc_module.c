@@ -349,7 +349,7 @@ EXPORT_SYMBOL(ptlrpcd_add_req);
 EXPORT_SYMBOL(ptlrpcd_wake);
 
 /* llogd.c */
-EXPORT_SYMBOL(llog_origin_handle_create);
+EXPORT_SYMBOL(llog_origin_handle_open);
 EXPORT_SYMBOL(llog_origin_handle_destroy);
 EXPORT_SYMBOL(llog_origin_handle_next_block);
 EXPORT_SYMBOL(llog_origin_handle_prev_block);
