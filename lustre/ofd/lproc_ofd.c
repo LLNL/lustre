@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -79,7 +80,7 @@ static int lprocfs_ofd_rd_tot_granted(char *page, char **start, off_t off,
 }
 
 static int lprocfs_ofd_rd_tot_pending(char *page, char **start, off_t off,
-                                         int count, int *eof, void *data)
+                                      int count, int *eof, void *data)
 {
         struct obd_device *obd = (struct obd_device *)data;
         struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
@@ -87,6 +88,46 @@ static int lprocfs_ofd_rd_tot_pending(char *page, char **start, off_t off,
         LASSERT(obd != NULL);
         *eof = 1;
         return snprintf(page, count, LPU64"\n", ofd->ofd_tot_pending);
+}
+
+static int lprocfs_ofd_rd_grant_ratio(char *page, char **start, off_t off,
+                                      int count, int *eof, void *data)
+{
+        struct obd_device *obd = (struct obd_device *)data;
+        struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
+
+        LASSERT(obd != NULL);
+        *eof = 1;
+        return snprintf(page, count, "%d%%\n",
+                        (int) ofd_grant_reserved(ofd, 100));
+}
+
+static int lprocfs_ofd_wr_grant_ratio(struct file *file, const char *buffer,
+                                      unsigned long count, void *data)
+{
+        struct obd_device *obd = (struct obd_device *)data;
+        struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
+        int val;
+        int rc;
+
+        rc = lprocfs_write_helper(buffer, count, &val);
+        if (rc)
+                return rc;
+
+        if (val > 100 || val < 0)
+                return -EINVAL;
+
+        if (val == 0)
+                CWARN("%s: disabling grant error margin\n", obd->obd_name);
+        if (val > 50)
+                CWARN("%s: setting grant error margin >50%%, be warned that "
+                      "a huge part of the free space is now reserved for grants"
+                      "\n", obd->obd_name);
+
+        cfs_spin_lock(&ofd->ofd_grant_lock);
+        ofd->ofd_grant_ratio = ofd_grant_ratio_conv(val);
+        cfs_spin_unlock(&ofd->ofd_grant_lock);
+        return count;
 }
 
 static int lprocfs_ofd_rd_last_id(char *page, char **start, off_t off,
@@ -378,6 +419,8 @@ static struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
         { "tot_dirty",    lprocfs_ofd_rd_tot_dirty,   0, 0 },
         { "tot_pending",  lprocfs_ofd_rd_tot_pending, 0, 0 },
         { "tot_granted",  lprocfs_ofd_rd_tot_granted, 0, 0 },
+        { "grant_ratio", lprocfs_ofd_rd_grant_ratio,
+                         lprocfs_ofd_wr_grant_ratio, 0, 0 },
         { "recovery_status",    lprocfs_obd_rd_recovery_status, 0, 0 },
         { "recovery_time_soft", lprocfs_obd_rd_recovery_time_soft,
                                 lprocfs_obd_wr_recovery_time_soft, 0},
