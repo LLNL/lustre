@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  *
  * Copyright (c) 2011, 2012, Whamcloud, Inc.
@@ -82,6 +83,8 @@ struct dt_device_param {
         unsigned           ddp_block_shift;
         int                ddp_mount_type;
         unsigned long long ddp_maxbytes;
+        /* percentage of available space to reserve for grant error margin */
+        int                ddp_grant_reserved;
         mntopt_t           ddp_mntopts;
         unsigned           ddp_max_ea_size;
 };

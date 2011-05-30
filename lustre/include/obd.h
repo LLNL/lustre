@@ -737,12 +737,19 @@ struct niobuf_local {
         __u32           page_offset;
         __u32           len;
         __u32           flags;
+        int             rc;
         cfs_page_t     *page;
         void           *obj;
-        int             lnb_grant_used;
-        unsigned long   bytes;
-        int             rc;
 };
+
+ /* XXX compat macros until struct niobuf_local fields are renamed */
+#define lnb_file_offset file_offset
+#define lnb_page_offset page_offset
+#define lnb_len         len
+#define lnb_flags       flags
+#define lnb_rc          rc
+#define lnb_page        page
+#define lnb_obj         obj
 
 #define LUSTRE_FLD_NAME         "fld"
 #define LUSTRE_SEQ_NAME         "seq"

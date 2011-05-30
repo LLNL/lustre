@@ -22,10 +22,6 @@
 #define OFD_INCOMPAT_SUPP (OBD_INCOMPAT_GROUPS | OBD_INCOMPAT_OST | \
                               OBD_INCOMPAT_COMMON_LR)
 
-#define OFD_GRANT_CHUNK (2ULL * PTLRPC_MAX_BRW_SIZE)
-#define OFD_GRANT_SHRINK_LIMIT (16ULL * OFD_GRANT_CHUNK)
-#define GRANT_FOR_LLOG      16
-
 #define OFD_RECOVERY_TIMEOUT (obd_timeout * 5 * CFS_HZ / 2) /* *waves hands* */
 
 extern struct file_operations ofd_per_export_stats_fops;
@@ -128,18 +124,38 @@ struct ofd_device {
         cfs_spinlock_t           ofd_objid_lock;
         unsigned long            ofd_destroys_in_progress;
 
+        /* protect all statfs-related counters */
+        cfs_spinlock_t           ofd_osfs_lock;
         /* statfs optimization: we cache a bit  */
         struct obd_statfs        ofd_osfs;
         __u64                    ofd_osfs_age;
-        cfs_spinlock_t           ofd_osfs_lock;
+        int                      ofd_blockbits;
+        /* writes which might be be accounted twice in ofd_osfs.os_bavail */
+        obd_size                 ofd_osfs_unstable;
+
+        /* counters used during statfs update, protected by ofd_osfs_lock.
+         * record when some statfs refresh are in progress */
+        int                      ofd_statfs_inflight;
+        /* track writes completed while statfs refresh is underway.
+         * tracking is only effective when ofd_statfs_inflight > 1 */
+        obd_size                 ofd_osfs_inflight;
 
         /* grants: all values in bytes */
+        /* grant lock to protect all grant counters */
         cfs_spinlock_t           ofd_grant_lock;
+        /* total amount of dirty data reported by clients in incoming obdo */
         obd_size                 ofd_tot_dirty;
+        /* sum of filesystem space granted to clients for async writes */
         obd_size                 ofd_tot_granted;
+        /* grant used by I/Os in progress (between prepare and commit) */
         obd_size                 ofd_tot_pending;
+        /* free space threshold over which we stop granting space to clients
+         * ofd_grant_ratio is stored as a fixed-point fraction using
+         * OFD_GRANT_RATIO_SHIFT of the remaining free space, not in percentage
+         * values */
+        int                      ofd_grant_ratio;
+        /* number of clients using grants */
         int                      ofd_tot_granted_clients;
-        cfs_semaphore_t          ofd_grant_sem;
 
         /* ofd mod data: ofd_device wide values */
         int                      ofd_fmd_max_num; /* per ofd ofd_mod_data */
@@ -290,6 +306,9 @@ struct ofd_thread_info {
         struct dt_object_format    fti_dof;
         struct lu_buf              fti_buf;
         loff_t                     fti_off;
+
+        /* Space used by the I/O, used by grant code */
+        unsigned long              fti_used;
 };
 
 extern struct lu_context_key ofd_txn_thread_key;
@@ -441,25 +460,32 @@ int ofd_attr_get(const struct lu_env *env, struct ofd_object *fo,
                  struct lu_attr *la);
 
 /* ofd_grants.c */
-void ofd_grant_discard(struct obd_export *exp);
+#define OFD_GRANT_RATIO_SHIFT 8
+static inline __u64 ofd_grant_reserved(struct ofd_device *ofd, obd_size bavail)
+{
+        return (bavail * ofd->ofd_grant_ratio) >> OFD_GRANT_RATIO_SHIFT;
+}
+static inline int ofd_grant_ratio_conv(int percentage)
+{
+        return (percentage << OFD_GRANT_RATIO_SHIFT) / 100;
+}
 void ofd_grant_sanity_check(struct obd_device *obd, const char *func);
-void ofd_grant_incoming(const struct lu_env *env, struct obd_export *exp,
-                        struct obdo *oa);
-obd_size ofd_grant_space_left(const struct lu_env *env,
-                              struct obd_export *exp);
-int ofd_grant_client_calc(struct obd_export *exp, obd_size *left,
-                          unsigned long *used, unsigned long *ungranted);
-int ofd_grant_check(const struct lu_env *env, struct obd_export *exp, 
-                    struct obdo *oa, struct niobuf_local *lnb, int nrpages,
-                    obd_size *left, unsigned long *used);
-long ofd_grant(const struct lu_env *env, struct obd_export *exp,
-               obd_size current_grant, obd_size want,
-               obd_size fs_space_left);
-void ofd_grant_commit(struct obd_export *exp, int niocount,
-                      struct niobuf_local *res);
+long ofd_grant_connect(const struct lu_env *env, struct obd_export *exp,
+                       obd_size want);
+void ofd_grant_discard(struct obd_export *exp);
+void ofd_grant_prepare_read(const struct lu_env *env,
+                            struct obd_export *exp, struct obdo *oa);
+int ofd_grant_prepare_write(const struct lu_env *env,
+                            struct obd_export *exp, struct obdo *oa,
+                            struct niobuf_local *res, int niocount,
+                            int sync_write);
+void ofd_grant_commit(const struct lu_env *env, struct obd_export *exp, int rc);
 /* ofd_obd.c */
 int ofd_create(struct obd_export *exp, struct obdo *oa,
-               struct lov_stripe_md **ea, struct obd_trans_info *oti);
+                  struct lov_stripe_md **ea, struct obd_trans_info *oti);
+int ofd_statfs_internal(const struct lu_env *env, struct ofd_device *ofd,
+                        struct obd_statfs *osfs, __u64 max_age,
+                        int *from_cache);
 
 /* The same as osc_build_res_name() */
 static inline void ofd_build_resid(const struct lu_fid *fid,
