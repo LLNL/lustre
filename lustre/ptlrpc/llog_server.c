@@ -59,7 +59,8 @@
 
 #if defined(__KERNEL__) && defined(LUSTRE_LOG_SERVER)
 
-int llog_origin_handle_create(struct ptlrpc_request *req)
+/* Only open is supported, no new llog can be created remotely */
+int llog_origin_handle_open(struct ptlrpc_request *req)
 {
         struct obd_export    *exp = req->rq_export;
         struct obd_device    *obd = exp->exp_obd;
@@ -92,9 +93,12 @@ int llog_origin_handle_create(struct ptlrpc_request *req)
                 RETURN(-ENODEV);
         }
 
-        rc = llog_open_create(req->rq_svc_thread->t_env, ctxt, &loghandle, logid, name);
+        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle, logid, name);
         if (rc)
                 GOTO(out_pop, rc);
+
+        if (!llog_exist_2(loghandle))
+                GOTO(out_close, rc = -ENOENT);
 
         rc = req_capsule_server_pack(&req->rq_pill);
         if (rc)
@@ -133,7 +137,7 @@ int llog_origin_handle_destroy(struct ptlrpc_request *req)
 
         rc = req_capsule_server_pack(&req->rq_pill);
         /* erase only if no error and logid is valid */
-        if (rc == 0 && logid != NULL)
+        if (rc == 0)
                 rc = llog_erase(req->rq_svc_thread->t_env, ctxt, logid, NULL);
         llog_ctxt_put(ctxt);
         return rc;
@@ -266,6 +270,8 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         if (rc)
                 GOTO(out_pop, rc);
 
+        if (!llog_exist_2(loghandle))
+                GOTO(out_close, rc = -ENOENT);
         /*
          * llog_init_handle() reads the llog header
          */
@@ -347,7 +353,7 @@ int llog_catinfo(struct ptlrpc_request *req)
 }
 
 #else /* !__KERNEL__ */
-int llog_origin_handle_create(struct ptlrpc_request *req)
+int llog_origin_handle_open(struct ptlrpc_request *req)
 {
         LBUG();
         return 0;
