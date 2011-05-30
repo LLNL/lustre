@@ -563,7 +563,7 @@ int mgs_handle(struct ptlrpc_request *req)
         case LLOG_ORIGIN_HANDLE_CREATE:
                 DEBUG_REQ(D_MGS, req, "llog_init");
                 req_capsule_set(&req->rq_pill, &RQF_LLOG_ORIGIN_HANDLE_CREATE);
-                rc = llog_origin_handle_create(req);
+                rc = llog_origin_handle_open(req);
                 break;
         case LLOG_ORIGIN_HANDLE_NEXT_BLOCK:
                 DEBUG_REQ(D_MGS, req, "llog next block");

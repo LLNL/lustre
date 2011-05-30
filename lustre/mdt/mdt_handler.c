@@ -1925,12 +1925,12 @@ static int mdt_llog_ctxt_unclone(const struct lu_env *env,
 }
 #endif
 
-static int mdt_llog_create(struct mdt_thread_info *info)
+static int mdt_llog_open(struct mdt_thread_info *info)
 {
         int rc;
 
         req_capsule_set(info->mti_pill, &RQF_LLOG_ORIGIN_HANDLE_CREATE);
-        rc = llog_origin_handle_create(mdt_info_req(info));
+        rc = llog_origin_handle_open(mdt_info_req(info));
         return (rc < 0 ? err_serious(rc) : rc);
 }
 
@@ -5787,7 +5787,7 @@ static struct mdt_handler mdt_dlm_ops[] = {
         DEF_HNDL(LLOG, ORIGIN_HANDLE_CREATE, _NET, flags, name, fn, NULL)
 
 static struct mdt_handler mdt_llog_ops[] = {
-        DEF_LLOG_HNDL(0, ORIGIN_HANDLE_CREATE,      mdt_llog_create),
+        DEF_LLOG_HNDL(0, ORIGIN_HANDLE_CREATE,      mdt_llog_open),
         DEF_LLOG_HNDL(0, ORIGIN_HANDLE_NEXT_BLOCK,  mdt_llog_next_block),
         DEF_LLOG_HNDL(0, ORIGIN_HANDLE_READ_HEADER, mdt_llog_read_header),
         DEF_LLOG_HNDL(0, ORIGIN_HANDLE_WRITE_REC,   NULL),
