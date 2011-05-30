@@ -712,6 +712,12 @@ int mgs_handle(struct ptlrpc_request *req)
                                 &RQF_LLOG_ORIGIN_HANDLE_NEXT_BLOCK);
                 rc = llog_origin_handle_next_block(req);
                 break;
+        case LLOG_ORIGIN_HANDLE_PREV_BLOCK:
+                DEBUG_REQ(D_MGS, req, "llog prev block");
+                req_capsule_set(&req->rq_pill,
+                                &RQF_LLOG_ORIGIN_HANDLE_PREV_BLOCK);
+                rc = llog_origin_handle_prev_block(req);
+                break;
         case LLOG_ORIGIN_HANDLE_READ_HEADER:
                 DEBUG_REQ(D_MGS, req, "llog read header");
                 req_capsule_set(&req->rq_pill,

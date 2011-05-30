@@ -112,6 +112,20 @@ struct llog_handle {
 #define lgh_file        lgh_store.lgh_file
 #define lgh_obj         lgh_store.lgh_obj
 
+static inline void logid_to_fid(struct llog_logid *id, struct lu_fid *fid)
+{
+        fid->f_seq = id->lgl_oseq;
+        fid->f_oid = id->lgl_oid;
+        fid->f_ver = 0;
+}
+
+static inline void fid_to_logid(struct lu_fid *fid, struct llog_logid *id)
+{
+        id->lgl_oseq = fid->f_seq;
+        id->lgl_oid = fid->f_oid;
+        id->lgl_ogen = 0;
+}
+
 /* llog.c  -  general API */
 typedef int (*llog_cb_t)(const struct lu_env *, struct llog_handle *,
                          struct llog_rec_hdr *, void *);
