@@ -301,6 +301,15 @@ AC_DEFINE(HAVE_TRUNCATE_COMPLETE_PAGE, 1,
 ])
 ])
 
+AC_DEFUN([LC_EXPORT_GENERIC_ERROR_REMOVE_PAGE],
+[LB_CHECK_SYMBOL_EXPORT([generic_error_remove_page],
+[mm/truncate.c],[
+AC_DEFINE(HAVE_GENERIC_ERROR_REMOVE_PAGE, 1,
+            [kernel export generic_error_remove_page])
+],[
+])
+])
+
 AC_DEFUN([LC_EXPORT_TRUNCATE_RANGE],
 [LB_CHECK_SYMBOL_EXPORT([truncate_inode_pages_range],
 [mm/truncate.c],[
@@ -2206,6 +2215,7 @@ AC_DEFUN([LC_PROG_LINUX],
          # RHEL4 patches
          LC_EXPORT_TRUNCATE_COMPLETE
          LC_EXPORT_TRUNCATE_RANGE
+         LC_EXPORT_GENERIC_ERROR_REMOVE_PAGE
          LC_EXPORT_D_REHASH_COND
          LC_EXPORT___D_REHASH
          LC_EXPORT_NODE_TO_CPUMASK

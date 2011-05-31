@@ -206,6 +206,15 @@ do {cfs_mutex_lock_nested(&(inode)->i_mutex, I_MUTEX_PARENT); } while(0)
 #define ll_truncate_complete_page(page) \
                                 truncate_complete_page(page->mapping, page)
 
+#ifndef HAVE_GENERIC_ERROR_REMOVE_PAGE
+#ifdef HAVE_TRUNCATE_COMPLETE_PAGE
+#define generic_error_remove_page(mapping,page) truncate_complete_page(mapping,page)
+#else
+#error "neither truncate_complete_page() nor generic_error_remove_page()"
+#endif
+#endif
+
+
 #define ll_vfs_create(a,b,c,d)          vfs_create(a,b,c,d)
 #define ll_dev_t                        dev_t
 #define kdev_t                          dev_t

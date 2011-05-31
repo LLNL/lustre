@@ -499,7 +499,14 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
         for (i = 0; i < npages; i++) {
 
                 if (cache == 0)
-                        truncate_complete_page(inode->i_mapping, lb[i].page);
+                        generic_error_remove_page(inode->i_mapping, lb[i].page);
+
+                /*
+                 * till commit the content of the page is undefined
+                 * we'll set it uptodate once bulk is done. otherwise
+                 * subsequent reads can access non-stable data
+                 */
+                ClearPageUptodate(lb[i].page);
 
                 if (lb[i].len == CFS_PAGE_SIZE)
                         continue;
@@ -648,7 +655,16 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                 }
 
                 rc = osd_do_bio(inode, iobuf, OBD_BRW_WRITE);
-                /* XXX: if write fails, we should drop pages from the cache */
+        }
+
+        if (unlikely(rc != 0)) {
+                /* if write fails, we should drop pages from the cache */
+                for (i = 0; i < npages; i++) {
+                        if (lb[i].page == NULL)
+                                continue;
+                        LASSERT(PageLocked(lb[i].page));
+                        generic_error_remove_page(inode->i_mapping, lb[i].page);
+                }
         }
 
         RETURN(rc);
@@ -698,7 +714,7 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
                         filter_iobuf_add_page(iobuf, lb[i].page);
                 }
                 if (cache == 0)
-                        truncate_complete_page(inode->i_mapping, lb[i].page);
+                        generic_error_remove_page(inode->i_mapping, lb[i].page);
         }
         cfs_gettimeofday(&end);
         timediff = cfs_timeval_sub(&end, &start, NULL);
