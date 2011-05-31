@@ -147,6 +147,8 @@ struct osp_device {
         cfs_timer_t                     opd_statfs_timer;
         /* how often to update statfs data */
         int                             opd_statfs_maxage;
+
+        cfs_proc_dir_entry_t           *opd_symlink;
 };
 
 /* this is a top object */

@@ -415,8 +415,17 @@ static int lod_init0(const struct lu_env *env, struct lod_device *m,
                       struct lu_device_type *ldt, struct lustre_cfg *cfg)
 {
         struct dt_device_param ddp;
+        struct proc_dir_entry *lov_proc_dir;
+        struct obd_device     *obd;
         int rc;
         ENTRY;
+
+        obd = class_name2obd(lustre_cfg_string(cfg, 0));
+        if (obd == NULL) {
+                CERROR("Cannot find obd with name %s\n",
+                       lustre_cfg_string(cfg, 0));
+                RETURN(-ENODEV);
+        }
 
         m->lod_dt_dev.dd_lu_dev.ld_ops = &lod_lu_ops;
         m->lod_dt_dev.dd_ops = &lod_dt_ops;
@@ -432,6 +441,27 @@ static int lod_init0(const struct lu_env *env, struct lod_device *m,
         rc = lod_lov_init(m, cfg);
         if (rc)
                 GOTO(out_disconnect, rc);
+
+        /* for compatibility we link old procfs's OSC entries to osp ones */
+        lov_proc_dir = lprocfs_srch(proc_lustre_root, "lov");
+        if (lov_proc_dir) {
+                cfs_proc_dir_entry_t *symlink = NULL;
+                char *name, *p;
+                OBD_ALLOC(name, strlen(obd->obd_name) + 1);
+                if (name) {
+                        strcpy(name, obd->obd_name);
+                        p = strstr(name, "lod");
+                        if (p) {
+                                p[2] = 'v';
+                                symlink = lprocfs_add_symlink(name,
+                                                lov_proc_dir,
+                                                "../lod/%s",
+                                                obd->obd_name);
+                        }
+                        OBD_FREE(name, strlen(obd->obd_name) + 1);
+                        m->lod_symlink = symlink;
+                }
+        }
 
         cfs_sema_init(&m->lod_mutex, 1);
 
@@ -486,6 +516,9 @@ static struct lu_device *lod_device_fini(const struct lu_env *env,
         struct lod_device *m = lu2lod_dev(d);
         int                rc;
         ENTRY;
+
+        if (m->lod_symlink)
+                lprocfs_remove(&m->lod_symlink);
 
         lod_lov_fini(m);
 
@@ -629,15 +662,34 @@ static struct obd_ops lod_obd_device_ops = {
 
 static int __init lod_mod_init(void)
 {
-        struct lprocfs_static_vars lvars;
+        struct lprocfs_static_vars  lvars;
+        cfs_proc_dir_entry_t       *lov_proc_dir;
+        int                         rc;
+
         lprocfs_lod_init_vars(&lvars);
 
-        return class_register_type(&lod_obd_device_ops, NULL, lvars.module_vars,
-                                   LUSTRE_LOD_NAME, &lod_device_type);
+        rc = class_register_type(&lod_obd_device_ops, NULL, lvars.module_vars,
+                                 LUSTRE_LOD_NAME, &lod_device_type);
+
+        /* create "lov" entry in procfs for compatibility purposes */
+        if (rc == 0) {
+                lov_proc_dir = lprocfs_srch(proc_lustre_root, "lov");
+                if (lov_proc_dir == NULL) {
+                        lov_proc_dir = lprocfs_register("lov", proc_lustre_root,
+                                                        NULL, NULL);
+                        if (IS_ERR(lov_proc_dir))
+                                CERROR("lod: can't create compat entry \"lov\": %d\n",
+                                       (int)PTR_ERR(lov_proc_dir));
+                }
+        }
+
+        return rc;
 }
 
 static void __exit lod_mod_exit(void)
 {
+
+        lprocfs_try_remove_proc_entry("lov", proc_lustre_root);
 
         class_unregister_type(LUSTRE_LOD_NAME);
 }

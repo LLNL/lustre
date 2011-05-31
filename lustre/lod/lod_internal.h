@@ -80,6 +80,8 @@ struct lod_device {
         /* maximum EA size underlied OSD may have */
         unsigned int          lod_osd_max_easize;
         struct lov_qos        lod_qos; /* qos info per lod */
+
+        cfs_proc_dir_entry_t *lod_symlink;
 };
 
 /*

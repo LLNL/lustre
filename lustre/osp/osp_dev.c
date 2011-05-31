@@ -312,6 +312,7 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
                       struct lu_device_type *ldt, struct lustre_cfg *cfg)
 {
         struct lprocfs_static_vars  lvars = { 0 };
+        struct proc_dir_entry      *osc_proc_dir;
         struct obd_import          *imp;
         class_uuid_t                uuid;
         int                         rc;
@@ -353,6 +354,27 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
         lprocfs_osp_init_vars(&lvars);
         if (lprocfs_obd_setup(m->opd_obd, lvars.obd_vars) == 0)
                 ptlrpc_lprocfs_register_obd(m->opd_obd);
+
+        /* for compatibility we link old procfs's OSC entries to osp ones */
+        osc_proc_dir = lprocfs_srch(proc_lustre_root, "osc");
+        if (osc_proc_dir) {
+                cfs_proc_dir_entry_t *symlink = NULL;
+                char *name, *p;
+                OBD_ALLOC(name, strlen(m->opd_obd->obd_name) + 1);
+                if (name) {
+                        strcpy(name, m->opd_obd->obd_name);
+                        p = strstr(name, "osp");
+                        if (p) {
+                                p[2] = 'c';
+                                symlink = lprocfs_add_symlink(name,
+                                                osc_proc_dir,
+                                                "../osp/%s",
+                                                m->opd_obd->obd_name);
+                        }
+                        OBD_FREE(name, strlen(m->opd_obd->obd_name) + 1);
+                        m->opd_symlink = symlink;
+                }
+        }
 
         /*
          * Initialize last id from the storage - will be used in orphan cleanup
@@ -462,6 +484,9 @@ static struct lu_device *osp_device_fini(const struct lu_env *env,
         }
 
         client_destroy_import(imp);
+
+        if (m->opd_symlink)
+                lprocfs_remove(&m->opd_symlink);
 
         LASSERT(m->opd_obd);
         ptlrpc_lprocfs_unregister_obd(m->opd_obd);
@@ -816,15 +841,33 @@ static struct obd_ops osp_obd_device_ops = {
 
 static int __init osp_mod_init(void)
 {
-        struct lprocfs_static_vars lvars;
+        struct lprocfs_static_vars  lvars;
+        cfs_proc_dir_entry_t       *osc_proc_dir;
+        int                         rc;
+
         lprocfs_osp_init_vars(&lvars);
 
-        return class_register_type(&osp_obd_device_ops, NULL, lvars.module_vars,
-                                   LUSTRE_OSP_NAME, &osp_device_type);
+        rc = class_register_type(&osp_obd_device_ops, NULL, lvars.module_vars,
+                                 LUSTRE_OSP_NAME, &osp_device_type);
+
+        /* create "osc" entry in procfs for compatibility purposes */
+        if (rc == 0) {
+                osc_proc_dir = lprocfs_srch(proc_lustre_root, "osc");
+                if (osc_proc_dir == NULL) {
+                        osc_proc_dir = lprocfs_register("osc", proc_lustre_root,
+                                                        NULL, NULL);
+                        if (IS_ERR(osc_proc_dir))
+                                CERROR("osp: can't create compat entry \"osc\": %d\n",
+                                       (int) PTR_ERR(osc_proc_dir));
+                }
+        }
+
+        return rc;
 }
 
 static void __exit osp_mod_exit(void)
 {
+        lprocfs_try_remove_proc_entry("osc", proc_lustre_root);
 
         class_unregister_type(LUSTRE_OSP_NAME);
 }
