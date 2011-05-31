@@ -79,6 +79,8 @@ struct lod_device {
         int                   lod_ostnr;
         cfs_semaphore_t       lod_mutex;
         struct lov_qos        lod_qos; /* qos info per lod */
+
+        cfs_proc_dir_entry_t *lod_symlink;
 };
 
 /*

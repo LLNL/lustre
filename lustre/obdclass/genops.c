@@ -192,9 +192,15 @@ int class_register_type(struct obd_ops *dt_ops, struct md_ops *md_ops,
         type->typ_procroot = lprocfs_register(type->typ_name, proc_lustre_root,
                                               vars, type);
         if (IS_ERR(type->typ_procroot)) {
-                rc = PTR_ERR(type->typ_procroot);
-                type->typ_procroot = NULL;
-                GOTO (failed, rc);
+                if (PTR_ERR(type->typ_procroot) == -EALREADY) {
+                        type->typ_procroot = lprocfs_srch(proc_lustre_root,
+                                                          type->typ_name);
+                        LASSERT(!IS_ERR(type->typ_procroot));
+                } else {
+                        rc = PTR_ERR(type->typ_procroot);
+                        type->typ_procroot = NULL;
+                        GOTO (failed, rc);
+                }
         }
 #endif
         if (ldt != NULL) {
@@ -240,9 +246,11 @@ int class_unregister_type(const char *name)
                 RETURN(-EBUSY);
         }
 
-        if (type->typ_procroot) {
-                lprocfs_remove(&type->typ_procroot);
-        }
+        /* we do not use type->typ_procroot as for compatibility purposes
+         * other modules can share names (i.e. lod can use lov entry). so
+         * we can't reference pointer as it can get invalided when another
+         * module removes the entry */
+        lprocfs_try_remove_proc_entry(type->typ_name, proc_lustre_root);
 
         if (type->typ_lu)
                 lu_device_type_fini(type->typ_lu);

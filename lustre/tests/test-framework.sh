@@ -2264,7 +2264,7 @@ osc_ensure_active () {
     local period=0
 
     while [ $period -lt $timeout ]; do
-        count=$(do_facet $facet "lctl dl | grep ' IN os[cp] ' 2>/dev/null | wc -l")
+        count=$(do_facet $facet "lctl dl | grep ' IN osc ' 2>/dev/null | wc -l")
         if [ $count -eq 0 ]; then
             break
         fi
@@ -3840,7 +3840,7 @@ mds_on_old_device() {
     local minor=$(get_mds_version_minor $mds)
 
     if [ $major -ge 2 ] || [ $major -eq 1 -a $minor -gt 8 ]; then
-        do_facet $mds "lctl list_param os[cp].$FSNAME-OST*-os[cp] \
+        do_facet $mds "lctl list_param osc.$FSNAME-OST*-osc \
             > /dev/null 2>&1" && return 0
     fi
     return 1
@@ -3859,7 +3859,7 @@ get_mdtosc_proc_path() {
     if [ $major -le 1 -a $minor -le 8 ] || mds_on_old_device $mds_facet; then
         echo "${ost_label}-osc"
     else
-        echo "${ost_label}-os[cp]-${mdt_index}"
+        echo "${ost_label}-osc-${mdt_index}"
     fi
 }
 
@@ -3917,7 +3917,7 @@ wait_osc_import_state() {
     local CONN_STATE
     local i=0
 
-    CONN_PROC="os[cp].${ost}.ost_server_uuid"
+    CONN_PROC="osc.${ost}.ost_server_uuid"
     CONN_STATE=$(do_facet $facet lctl get_param -n $CONN_PROC 2>/dev/null | cut -f2)
     while [ "${CONN_STATE}" != "${expected}" ]; do
         if [ "${expected}" == "DISCONN" ]; then 
@@ -4344,7 +4344,7 @@ flvr_cnt_mdt2ost()
         mdtosc=$(get_mdtosc_proc_path mds$num)
         mdtosc=${mdtosc/-MDT*/-MDT\*}
         output=$(do_facet mds$num lctl get_param -n \
-            os[cp].$mdtosc.$PROC_CLI 2>/dev/null)
+            osc.$mdtosc.$PROC_CLI 2>/dev/null)
         tmpcnt=`count_flvr "$output" $flavor`
         cnt=$((cnt + tmpcnt))
     done
