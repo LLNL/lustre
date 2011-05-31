@@ -1000,11 +1000,6 @@ test_27l() {
 }
 run_test 27l "check setstripe permissions (should return error)"
 
-sleep_maxage() {
-        local DELAY=$(do_facet $SINGLEMDS lctl get_param -n lo[vd].*.qos_maxage | head -n 1 | awk '{print $1 * 2}')
-        sleep $DELAY
-}
-
 test_27m() {
 	[ "$OSTCOUNT" -lt "2" ] && skip_env "$OSTCOUNT < 2 OSTs -- skipping" && return
 	if [ $ORIGFREE -gt $MAXFREE ]; then
@@ -1033,6 +1028,11 @@ test_27m() {
 	sleep 15
 }
 run_test 27m "create file while OST0 was full =================="
+
+sleep_maxage() {
+        local DELAY=$(do_facet $SINGLEMDS lctl get_param -n lov.*.qos_maxage | head -n 1 | awk '{print $1 * 2}')
+        sleep $DELAY
+}
 
 # OSCs keep a NOSPC flag that will be reset after ~5s (qos_maxage)
 # if the OST isn't full anymore.
@@ -1063,12 +1063,12 @@ exhaust_precreations() {
 	# on the mdt's osc
 	local mdtosc_proc1=$(get_mdtosc_proc_path mds${MDSIDX} $OST)
 	local last_id=$(do_facet mds${MDSIDX} lctl get_param -n \
-        os[cp].$mdtosc_proc1.prealloc_last_id)
+        osc.$mdtosc_proc1.prealloc_last_id)
 	local next_id=$(do_facet mds${MDSIDX} lctl get_param -n \
-        os[cp].$mdtosc_proc1.prealloc_next_id)
+        osc.$mdtosc_proc1.prealloc_next_id)
 
 	local mdtosc_proc2=$(get_mdtosc_proc_path mds${MDSIDX})
-	do_facet mds${MDSIDX} lctl get_param os[cp].$mdtosc_proc2.prealloc*
+	do_facet mds${MDSIDX} lctl get_param osc.$mdtosc_proc2.prealloc*
 
 	mkdir -p $DIR/$tdir/${OST}
 	$SETSTRIPE -i $OSTIDX -c 1 $DIR/$tdir/${OST}
@@ -1077,7 +1077,7 @@ exhaust_precreations() {
 	do_facet ost$((OSTIDX + 1)) lctl set_param fail_loc=0x215
 	echo "Creating to objid $last_id on ost $OST..."
 	createmany -o $DIR/$tdir/${OST}/f $next_id $((last_id - next_id + 2))
-	do_facet mds${MDSIDX} lctl get_param os[cp].$mdtosc_proc2.prealloc*
+	do_facet mds${MDSIDX} lctl get_param osc.$mdtosc_proc2.prealloc*
 	do_facet ost$((OSTIDX + 1)) lctl set_param fail_loc=$FAILLOC
 	sleep_maxage
 }
@@ -1304,9 +1304,9 @@ test_27y() {
 
         local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS $FSNAME-OST0000)
         local last_id=$(do_facet $SINGLEMDS lctl get_param -n \
-            os[cp].$mdtosc.prealloc_last_id)
+            osc.$mdtosc.prealloc_last_id)
         local next_id=$(do_facet $SINGLEMDS lctl get_param -n \
-            os[cp].$mdtosc.prealloc_next_id)
+            osc.$mdtosc.prealloc_next_id)
         local fcount=$((last_id - next_id))
         [ $fcount -eq 0 ] && skip "not enough space on OST0" && return
         [ $fcount -gt $OSTCOUNT ] && fcount=$OSTCOUNT
@@ -3233,7 +3233,7 @@ test_53() {
 
 	# only test MDT0000
         local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS)
-        for value in $(do_facet $SINGLEMDS lctl get_param os[cp].$mdtosc.prealloc_last_id) ; do
+        for value in $(do_facet $SINGLEMDS lctl get_param osc.$mdtosc.prealloc_last_id) ; do
                 param=`echo ${value[0]} | cut -d "=" -f1`
                 ostname=`echo $param | cut -d "." -f2 | cut -d - -f 1-2`
                 mds_last=$(do_facet $SINGLEMDS lctl get_param -n $param)
@@ -4222,7 +4222,7 @@ test_65k() { # bug11679
         do_facet $SINGLEMDS lctl --device %$INACTIVE_OSC deactivate
         for STRIPE_OSC in $MDS_OSCS; do
             OST=`osc_to_ost $STRIPE_OSC`
-            IDX=`do_facet $SINGLEMDS lctl get_param -n lo[vd].*md*.target_obd |
+            IDX=`do_facet $SINGLEMDS lctl get_param -n lov.*md*.target_obd |
                  awk -F: /$OST/'{ print $1 }' | head -n 1`
 
             [ -f $DIR/$tdir/$IDX ] && continue

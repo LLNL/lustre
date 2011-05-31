@@ -493,6 +493,8 @@ extern cfs_proc_dir_entry_t *lprocfs_register(const char *name,
 extern void lprocfs_remove(cfs_proc_dir_entry_t **root);
 extern void lprocfs_remove_proc_entry(const char *name,
                                       struct proc_dir_entry *parent);
+extern void lprocfs_try_remove_proc_entry(const char *name,
+                                          struct proc_dir_entry *parent);
 
 extern cfs_proc_dir_entry_t *lprocfs_srch(cfs_proc_dir_entry_t *root,
                                           const char *name);
@@ -834,6 +836,9 @@ static inline void lprocfs_remove(cfs_proc_dir_entry_t **root)
 { return; }
 static inline void lprocfs_remove_proc_entry(const char *name,
                                              struct proc_dir_entry *parent)
+{ return; }
+static inline void lprocfs_try_remove_proc_entry(const char *name,
+                                                 struct proc_dir_entry *parent)
 { return; }
 static inline cfs_proc_dir_entry_t *lprocfs_srch(cfs_proc_dir_entry_t *head,
                                                  const char *name)
