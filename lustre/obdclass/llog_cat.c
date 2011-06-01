@@ -65,7 +65,7 @@
  */
 static int llog_cat_new_log(const struct lu_env *env,
                             struct llog_handle *cathandle,
-                            struct llog_handle *loghandle, 
+                            struct llog_handle *loghandle,
                             struct thandle *th)
 {
         struct llog_log_hdr *llh;
