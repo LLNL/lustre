@@ -688,7 +688,7 @@ static int mgs_modify_handler(const struct lu_env *env, struct llog_handle *llh,
                 /* Header and tail are added back to lrh_len in
                    llog_lvfs_write_rec */
                 rec->lrh_len = cfg_len;
-                rc = llog_write_rec(llh, rec, NULL, 0, (void *)lcfg,
+                rc = llog_write_rec(env, llh, rec, NULL, 0, (void *)lcfg,
                                     rec->lrh_index);
                 if (!rc)
                          mml->mml_modified++;
@@ -771,7 +771,7 @@ static int record_lcfg(const struct lu_env *env, struct llog_handle *llh,
         rec.lrh_type = OBD_CFG_REC;
 
         /* idx = -1 means append */
-        rc = llog_write_rec(llh, &rec, NULL, 0, (void *)lcfg, -1);
+        rc = llog_write_rec(env, llh, &rec, NULL, 0, (void *)lcfg, -1);
         if (rc)
                 CERROR("failed %d\n", rc);
         return rc;

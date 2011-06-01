@@ -572,3 +572,43 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_erase);
+
+/*
+ * Helper function for write record in llog. It is valid only with local llog.
+ */
+int llog_write_rec(const struct lu_env *env, struct llog_handle *loghandle,
+                   struct llog_rec_hdr *rec, struct llog_cookie *reccookie,
+                   int cookiecount, void *buf, int idx)
+{
+        struct dt_device  *dt;
+        struct thandle    *th;
+        int rc;
+        ENTRY;
+
+        LASSERT(loghandle);
+        LASSERT(loghandle->lgh_ctxt);
+        LASSERT(loghandle->lgh_obj);
+        dt = lu2dt_dev(loghandle->lgh_obj->do_lu.lo_dev);
+
+        th = dt_trans_create(env, dt);
+        if (IS_ERR(th))
+                RETURN(PTR_ERR(th));
+
+        if (!llog_exist_2(loghandle))
+                GOTO(out_trans, rc = -EEXIST);
+
+        rc = llog_declare_write_rec_2(env, loghandle, rec, idx, th);
+        if (rc)
+                GOTO(out_trans, rc);
+
+        rc = dt_trans_start_local(env, dt, th);
+        if (rc)
+                GOTO(out_trans, rc);
+
+        rc = llog_write_rec_2(env, loghandle, rec, reccookie, cookiecount,
+                              buf, idx, th);
+out_trans:
+        dt_trans_stop(env, dt, th);
+        RETURN(rc);
+}
+

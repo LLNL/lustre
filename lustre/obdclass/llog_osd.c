@@ -35,7 +35,8 @@
  *
  * lustre/obdclass/llog_osd.c - low level llog routines on top of OSD API
  *
- * Author: Alexey Zhuravlev <bzzz@sun.com>
+ * Author: Alexey Zhuravlev <bzzz@whamcloud.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #define DEBUG_SUBSYSTEM S_LOG
@@ -46,14 +47,9 @@
 
 #include <obd.h>
 #include <obd_class.h>
-#include <lustre_log.h>
-#include <obd_ost.h>
-#include <libcfs/list.h>
-#include <lustre_fsfilt.h>
-#include <lustre_disk.h>
-#include "llog_internal.h"
 #include <lustre_fid.h>
 #include <dt_object.h>
+#include "llog_internal.h"
 
 /*
  * - multi-chunks or big-declaration approach
@@ -100,7 +96,6 @@ struct llog_osd_object {
         struct lu_object_header llo_header;
         struct dt_object        llo_obj;
 };
-
 
 static inline struct llog_osd_object *lu2llo_obj(struct lu_object *o)
 {
@@ -389,7 +384,7 @@ static void llog_osd_put_sb(const struct lu_env *env, struct llog_superblock *ls
                          * as the object references virtual llog
                          * device which is part of lsb being freed
                          * -bzzz
-                         */ 
+                         */
                         lo = &lsb->lsb_obj->do_lu;
                         cfs_set_bit(LU_OBJECT_HEARD_BANSHEE,
                                     &lo->lo_header->loh_flags);
@@ -404,24 +399,16 @@ static void llog_osd_put_sb(const struct lu_env *env, struct llog_superblock *ls
         cfs_mutex_unlock(&lsb_list_mutex);
 }
 
-static int llog_osd_generate_fid(const struct lu_env *env0,
+static int llog_osd_generate_fid(const struct lu_env *env,
                                  struct llog_superblock *lsb,
-                                 struct lu_fid *fid,
-                                 struct thandle *th)
+                                 struct lu_fid *fid)
 {
         struct llog_superblock_ondisk  sbd;
-        struct lu_env                  _env;
-        struct lu_env                 *env;
-        struct thandle                *_th = NULL;
-        struct dt_device              *dev;
-        struct dt_object              *o;
+        struct thandle                *th;
         struct lu_buf                  lb;
         loff_t                         pos;
         int                            rc;
         ENTRY;
-
-        LASSERT(env0);
-        env = (struct lu_env *) env0;
 
         cfs_spin_lock(&lsb->lsb_id_lock);
         fid->f_seq = lsb->lsb_seq;
@@ -429,48 +416,31 @@ static int llog_osd_generate_fid(const struct lu_env *env0,
         cfs_spin_unlock(&lsb->lsb_id_lock);
         fid->f_ver = 0;
 
-        dev = lsb->lsb_dev;
-        o = lsb->lsb_obj;
+        LASSERT(lsb->lsb_dev);
+        LASSERT(lsb->lsb_obj);
 
         /* update next id on a disk to make it unique over remounts */
-        if (th == NULL) {
-                /* XXX: need new environment to avoid interaction
-                 * with mdt/mdd at this point */
+        th = dt_trans_create(env, lsb->lsb_dev);
+        if (IS_ERR(th))
+                RETURN(PTR_ERR(th));
 
-                env = &_env;
-                rc = lu_env_init(env, dev->dd_lu_dev.ld_type->ldt_ctx_tags);
-                if (rc) {
-                        CERROR("can't initialize env: %d\n", rc);
-                        GOTO(out, rc);
-                }
+        rc = dt_declare_record_write(env, lsb->lsb_obj, sizeof(sbd), 0, th);
+        if (rc != 0)
+                GOTO(out_trans, rc);
 
-                _th = dt_trans_create(env, dev);
-                LASSERT(!IS_ERR(_th));
-
-                rc = dt_declare_record_write(env, o, sizeof(sbd), 0, _th);
-                LASSERT(rc == 0);
-
-                rc = dt_trans_start_local(env, dev, _th);
-        } else
-                _th = th;
+        rc = dt_trans_start_local(env, lsb->lsb_dev, th);
+        if (rc != 0)
+                GOTO(out_trans, rc);
 
         pos = 0;
         sbd.next_id = lsb->lsb_last_oid;
         lb.lb_buf = &sbd;
         lb.lb_len = sizeof(sbd);
 
-        rc = dt_record_write(env, o, &lb, &pos, _th);
-        LASSERT(rc == 0);
+        rc = dt_record_write(env, lsb->lsb_obj, &lb, &pos, th);
 
-        if (th == NULL) {
-                LASSERT(_th);
-                LASSERT(env == &_env);
-                rc = dt_trans_stop(env, dev, _th);
-                LASSERT(rc == 0);
-                lu_env_fini(env);
-        }
-
-out:
+out_trans:
+        dt_trans_stop(env, lsb->lsb_dev, th);
         RETURN(rc);
 }
 
@@ -598,7 +568,6 @@ static int llog_osd_read_blob(const struct lu_env *env, struct dt_object *o,
 
 static int llog_osd_read_header(struct llog_handle *handle)
 {
-        struct obd_device       *obd;
         struct dt_object        *o;
         struct lu_attr          *attr = NULL;
         struct dt_device        *dt;
@@ -612,19 +581,16 @@ static int llog_osd_read_header(struct llog_handle *handle)
         if (unlikely(attr == NULL))
                 RETURN(-ENOMEM);
 
-        obd = handle->lgh_ctxt->loc_exp->exp_obd;
-        LASSERT(obd);
-        dt = obd->obd_lvfs_ctxt.dt;
+        o = handle->lgh_obj;
+        LASSERT(o);
+        dt = lu2dt_dev(o->do_lu.lo_dev);
         LASSERT(dt);
 
         rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
         if (rc) {
                 CERROR("can't initialize env: %d\n", rc);
-                RETURN(rc);
+                GOTO(out_attr, rc);
         }
-
-        o = handle->lgh_obj;
-        LASSERT(o);
 
         rc = dt_attr_get(&env, o, attr, NULL);
         LASSERT(rc == 0);
@@ -647,16 +613,17 @@ static int llog_osd_read_header(struct llog_handle *handle)
                         lustre_swab_llog_hdr(handle->lgh_hdr);
 
                 if (llh_hdr->lrh_type != LLOG_HDR_MAGIC) {
-                        CERROR("bad log %.*s header magic: %#x (expected %#x)\n",
-                               handle->lgh_file->f_dentry->d_name.len,
-                               handle->lgh_file->f_dentry->d_name.name,
+                        CERROR("bad log %s "DFID" header magic: %#x "
+                               "(expected %#x)\n",
+                               handle->lgh_name ? handle->lgh_name : "",
+                               PFID(lu_object_fid(&o->do_lu)),
                                llh_hdr->lrh_type, LLOG_HDR_MAGIC);
                         rc = -EIO;
                 } else if (llh_hdr->lrh_len != LLOG_CHUNK_SIZE) {
-                        CERROR("incorrectly sized log %.*s header: %#x "
+                        CERROR("incorrectly sized log %s "DFID" header: %#x "
                                "(expected %#x)\n",
-                               handle->lgh_file->f_dentry->d_name.len,
-                               handle->lgh_file->f_dentry->d_name.name,
+                               handle->lgh_name ? handle->lgh_name : "",
+                               PFID(lu_object_fid(&o->do_lu)),
                                llh_hdr->lrh_len, LLOG_CHUNK_SIZE);
                         CERROR("you may need to re-run lconf --write_conf.\n");
                         rc = -EIO;
@@ -664,13 +631,10 @@ static int llog_osd_read_header(struct llog_handle *handle)
         }
 
         handle->lgh_last_idx = handle->lgh_hdr->llh_tail.lrt_index;
-
 out:
-        if (likely(attr))
-                OBD_FREE_PTR(attr);
-
         lu_env_fini(&env);
-
+out_attr:
+        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -793,8 +757,6 @@ static int llog_osd_write_rec_2(const struct lu_env *env,
                 saved_offset = sizeof(*llh) + (idx - 1) * reclen;
 
                 if (buf) {
-                        //struct llog_rec_hdr check;
-
                         /* We assume that caller has set lgh_cur_* */
                         saved_offset = loghandle->lgh_cur_offset;
                         CDEBUG(D_OTHER,
@@ -808,18 +770,6 @@ static int llog_osd_write_rec_2(const struct lu_env *env,
                                        idx, loghandle->lgh_cur_idx);
                                 GOTO(out, rc = -EFAULT);
                         }
-#if 0  /* FIXME remove this safety check at some point */
-                        /* Verify that the record we're modifying is the
-                           right one. */
-                        rc = llog_osd_read_blob(env, o, &check, sizeof(check),
-                                                saved_offset);
-                        if (check.lrh_index != idx || check.lrh_len != reclen) {
-                                CERROR("Bad modify idx %u/%u size %u/%u (%d)\n",
-                                       idx, check.lrh_index, reclen,
-                                       check.lrh_len, rc);
-                                RETURN(-EFAULT);
-                        }
-#endif
                 }
 
                 rc = llog_osd_write_blob(env, o, rec, buf, saved_offset, th);
@@ -924,12 +874,12 @@ int llog_osd_record_read(const struct lu_env *env, struct dt_object *dt,
 
         return (rc >= 0 ? 0 : rc);
 }
+
 /* We can skip reading at least as many log blocks as the number of
 * minimum sized log records we are skipping.  If it turns out
 * that we are not far enough along the log (because the
 * actual records are larger than minimum size) we just skip
 * some more records. */
-
 static void llog_skip_over(__u64 *off, int curr, int goal)
 {
         if (goal <= curr)
@@ -964,16 +914,16 @@ static int llog_osd_next_block(const struct lu_env *env, struct llog_handle *log
 
         LASSERT(loghandle);
         LASSERT(loghandle->lgh_ctxt);
-        dt = loghandle->lgh_ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
 
         o = loghandle->lgh_obj;
         LASSERT(o);
         LASSERT(dt_object_exists(o));
+        dt = lu2dt_dev(o->do_lu.lo_dev);
+        LASSERT(dt);
 
         OBD_ALLOC_PTR(attr);
         if (unlikely(attr == NULL))
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         rc = dt_attr_get(env, o, attr, BYPASS_CAPA);
         if (rc)
@@ -1048,11 +998,8 @@ static int llog_osd_next_block(const struct lu_env *env, struct llog_handle *log
                 GOTO(out, rc = 0);
         }
         GOTO(out, rc = -EIO);
-
 out:
-        if (likely(attr))
-                OBD_FREE_PTR(attr);
-
+        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -1076,16 +1023,16 @@ static int llog_osd_prev_block(const struct lu_env *env,
 
         LASSERT(loghandle);
         LASSERT(loghandle->lgh_ctxt);
-        dt = loghandle->lgh_ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
 
         o = loghandle->lgh_obj;
         LASSERT(o);
         LASSERT(dt_object_exists(o));
+        dt = lu2dt_dev(o->do_lu.lo_dev);
+        LASSERT(dt);
 
         OBD_ALLOC_PTR(attr);
         if (unlikely(attr == NULL))
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         cur_offset = LLOG_CHUNK_SIZE;
         llog_skip_over(&cur_offset, 0, prev_idx);
@@ -1148,11 +1095,8 @@ static int llog_osd_prev_block(const struct lu_env *env,
                 GOTO(out, rc = 0);
         }
         GOTO(out, rc = -EIO);
-
 out:
-        if (likely(attr))
-                OBD_FREE_PTR(attr);
-
+        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -1165,7 +1109,6 @@ static int llog_osd_open_2(const struct lu_env *env, struct llog_ctxt *ctxt,
 {
         struct llog_handle        *handle = NULL;
         struct dt_object          *o;
-        struct obd_device         *obd;
         struct dt_device          *dt;
         struct llog_superblock    *lsb = NULL;
         struct lu_fid              fid;
@@ -1176,9 +1119,8 @@ static int llog_osd_open_2(const struct lu_env *env, struct llog_ctxt *ctxt,
         LASSERT(env);
         LASSERT(ctxt);
         LASSERT(ctxt->loc_exp);
-        obd = ctxt->loc_exp->exp_obd;
-        LASSERT(obd);
-        dt = obd->obd_lvfs_ctxt.dt;
+        LASSERT(ctxt->loc_exp->exp_obd);
+        dt = ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
         LASSERT(dt);
 
         lsb = llog_osd_get_sb(env, dt, NULL);
@@ -1212,7 +1154,7 @@ static int llog_osd_open_2(const struct lu_env *env, struct llog_ctxt *ctxt,
                 } else {
                         /* generate fid for new llog */
                         rc = 0;
-                        llog_osd_generate_fid(env, lsb, &fid, NULL);
+                        llog_osd_generate_fid(env, lsb, &fid);
                         fid_to_logid(&fid, logid);
                         OBD_ALLOC(handle->lgh_name, strlen(name) + 1);
                         if (handle->lgh_name)
@@ -1229,7 +1171,7 @@ static int llog_osd_open_2(const struct lu_env *env, struct llog_ctxt *ctxt,
         } else {
 
                 /* generate fid for new llog */
-                llog_osd_generate_fid(env, lsb, &fid, NULL);
+                llog_osd_generate_fid(env, lsb, &fid);
 
                 o = llog_osd_locate(env, lsb, &fid);
                 if (IS_ERR(o))
@@ -1262,10 +1204,7 @@ out:
 static int llog_osd_exist_2(struct llog_handle *handle)
 {
         LASSERT(handle->lgh_obj);
-        if (dt_object_exists(handle->lgh_obj))
-                return 1;
-        else
-                return 0;
+        return dt_object_exists(handle->lgh_obj);
 }
 
 static int llog_osd_declare_create_2(const struct lu_env *env,
@@ -1397,49 +1336,6 @@ static int llog_osd_close_2(const struct lu_env *env,
         RETURN(rc);
 }
 
-static int llog_osd_close(struct llog_handle *handle)
-{
-        struct dt_object  *o;
-        struct obd_device *obd;
-        struct llog_ctxt  *ctxt;
-        struct dt_device  *dt;
-        struct lu_env      env;
-        int                rc;
-        struct llog_superblock *lsb;
-
-        ctxt = handle->lgh_ctxt;
-        LASSERT(ctxt);
-        LASSERT(ctxt->loc_exp);
-
-        obd = ctxt->loc_exp->exp_obd;
-        LASSERT(obd);
-
-        dt = obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
-
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                GOTO(out, rc);
-        }
-        o = handle->lgh_obj;
-        LASSERT(o);
-
-        lu_object_put(&env, &o->do_lu);
-
-        lsb = handle->private_data;
-        LASSERT(lsb);
-        llog_osd_put_sb(&env, lsb);
-
-        if (handle->lgh_name)
-                OBD_FREE(handle->lgh_name, strlen(handle->lgh_name) + 1);
-
-out:
-        lu_env_fini(&env);
-
-        RETURN(rc);
-}
-
 static int llog_osd_destroy(const struct lu_env *env,
                             struct llog_handle *loghandle)
 {
@@ -1447,8 +1343,6 @@ static int llog_osd_destroy(const struct lu_env *env,
         struct dt_object       *o;
         struct dt_device       *d;
         struct thandle         *th;
-        struct lu_env           _env;
-        struct lu_fid           fid = { 0 };
         char                   *name = NULL;
         int                     rc;
         ENTRY;
@@ -1463,15 +1357,6 @@ static int llog_osd_destroy(const struct lu_env *env,
         LASSERT(d);
         LASSERT(d == ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt);
 
-        if (env == NULL) {
-                rc = lu_env_init(&_env, d->dd_lu_dev.ld_type->ldt_ctx_tags);
-                if (rc) {
-                        CERROR("can't initialize env: %d\n", rc);
-                        RETURN(rc);
-                }
-                env = &_env;
-        }
-
         th = dt_trans_create(env, d);
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
@@ -1483,11 +1368,10 @@ static int llog_osd_destroy(const struct lu_env *env,
         if (loghandle->lgh_name) {
                 LASSERT(ctxt->loc_dir);
                 name = loghandle->lgh_name;
-                logid_to_fid(&loghandle->lgh_id, &fid);
                 rc = dt_declare_delete(env, ctxt->loc_dir,
                                        (struct dt_key *) name, th);
                 if (rc)
-                        GOTO(out, rc);
+                        GOTO(out_trans, rc);
         }
 
         rc = dt_trans_start_local(env, d, th);
@@ -1499,8 +1383,6 @@ static int llog_osd_destroy(const struct lu_env *env,
                 dt_ref_del(env, o, th);
                 dt_destroy(env, o, th);
                 if (name) {
-                        LASSERT(fid.f_oid != 0);
-                        LASSERT(fid.f_seq != 0);
                         rc = dt_delete(env, ctxt->loc_dir,
                                        (struct dt_key *) name,
                                        th, BYPASS_CAPA);
@@ -1511,121 +1393,9 @@ static int llog_osd_destroy(const struct lu_env *env,
         dt_write_unlock(env, o);
 
 out_trans:
-        rc = dt_trans_stop(env, d, th);
-
+        dt_trans_stop(env, d, th);
 out:
-        /* XXX: shouldn't that be explicit? */
         llog_osd_close_2(env, loghandle);
-
-        if (env == &_env)
-                lu_env_fini(&_env);
-
-        RETURN(rc);
-}
-
-static int llog_osd_create(struct llog_ctxt *ctxt, struct llog_handle **res,
-                           struct llog_logid *logid, char *name)
-{
-        struct obd_device *obd;
-        struct dt_device  *dt;
-        struct thandle    *th;
-        struct lu_env      env;
-        int rc;
-        ENTRY;
-
-        LASSERT(res);
-        LASSERT(ctxt);
-        LASSERT(ctxt->loc_exp);
-        obd = ctxt->loc_exp->exp_obd;
-        LASSERT(obd);
-        dt = obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
-
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                RETURN(rc);
-        }
-
-        rc = llog_osd_open_2(&env, ctxt, res, logid, name);
-        if (rc)
-                GOTO(out, rc);
-
-        /* XXX: no need to create each time */
-        th = dt_trans_create(&env, dt);
-        if (IS_ERR(th))
-                GOTO(out, rc = PTR_ERR(th));
-
-        rc = llog_osd_declare_create_2(&env, *res, th);
-        if (rc == 0) {
-                rc = dt_trans_start_local(&env, dt, th);
-                if (rc == 0)
-                        rc = llog_osd_create_2(&env, *res, th);
-                if (rc == -EEXIST)
-                        rc = 0;
-        }
-
-        dt_trans_stop(&env, dt, th);
-out:
-        lu_env_fini(&env);
-        RETURN(rc);
-}
-
-static int llog_osd_write_rec(struct llog_handle *loghandle,
-                              struct llog_rec_hdr *rec,
-                              struct llog_cookie *reccookie, int cookiecount,
-                              void *buf, int idx)
-{
-        struct dt_device  *dt;
-        struct thandle    *th;
-        struct lu_env      env;
-        int rc;
-        ENTRY;
-
-        LASSERT(loghandle);
-        LASSERT(loghandle->lgh_ctxt);
-        dt = loghandle->lgh_ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
-
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                RETURN(rc);
-        }
-
-        /* XXX: no need to create each time */
-        th = dt_trans_create(&env, dt);
-        if (IS_ERR(th))
-                GOTO(out, rc = PTR_ERR(th));
-
-        if (!llog_exist_2(loghandle)) {
-                rc = llog_osd_declare_create_2(&env, loghandle, th);
-                if (rc)
-                        GOTO(out_trans, rc);
-        }
-
-        rc = llog_osd_declare_write_rec_2(&env, loghandle, rec, idx, th);
-        if (rc)
-                GOTO(out_trans, rc);
-
-        rc = dt_trans_start_local(&env, dt, th);
-        if (rc)
-                GOTO(out_trans, rc);
-
-        if (!llog_exist_2(loghandle)) {
-                rc = llog_osd_create_2(&env, loghandle, th);
-                if (rc)
-                        GOTO(out_trans, rc);
-        }
-
-        rc = llog_osd_write_rec_2(&env, loghandle, rec, reccookie, cookiecount,
-                                  buf, idx, th);
-
-out_trans:
-        dt_trans_stop(&env, dt, th);
-
-out:
-        lu_env_fini(&env);
         RETURN(rc);
 }
 
@@ -1694,13 +1464,10 @@ static int llog_osd_cleanup(struct llog_ctxt *ctxt)
 }
 
 struct llog_operations llog_osd_ops = {
-        lop_write_rec:           llog_osd_write_rec,
         lop_next_block:          llog_osd_next_block,
         lop_prev_block:          llog_osd_prev_block,
         lop_read_header:         llog_osd_read_header,
-        lop_create:              llog_osd_create,
         lop_destroy:             llog_osd_destroy,
-        lop_close:               llog_osd_close,
 
         lop_setup:               llog_osd_setup,
         lop_cleanup:             llog_osd_cleanup,
