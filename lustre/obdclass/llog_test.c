@@ -422,13 +422,17 @@ static int plain_counter;
 static int plain_print_cb(const struct lu_env *env, struct llog_handle *llh,
                           struct llog_rec_hdr *rec, void *data)
 {
+        struct lu_fid fid;
+
         if (!(llh->lgh_hdr->llh_flags & LLOG_F_IS_PLAIN)) {
                 CERROR("log is not plain\n");
                 RETURN(-EINVAL);
         }
 
+        logid_to_fid(&llh->lgh_id, &fid);
+
         CDEBUG(D_OTHER, "seeing record at index %d in log "DFID"\n",
-               rec->lrh_index, PFID(lu_object_fid(&llh->lgh_obj->do_lu)));
+               rec->lrh_index, PFID(&fid));
 
         plain_counter++;
 
