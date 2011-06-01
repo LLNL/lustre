@@ -145,16 +145,13 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
         info->fti_attr.la_mode = S_IFREG | S_ISUID | S_ISGID | 0666;
         info->fti_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
-        /**
-         * Set a/c/m time to a insane large negative value at creation
-         * time so that any timestamp arriving from the client will
-         * always be newer and update the inode.
-         * See LU-221 for details.
-         */
+        /* Initialize a/c/m time so any client timestamp will always
+         * be newer and update the inode. ctime = 0 is also handled
+         * specially in fsfilt_ext3_setattr(). See LU-221, LU-1042 */
         info->fti_attr.la_valid |= LA_ATIME | LA_MTIME | LA_CTIME;
-        info->fti_attr.la_atime = INT_MIN + 24 * 3600;
-        info->fti_attr.la_mtime = INT_MIN + 24 * 3600;
-        info->fti_attr.la_ctime = INT_MIN + 24 * 3600;
+        info->fti_attr.la_atime = 0;
+        info->fti_attr.la_mtime = 0;
+        info->fti_attr.la_ctime = 0;
 
         next = ofd_object_child(fo);
         LASSERT(next != NULL);
@@ -361,6 +358,23 @@ int ofd_attr_get(const struct lu_env *env, struct ofd_object *fo,
         if (ofd_object_exists(fo)) {
                 rc = dt_attr_get(env, ofd_object_child(fo), la,
                                  ofd_object_capa(env, fo));
+
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2,7,50,0)
+                /* Try to correct for a bug in 2.1.0 (LU-221) that caused
+                 * negative timestamps to appear to be in the far future,
+                 * due old timestamp being stored on disk as an unsigned value.
+                 * This fixes up any bad values stored on disk before
+                 * returning them to the client, and ensures any timestamp
+                 * updates are correct.  LU-1042 */
+                if (unlikely(la->la_atime == LU221_BAD_TIME))
+                        la->la_atime = 0;
+                if (unlikely(la->la_mtime == LU221_BAD_TIME))
+                        la->la_mtime = 0;
+                if (unlikely(la->la_ctime == LU221_BAD_TIME))
+                        la->la_ctime = 0;
+#else
+#warning "remove old LU-221/LU-1042 workaround code"
+#endif
         } else {
                 rc = -ENOENT;
         }
