@@ -21,10 +21,9 @@ CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 
 # Orion: to be fixed
-# 60a -- llog_osd_create()) ASSERTION(dt) failed
 # 160 -- (bug 22448) changelogs don't work yet
 # 225 - md_echo needs fixes
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 60a 160 225"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 160 225"
 
 case `uname -r` in
 2.6*) FSTYPE=${FSTYPE:-ldiskfs} ;;
