@@ -981,6 +981,7 @@ int ofd_getattr(const struct lu_env *env, struct obd_export *exp,
         struct ofd_device *ofd = ofd_exp(exp);
         struct ofd_thread_info *info;
         struct ofd_object *fo;
+        __u64 curr_version;
         int rc = 0;
         ENTRY;
 
@@ -1005,6 +1006,12 @@ int ofd_getattr(const struct lu_env *env, struct obd_export *exp,
                 obdo_from_la(oinfo->oi_oa, &info->fti_attr,
                              OFD_VALID_FLAGS | LA_UID | LA_GID);
 
+        /* Store inode version in reply */
+        curr_version = dt_version_get(env, ofd_object_child(fo));
+        if ((__s64)curr_version != -EOPNOTSUPP) {
+                oinfo->oi_oa->o_valid |= OBD_MD_FLDATAVERSION;
+                oinfo->oi_oa->o_data_version = curr_version;
+        }
         ofd_object_put(env, fo);
 out:
         RETURN(rc);

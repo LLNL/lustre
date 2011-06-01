@@ -604,6 +604,8 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         if (rc != 0)
                 RETURN(rc);
 
+        obd->u.obt.obt_magic = OBT_MAGIC;
+
         m->ofd_fmd_max_num = OFD_FMD_MAX_NUM_DEFAULT;
         m->ofd_fmd_max_age = OFD_FMD_MAX_AGE_DEFAULT;
 

@@ -395,6 +395,9 @@ static struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
                           lprocfs_ofd_wr_syncjournal, 0 },
         { "sync_on_lock_cancel", lprocfs_ofd_rd_sync_lock_cancel,
                                  lprocfs_ofd_wr_sync_lock_cancel, 0 },
+        { "instance",     lprocfs_target_rd_instance, 0 },
+        { "ir_factor",    lprocfs_obd_rd_ir_factor,
+                          lprocfs_obd_wr_ir_factor, 0},
 #if 0
 #ifdef HAVE_QUOTA_SUPPORT
         { "quota_bunit_sz", lprocfs_rd_bunit, lprocfs_wr_bunit, 0},
