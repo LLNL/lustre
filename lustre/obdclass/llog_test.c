@@ -109,7 +109,7 @@ static int llog_test_1(const struct lu_env *env, struct obd_device *obd, char *n
         CWARN("1a: create a log with name: %s\n", name);
         LASSERT(ctxt);
 
-        rc = llog_create(ctxt, &llh, NULL, name);
+        rc = llog_open_create(env, ctxt, &llh, NULL, name);
         if (rc) {
                 CERROR("1a: llog_create with name %s failed: %d\n", name, rc);
                 GOTO(out, rc);
@@ -157,7 +157,7 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
                 GOTO(out_close, rc);
 
         CWARN("2b: create a log without specified NAME & LOGID\n");
-        rc = llog_create(ctxt, &loghandle, NULL, NULL);
+        rc = llog_open_create(env, ctxt, &loghandle, NULL, NULL);
         if (rc) {
                 CERROR("2b: create log failed\n");
                 GOTO(out_close, rc);
@@ -207,7 +207,7 @@ static int llog_test_3(const struct lu_env *env, struct obd_device *obd, struct 
         lcr.lcr_hdr.lrh_type = OST_SZ_REC;
 
         CWARN("3a: write one create_rec\n");
-        rc = llog_write_rec(llh,  &lcr.lcr_hdr, NULL, 0, NULL, -1);
+        rc = llog_write_rec(env, llh,  &lcr.lcr_hdr, NULL, 0, NULL, -1);
         num_recs++;
         if (rc) {
                 CERROR("3a: write one log record failed: %d\n", rc);
@@ -225,7 +225,7 @@ static int llog_test_3(const struct lu_env *env, struct obd_device *obd, struct 
                 hdr.lrh_len = 8;
                 hdr.lrh_type = OBD_CFG_REC;
                 memset(buf, 0, sizeof buf);
-                rc = llog_write_rec(llh, &hdr, NULL, 0, buf, -1);
+                rc = llog_write_rec(env, llh, &hdr, NULL, 0, buf, -1);
                 if (rc) {
                         CERROR("3b: write 10 records failed at #%d: %d\n",
                                i + 1, rc);
@@ -240,7 +240,7 @@ static int llog_test_3(const struct lu_env *env, struct obd_device *obd, struct 
 
         CWARN("3c: write 1000 more log records\n");
         for (i = 0; i < 1000; i++) {
-                rc = llog_write_rec(llh, &lcr.lcr_hdr, NULL, 0, NULL, -1);
+                rc = llog_write_rec(env, llh, &lcr.lcr_hdr, NULL, 0, NULL, -1);
                 if (rc) {
                         CERROR("3c: write 1000 records failed at #%d: %d\n",
                                i + 1, rc);
@@ -264,11 +264,11 @@ static int llog_test_3(const struct lu_env *env, struct obd_device *obd, struct 
                 if ((i % 2) == 0) {
                         hdr.lrh_len = 24;
                         hdr.lrh_type = OBD_CFG_REC;
-                        rc = llog_write_rec(llh, &hdr, NULL, 0, buf_even, -1);
+                        rc = llog_write_rec(env, llh, &hdr, NULL, 0, buf_even, -1);
                 } else {
                         hdr.lrh_len = 32;
                         hdr.lrh_type = OBD_CFG_REC;
-                        rc = llog_write_rec(llh, &hdr, NULL, 0, buf_odd, -1);
+                        rc = llog_write_rec(env, llh, &hdr, NULL, 0, buf_odd, -1);
                 }
                 if (rc == -ENOSPC) {
                         break;
@@ -309,7 +309,7 @@ static int llog_test_4(const struct lu_env *env, struct obd_device *obd)
 
         sprintf(name, "%x", llog_test_rand + 1);
         CWARN("4a: create a catalog log with name: %s\n", name);
-        rc = llog_create(ctxt, &cath, NULL, name);
+        rc = llog_open_create(env, ctxt, &cath, NULL, name);
         if (rc) {
                 CERROR("4a: llog_create with name %s failed: %d\n", name, rc);
                 GOTO(ctxt_release, rc);
