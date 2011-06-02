@@ -131,9 +131,6 @@ static int llog_cat_new_log(const struct lu_env *env,
                 GOTO(out_destroy, rc);
 
         loghandle->lgh_hdr->llh_cat_idx = index;
-        LASSERT(cfs_list_empty(&loghandle->u.phd.phd_entry));
-        cfs_list_add_tail(&loghandle->u.phd.phd_entry,
-                          &cathandle->u.chd.chd_head);
         RETURN(0);
 
 out_destroy:
@@ -302,7 +299,6 @@ int llog_cat_add_rec_2(const struct lu_env *env, struct llog_handle *cathandle,
 
         /* loghandle is already locked by llog_cat_current_log() for us */
         if (!llog_exist_2(loghandle)) {
-                cfs_list_del_init(&loghandle->u.phd.phd_entry);
                 rc = llog_cat_new_log(env, cathandle, loghandle, th);
                 LASSERTF(rc >= 0, "rc = %d\n", rc);
         }
@@ -319,7 +315,6 @@ int llog_cat_add_rec_2(const struct lu_env *env, struct llog_handle *cathandle,
                 LASSERT(!IS_ERR(loghandle));
                 /* new llog can be created concurrently */
                 if (!llog_exist_2(loghandle)) {
-                        cfs_list_del_init(&loghandle->u.phd.phd_entry);
                         rc = llog_cat_new_log(env, cathandle, loghandle, th);
                         LASSERTF(rc >= 0, "rc = %d\n", rc);
                 }
