@@ -69,6 +69,7 @@ struct llog_handle *llog_alloc_handle(void)
                 RETURN(ERR_PTR(-ENOMEM));
 
         cfs_init_rwsem(&loghandle->lgh_lock);
+        CFS_INIT_LIST_HEAD(&loghandle->u.phd.phd_entry);
 
         RETURN(loghandle);
 }
@@ -148,7 +149,7 @@ int llog_init_handle(struct llog_handle *handle, int flags,
         ENTRY;
         LASSERT(handle->lgh_hdr == NULL);
 
-        OBD_ALLOC(llh, sizeof(*llh));
+        OBD_ALLOC_PTR(llh);
         if (llh == NULL)
                 RETURN(-ENOMEM);
         handle->lgh_hdr = llh;
@@ -183,18 +184,17 @@ int llog_init_handle(struct llog_handle *handle, int flags,
 
 out:
         if (flags & LLOG_F_IS_CAT) {
+                LASSERT(cfs_list_empty(&handle->u.chd.chd_head));
                 CFS_INIT_LIST_HEAD(&handle->u.chd.chd_head);
                 llh->llh_size = sizeof(struct llog_logid_rec);
-        } else if (flags & LLOG_F_IS_PLAIN) {
-                CFS_INIT_LIST_HEAD(&handle->u.phd.phd_entry);
-        } else {
+        } else if (!(flags & LLOG_F_IS_PLAIN)) {
                 CERROR("Unknown flags: %#x (Expected %#x or %#x\n",
                        flags, LLOG_F_IS_CAT, LLOG_F_IS_PLAIN);
                 LBUG();
         }
 
         if (rc) {
-                OBD_FREE(llh, sizeof(*llh));
+                OBD_FREE_PTR(llh);
                 handle->lgh_hdr = NULL;
         }
         RETURN(rc);
@@ -572,4 +572,3 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_erase);
-
