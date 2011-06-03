@@ -90,13 +90,15 @@ struct cat_handle_data {
         cfs_list_t          chd_head;
         struct llog_handle *chd_current_log; /* currently open log */
         struct llog_handle *chd_next_log;    /* log to be used next */
+        cfs_spinlock_t      chd_lock; /* protect chd values and list */
 };
 
 /* In-memory descriptor for a log object or log catalog */
 struct llog_handle {
-        cfs_rw_semaphore_t      lgh_lock;
+        cfs_rw_semaphore_t      lgh_lock; /* protect llog writes */
         struct llog_logid       lgh_id;              /* id of this log */
         struct llog_log_hdr    *lgh_hdr;
+        cfs_spinlock_t          lgh_hdr_lock; /* protect lgh_hdr data */
         struct dt_object       *lgh_obj;
         int                     lgh_last_idx;
         int                     lgh_cur_idx;    /* used during llog_process */
