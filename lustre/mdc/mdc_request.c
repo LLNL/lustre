@@ -1294,7 +1294,7 @@ static int mdc_changelog_send_thread(void *csdata)
         ctxt = llog_get_context(cs->cs_obd, LLOG_CHANGELOG_REPL_CTXT);
         if (ctxt == NULL)
                 GOTO(out, rc = -ENOENT);
-        rc = llog_create(ctxt, &llh, NULL, CHANGELOG_CATALOG);
+        rc = llog_open(NULL, ctxt, &llh, NULL, CHANGELOG_CATALOG);
         if (rc) {
                 CERROR("llog_create() failed %d\n", rc);
                 GOTO(out, rc);

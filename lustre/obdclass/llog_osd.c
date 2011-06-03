@@ -634,10 +634,10 @@ out_attr:
         RETURN(rc);
 }
 
-static int llog_osd_declare_write_rec_2(const struct lu_env *env,
-                                        struct llog_handle *loghandle,
-                                        struct llog_rec_hdr *rec,
-                                        int idx, struct thandle *th)
+static int llog_osd_declare_write_rec(const struct lu_env *env,
+                                      struct llog_handle *loghandle,
+                                      struct llog_rec_hdr *rec,
+                                      int idx, struct thandle *th)
 {
         struct dt_object *o;
         struct lu_attr   *attr = NULL;
@@ -681,11 +681,11 @@ out:
 
 /* returns negative in on error; 0 if success && reccookie == 0; 1 otherwise */
 /* appends if idx == -1, otherwise overwrites record idx. */
-static int llog_osd_write_rec_2(const struct lu_env *env,
-                                struct llog_handle *loghandle,
-                                struct llog_rec_hdr *rec,
-                                struct llog_cookie *reccookie, int cookiecount,
-                                void *buf, int idx, struct thandle *th)
+static int llog_osd_write_rec(const struct lu_env *env,
+                              struct llog_handle *loghandle,
+                              struct llog_rec_hdr *rec,
+                              struct llog_cookie *reccookie, int cookiecount,
+                              void *buf, int idx, struct thandle *th)
 {
         struct llog_log_hdr       *llh;
         int                        reclen = rec->lrh_len;
@@ -1099,9 +1099,9 @@ out:
 /*
  *
  */
-static int llog_osd_open_2(const struct lu_env *env, struct llog_ctxt *ctxt,
-                           struct llog_handle **res, struct llog_logid *logid,
-                           char *name)
+static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
+                         struct llog_handle **res, struct llog_logid *logid,
+                         char *name)
 {
         struct llog_handle        *handle = NULL;
         struct dt_object          *o;
@@ -1197,15 +1197,15 @@ out:
         RETURN(rc);
 }
 
-static int llog_osd_exist_2(struct llog_handle *handle)
+static int llog_osd_exist(struct llog_handle *handle)
 {
         LASSERT(handle->lgh_obj);
         return dt_object_exists(handle->lgh_obj);
 }
 
-static int llog_osd_declare_create_2(const struct lu_env *env,
-                                     struct llog_handle *res,
-                                     struct thandle *th)
+static int llog_osd_declare_create(const struct lu_env *env,
+                                   struct llog_handle *res,
+                                   struct thandle *th)
 {
         struct dt_object_format dof;
         struct lu_attr         *attr = NULL;
@@ -1256,9 +1256,8 @@ out:
 
 /* This is a callback from the llog_* functions.
  * Assumes caller has already pushed us into the kernel context. */
-static int llog_osd_create_2(const struct lu_env *env,
-                             struct llog_handle *res,
-                             struct thandle *th)
+static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
+                           struct thandle *th)
 {
         struct dt_object          *o;
         struct lu_attr            *attr = NULL;
@@ -1311,8 +1310,7 @@ out:
         RETURN(rc);
 }
 
-static int llog_osd_close_2(const struct lu_env *env,
-                            struct llog_handle *handle)
+static int llog_osd_close(const struct lu_env *env, struct llog_handle *handle)
 {
         struct llog_superblock *lsb;
         int rc = 0;
@@ -1391,7 +1389,7 @@ static int llog_osd_destroy(const struct lu_env *env,
 out_trans:
         dt_trans_stop(env, d, th);
 out:
-        llog_osd_close_2(env, loghandle);
+        llog_osd_close(env, loghandle);
         RETURN(rc);
 }
 
@@ -1468,13 +1466,13 @@ struct llog_operations llog_osd_ops = {
         lop_setup:               llog_osd_setup,
         lop_cleanup:             llog_osd_cleanup,
 
-        lop_open_2:              llog_osd_open_2,
-        lop_exist_2:             llog_osd_exist_2,
-        lop_declare_create_2:    llog_osd_declare_create_2,
-        lop_create_2:            llog_osd_create_2,
-        lop_declare_write_rec_2: llog_osd_declare_write_rec_2,
-        lop_write_rec_2:         llog_osd_write_rec_2,
-        lop_close_2:             llog_osd_close_2,
+        lop_open:                llog_osd_open,
+        lop_exist:               llog_osd_exist,
+        lop_declare_create:      llog_osd_declare_create,
+        lop_create:              llog_osd_create,
+        lop_declare_write_rec:   llog_osd_declare_write_rec,
+        lop_write_rec:           llog_osd_write_rec,
+        lop_close:               llog_osd_close,
 };
 
 EXPORT_SYMBOL(llog_osd_ops);

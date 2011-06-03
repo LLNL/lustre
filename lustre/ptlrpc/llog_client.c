@@ -84,8 +84,8 @@
 
 /* This is a callback from the llog_* functions.
  * Assumes caller has already pushed us into the kernel context. */
-static int llog_client_create(struct llog_ctxt *ctxt, struct llog_handle **res,
-                              struct llog_logid *logid, char *name)
+static int llog_client_open(const struct lu_env *env, struct llog_ctxt *ctxt, struct llog_handle **res,
+                            struct llog_logid *logid, char *name)
 {
         struct obd_import     *imp;
         struct llogd_body     *body;
@@ -340,7 +340,7 @@ err_exit:
         return rc;
 }
 
-static int llog_client_close(struct llog_handle *handle)
+static int llog_client_close(const struct lu_env *env, struct llog_handle *handle)
 {
         /* this doesn't call LLOG_ORIGIN_HANDLE_CLOSE because
            the servers all close the file at the end of every
@@ -353,7 +353,7 @@ struct llog_operations llog_client_ops = {
         lop_next_block:  llog_client_next_block,
         lop_prev_block:  llog_client_prev_block,
         lop_read_header: llog_client_read_header,
-        lop_create:      llog_client_create,
+        lop_open:        llog_client_open,
         lop_destroy:     llog_client_destroy,
         lop_close:       llog_client_close,
 };
