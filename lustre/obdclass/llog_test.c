@@ -488,7 +488,7 @@ static int llog_test_5(const struct lu_env *env, struct obd_device *obd)
 
         CWARN("5b: print the catalog entries.. we expect 2\n");
         cat_counter = 0;
-        rc = llog_process(llh, cat_print_cb, "test 5", NULL);
+        rc = llog_process(env, llh, cat_print_cb, "test 5", NULL);
         if (rc) {
                 CERROR("5b: process with cat_print_cb failed: %d\n", rc);
                 GOTO(out, rc);
@@ -507,7 +507,7 @@ static int llog_test_5(const struct lu_env *env, struct obd_device *obd)
 
         CWARN("5c: print the catalog entries.. we expect 1\n");
         cat_counter = 0;
-        rc = llog_process(llh, cat_print_cb, "test 5", NULL);
+        rc = llog_process(env, llh, cat_print_cb, "test 5", NULL);
         if (rc) {
                 CERROR("5c: process with cat_print_cb failed: %d\n", rc);
                 GOTO(out, rc);
@@ -608,7 +608,7 @@ static int llog_test_6(const struct lu_env *env, struct obd_device *obd,
         }
 
         CWARN("6b: process log %s using client API\n", name);
-        rc = llog_process(llh, plain_print_cb, NULL, NULL);
+        rc = llog_process(env, llh, plain_print_cb, NULL, NULL);
         if (rc)
                 CERROR("6b: llog_process failed %d\n", rc);
 

@@ -1400,7 +1400,7 @@ int class_config_parse_llog(struct llog_ctxt *ctxt, char *name,
                 cd.lpcd_first_idx = cfg->cfg_last_idx;
         cd.lpcd_last_idx = 0;
 
-        rc = llog_process(llh, class_config_llog_handler, cfg, &cd);
+        rc = llog_process(NULL, llh, class_config_llog_handler, cfg, &cd);
 
         CDEBUG(D_CONFIG, "Processed log %s gen %d-%d (rc=%d)\n", name,
                cd.lpcd_first_idx + 1, cd.lpcd_last_idx, rc);
@@ -1412,7 +1412,6 @@ parse_out:
         rc2 = llog_close(llh);
         if (rc == 0)
                 rc = rc2;
-
         RETURN(rc);
 }
 
@@ -1493,12 +1492,11 @@ int class_config_dump_llog(struct llog_ctxt *ctxt, char *name,
         if (rc)
                 GOTO(parse_out, rc);
 
-        rc = llog_process(llh, class_config_dump_handler, cfg, NULL);
+        rc = llog_process(NULL, llh, class_config_dump_handler, cfg, NULL);
 parse_out:
         rc2 = llog_close(llh);
         if (rc == 0)
                 rc = rc2;
-
         LCONSOLE_INFO("End config log %s\n", name);
         RETURN(rc);
 

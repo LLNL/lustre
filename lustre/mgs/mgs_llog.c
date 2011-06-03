@@ -332,7 +332,7 @@ static int mgs_get_fsdb_from_llog(const struct lu_env *env,
         if (llog_get_size(loghandle) <= 1)
                 cfs_set_bit(FSDB_LOG_EMPTY, &fsdb->fsdb_flags);
 
-        rc = llog_process_2(env, loghandle, mgs_fsdb_handler, (void *)&d, NULL);
+        rc = llog_process(env, loghandle, mgs_fsdb_handler, (void *)&d, NULL);
         CDEBUG(D_INFO, "get_db = %d\n", rc);
 out_close:
         llog_close_2(env, loghandle);
@@ -747,7 +747,7 @@ static int mgs_modify(const struct lu_env *env, struct mgs_device *mgs,
         mml->mml_marker.cm_flags = flags;
         mml->mml_marker.cm_canceltime = flags ? cfs_time_current_sec() : 0;
         mml->mml_modified = 0;
-        rc = llog_process_2(env, loghandle, mgs_modify_handler, (void *)mml, NULL);
+        rc = llog_process(env, loghandle, mgs_modify_handler, (void *)mml, NULL);
         if (!rc && !mml->mml_modified)
                 rc = -ENODEV;
         OBD_FREE_PTR(mml);
@@ -1313,7 +1313,7 @@ static int mgs_steal_llog_for_mdt_from_client(const struct lu_env *env,
         if (rc)
                 GOTO(out_close, rc);
 
-        rc = llog_process_2(env, loghandle, mgs_steal_llog_handler, (void *)comp, NULL);
+        rc = llog_process(env, loghandle, mgs_steal_llog_handler, (void *)comp, NULL);
         CDEBUG(D_MGS, "steal llog re = %d\n", rc);
 out_close:
         llog_close_2(env, loghandle);
@@ -2545,7 +2545,7 @@ int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env,
         msrd.msrd_fsdb = fsdb;
         msrd.msrd_skip = 0;
 
-        rc = llog_process_2(env, llh, mgs_srpc_read_handler, (void *) &msrd, NULL);
+        rc = llog_process(env, llh, mgs_srpc_read_handler, (void *) &msrd, NULL);
 
 out_close:
         llog_close_2(env, llh);
