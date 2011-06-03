@@ -512,11 +512,11 @@ int llog_open_create(const struct lu_env *env, struct llog_ctxt *ctxt,
         int                rc;
         ENTRY;
 
-        rc = llog_open_2(env, ctxt, res, logid, name);
+        rc = llog_open(env, ctxt, res, logid, name);
         if (rc)
                 RETURN(rc);
 
-        if (!llog_exist_2(*res)) {
+        if (!llog_exist(*res)) {
                 struct dt_device *d;
 
                 d = lu2dt_dev((*res)->lgh_obj->do_lu.lo_dev);
@@ -525,16 +525,16 @@ int llog_open_create(const struct lu_env *env, struct llog_ctxt *ctxt,
                 if (IS_ERR(th))
                         GOTO(out, rc = PTR_ERR(th));
 
-                rc = llog_declare_create_2(env, *res, th);
+                rc = llog_declare_create(env, *res, th);
                 if (rc == 0) {
                         rc = dt_trans_start_local(env, d, th);
                         if (rc == 0)
-                                rc = llog_create_2(env, *res, th);
+                                rc = llog_create(env, *res, th);
                 }
                 dt_trans_stop(env, d, th);
 out:
                 if (rc)
-                        llog_close_2(env, *res);
+                        llog_close(env, *res);
         }
         RETURN(rc);
 }
@@ -551,11 +551,11 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (name == NULL && logid == NULL)
                 RETURN(0);
 
-        rc = llog_open_2(env, ctxt, &handle, logid, name);
+        rc = llog_open(env, ctxt, &handle, logid, name);
         if (rc)
                 RETURN(rc);
 
-        if (llog_exist_2(handle)) {
+        if (llog_exist(handle)) {
                 rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
                 if (rc == 0) {
                         rc = llog_destroy(env, handle);
@@ -563,7 +563,7 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
                         RETURN(rc);
                 }
         }
-        rc = llog_close_2(env, handle);
+        rc = llog_close(env, handle);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_erase);
@@ -571,9 +571,9 @@ EXPORT_SYMBOL(llog_erase);
 /*
  * Helper function for write record in llog. It is valid only with local llog.
  */
-int llog_write_rec(const struct lu_env *env, struct llog_handle *loghandle,
-                   struct llog_rec_hdr *rec, struct llog_cookie *reccookie,
-                   int cookiecount, void *buf, int idx)
+int llog_write(const struct lu_env *env, struct llog_handle *loghandle,
+               struct llog_rec_hdr *rec, struct llog_cookie *reccookie,
+               int cookiecount, void *buf, int idx)
 {
         struct dt_device  *dt;
         struct thandle    *th;
@@ -589,10 +589,10 @@ int llog_write_rec(const struct lu_env *env, struct llog_handle *loghandle,
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
 
-        if (!llog_exist_2(loghandle))
+        if (!llog_exist(loghandle))
                 GOTO(out_trans, rc = -EEXIST);
 
-        rc = llog_declare_write_rec_2(env, loghandle, rec, idx, th);
+        rc = llog_declare_write_rec(env, loghandle, rec, idx, th);
         if (rc)
                 GOTO(out_trans, rc);
 
@@ -600,10 +600,10 @@ int llog_write_rec(const struct lu_env *env, struct llog_handle *loghandle,
         if (rc)
                 GOTO(out_trans, rc);
 
-        rc = llog_write_rec_2(env, loghandle, rec, reccookie, cookiecount,
-                              buf, idx, th);
+        rc = llog_write_rec(env, loghandle, rec, reccookie, cookiecount,
+                            buf, idx, th);
 out_trans:
         dt_trans_stop(env, dt, th);
         RETURN(rc);
 }
-EXPORT_SYMBOL(llog_write_rec);
+EXPORT_SYMBOL(llog_write);

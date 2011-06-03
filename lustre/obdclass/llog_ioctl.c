@@ -142,7 +142,7 @@ static int llog_check_cb(const struct lu_env *env, struct llog_handle *handle,
                         RETURN(rc);
                 }
                 rc = llog_process(env, log_handle, llog_check_cb, NULL, NULL);
-                llog_close_2(env, log_handle);
+                llog_close(env, log_handle);
         } else {
                 switch (rec->lrh_type) {
                 case OST_SZ_REC:
@@ -313,12 +313,12 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 rc = str2logid(&logid, data->ioc_inlbuf1, data->ioc_inllen1);
                 if (rc)
                         GOTO(out, rc);
-                rc = llog_open_2(&env, ctxt, &handle, &logid, NULL);
+                rc = llog_open(&env, ctxt, &handle, &logid, NULL);
                 if (rc)
                         GOTO(out, rc);
         } else if (*data->ioc_inlbuf1 == '$') {
                 char *name = data->ioc_inlbuf1 + 1;
-                rc = llog_open_2(&env, ctxt, &handle, NULL, name);
+                rc = llog_open(&env, ctxt, &handle, NULL, name);
                 if (rc)
                         GOTO(out, rc);
         } else {
@@ -397,7 +397,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 if (!(handle->lgh_hdr->llh_flags & LLOG_F_IS_CAT))
                         GOTO(out_close, rc = -EINVAL);
 
-                rc = llog_cat_cancel_records_2(&env, handle, 1, &cookie);
+                rc = llog_cat_cancel_records(&env, handle, 1, &cookie);
                 GOTO(out_close, rc);
         }
         case OBD_IOC_LLOG_REMOVE: {
@@ -433,7 +433,7 @@ out_close:
             handle->lgh_hdr->llh_flags & LLOG_F_IS_CAT)
                 llog_cat_close(&env, handle);
         else
-                llog_close_2(&env, handle);
+                llog_close(&env, handle);
 out:
         lu_env_fini(&env);
         RETURN(rc);
