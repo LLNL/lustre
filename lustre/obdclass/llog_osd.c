@@ -632,6 +632,12 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
         o = loghandle->lgh_obj;
         LASSERT(o);
 
+        /* each time we update header */
+        rc = dt_declare_record_write(env, o, sizeof(struct llog_log_hdr),
+                                     0, th);
+        if (rc || idx != 0) /* if error or just header */
+                GOTO(out, rc);
+
         if (dt_object_exists(o)) {
                 OBD_ALLOC_PTR(attr);
                 if (unlikely(attr == NULL))
@@ -642,19 +648,16 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
                 OBD_FREE_PTR(attr);
                 if (rc)
                         GOTO(out, rc);
-        } else
+        } else {
                 pos = 0;
+        }
 
         /* XXX: implement declared window or multi-chunks approach */
         rc = dt_declare_record_write(env, o, 32 * 1024, pos, th);
         if (rc)
                 GOTO(out, rc);
-
-        /* each time we update header */
-        rc = dt_declare_record_write(env, o,
-                                     sizeof(struct llog_log_hdr), 0, th);
 out:
-        RETURN(rc);
+        return rc;
 }
 
 /* returns negative in on error; 0 if success && reccookie == 0; 1 otherwise */
@@ -768,15 +771,15 @@ static int llog_osd_write_rec(const struct lu_env *env,
         /* NOTE: padding is a record, but no bit is set */
         if (left != 0 && left != reclen &&
             left < (reclen + LLOG_MIN_REC_SIZE)) {
-                 index = loghandle->lgh_last_idx + 1;
-                 rc = llog_osd_pad(env, o, &off, left, index, th);
-                 if (rc)
+                index = loghandle->lgh_last_idx + 1;
+                rc = llog_osd_pad(env, o, &off, left, index, th);
+                if (rc)
                         GOTO(out, rc);
-                 loghandle->lgh_last_idx++; /*for pad rec*/
-         }
-         /* if it's the last idx in log file, then return -ENOSPC */
-         if (loghandle->lgh_last_idx >= LLOG_BITMAP_SIZE(llh) - 1)
-                 GOTO(out, rc = -ENOSPC);
+                loghandle->lgh_last_idx++; /*for pad rec*/
+        }
+        /* if it's the last idx in log file, then return -ENOSPC */
+        if (loghandle->lgh_last_idx >= LLOG_BITMAP_SIZE(llh) - 1)
+                GOTO(out, rc = -ENOSPC);
         loghandle->lgh_last_idx++;
         index = loghandle->lgh_last_idx;
         LASSERT(index < LLOG_BITMAP_SIZE(llh));
@@ -787,14 +790,17 @@ static int llog_osd_write_rec(const struct lu_env *env,
                 lrt->lrt_len = rec->lrh_len;
                 lrt->lrt_index = rec->lrh_index;
         }
-        /*The caller should make sure only 1 process access the lgh_last_idx,
-         *Otherwise it might hit the assert.*/
+        /* The caller should make sure only 1 process access the lgh_last_idx,
+         * Otherwise it might hit the assert.*/
         LASSERT(index < LLOG_BITMAP_SIZE(llh));
+        cfs_spin_lock(&loghandle->lgh_hdr_lock);
         if (ext2_set_bit(index, llh->llh_bitmap)) {
                 CERROR("argh, index %u already set in log bitmap?\n", index);
+                cfs_spin_unlock(&loghandle->lgh_hdr_lock);
                 LBUG(); /* should never happen */
         }
         llh->llh_count++;
+        cfs_spin_unlock(&loghandle->lgh_hdr_lock);
         llh->llh_tail.lrt_index = index;
 
         rc = llog_osd_write_blob(env, o, &llh->llh_hdr, NULL, 0, th);
