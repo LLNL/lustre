@@ -128,10 +128,8 @@ extern struct llog_handle *llog_alloc_handle(void);
 int llog_init_handle(struct llog_handle *handle, int flags,
                      struct obd_uuid *uuid);
 extern void llog_free_handle(struct llog_handle *handle);
-int llog_process(struct llog_handle *loghandle, llog_cb_t cb,
-                 void *data, void *catdata);
-int llog_process_2(const struct lu_env *, struct llog_handle *loghandle, llog_cb_t cb,
-                   void *data, void *catdata);
+int llog_process(const struct lu_env *, struct llog_handle *loghandle,
+                 llog_cb_t cb, void *data, void *catdata);
 int llog_reverse_process(const struct lu_env *, struct llog_handle *, llog_cb_t,
                          void *, void *);
 extern int llog_cancel_rec(const struct lu_env *, struct llog_handle *, int);
@@ -931,7 +929,7 @@ static inline int llog_close(struct llog_handle *loghandle)
         if (lop->lop_close == NULL)
                 GOTO(out, -EOPNOTSUPP);
         rc = lop->lop_close(loghandle);
- out:
+out:
         llog_free_handle(loghandle);
         RETURN(rc);
 }

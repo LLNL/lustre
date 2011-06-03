@@ -139,7 +139,7 @@ static int llog_check_cb(const struct lu_env *env, struct llog_handle *handle,
                                lir->lid_id.lgl_ogen);
                         RETURN(rc);
                 }
-                rc = llog_process_2(env, log_handle, llog_check_cb, NULL, NULL);
+                rc = llog_process(env, log_handle, llog_check_cb, NULL, NULL);
                 llog_close_2(env, log_handle);
         } else {
                 switch (rec->lrh_type) {
@@ -355,7 +355,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
         }
         case OBD_IOC_LLOG_CHECK: {
                 LASSERT(data->ioc_inllen1);
-                rc = llog_process_2(&env, handle, llog_check_cb, data, NULL);
+                rc = llog_process(&env, handle, llog_check_cb, data, NULL);
                 if (rc == -LLOG_EEMPTY)
                         rc = 0;
                 GOTO(out_close, rc);
@@ -363,11 +363,11 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
 
         case OBD_IOC_LLOG_PRINT: {
                 LASSERT(data->ioc_inllen1);
-                rc = llog_process_2(&env, handle, class_config_dump_handler,data,NULL);
+                rc = llog_process(&env, handle, class_config_dump_handler,data,NULL);
                 if (rc == -LLOG_EEMPTY)
                         rc = 0;
                 else
-                        rc = llog_process_2(&env, handle, llog_print_cb, data, NULL);
+                        rc = llog_process(&env, handle, llog_print_cb, data, NULL);
 
                 GOTO(out_close, rc);
         }
@@ -420,7 +420,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                         rc = llog_remove_log(&env, handle, &plain);
                 } else {
                         /*remove all the log of the catalog*/
-                        llog_process_2(&env, handle, llog_delete_cb, NULL, NULL);
+                        llog_process(&env, handle, llog_delete_cb, NULL, NULL);
                 }
                 GOTO(out_close, rc);
         }
