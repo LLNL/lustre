@@ -64,7 +64,7 @@ struct llog_handle *llog_alloc_handle(void)
         struct llog_handle *loghandle;
         ENTRY;
 
-        OBD_ALLOC(loghandle, sizeof(*loghandle));
+        OBD_ALLOC_PTR(loghandle);
         if (loghandle == NULL)
                 RETURN(ERR_PTR(-ENOMEM));
 
@@ -90,7 +90,7 @@ void llog_free_handle(struct llog_handle *loghandle)
         LASSERT(sizeof(*(loghandle->lgh_hdr)) == LLOG_CHUNK_SIZE);
         OBD_FREE(loghandle->lgh_hdr, LLOG_CHUNK_SIZE);
 out:
-        OBD_FREE(loghandle, sizeof(*loghandle));
+        OBD_FREE_PTR(loghandle);
 }
 EXPORT_SYMBOL(llog_free_handle);
 
@@ -207,33 +207,25 @@ static int __llog_process_thread(void *arg)
         struct llog_handle           *loghandle = lpi->lpi_loghandle;
         struct llog_log_hdr          *llh = loghandle->lgh_hdr;
         struct llog_process_cat_data *cd  = lpi->lpi_catdata;
-        struct dt_device             *dt = NULL;
-        const struct lu_env          *env;
-        struct lu_env                 _env;
+        const struct lu_env          *env = lpi->lpi_env;
         char                         *buf;
         __u64                         cur_offset = LLOG_CHUNK_SIZE;
         __u64                         last_offset;
         int                           rc = 0, index = 1, last_index;
         int                           saved_index = 0, last_called_index = 0;
+        ENTRY;
 
         LASSERT(llh);
+        LASSERT(env);
 
         OBD_ALLOC(buf, LLOG_CHUNK_SIZE);
         if (!buf) {
                 lpi->lpi_rc = -ENOMEM;
-                return 0;
+                RETURN(0);
         }
 
         LASSERT(loghandle->lgh_ctxt);
         LASSERT(loghandle->lgh_ctxt->loc_obd);
-        env = lpi->lpi_env;
-        if (env == NULL && loghandle->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt) {
-                dt = loghandle->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt;
-                rc = lu_env_init(&_env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-                if (rc)
-                        GOTO(out, rc);
-                env = &_env;
-        }
 
         if (cd != NULL) {
                 last_called_index = cd->lpcd_first_idx;
@@ -338,13 +330,10 @@ repeat:
                 }
         }
 
- out:
+out:
         if (cd != NULL)
                 cd->lpcd_last_idx = last_called_index;
-        if (buf)
-                OBD_FREE(buf, LLOG_CHUNK_SIZE);
-        if (dt)
-                lu_env_fini(&_env);
+        OBD_FREE(buf, LLOG_CHUNK_SIZE);
         lpi->lpi_rc = rc;
         return 0;
 }
@@ -353,12 +342,25 @@ repeat:
 static int llog_process_thread(void *arg)
 {
         struct llog_process_info *lpi = (struct llog_process_info *)arg;
-        int                       rc;
+        struct lu_env             env;
+        struct dt_device         *dt;
+        int                       rc, tags = 0;
 
         cfs_daemonize_ctxt("llog_process_thread");
 
+        /* client env has no keys, tags is just 0 */
+        dt = lpi->lpi_loghandle->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt;
+        if (dt)
+                tags = dt->dd_lu_dev.ld_type->ldt_ctx_tags;
+        rc = lu_env_init(&env, tags);
+        if (rc)
+                goto out;
+        lpi->lpi_env = &env;
+
         rc = __llog_process_thread(arg);
 
+        lu_env_fini(&env);
+out:
         cfs_complete(&lpi->lpi_completion);
         return rc;
 }
@@ -393,8 +395,9 @@ int __llog_process(const struct lu_env *env, struct llog_handle *loghandle,
                         RETURN(rc);
                 }
                 cfs_wait_for_completion(&lpi->lpi_completion);
-        } else
+        } else {
                 __llog_process_thread(lpi);
+        }
 #else
         __llog_process_thread(lpi);
 #endif
@@ -403,20 +406,12 @@ int __llog_process(const struct lu_env *env, struct llog_handle *loghandle,
         RETURN(rc);
 }
 
-int llog_process(struct llog_handle *loghandle, llog_cb_t cb,
-                 void *data, void *catdata)
-{
-        return __llog_process(NULL, loghandle, cb, data, catdata, 1);
-}
-EXPORT_SYMBOL(llog_process);
-
-int llog_process_2(const struct lu_env *env,
-                   struct llog_handle *loghandle, llog_cb_t cb,
-                   void *data, void *catdata)
+int llog_process(const struct lu_env *env, struct llog_handle *loghandle,
+                 llog_cb_t cb, void *data, void *catdata)
 {
         return __llog_process(env, loghandle, cb, data, catdata, 1);
 }
-EXPORT_SYMBOL(llog_process_2);
+EXPORT_SYMBOL(llog_process);
 
 inline int llog_get_size(struct llog_handle *loghandle)
 {
@@ -568,7 +563,7 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
                         RETURN(rc);
                 }
         }
-        llog_close_2(env, handle);
+        rc = llog_close_2(env, handle);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_erase);
