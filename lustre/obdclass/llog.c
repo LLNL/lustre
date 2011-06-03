@@ -74,6 +74,7 @@ struct llog_handle *llog_alloc_handle(void)
                 RETURN(ERR_PTR(-ENOMEM));
 
         cfs_init_rwsem(&loghandle->lgh_lock);
+        cfs_spin_lock_init(&loghandle->lgh_hdr_lock);
         CFS_INIT_LIST_HEAD(&loghandle->u.phd.phd_entry);
 
         RETURN(loghandle);
@@ -105,6 +106,8 @@ EXPORT_SYMBOL(llog_free_handle);
 int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle, int index)
 {
         struct llog_log_hdr *llh = loghandle->lgh_hdr;
+        struct dt_device  *dt;
+        struct thandle    *th;
         int rc = 0;
         ENTRY;
 
@@ -116,34 +119,57 @@ int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle, int
                 RETURN(-EINVAL);
         }
 
+        cfs_spin_lock(&loghandle->lgh_hdr_lock);
         if (!ext2_clear_bit(index, llh->llh_bitmap)) {
                 CDEBUG(D_RPCTRACE, "Catalog index %u already clear?\n", index);
+                cfs_spin_unlock(&loghandle->lgh_hdr_lock);
                 RETURN(-ENOENT);
         }
 
         llh->llh_count--;
-
         if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
             (llh->llh_count == 1) &&
             (loghandle->lgh_last_idx == (LLOG_BITMAP_BYTES * 8) - 1)) {
+                cfs_spin_unlock(&loghandle->lgh_hdr_lock);
                 rc = llog_destroy(env, loghandle);
-                if (rc) {
-                        CERROR("Failure destroying log after last cancel: %d\n",
-                               rc);
-                        ext2_set_bit(index, llh->llh_bitmap);
-                        llh->llh_count++;
-                } else {
+                if (rc)
+                        CERROR("Can't destroy empty llog, %d\n", rc);
+                else
                         rc = 1;
-                }
-                RETURN(rc);
+                GOTO(out, rc);
         }
+        cfs_spin_unlock(&loghandle->lgh_hdr_lock);
 
-        /*rc = llog_write_rec(env, loghandle, &llh->llh_hdr, NULL, 0, NULL, 0);
-        if (rc) {
-                CERROR("Failure re-writing header %d\n", rc);
+        LASSERT(loghandle->lgh_obj);
+        dt = lu2dt_dev(loghandle->lgh_obj->do_lu.lo_dev);
+        LASSERT(dt);
+
+        th = dt_trans_create(env, dt);
+        if (IS_ERR(th))
+                GOTO(out, rc = PTR_ERR(th));
+
+        rc = llog_declare_write_rec(env, loghandle, &llh->llh_hdr, 0, th);
+        if (rc)
+                GOTO(out_trans, rc);
+
+        rc = dt_trans_start(env, dt, th);
+        if (rc)
+                GOTO(out_trans, rc);
+
+        cfs_down_write(&loghandle->lgh_lock);
+        rc = llog_write_rec(env, loghandle, &llh->llh_hdr, NULL, 0, NULL,
+                            0, th);
+        cfs_up_write(&loghandle->lgh_lock);
+out_trans:
+        dt_trans_stop(env, dt, th);
+out:
+        if (rc < 0) {
+                CERROR("Failed to write header %d\n", rc);
+                cfs_spin_lock(&loghandle->lgh_hdr_lock);
                 ext2_set_bit(index, llh->llh_bitmap);
                 llh->llh_count++;
-        }*/
+                cfs_spin_unlock(&loghandle->lgh_hdr_lock);
+        }
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cancel_rec);
@@ -193,6 +219,7 @@ out:
         if (flags & LLOG_F_IS_CAT) {
                 LASSERT(cfs_list_empty(&handle->u.chd.chd_head));
                 CFS_INIT_LIST_HEAD(&handle->u.chd.chd_head);
+                cfs_spin_lock_init(&handle->u.chd.chd_lock);
                 llh->llh_size = sizeof(struct llog_logid_rec);
         } else if (!(flags & LLOG_F_IS_PLAIN)) {
                 CERROR("Unknown flags: %#x (Expected %#x or %#x\n",
