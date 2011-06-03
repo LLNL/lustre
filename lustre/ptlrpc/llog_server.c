@@ -91,11 +91,11 @@ int llog_origin_handle_open(struct ptlrpc_request *req)
                 RETURN(-ENODEV);
         }
 
-        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle, logid, name);
+        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle, logid, name);
         if (rc)
                 GOTO(out_pop, rc);
 
-        if (!llog_exist_2(loghandle))
+        if (!llog_exist(loghandle))
                 GOTO(out_close, rc = -ENOENT);
 
         rc = req_capsule_server_pack(&req->rq_pill);
@@ -106,7 +106,7 @@ int llog_origin_handle_open(struct ptlrpc_request *req)
         body->lgd_logid = loghandle->lgh_id;
 
 out_close:
-        llog_close_2(req->rq_svc_thread->t_env, loghandle);
+        llog_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         RETURN(rc);
@@ -158,12 +158,12 @@ int llog_origin_handle_next_block(struct ptlrpc_request *req)
         if (ctxt == NULL)
                 RETURN(-ENODEV);
 
-        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle,
-                         &body->lgd_logid, NULL);
+        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle,
+                       &body->lgd_logid, NULL);
         if (rc)
                 GOTO(out_pop, rc);
 
-        if (!llog_exist_2(loghandle))
+        if (!llog_exist(loghandle))
                 GOTO(out_close, rc = -ENOENT);
 
         flags = body->lgd_llh_flags;
@@ -187,7 +187,7 @@ int llog_origin_handle_next_block(struct ptlrpc_request *req)
                              repbody->lgd_index, &repbody->lgd_cur_offset,
                              ptr, LLOG_CHUNK_SIZE);
 out_close:
-        llog_close_2(req->rq_svc_thread->t_env, loghandle);
+        llog_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;
@@ -211,12 +211,12 @@ int llog_origin_handle_prev_block(struct ptlrpc_request *req)
         if (ctxt == NULL)
                 RETURN(-ENODEV);
 
-        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle,
+        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle,
                          &body->lgd_logid, NULL);
         if (rc)
                 GOTO(out_pop, rc);
 
-        if (!llog_exist_2(loghandle))
+        if (!llog_exist(loghandle))
                 GOTO(out_close, rc = -ENOENT);
 
         flags = body->lgd_llh_flags;
@@ -237,7 +237,7 @@ int llog_origin_handle_prev_block(struct ptlrpc_request *req)
         rc = llog_prev_block(req->rq_svc_thread->t_env, loghandle,
                              body->lgd_index, ptr, LLOG_CHUNK_SIZE);
 out_close:
-        llog_close_2(req->rq_svc_thread->t_env, loghandle);
+        llog_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;
@@ -263,11 +263,11 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         if (ctxt == NULL)
                 RETURN(-ENODEV);
 
-        rc = llog_open_2(req->rq_svc_thread->t_env, ctxt, &loghandle, &body->lgd_logid, NULL);
+        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle, &body->lgd_logid, NULL);
         if (rc)
                 GOTO(out_pop, rc);
 
-        if (!llog_exist_2(loghandle))
+        if (!llog_exist(loghandle))
                 GOTO(out_close, rc = -ENOENT);
         /*
          * llog_init_handle() reads the llog header
@@ -285,7 +285,7 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         *hdr = *loghandle->lgh_hdr;
         GOTO(out_close, rc);
 out_close:
-        llog_close_2(req->rq_svc_thread->t_env, loghandle);
+        llog_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;
@@ -321,8 +321,8 @@ int llog_origin_handle_cancel(struct ptlrpc_request *req)
         cathandle = ctxt->loc_handle;
         LASSERT(cathandle != NULL);
 
-        rc = llog_cat_cancel_records_2(req->rq_svc_thread->t_env, cathandle,
-                                       num_cookies, logcookies);
+        rc = llog_cat_cancel_records(req->rq_svc_thread->t_env, cathandle,
+                                     num_cookies, logcookies);
         /*
          * Do not raise -ENOENT errors for resent rpcs. This rec already
          * might be killed.

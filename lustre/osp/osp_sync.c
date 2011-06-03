@@ -201,7 +201,7 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
         ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
         LASSERT(ctxt);
 
-        rc = llog_declare_add_2(env, ctxt, &osi->u.hdr, NULL, th);
+        rc = llog_declare_add(env, ctxt, &osi->u.hdr, NULL, th);
         llog_ctxt_put(ctxt);
 
         RETURN(rc);
@@ -251,7 +251,7 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
         ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
         if (ctxt == NULL)
                 RETURN(-ENOMEM);
-        rc = llog_add_2(env, ctxt, &osi->u.hdr, NULL, &osi->osi_cookie, 1, th);
+        rc = llog_add(env, ctxt, &osi->u.hdr, NULL, &osi->osi_cookie, 1, th);
         llog_ctxt_put(ctxt);
 
         CDEBUG(D_OTHER, "%s: new record %lu:%lu:%lu/%lu: %d\n",
@@ -542,8 +542,8 @@ static int osp_sync_process_record(const struct lu_env *env,
                 }
 
                 /* cancel any generation record */
-                rc = llog_cat_cancel_records_2(env, llh->u.phd.phd_cat_handle,
-                                               1, &cookie);
+                rc = llog_cat_cancel_records(env, llh->u.phd.phd_cat_handle,
+                                             1, &cookie);
 
                 return rc;
         }
@@ -644,7 +644,7 @@ static void osp_sync_process_committed(const struct lu_env *env, struct osp_devi
                 body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
                 LASSERT(body);
 
-                rc = llog_cat_cancel_records_2(env, llh, 1, &body->oa.o_lcookie);
+                rc = llog_cat_cancel_records(env, llh, 1, &body->oa.o_lcookie);
                 if (rc)
                         CERROR("can't cancel record: %d\n", rc);
 
@@ -862,8 +862,7 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
         osp_mds_ost_orig_logops.lop_setup = llog_obd_origin_setup;
         osp_mds_ost_orig_logops.lop_cleanup = llog_obd_origin_cleanup;
         osp_mds_ost_orig_logops.lop_add = llog_obd_origin_add;
-        osp_mds_ost_orig_logops.lop_add_2 = llog_obd_origin_add_2;
-        osp_mds_ost_orig_logops.lop_declare_add_2 = llog_obd_origin_declare_add;
+        osp_mds_ost_orig_logops.lop_declare_add = llog_obd_origin_declare_add;
         osp_mds_ost_orig_logops.lop_connect = llog_origin_connect;
 
         rc = llog_setup(obd, &obd->obd_olg, LLOG_MDS_OST_ORIG_CTXT, obd, 1,
@@ -883,7 +882,7 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
 
         /*
          * put a mark in the llog till which we'll be processing
-         * old records restless 
+         * old records restless
          */
         d->opd_syn_generation.mnt_cnt = cfs_time_current();
         d->opd_syn_generation.conn_cnt = cfs_time_current();
@@ -896,7 +895,9 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
 
         ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
         LASSERT(ctxt);
-        rc = llog_add(ctxt, &osi->u.gen.lgr_hdr, NULL, &osi->osi_cookie, 1);
+        LASSERT(ctxt->loc_handle);
+        rc = llog_cat_add(env, ctxt->loc_handle, &osi->u.gen.lgr_hdr,
+                          &osi->osi_cookie, NULL);
         if (rc == 1)
                 rc = 0;
         llog_ctxt_put(ctxt);

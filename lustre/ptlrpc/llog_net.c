@@ -59,8 +59,6 @@
 #include <obd_class.h>
 #include <lustre_log.h>
 #include <libcfs/list.h>
-#include <lvfs.h>
-#include <lustre_fsfilt.h>
 
 #ifdef __KERNEL__
 int llog_origin_connect(struct llog_ctxt *ctxt,
@@ -70,6 +68,8 @@ int llog_origin_connect(struct llog_ctxt *ctxt,
         struct llog_gen_rec    *lgr;
         struct ptlrpc_request  *req;
         struct llogd_conn_body *req_body;
+        struct dt_device       *dt;
+        struct lu_env           env;
         int rc;
 
         ENTRY;
@@ -82,25 +82,33 @@ int llog_origin_connect(struct llog_ctxt *ctxt,
         /* FIXME what value for gen->conn_cnt */
         llog_gen_init(ctxt);
 
+        LASSERT(ctxt->loc_obd);
+        LASSERT(ctxt->loc_obd->obd_lvfs_ctxt.dt);
+        dt = ctxt->loc_obd->obd_lvfs_ctxt.dt;
+        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        if (rc)
+                RETURN(rc);
+
         /* first add llog_gen_rec */
         OBD_ALLOC_PTR(lgr);
         if (!lgr)
-                RETURN(-ENOMEM);
+                GOTO(out_env, rc = -ENOMEM);
         lgr->lgr_hdr.lrh_len = lgr->lgr_tail.lrt_len = sizeof(*lgr);
         lgr->lgr_hdr.lrh_type = LLOG_GEN_REC;
 
         lgr->lgr_gen = ctxt->loc_gen;
-        rc = llog_add(ctxt, &lgr->lgr_hdr, NULL, NULL, 1);
+        LASSERT(ctxt->loc_handle);
+        rc = llog_cat_add(&env, ctxt->loc_handle, &lgr->lgr_hdr, NULL, NULL);
         OBD_FREE_PTR(lgr);
         if (rc != 1)
-                RETURN(rc);
+                GOTO(out_env, rc);
 
         LASSERT(ctxt->loc_imp);
         req = ptlrpc_request_alloc_pack(ctxt->loc_imp, &RQF_LLOG_ORIGIN_CONNECT,
                                         LUSTRE_LOG_VERSION,
                                         LLOG_ORIGIN_CONNECT);
         if (req == NULL)
-                RETURN(-ENOMEM);
+                GOTO(out_env, rc = -ENOMEM);
 
         CDEBUG(D_OTHER, "%s mount_count "LPU64", connection count "LPU64"\n",
                ctxt->loc_exp->exp_obd->obd_type->typ_name,
@@ -115,7 +123,8 @@ int llog_origin_connect(struct llog_ctxt *ctxt,
         req->rq_no_resend = req->rq_no_delay = 1;
         rc = ptlrpc_queue_wait(req);
         ptlrpc_req_finished(req);
-
+out_env:
+        lu_env_fini(&env);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_origin_connect);
