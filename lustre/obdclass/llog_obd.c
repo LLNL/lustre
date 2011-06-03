@@ -250,33 +250,6 @@ int llog_sync(struct llog_ctxt *ctxt, struct obd_export *exp)
 }
 EXPORT_SYMBOL(llog_sync);
 
-int llog_add(struct llog_ctxt *ctxt, struct llog_rec_hdr *rec,
-             struct lov_stripe_md *lsm, struct llog_cookie *logcookies,
-             int numcookies)
-{
-        int raised, rc;
-        ENTRY;
-
-        if (!ctxt) {
-                //CERROR("No ctxt\n");
-                RETURN(-ENODEV);
-        }
-
-        if (ctxt->loc_flags & LLOG_CTXT_FLAG_UNINITIALIZED)
-                RETURN(-ENXIO);
-
-
-        CTXT_CHECK_OP(ctxt, add, -EOPNOTSUPP);
-        raised = cfs_cap_raised(CFS_CAP_SYS_RESOURCE);
-        if (!raised)
-                cfs_cap_raise(CFS_CAP_SYS_RESOURCE);
-        rc = CTXTP(ctxt, add)(ctxt, rec, lsm, logcookies, numcookies);
-        if (!raised)
-                cfs_cap_lower(CFS_CAP_SYS_RESOURCE);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(llog_add);
-
 int llog_cancel(struct llog_ctxt *ctxt, struct lov_stripe_md *lsm,
                 int count, struct llog_cookie *cookies, int flags)
 {
@@ -460,9 +433,10 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
 EXPORT_SYMBOL(llog_obd_origin_cleanup);
 
 /* add for obdfilter/sz and mds/unlink */
-int llog_obd_origin_add(struct llog_ctxt *ctxt,
+int llog_obd_origin_add(const struct lu_env *env, struct llog_ctxt *ctxt,
                         struct llog_rec_hdr *rec, struct lov_stripe_md *lsm,
-                        struct llog_cookie *logcookies, int numcookies)
+                        struct llog_cookie *logcookies, int numcookies,
+                        struct thandle *th)
 {
         struct llog_handle *cathandle;
         int rc;
@@ -470,30 +444,12 @@ int llog_obd_origin_add(struct llog_ctxt *ctxt,
 
         cathandle = ctxt->loc_handle;
         LASSERT(cathandle != NULL);
-        rc = llog_cat_add_rec(cathandle, rec, logcookies, NULL);
+        rc = llog_cat_add_rec(env, cathandle, rec, logcookies, NULL, th);
         if (rc != 0 && rc != 1)
                 CERROR("write one catalog record failed: %d\n", rc);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_obd_origin_add);
-
-int llog_obd_origin_add_2(const struct lu_env *env, struct llog_ctxt *ctxt,
-                          struct llog_rec_hdr *rec, struct lov_stripe_md *lsm,
-                          struct llog_cookie *logcookies, int numcookies,
-                          struct thandle *th)
-{
-        struct llog_handle *cathandle;
-        int rc;
-        ENTRY;
-
-        cathandle = ctxt->loc_handle;
-        LASSERT(cathandle != NULL);
-        rc = llog_cat_add_rec_2(env, cathandle, rec, logcookies, NULL, th);
-        if (rc != 0 && rc != 1)
-                CERROR("write one catalog record failed: %d\n", rc);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(llog_obd_origin_add_2);
 
 int llog_obd_origin_declare_add(const struct lu_env *env, struct llog_ctxt *ctxt,
                                 struct llog_rec_hdr *rec, struct lov_stripe_md *lsm,
