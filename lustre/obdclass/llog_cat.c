@@ -604,21 +604,17 @@ int llog_cat_process_thread(void *data)
         cfs_daemonize_ctxt("ll_log_process");
 
         LASSERT(ctxt->loc_obd);
-        if (ctxt->loc_obd->obd_lvfs_ctxt.dt) {
-                dt = ctxt->loc_obd->obd_lvfs_ctxt.dt;
-                rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-                if (rc)
-                        RETURN(rc);
-        } else {
-                /* XXX: env for network llog processing */
-        }
+        dt = ctxt->loc_obd->obd_lvfs_ctxt.dt;
+        rc = lu_env_init(&env, dt ? dt->dd_lu_dev.ld_type->ldt_ctx_tags : 0);
+        if (rc)
+                GOTO(out, rc);
 
         logid = *(struct llog_logid *)(args->lpca_arg);
         rc = llog_open_2(&env, ctxt, &llh, &logid, NULL);
         if (rc) {
                 CERROR("Cannot open llog "LPX64":%x (%d)\n",
                        logid.lgl_oid, logid.lgl_ogen, rc);
-                GOTO(out, rc);
+                GOTO(out_env, rc);
         }
         if (!llog_exist_2(llh)) {
                 CERROR("No such llog "LPX64":%x (%d)\n",
@@ -648,10 +644,11 @@ release_llh:
         rc = llog_cat_close(&env, llh);
         if (rc)
                 CERROR("llog_cat_close() failed %d\n", rc);
+out_env:
+        lu_env_fini(&env);
 out:
         llog_ctxt_put(ctxt);
         OBD_FREE_PTR(args);
-        lu_env_fini(&env);
         return rc;
 }
 EXPORT_SYMBOL(llog_cat_process_thread);
