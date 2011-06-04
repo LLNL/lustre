@@ -1092,15 +1092,11 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
 
                 o = llog_osd_locate(env, lsb, &fid);
                 if (IS_ERR(o))
-                        GOTO(out, rc = PTR_ERR(o));
+                        GOTO(out_free, rc = PTR_ERR(o));
 
-                if (!dt_object_exists(o)) {
-                        llog_free_handle(handle);
-                        lu_object_put(env, &o->do_lu);
-                        GOTO(out, rc = -ENOENT);
-                }
+                if (!dt_object_exists(o))
+                        GOTO(out_put, rc = -ENOENT);
                 handle->lgh_id = *logid;
-
         } else if (name) {
                 logid = &tlogid;
 
@@ -1116,12 +1112,12 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
                         if (handle->lgh_name)
                                 strcpy(handle->lgh_name, name);
                         else
-                                rc = -ENOMEM;
+                                GOTO(out_free, rc = -ENOMEM);
                 }
 
                 o = llog_osd_locate(env, lsb, &fid);
                 if (IS_ERR(o))
-                        GOTO(out, rc = PTR_ERR(o));
+                        GOTO(out_free, rc = PTR_ERR(o));
 
                 fid_to_logid(&fid, &handle->lgh_id);
         } else {
@@ -1131,7 +1127,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
 
                 o = llog_osd_locate(env, lsb, &fid);
                 if (IS_ERR(o))
-                        GOTO(out, rc = PTR_ERR(o));
+                        GOTO(out_free, rc = PTR_ERR(o));
                 LASSERT(!dt_object_exists(o));
 
                 fid_to_logid(&fid, &handle->lgh_id);
@@ -1139,21 +1135,20 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
                 /* XXX: generate name for this object? */
         }
 
-        if (rc == 0) {
-                handle->lgh_obj = o;
-                handle->lgh_ctxt = ctxt;
-                cfs_atomic_inc(&lsb->lsb_refcount);
-                handle->private_data = lsb;
-                LASSERT(handle->lgh_ctxt);
-        } else {
-                if (handle)
-                        llog_free_handle(handle);
-        }
+        handle->lgh_obj = o;
+        handle->lgh_ctxt = ctxt;
+        cfs_atomic_inc(&lsb->lsb_refcount);
+        handle->private_data = lsb;
+        LASSERT(handle->lgh_ctxt);
 
+        GOTO(out, rc);
+
+out_put:
+        lu_object_put(env, &o->do_lu);
+out_free:
+        llog_free_handle(handle);
 out:
-        if (lsb)
-                llog_osd_put_sb(env, lsb);
-
+        llog_osd_put_sb(env, lsb);
         RETURN(rc);
 }
 
@@ -1313,7 +1308,7 @@ static int llog_osd_destroy(const struct lu_env *env,
 
         th = dt_trans_create(env, d);
         if (IS_ERR(th))
-                GOTO(out, rc = PTR_ERR(th));
+                RETURN(PTR_ERR(th));
 
         dt_declare_ref_del(env, o, th);
 
@@ -1348,8 +1343,6 @@ static int llog_osd_destroy(const struct lu_env *env,
 
 out_trans:
         dt_trans_stop(env, d, th);
-out:
-        llog_osd_close(env, loghandle);
         RETURN(rc);
 }
 
