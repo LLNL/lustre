@@ -148,19 +148,19 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
         }
 
         if (!llog_exist(*llh))
-                GOTO(out_close, rc = -ENOENT);
+                GOTO(out_close_llh, rc = -ENOENT);
 
         llog_init_handle(*llh, LLOG_F_IS_PLAIN, &uuid);
 
         rc = verify_handle("2", *llh, 1);
         if (rc)
-                GOTO(out_close, rc);
+                GOTO(out_close_llh, rc);
 
         CWARN("2b: create a log without specified NAME & LOGID\n");
         rc = llog_open_create(env, ctxt, &loghandle, NULL, NULL);
         if (rc) {
                 CERROR("2b: create log failed\n");
-                GOTO(out_close, rc);
+                GOTO(out_close_llh, rc);
         }
         llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
         logid = loghandle->lgh_id;
@@ -170,7 +170,7 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
         rc = llog_open(env, ctxt, &loghandle, &logid, NULL);
         if (rc) {
                 CERROR("2c: re-open log by LOGID failed\n");
-                GOTO(out_close, rc);
+                GOTO(out_close_llh, rc);
         }
 
         if (!llog_exist(loghandle))
@@ -180,13 +180,11 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
 
         CWARN("2d: destroy this log\n");
         rc = llog_destroy(env, loghandle);
-        llog_free_handle(loghandle);
-        if (rc) {
+        if (rc)
                 CERROR("2d: destroy log failed\n");
-                GOTO(out_close, rc);
-        }
-
 out_close:
+        llog_close(env, loghandle);
+out_close_llh:
         if (rc)
                 llog_close(env, *llh);
 out_put:

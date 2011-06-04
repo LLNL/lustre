@@ -465,7 +465,7 @@ int llog_cat_cancel_records(const struct lu_env *env, struct llog_handle *cathan
                         index = loghandle->u.phd.phd_cookie.lgc_index;
                         if (cathandle->u.chd.chd_current_log == loghandle)
                                 cathandle->u.chd.chd_current_log = NULL;
-                        llog_free_handle(loghandle);
+                        llog_close(env, loghandle);
 
                         LASSERT(index);
                         llog_cat_set_first_idx(cathandle, index);

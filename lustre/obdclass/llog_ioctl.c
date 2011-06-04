@@ -263,7 +263,7 @@ static int llog_remove_log(const struct lu_env *env, struct llog_handle *cat,
         llog_cat_set_first_idx(cat, index);
         rc = llog_cancel_rec(env, cat, index);
 out:
-        llog_free_handle(log);
+        llog_close(env, log);
         cfs_up_write(&cat->lgh_lock);
         RETURN(rc);
 
@@ -404,7 +404,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 if (handle->lgh_hdr->llh_flags & LLOG_F_IS_PLAIN) {
                         rc = llog_destroy(&env, handle);
                         if (!rc)
-                                llog_free_handle(handle);
+                                llog_close(&env, handle);
                         GOTO(out, rc);
                 }
 
