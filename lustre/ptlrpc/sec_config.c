@@ -1043,17 +1043,7 @@ int sptlrpc_target_local_copy_conf(struct obd_device *obd,
         }
 
         /* erase the old tmp log */
-        rc = llog_open(NULL, ctxt, &llh, NULL, LOG_SPTLRPC_TMP);
-        if (rc == 0) {
-                rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
-                if (rc == 0) {
-                        rc = llog_destroy(NULL, llh);
-                        llog_free_handle(llh);
-                } else {
-                        llog_close(NULL, llh);
-                }
-        }
-
+        rc = llog_erase(NULL, ctxt, NULL, LOG_SPTLRPC_TMP);
         if (rc) {
                 CERROR("target %s: cannot erase temporary sptlrpc log: "
                        "rc = %d\n", obd->obd_name, rc);
@@ -1061,7 +1051,7 @@ int sptlrpc_target_local_copy_conf(struct obd_device *obd,
         }
 
         /* write temporary log */
-        rc = llog_open(NULL, ctxt, &llh, NULL, LOG_SPTLRPC_TMP);
+        rc = llog_open_create(NULL, ctxt, &llh, NULL, LOG_SPTLRPC_TMP);
         if (rc)
                 GOTO(out_dput, rc);
         rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
