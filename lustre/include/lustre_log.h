@@ -263,12 +263,31 @@ int llog_obd_repl_connect(struct llog_ctxt *ctxt,
 
 struct thandle;
 
+/**
+ * Llog methods.
+ * There are two log backends: disk and network. Not all methods are valid
+ * for network backend. See ptlrpc/llog_client.c for details.
+ */
 struct llog_operations {
+        /**
+         * Delete existing llog from disk. The llog_close() must be used
+         * to close llog after that.
+         * Currently is used only in local llog operations
+         */
         int (*lop_destroy)(const struct lu_env *env, struct llog_handle *handle);
+        /**
+         * Read next block of raw llog file data.
+         */
         int (*lop_next_block)(const struct lu_env *, struct llog_handle *, int *,
                               int next_idx, __u64 *offset, void *buf, int len);
+        /**
+         * Read previous block of raw llog file data.
+         */
         int (*lop_prev_block)(const struct lu_env *, struct llog_handle *,
                               int prev_idx, void *buf, int len);
+        /**
+         * Read llog header only.
+         */
         int (*lop_read_header)(struct llog_handle *handle);
 
         int (*lop_setup)(struct obd_device *obd, struct obd_llog_group *olg,
@@ -281,27 +300,51 @@ struct llog_operations {
         int (*lop_connect)(struct llog_ctxt *ctxt,
                            struct llog_logid *logid, struct llog_gen *gen,
                            struct obd_uuid *uuid);
-
-        /* XXX add 2 more: commit callbacks and llog recovery functions */
-
-        /* new API */
+        /**
+         * Any llog file must be opemed first using llog_open().  Llog can be
+         * opened by name, logid or without both, in last case the new logid
+         * will be generated.
+         * The llog_open() initializes new llog_handle() but not header.
+         * The llog_init_handle() need to be called for that.
+         */
         int (*lop_open)(const struct lu_env *, struct llog_ctxt *,
                         struct llog_handle **, struct llog_logid *, char *);
+        /**
+         * Opened llog may not exist and this must be checked where needed using
+         * the llog_exist() call.
+         */
         int (*lop_exist)(struct llog_handle *);
+        /**
+         * Create new llog file. The llog must be opened.
+         * Must be used only for local llog operations.
+         */
         int (*lop_declare_create)(const struct lu_env *, struct llog_handle *,
-                                    struct thandle *);
+                                  struct thandle *);
         int (*lop_create)(const struct lu_env *, struct llog_handle *, struct thandle *);
+
+        /**
+         * write new record in llog. It appends records usually but can edit
+         * existing records too.
+         */
         int (*lop_declare_write_rec)(const struct lu_env *, struct llog_handle *,
-                                       struct llog_rec_hdr *, int, struct thandle *);
+                                     struct llog_rec_hdr *, int, struct thandle *);
         int (*lop_write_rec)(const struct lu_env *, struct llog_handle *,
-                               struct llog_rec_hdr *, struct llog_cookie *, int,
-                               void *, int, struct thandle *);
+                             struct llog_rec_hdr *, struct llog_cookie *,
+                             int cookiecount, void *buf, int idx, struct thandle *);
+        /**
+         * Add new record in llog catalog. Does the same as llog_write_rec()
+         * but using llog catalog.
+         */
         int (*lop_declare_add)(const struct lu_env *, struct llog_ctxt *,
-                                 struct llog_rec_hdr *, struct lov_stripe_md *,
-                                 struct thandle *);
+                               struct llog_rec_hdr *, struct lov_stripe_md *,
+                               struct thandle *);
         int (*lop_add)(const struct lu_env *, struct llog_ctxt *, struct llog_rec_hdr *,
-                         struct lov_stripe_md *, struct llog_cookie *,
-                         int, struct thandle *);
+                       struct lov_stripe_md *, struct llog_cookie *,
+                       int, struct thandle *);
+        /**
+         * Close llog file and calls llog_free_handle() implicitly.
+         * Any opened llog must be closed by llog_close() call.
+         */
         int (*lop_close)(const struct lu_env *, struct llog_handle *handle);
 };
 

@@ -306,7 +306,7 @@ static int cat_cancel_cb(const struct lu_env *env, struct llog_handle *cathandle
                         CERROR("failure destroying log in postsetup: %d\n", rc);
 
                 index = loghandle->u.phd.phd_cookie.lgc_index;
-                llog_free_handle(loghandle);
+                llog_close(env, loghandle);
 
 cat_cleanup:
                 LASSERT(index);
@@ -416,7 +416,7 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
                                                "cleanup: %d\n", rc);
 
                                 index = loghandle->u.phd.phd_cookie.lgc_index;
-                                llog_free_handle(loghandle);
+                                llog_close(&env, loghandle);
 
                                 LASSERT(index);
                                 llog_cat_set_first_idx(cathandle, index);

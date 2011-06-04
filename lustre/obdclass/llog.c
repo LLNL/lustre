@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -41,6 +42,8 @@
  *   if an OST or MDS fails it need only look at log(s) relevant to itself
  *
  * Author: Andreas Dilger <adilger@clusterfs.com>
+ * Author: Alex Zhuravlev <bzzz@whamcloud.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #define DEBUG_SUBSYSTEM S_LOG
@@ -58,7 +61,10 @@
 #include <libcfs/list.h>
 #include "llog_internal.h"
 
-/* Allocate a new log or catalog handle */
+/*
+ * Allocate a new log or catalog handle.
+ * Used inside llog_open().
+ */
 struct llog_handle *llog_alloc_handle(void)
 {
         struct llog_handle *loghandle;
@@ -75,7 +81,9 @@ struct llog_handle *llog_alloc_handle(void)
 }
 EXPORT_SYMBOL(llog_alloc_handle);
 
-
+/*
+ * Free llog handle and header data if exists. Used in llog_close() only
+ */
 void llog_free_handle(struct llog_handle *loghandle)
 {
         if (!loghandle)
@@ -544,7 +552,7 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
                struct llog_logid *logid, char *name)
 {
         struct llog_handle *handle;
-        int rc = 0;
+        int rc = 0, rc2;
         ENTRY;
 
         /* nothing to erase */
@@ -557,13 +565,12 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
 
         if (llog_exist(handle)) {
                 rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
-                if (rc == 0) {
+                if (rc == 0)
                         rc = llog_destroy(env, handle);
-                        llog_free_handle(handle);
-                        RETURN(rc);
-                }
         }
-        rc = llog_close(env, handle);
+        rc2 = llog_close(env, handle);
+        if (rc == 0)
+                rc = rc2;
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_erase);
