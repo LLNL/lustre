@@ -609,4 +609,4 @@ out_trans:
         dt_trans_stop(env, dt, th);
         RETURN(rc);
 }
-
+EXPORT_SYMBOL(llog_write_rec);
