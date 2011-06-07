@@ -163,6 +163,8 @@ test_5() {
     rc=$?
     log "iozone rc=$rc"
     rm -f $TDIR/$tfile
+    # wait till rm is done, otherwise subsequent test can fail
+    wait_delete_completed
     [ $rc -eq 0 ] || error "iozone failed"
     return $rc
 }
@@ -176,8 +178,6 @@ test_6() {
     remote_mds_nodsh && skip "remote MDS with nodsh" && return 0
 
     f=$TDIR/$tfile
-    rm -f $f
-    sync && sleep 2 && sync	# wait for delete thread
     before=`kbytesfree`
     dd if=/dev/urandom bs=4096 count=1280 of=$f || return 28
     lfs getstripe $f
@@ -207,8 +207,6 @@ run_test 6 "Fail OST before obd_destroy"
 
 test_7() {
     f=$TDIR/$tfile
-    rm -f $f
-    sync && sleep 5 && sync	# wait for delete thread
     before=`kbytesfree`
     dd if=/dev/urandom bs=4096 count=1280 of=$f || return 4
     sync
