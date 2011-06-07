@@ -3863,6 +3863,17 @@ get_mdtosc_proc_path() {
     fi
 }
 
+get_mdtosp_proc_path() {
+    local mds_facet=$1
+    local ost_label=${2:-"*OST*"}
+
+    [ "$mds_facet" = "mds" ] && mds_facet=$SINGLEMDS
+    local mdt_label=$(convert_facet2label $mds_facet)
+    local mdt_index=$(echo $mdt_label | sed -e 's/^.*-//')
+
+    echo "${ost_label}-osp-${mdt_index}"
+}
+
 get_osc_import_name() {
     local facet=$1
     local ost=$2
