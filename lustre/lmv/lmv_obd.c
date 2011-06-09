@@ -55,7 +55,6 @@
 #include <liblustre.h>
 #endif
 
-#include <lustre_log.h>
 #include <obd_support.h>
 #include <lustre_lib.h>
 #include <lustre_net.h>
@@ -519,12 +518,6 @@ int lmv_add_target(struct obd_device *obd, struct obd_uuid *tgt_uuid)
                         lmv_init_unlock(lmv);
                         CERROR("Target %s not attached\n", tgt_uuid->uuid);
                         RETURN(-EINVAL);
-                }
-
-                rc = obd_llog_init(obd, &obd->obd_olg, mdc_obd, NULL);
-                if (rc) {
-                        lmv_init_unlock(lmv);
-                        CERROR("lmv failed to setup llogging subsystems\n");
                 }
         }
         cfs_spin_lock(&lmv->lmv_lock);
@@ -2639,9 +2632,6 @@ static int lmv_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
                  * stack. */
                 break;
         case OBD_CLEANUP_EXPORTS:
-                rc = obd_llog_finish(obd, 0);
-                if (rc != 0)
-                        CERROR("failed to cleanup llogging subsystems\n");
                 break;
         default:
                 break;

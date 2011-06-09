@@ -733,6 +733,8 @@ struct dt_object *dt_find_or_create(const struct lu_env *env,
 struct dt_object *dt_locate(const struct lu_env *env,
                             struct dt_device *dev,
                             const struct lu_fid *fid);
+int dt_lookup(const struct lu_env *env, struct dt_object *dir,
+              const char *name, struct lu_fid *fid);
 
 static inline int dt_object_sync(const struct lu_env *env,
                                  struct dt_object *o)

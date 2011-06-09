@@ -40,20 +40,21 @@
 #include <lustre_log.h>
 
 struct llog_process_info {
-        struct llog_handle *lpi_loghandle;
-        llog_cb_t           lpi_cb;
-        void               *lpi_cbdata;
-        void               *lpi_catdata;
-        int                 lpi_rc;
-        int                 lpi_flags;
-        cfs_completion_t    lpi_completion;
+        struct llog_handle  *lpi_loghandle;
+        llog_cb_t            lpi_cb;
+        void                *lpi_cbdata;
+        void                *lpi_catdata;
+        int                  lpi_rc;
+        int                  lpi_flags;
+        cfs_completion_t     lpi_completion;
         const struct lu_env *lpi_env;
 };
 
-int llog_cat_id2handle(const struct lu_env *, struct llog_handle *, struct llog_handle **,
-                       struct llog_logid *);
-int class_config_dump_handler(const struct lu_env *, struct llog_handle * handle,
+int llog_cat_id2handle(const struct lu_env *, struct llog_handle *,
+                       struct llog_handle **, struct llog_logid *);
+int class_config_dump_handler(const struct lu_env *,
+                              struct llog_handle * handle,
                               struct llog_rec_hdr *rec, void *data);
-int __llog_process(const struct lu_env *, struct llog_handle *loghandle, llog_cb_t cb,
-                   void *data, void *catdata, int fork);
+int __llog_process(const struct lu_env *, struct llog_handle *loghandle,
+                   llog_cb_t cb, void *data, void *catdata, int fork);
 #endif

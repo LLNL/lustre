@@ -52,7 +52,6 @@
 #endif
 #include <lustre_log.h>
 #include <lprocfs_status.h>
-#include <libcfs/list.h>
 #include <lustre_param.h>
 
 static cfs_hash_ops_t uuid_hash_ops;
