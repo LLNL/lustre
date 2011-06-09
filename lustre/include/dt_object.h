@@ -775,8 +775,6 @@ struct dt_object *dt_locate_at(const struct lu_env *env,
                                struct dt_device *dev,
                                const struct lu_fid *fid,
                                struct lu_device *top_dev);
-int dt_lookup_dir(const struct lu_env *env, struct dt_object *dir,
-                  const char *name, struct lu_fid *fid);
 
 int local_oid_storage_init(const struct lu_env *env, struct dt_device *dev,
                            struct lu_device *top,
@@ -804,6 +802,9 @@ int dt_declare_version_set(const struct lu_env *env, struct dt_object *o,
 void dt_version_set(const struct lu_env *env, struct dt_object *o,
                     dt_obj_version_t version, struct thandle *th);
 dt_obj_version_t dt_version_get(const struct lu_env *env, struct dt_object *o);
+
+int dt_lookup(const struct lu_env *env, struct dt_object *dir,
+              const char *name, struct lu_fid *fid);
 
 static inline int dt_object_sync(const struct lu_env *env,
                                  struct dt_object *o)

@@ -47,7 +47,7 @@
 # include <liblustre.h>
 #endif
 #include <obd.h>
-#include <lustre_mds.h>
+#include <obd_class.h>
 #include <lustre_dlm.h>
 #include <lustre_net.h>
 #include <lustre_sec.h>

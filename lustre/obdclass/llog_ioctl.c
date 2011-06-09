@@ -44,7 +44,6 @@
 
 #include <obd_class.h>
 #include <lustre_log.h>
-#include <libcfs/list.h>
 #include "llog_internal.h"
 
 static int str2logid(struct llog_logid *logid, char *str, int len)
@@ -366,11 +365,13 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
 
         case OBD_IOC_LLOG_PRINT: {
                 LASSERT(data->ioc_inllen1);
-                rc = llog_process(&env, handle, class_config_dump_handler,data,NULL);
+                rc = llog_process(&env, handle, class_config_dump_handler,
+                                  data, NULL);
                 if (rc == -LLOG_EEMPTY)
                         rc = 0;
                 else
-                        rc = llog_process(&env, handle, llog_print_cb, data, NULL);
+                        rc = llog_process(&env, handle, llog_print_cb, data,
+                                          NULL);
 
                 GOTO(out_close, rc);
         }
@@ -483,6 +484,5 @@ out:
 
         OBD_FREE_LARGE(idarray, size);
         RETURN(rc);
-
 }
 EXPORT_SYMBOL(llog_catalog_list);

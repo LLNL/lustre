@@ -86,13 +86,12 @@ struct plain_handle_data {
         cfs_list_t          phd_entry;
         struct llog_handle *phd_cat_handle;
         struct llog_cookie  phd_cookie; /* cookie of this log in its cat */
-        int                 phd_last_idx;
 };
 
 struct cat_handle_data {
-        cfs_list_t              chd_head;
-        struct llog_handle     *chd_current_log; /* currently open log */
-        struct llog_handle     *chd_next_log;    /* log to be used next */
+        cfs_list_t          chd_head;
+        struct llog_handle *chd_current_log; /* currently open log */
+        struct llog_handle *chd_next_log;    /* log to be used next */
 };
 
 /* In-memory descriptor for a log object or log catalog */
@@ -130,7 +129,6 @@ static inline void fid_to_logid(struct lu_fid *fid, struct llog_logid *id)
 /* llog.c  -  general API */
 typedef int (*llog_cb_t)(const struct lu_env *, struct llog_handle *,
                          struct llog_rec_hdr *, void *);
-typedef int (*llog_fill_rec_cb_t)(struct llog_rec_hdr *rec, void *data);
 extern struct llog_handle *llog_alloc_handle(void);
 int llog_init_handle(struct llog_handle *handle, int flags,
                      struct obd_uuid *uuid);
@@ -218,8 +216,8 @@ int llog_setup_named(struct obd_device *obd, struct obd_llog_group *olg,
                      struct llog_logid *logid, const char *logname,
                      struct llog_operations *op);
 int llog_setup(struct obd_device *obd, struct obd_llog_group *olg, int index,
-               struct obd_device *disk_obd, int count, struct llog_logid *logid,
-               struct llog_operations *op);
+               struct obd_device *disk_obd, int count,
+               struct llog_logid *logid, struct llog_operations *op);
 int __llog_ctxt_put(struct llog_ctxt *ctxt);
 int llog_cleanup(struct llog_ctxt *);
 int llog_sync(struct llog_ctxt *ctxt, struct obd_export *exp);
@@ -279,12 +277,14 @@ struct llog_operations {
          * to close llog after that.
          * Currently is used only in local llog operations
          */
-        int (*lop_destroy)(const struct lu_env *env, struct llog_handle *handle);
+        int (*lop_destroy)(const struct lu_env *env,
+                           struct llog_handle *handle);
         /**
          * Read next block of raw llog file data.
          */
-        int (*lop_next_block)(const struct lu_env *, struct llog_handle *, int *,
-                              int next_idx, __u64 *offset, void *buf, int len);
+        int (*lop_next_block)(const struct lu_env *, struct llog_handle *,
+                              int *, int next_idx, __u64 *offset, void *buf,
+                              int len);
         /**
          * Read previous block of raw llog file data.
          */
@@ -326,17 +326,21 @@ struct llog_operations {
          */
         int (*lop_declare_create)(const struct lu_env *, struct llog_handle *,
                                   struct thandle *);
-        int (*lop_create)(const struct lu_env *, struct llog_handle *, struct thandle *);
+        int (*lop_create)(const struct lu_env *, struct llog_handle *,
+                          struct thandle *);
 
         /**
          * write new record in llog. It appends records usually but can edit
          * existing records too.
          */
-        int (*lop_declare_write_rec)(const struct lu_env *, struct llog_handle *,
-                                     struct llog_rec_hdr *, int, struct thandle *);
+        int (*lop_declare_write_rec)(const struct lu_env *,
+                                     struct llog_handle *,
+                                     struct llog_rec_hdr *,
+                                     int, struct thandle *);
         int (*lop_write_rec)(const struct lu_env *, struct llog_handle *,
                              struct llog_rec_hdr *, struct llog_cookie *,
-                             int cookiecount, void *buf, int idx, struct thandle *);
+                             int cookiecount, void *buf, int idx,
+                             struct thandle *);
         /**
          * Add new record in llog catalog. Does the same as llog_write_rec()
          * but using llog catalog.
@@ -344,9 +348,9 @@ struct llog_operations {
         int (*lop_declare_add)(const struct lu_env *, struct llog_ctxt *,
                                struct llog_rec_hdr *, struct lov_stripe_md *,
                                struct thandle *);
-        int (*lop_add)(const struct lu_env *, struct llog_ctxt *, struct llog_rec_hdr *,
-                       struct lov_stripe_md *, struct llog_cookie *,
-                       int, struct thandle *);
+        int (*lop_add)(const struct lu_env *, struct llog_ctxt *,
+                       struct llog_rec_hdr *, struct lov_stripe_md *,
+                       struct llog_cookie *, int, struct thandle *);
         /**
          * Close llog file and calls llog_free_handle() implicitly.
          * Any opened llog must be closed by llog_close() call.
@@ -362,7 +366,8 @@ int llog_get_cat_list(struct obd_device *disk_obd,
                       struct llog_catid *idarray);
 
 int llog_put_cat_list(struct obd_device *disk_obd,
-                      char *name, int idx, int count, struct llog_catid *idarray);
+                      char *name, int idx, int count,
+                      struct llog_catid *idarray);
 
 #define LLOG_CTXT_FLAG_UNINITIALIZED     0x00000001
 

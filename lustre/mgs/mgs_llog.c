@@ -296,15 +296,6 @@ static int mgs_fsdb_handler(const struct lu_env *env, struct llog_handle *llh,
         RETURN(rc);
 }
 
-static int mgs_llog_create(const struct lu_env *env,
-                           struct mgs_device *mgs,
-                           struct llog_ctxt *ctxt,
-                           struct llog_handle **res,
-                           char *name)
-{
-        return llog_open_create(env, ctxt, res, NULL, name);
-}
-
 /* fsdb->fsdb_sem is already held  in mgs_find_or_make_fsdb*/
 static int mgs_get_fsdb_from_llog(const struct lu_env *env,
                                   struct mgs_device *mgs,
@@ -321,7 +312,7 @@ static int mgs_get_fsdb_from_llog(const struct lu_env *env,
         LASSERT(ctxt != NULL);
         name_create(&logname, fsdb->fsdb_name, "-client");
         cfs_mutex_lock(&fsdb->fsdb_mutex);
-        rc = mgs_llog_create(env, mgs, ctxt, &loghandle, logname);
+        rc = llog_open_create(env, ctxt, &loghandle, NULL, logname);
         if (rc)
                 GOTO(out_pop, rc);
 
@@ -961,17 +952,20 @@ static int record_start_log(const struct lu_env *env,
         if (!ctxt)
                 GOTO(out, rc = -ENODEV);
 
-        rc = mgs_llog_create(env, mgs, ctxt, llh, name);
-        if (rc == 0)
-                llog_init_handle(*llh, LLOG_F_IS_PLAIN, &cfg_uuid);
-        else
-                *llh = NULL;
-
-        llog_ctxt_put(ctxt);
-
-out:
+        rc = llog_open_create(env, ctxt, llh, NULL, name);
         if (rc)
+                GOTO(out_ctxt, rc);
+
+        rc = llog_init_handle(*llh, LLOG_F_IS_PLAIN, &cfg_uuid);
+        if (rc)
+                llog_close(env, *llh);
+out_ctxt:
+        llog_ctxt_put(ctxt);
+out:
+        if (rc) {
                 CERROR("Can't start log %s: %d\n", name, rc);
+                *llh = NULL;
+        }
         RETURN(rc);
 }
 
@@ -995,11 +989,17 @@ static int mgs_log_is_empty(const struct lu_env *env,
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         LASSERT(ctxt != NULL);
         rc = llog_open(env, ctxt, &llh, NULL, name, LLOG_OPEN_OLD);
-        if (rc == 0) {
-                llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
-                rc = llog_get_size(llh);
-                llog_close(env, llh);
-        }
+        if (rc)
+                GOTO(out_ctxt, rc);
+
+        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        if (rc)
+                GOTO(out_close, rc);
+
+        rc = llog_get_size(llh);
+out_close:
+        llog_close(env, llh);
+out_ctxt:
         llog_ctxt_put(ctxt);
         /* header is record 1 */
         return(rc <= 1);

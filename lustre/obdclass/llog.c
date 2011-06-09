@@ -58,7 +58,6 @@
 
 #include <obd_class.h>
 #include <lustre_log.h>
-#include <libcfs/list.h>
 #include "llog_internal.h"
 
 /*
@@ -187,7 +186,7 @@ int llog_init_handle(struct llog_handle *handle, int flags,
         llh->llh_timestamp = cfs_time_current_sec();
         if (uuid)
                 memcpy(&llh->llh_tgtuuid, uuid, sizeof(llh->llh_tgtuuid));
-        llh->llh_bitmap_offset = offsetof(typeof(*llh),llh_bitmap);
+        llh->llh_bitmap_offset = offsetof(typeof(*llh), llh_bitmap);
         ext2_set_bit(0, llh->llh_bitmap);
 
 out:
@@ -279,7 +278,7 @@ repeat:
                                rec, rec->lrh_type);
 
                         if (LLOG_REC_HDR_NEEDS_SWABBING(rec))
-                                lustre_swab_llog_rec(rec, NULL);
+                                lustre_swab_llog_rec(rec);
 
                         CDEBUG(D_OTHER, "after swabbing, type=%#x idx=%d\n",
                                rec->lrh_type, rec->lrh_index);
@@ -291,7 +290,8 @@ repeat:
                                 GOTO(out, 0); /* no more records */
                         }
 
-                        if (rec->lrh_len == 0 || rec->lrh_len >LLOG_CHUNK_SIZE){
+                        if (rec->lrh_len == 0 ||
+                            rec->lrh_len > LLOG_CHUNK_SIZE) {
                                 CWARN("invalid length %d in llog record for "
                                       "index %d/%d\n", rec->lrh_len,
                                       rec->lrh_index, index);
@@ -470,28 +470,34 @@ int llog_reverse_process(const struct lu_env *env,
                         GOTO(out, rc);
 
                 rec = buf;
-                idx = le32_to_cpu(rec->lrh_index);
-                if (idx < index)
-                        CDEBUG(D_RPCTRACE, "index %u : idx %u\n", index, idx);
+                idx = rec->lrh_index;
+                CDEBUG(D_RPCTRACE, "index %u : idx %u\n", index, idx);
                 while (idx < index) {
-                        rec = ((void *)rec + le32_to_cpu(rec->lrh_len));
+                        rec = ((void *)rec + rec->lrh_len);
+                        if (LLOG_REC_HDR_NEEDS_SWABBING(rec))
+                                lustre_swab_llog_rec(rec);
                         idx ++;
                 }
-                tail = (void *)rec + le32_to_cpu(rec->lrh_len) - sizeof(*tail);
+                LASSERT(idx == index);
+                tail = (void *)rec + rec->lrh_len - sizeof(*tail);
 
                 /* process records in buffer, starting where we found one */
                 while ((void *)tail > buf) {
-                        rec = (void *)tail - le32_to_cpu(tail->lrt_len) +
-                                sizeof(*tail);
-
-                        if (rec->lrh_index == 0)
+                        if (tail->lrt_index == 0)
                                 GOTO(out, 0); /* no more records */
 
                         /* if set, process the callback on this record */
                         if (ext2_test_bit(index, llh->llh_bitmap)) {
+                                rec = (void *)tail - tail->lrt_len +
+                                      sizeof(*tail);
+
                                 rc = cb(env, loghandle, rec, data);
                                 if (rc == LLOG_PROC_BREAK) {
                                         GOTO(out, rc);
+                                } else if (rc == LLOG_DEL_RECORD) {
+                                        llog_cancel_rec(env, loghandle,
+                                                        tail->lrt_index);
+                                        rc = 0;
                                 }
                                 if (rc)
                                         GOTO(out, rc);
@@ -501,7 +507,7 @@ int llog_reverse_process(const struct lu_env *env,
                         --index;
                         if (index < first_index)
                                 GOTO(out, rc = 0);
-                        tail = (void *)rec - sizeof(*tail);
+                        tail = (void *)tail - tail->lrt_len;
                 }
         }
 

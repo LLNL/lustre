@@ -184,8 +184,7 @@ static struct dt_object *llog_osd_locate(const struct lu_env *env,
                 if (n->lo_dev == &lsb->lsb_dev->dd_lu_dev)
                         return container_of0(n, struct dt_object, do_lu);
         }
-        LBUG();
-        return NULL;
+        return ERR_PTR(-ENOENT);
 }
 
 static struct llog_superblock *__llog_osd_find_sb(struct dt_device *dev)
@@ -199,7 +198,6 @@ static struct llog_superblock *__llog_osd_find_sb(struct dt_device *dev)
                         break;
                 }
         }
-
         return ret;
 }
 
@@ -272,7 +270,8 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
         fid.f_ver = 0;
 
         o = llog_osd_locate(env, lsb, &fid);
-        LASSERT(!IS_ERR(o));
+        if(IS_ERR(o))
+                GOTO(out, lsb = ERR_PTR(PTR_ERR(o)));
 
         pos = 0;
         lb.lb_buf = &sbd;
@@ -284,66 +283,51 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
                 dof.dof_type = dt_mode_to_dft(S_IFREG);
 
                 _th = dt_trans_create(env, dev);
-                LASSERT(!IS_ERR(_th));
+                if (IS_ERR(_th))
+                        GOTO(out, lsb = ERR_PTR(PTR_ERR(_th)));
 
                 rc = dt_declare_create(env, o, attr, NULL, &dof, _th);
-                LASSERT(rc == 0);
+                if (rc)
+                        GOTO(out_trans, rc);
 
                 rc = dt_declare_record_write(env, o, sizeof(sbd), 0, _th);
-                LASSERT(rc == 0);
+                if (rc)
+                        GOTO(out_trans, rc);
 
                 rc = dt_trans_start_local(env, dev, _th);
-                LASSERT(rc == 0);
+                if (rc)
+                        GOTO(out_trans, rc);
 
                 dt_write_lock(env, o, 0);
                 LASSERT(!dt_object_exists(o));
-
                 rc = dt_create(env, o, attr, NULL, &dof, _th);
-                LASSERT(rc == 0);
-                LASSERT(dt_object_exists(o));
                 dt_write_unlock(env, o);
+                if (rc)
+                        GOTO(out_trans, rc);
+                LASSERT(dt_object_exists(o));
 
                 sbd.next_id = 2;
 
                 rc = dt_record_write(env, o, &lb, &pos, _th);
-                LASSERT(rc == 0);
-
-                rc = dt_trans_stop(env, dev, _th);
+                if (rc)
+                        GOTO(out_trans, rc);
+out_trans:
+                dt_trans_stop(env, dev, _th);
                 _th = NULL;
         } else {
                 rc = dt_record_read(env, o, &lb, &pos);
-                LASSERT(rc == 0);
         }
 
-        lsb->lsb_last_oid = sbd.next_id;
-        lsb->lsb_obj = o;
-
+        if (rc) {
+                lsb = ERR_PTR(rc);
+        } else {
+                lsb->lsb_last_oid = sbd.next_id;
+                lsb->lsb_obj = o;
+        }
 out:
         cfs_mutex_unlock(&lsb_list_mutex);
-
-        if (likely(attr))
-                OBD_FREE_PTR(attr);
-
+        OBD_FREE_PTR(attr);
         return lsb;
-}
-
-static int dt_lookup(const struct lu_env *env, struct dt_object *dir,
-                     const char *name, struct lu_fid *fid)
-{
-        struct dt_rec       *rec = (struct dt_rec *)fid;
-        const struct dt_key *key = (const struct dt_key *)name;
-        int result;
-
-        if (dt_try_as_dir(env, dir)) {
-                result = dir->do_index_ops->dio_lookup(env, dir, rec, key,
-                                                       BYPASS_CAPA);
-                if (result > 0)
-                        result = 0;
-                else if (result == 0)
-                        result = -ENOENT;
-        } else
-                result = -ENOTDIR;
-        return result;
 }
 
 static int llog_osd_lookup(const struct lu_env *env,
@@ -434,7 +418,6 @@ static int llog_osd_generate_fid(const struct lu_env *env,
         lb.lb_len = sizeof(sbd);
 
         rc = dt_record_write(env, lsb->lsb_obj, &lb, &pos, th);
-
 out_trans:
         dt_trans_stop(env, lsb->lsb_dev, th);
         RETURN(rc);
@@ -475,8 +458,7 @@ static int llog_osd_pad(const struct lu_env *env,
                 CERROR("error writing padding record: rc %d\n", rc);
                 goto out;
         }
-
- out:
+out:
         RETURN(rc);
 }
 
@@ -503,11 +485,9 @@ static int llog_osd_write_blob(const struct lu_env *env, struct dt_object *o,
                 lb.lb_len = buflen;
                 lb.lb_buf = rec;
                 rc = dt_record_write(env, o, &lb, &off, th);
-                if (rc) {
+                if (rc)
                         CERROR("error writing log record: rc %d\n", rc);
-                        goto out;
-                }
-                GOTO(out, rc = 0);
+                RETURN(rc);
         }
 
         /* the buf case */
@@ -533,15 +513,10 @@ static int llog_osd_write_blob(const struct lu_env *env, struct dt_object *o,
         lb.lb_len = sizeof(end);
         lb.lb_buf = &end;
         rc = dt_record_write(env, o, &lb, &off, th);
-        if (rc) {
+        if (rc)
                 CERROR("error writing log tail: rc %d\n", rc);
-                goto out;
-        }
-
-        rc = 0;
- out:
+out:
         LASSERT(rc <= 0);
-
         RETURN(rc);
 }
 
@@ -589,7 +564,9 @@ static int llog_osd_read_header(struct llog_handle *handle)
         }
 
         rc = dt_attr_get(&env, o, attr, NULL);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(out, rc);
+
         LASSERT(attr->la_valid & LA_SIZE);
 
         if (attr->la_size == 0) {
@@ -647,7 +624,6 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
 
         LASSERT(env);
         LASSERT(th);
-        /* XXX: LASSERT(rec); */
         LASSERT(loghandle);
 
         o = loghandle->lgh_obj;
@@ -659,7 +635,7 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
                         GOTO(out, rc = -ENOMEM);
                 rc = dt_attr_get(env, o, attr, BYPASS_CAPA);
                 pos = attr->la_size;
-                LASSERT(rc != 0 || attr->la_valid & LA_SIZE);
+                LASSERT(ergo(rc == 0, attr->la_valid & LA_SIZE));
                 OBD_FREE_PTR(attr);
                 if (rc)
                         GOTO(out, rc);
@@ -674,7 +650,6 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
         /* each time we update header */
         rc = dt_declare_record_write(env, o,
                                      sizeof(struct llog_log_hdr), 0, th);
-
 out:
         RETURN(rc);
 }
@@ -714,14 +689,15 @@ static int llog_osd_write_rec(const struct lu_env *env,
         else
                 rc = (reclen > LLOG_CHUNK_SIZE) ? -E2BIG : 0;
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         OBD_ALLOC_PTR(attr);
         if (unlikely(attr == NULL))
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         rc = dt_attr_get(env, o, attr, NULL);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(out, rc);
         LASSERT(attr->la_valid & LA_SIZE);
         off = attr->la_size;
 
@@ -733,7 +709,7 @@ static int llog_osd_write_rec(const struct lu_env *env,
         if (idx != -1) {
                 loff_t saved_offset;
                 /* no header: only allowed to insert record 1 */
-                if (idx != 1 && !attr->la_size)
+                if (idx != 1 && attr->la_size == 0)
                         LBUG();
 
                 if (idx && llh->llh_size && llh->llh_size != rec->lrh_len)
@@ -823,7 +799,8 @@ static int llog_osd_write_rec(const struct lu_env *env,
                 GOTO(out, rc);
 
         rc = dt_attr_get(env, o, attr, NULL);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(out, rc);
         LASSERT(attr->la_valid & LA_SIZE);
         off = attr->la_size;
 
@@ -849,11 +826,8 @@ static int llog_osd_write_rec(const struct lu_env *env,
         }
         if (rc == 0 && rec->lrh_type == LLOG_GEN_REC)
                 rc = 1;
-out: 
-
-        if (likely(attr))
-                OBD_FREE_PTR(attr);
-
+out:
+        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -861,14 +835,11 @@ int llog_osd_record_read(const struct lu_env *env, struct dt_object *dt,
                          void *buf, int len, loff_t *pos)
 {
         struct lu_buf lb;
-        int rc;
 
         lb.lb_buf = buf;
         lb.lb_len = len;
 
-        rc = dt->do_body_ops->dbo_read(env, dt, &lb, pos, BYPASS_CAPA);
-
-        return (rc >= 0 ? 0 : rc);
+        return dt_record_read(env, dt, &lb, pos);
 }
 
 /* We can skip reading at least as many log blocks as the number of
@@ -880,18 +851,18 @@ static void llog_skip_over(__u64 *off, int curr, int goal)
 {
         if (goal <= curr)
                 return;
-        *off = (*off + (goal-curr-1) * LLOG_MIN_REC_SIZE) &
+        *off = (*off + (goal - curr - 1) * LLOG_MIN_REC_SIZE) &
                 ~(LLOG_CHUNK_SIZE - 1);
 }
-
 
 /* sets:
  *  - cur_offset to the furthest point read in the log file
  *  - cur_idx to the log index preceeding cur_offset
  * returns -EIO/-EINVAL on error
  */
-static int llog_osd_next_block(const struct lu_env *env, struct llog_handle *loghandle,
-                               int *cur_idx, int next_idx, __u64 *cur_offset, void *buf,
+static int llog_osd_next_block(const struct lu_env *env,
+                               struct llog_handle *loghandle, int *cur_idx,
+                               int next_idx, __u64 *cur_offset, void *buf,
                                int len)
 {
         struct dt_object *o;
@@ -926,7 +897,7 @@ static int llog_osd_next_block(const struct lu_env *env, struct llog_handle *log
                 GOTO(out, rc);
 
         while (*cur_offset < attr->la_size) {
-                struct llog_rec_hdr *rec;
+                struct llog_rec_hdr *rec, *last_rec;
                 struct llog_rec_tail *tail;
                 loff_t ppos, toread;
 
@@ -935,6 +906,7 @@ static int llog_osd_next_block(const struct lu_env *env, struct llog_handle *log
                 ppos = *cur_offset;
                 /* read up to next LLOG_CHUNK_SIZE block */
                 toread = ((ppos & ~(LLOG_CHUNK_SIZE-1)) + LLOG_CHUNK_SIZE) - ppos;
+                //toread = LLOG_CHUNK_SIZE - (ppos & (LLOG_CHUNK_SIZE - 1));
                 rc = llog_osd_record_read(env, o, buf, toread, &ppos);
                 if (rc) {
                         CERROR("Cant read llog block at log id "LPU64
@@ -965,12 +937,18 @@ static int llog_osd_next_block(const struct lu_env *env, struct llog_handle *log
                 }
 
                 rec = buf;
+                if (LLOG_REC_HDR_NEEDS_SWABBING(rec))
+                        lustre_swab_llog_rec(rec);
+
                 tail = (struct llog_rec_tail *)((char *)buf + rc -
                                                 sizeof(struct llog_rec_tail));
+                /* get the last record in block */
+                last_rec = (struct llog_rec_hdr *)((char *)buf + rc -
+                                                   le32_to_cpu(tail->lrt_len));
 
-                if (LLOG_REC_HDR_NEEDS_SWABBING(rec)) {
-                        lustre_swab_llog_rec(rec, tail);
-                }
+                if (LLOG_REC_HDR_NEEDS_SWABBING(last_rec))
+                        lustre_swab_llog_rec(last_rec);
+                LASSERT(last_rec->lrh_index == tail->lrt_index);
 
                 *cur_idx = tail->lrt_index;
 
@@ -1010,8 +988,6 @@ static int llog_osd_prev_block(const struct lu_env *env,
         int               rc;
         ENTRY;
 
-        LASSERT(env);
-
         if (len == 0 || len & (LLOG_CHUNK_SIZE - 1))
                 RETURN(-EINVAL);
 
@@ -1038,7 +1014,7 @@ static int llog_osd_prev_block(const struct lu_env *env,
                 GOTO(out, rc);
 
         while (cur_offset < attr->la_size) {
-                struct llog_rec_hdr *rec;
+                struct llog_rec_hdr *rec, *last_rec;
                 struct llog_rec_tail *tail;
                 loff_t ppos;
 
@@ -1068,7 +1044,19 @@ static int llog_osd_prev_block(const struct lu_env *env,
                         GOTO(out, rc = -EINVAL);
                 }
 
-                tail = buf + rc - sizeof(struct llog_rec_tail);
+                rec = buf;
+                if (LLOG_REC_HDR_NEEDS_SWABBING(rec))
+                        lustre_swab_llog_rec(rec);
+
+                tail = (struct llog_rec_tail *)((char *)buf + rc -
+                                                sizeof(struct llog_rec_tail));
+                /* get the last record in block */
+                last_rec = (struct llog_rec_hdr *)((char *)buf + rc -
+                                                   le32_to_cpu(tail->lrt_len));
+
+                if (LLOG_REC_HDR_NEEDS_SWABBING(last_rec))
+                        lustre_swab_llog_rec(last_rec);
+                LASSERT(last_rec->lrh_index == tail->lrt_index);
 
                 /* this shouldn't happen */
                 if (tail->lrt_index == 0) {
@@ -1077,15 +1065,14 @@ static int llog_osd_prev_block(const struct lu_env *env,
                                loghandle->lgh_id.lgl_ogen, cur_offset);
                         GOTO(out, rc = -EINVAL);
                 }
-                if (le32_to_cpu(tail->lrt_index) < prev_idx)
+                if (tail->lrt_index < prev_idx)
                         continue;
 
                 /* sanity check that the start of the new buffer is no farther
                  * than the record that we wanted.  This shouldn't happen. */
-                rec = buf;
-                if (le32_to_cpu(rec->lrh_index) > prev_idx) {
+                if (rec->lrh_index > prev_idx) {
                         CERROR("missed desired record? %u > %u\n",
-                               le32_to_cpu(rec->lrh_index), prev_idx);
+                               rec->lrh_index, prev_idx);
                         GOTO(out, rc = -ENOENT);
                 }
                 GOTO(out, rc = 0);
@@ -1197,7 +1184,6 @@ static int llog_osd_declare_create(const struct lu_env *env,
         int                     rc;
         ENTRY;
 
-        LASSERT(env);
         LASSERT(res->lgh_obj);
         LASSERT(th);
 
@@ -1208,17 +1194,19 @@ static int llog_osd_declare_create(const struct lu_env *env,
 
         OBD_ALLOC_PTR(attr);
         if (unlikely(attr == NULL))
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         attr->la_valid = LA_TYPE | LA_MODE;
         attr->la_mode = S_IFREG | 0666;
         dof.dof_type = dt_mode_to_dft(S_IFREG);
 
         rc = dt_declare_create(env, o, attr, NULL, &dof, th);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(out, rc);
 
         rc = dt_declare_record_write(env, o, LLOG_CHUNK_SIZE, 0, th);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(out, rc);
 
         if (res->lgh_name) {
                 LASSERT(res->lgh_ctxt->loc_dir);
@@ -1230,10 +1218,8 @@ static int llog_osd_declare_create(const struct lu_env *env,
                         CERROR("can't declare named llog %s: %d\n",
                                res->lgh_name, rc);
         }
-
-        OBD_FREE_PTR(attr);
-
 out:
+        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -1259,7 +1245,7 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
 
         OBD_ALLOC_PTR(attr);
         if (unlikely(attr == NULL))
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         dt_write_lock(env, o, 0);
         if (!dt_object_exists(o)) {
@@ -1268,11 +1254,12 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
                 dof.dof_type = dt_mode_to_dft(S_IFREG);
 
                 rc = dt_create(env, o, attr, NULL, &dof, th);
-                LASSERT(rc == 0);
-                LASSERT(dt_object_exists(o));
-        } else
+        } else {
                 rc = -EEXIST;
+        }
         dt_write_unlock(env, o);
+        if (rc)
+                GOTO(out, rc);
 
         if (res->lgh_name) {
                 LASSERT(res->lgh_ctxt->loc_dir);
@@ -1285,11 +1272,8 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
                         CERROR("can't create named llog %s: %d\n",
                                res->lgh_name, rc);
         }
-
 out:
-        if (likely(attr))
-                OBD_FREE_PTR(attr);
-
+        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -1340,7 +1324,9 @@ static int llog_osd_destroy(const struct lu_env *env,
 
         dt_declare_ref_del(env, o, th);
 
-        dt_declare_destroy(env, o, th);
+        rc = dt_declare_destroy(env, o, th);
+        if (rc)
+                GOTO(out_trans, rc);
 
         if (loghandle->lgh_name) {
                 LASSERT(ctxt->loc_dir);
@@ -1358,7 +1344,9 @@ static int llog_osd_destroy(const struct lu_env *env,
         dt_write_lock(env, o, 0);
         if (dt_object_exists(o)) {
                 dt_ref_del(env, o, th);
-                dt_destroy(env, o, th);
+                rc = dt_destroy(env, o, th);
+                if (rc)
+                        GOTO(out_unlock, rc);
                 if (name) {
                         rc = dt_delete(env, ctxt->loc_dir,
                                        (struct dt_key *) name,
@@ -1367,16 +1355,16 @@ static int llog_osd_destroy(const struct lu_env *env,
                                 CERROR("can't remove llog %s: %d\n", name, rc);
                 }
         }
+out_unlock:
         dt_write_unlock(env, o);
-
 out_trans:
         dt_trans_stop(env, d, th);
         RETURN(rc);
 }
 
 static int llog_osd_setup(struct obd_device *obd, struct obd_llog_group *olg,
-                         int ctxt_idx, struct obd_device *disk_obd, int count,
-                         struct llog_logid *logid, const char *name)
+                          int ctxt_idx, struct obd_device *disk_obd, int count,
+                          struct llog_logid *logid, const char *name)
 {
         struct llog_superblock *lsb;
         struct llog_ctxt       *ctxt;
@@ -1386,25 +1374,25 @@ static int llog_osd_setup(struct obd_device *obd, struct obd_llog_group *olg,
         ENTRY;
 
         LASSERT(obd);
+        LASSERT(olg->olg_ctxts[ctxt_idx]);
 
         ctxt = llog_ctxt_get(olg->olg_ctxts[ctxt_idx]);
-        LASSERT(ctxt);
-
         dt = obd->obd_lvfs_ctxt.dt;
         LASSERT(dt);
 
         rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(out_ctxt, rc);
 
         /* pin llog_superblock with corresponding dt device */
         lsb = llog_osd_get_sb(&env, dt);
-        LASSERT(lsb);
-
-        llog_ctxt_put(ctxt);
-
+        if (lsb == NULL)
+                GOTO(out_env, rc = -ENODEV);
+out_env:
         lu_env_fini(&env);
-
-        return 0;
+out_ctxt:
+        llog_ctxt_put(ctxt);
+        return rc;
 }
 
 static int llog_osd_cleanup(struct llog_ctxt *ctxt)
@@ -1420,7 +1408,10 @@ static int llog_osd_cleanup(struct llog_ctxt *ctxt)
         dt = obd->obd_lvfs_ctxt.dt;
         LASSERT(dt);
         lsb = llog_osd_find_sb(dt);
-        LASSERT(lsb);
+        if (lsb == NULL) {
+                CERROR("Can't find proper lsb\n");
+                return -ENODEV;
+        }
 
         rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
         if (rc) {
@@ -1434,7 +1425,6 @@ static int llog_osd_cleanup(struct llog_ctxt *ctxt)
         llog_osd_put_sb(&env, lsb);
 
         lu_env_fini(&env);
-
         return 0;
 }
 
@@ -1489,7 +1479,7 @@ int llog_get_cat_list(struct obd_device *disk_obd,
         lu_local_obj_fid(&fid, LLOG_CATALOGS_OID);
         o = dt_locate(&env, d, &fid);
         if (IS_ERR(o))
-                GOTO(out, rc = PTR_ERR(o));
+                GOTO(out_env, rc = PTR_ERR(o));
 
         if (!dt_object_exists(o)) {
                 struct dt_object_format  dof;
@@ -1512,12 +1502,9 @@ int llog_get_cat_list(struct obd_device *disk_obd,
                         GOTO(out_trans, rc);
 
                 dt_write_lock(&env, o, 0);
-
                 if (!dt_object_exists(o))
                         rc = dt_create(&env, o, &attr, NULL, &dof, th);
-
                 dt_write_unlock(&env, o);
-
 out_trans:
                 dt_trans_stop(&env, d, th);
                 if (rc)
@@ -1551,11 +1538,10 @@ out_trans:
         }
 
         EXIT;
- out:
-        if (o && !IS_ERR(o))
-                lu_object_put(&env, &o->do_lu);
+out:
+        lu_object_put(&env, &o->do_lu);
+out_env:
         lu_env_fini(&env);
-
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_get_cat_list);
@@ -1590,7 +1576,7 @@ int llog_put_cat_list(struct obd_device *disk_obd,
         lu_local_obj_fid(&fid, LLOG_CATALOGS_OID);
         o = dt_locate(&env, d, &fid);
         if (IS_ERR(o))
-                GOTO(out, rc = PTR_ERR(o));
+                GOTO(out_env, rc = PTR_ERR(o));
 
         if (!dt_object_exists(o))
                 GOTO(out, rc = -ENOENT);
@@ -1623,14 +1609,12 @@ int llog_put_cat_list(struct obd_device *disk_obd,
         rc = dt_record_write(&env, o, &lb, &off, th);
         if (rc)
                 CDEBUG(D_INODE,"error writeing CATALOGS: %d\n", rc);
-
 out_trans:
         dt_trans_stop(&env, d, th);
 out:
-        if (o && !IS_ERR(o))
-                lu_object_put(&env, &o->do_lu);
+        lu_object_put(&env, &o->do_lu);
+out_env:
         lu_env_fini(&env);
-
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_put_cat_list);
