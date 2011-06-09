@@ -75,6 +75,11 @@
         snprintf(logname, sizeof(logname), "LOGS/%s", name)
 #define LLOG_EEMPTY 4711
 
+enum llog_open_flag {
+        LLOG_OPEN_OLD = 0x0000,
+        LLOG_OPEN_NEW = 0x0001,
+};
+
 struct plain_handle_data {
         cfs_list_t          phd_entry;
         struct llog_handle *phd_cat_handle;
@@ -306,7 +311,8 @@ struct llog_operations {
          * The llog_init_handle() need to be called for that.
          */
         int (*lop_open)(const struct lu_env *, struct llog_ctxt *,
-                        struct llog_handle **, struct llog_logid *, char *);
+                        struct llog_handle **, struct llog_logid *,
+                        char * name, enum llog_open_flag);
         /**
          * Opened llog may not exist and this must be checked where needed using
          * the llog_exist() call.
@@ -702,7 +708,8 @@ static inline int llog_connect(struct llog_ctxt *ctxt,
  */
 static inline int llog_open(const struct lu_env *env,
                             struct llog_ctxt *ctxt, struct llog_handle **res,
-                            struct llog_logid *logid, char *name)
+                            struct llog_logid *logid, char *name,
+                            enum llog_open_flag flags)
 {
         struct llog_operations *lop;
         int raised, rc;
@@ -717,7 +724,7 @@ static inline int llog_open(const struct lu_env *env,
         raised = cfs_cap_raised(CFS_CAP_SYS_RESOURCE);
         if (!raised)
                 cfs_cap_raise(CFS_CAP_SYS_RESOURCE);
-        rc = lop->lop_open(env, ctxt, res, logid, name);
+        rc = lop->lop_open(env, ctxt, res, logid, name, flags);
         if (!raised)
                 cfs_cap_lower(CFS_CAP_SYS_RESOURCE);
         RETURN(rc);

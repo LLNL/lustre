@@ -1128,7 +1128,7 @@ int sptlrpc_target_local_read_conf(struct obd_device *obd,
 
         push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
 
-        rc = llog_open(NULL, ctxt, &llh, NULL, LOG_SPTLRPC);
+        rc = llog_open(NULL, ctxt, &llh, NULL, LOG_SPTLRPC, LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
 

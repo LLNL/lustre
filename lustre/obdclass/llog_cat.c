@@ -171,24 +171,25 @@ int llog_cat_id2handle(const struct lu_env *env, struct llog_handle *cathandle,
                 }
         }
 
-        rc = llog_open(env, cathandle->lgh_ctxt, &loghandle, logid, NULL);
-        if (rc) {
+        rc = llog_open(env, cathandle->lgh_ctxt, &loghandle, logid, NULL,
+                       LLOG_OPEN_OLD);
+        if (rc < 0) {
                 CERROR("error opening log id "LPX64":%x: rc %d\n",
                        logid->lgl_oid, logid->lgl_ogen, rc);
-        } else {
-                LASSERT(llog_exist(loghandle));
-                rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
-                if (rc == 0) {
-                        cfs_list_add(&loghandle->u.phd.phd_entry,
-                                     &cathandle->u.chd.chd_head);
-                }
+                GOTO(out, rc);
         }
-        if (!rc) {
-                loghandle->u.phd.phd_cat_handle = cathandle;
-                loghandle->u.phd.phd_cookie.lgc_lgl = cathandle->lgh_id;
-                loghandle->u.phd.phd_cookie.lgc_index =
+
+        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
+        if (rc < 0) {
+                llog_close(env, loghandle);
+                GOTO(out, rc);
+        }
+
+        cfs_list_add(&loghandle->u.phd.phd_entry, &cathandle->u.chd.chd_head);
+        loghandle->u.phd.phd_cat_handle = cathandle;
+        loghandle->u.phd.phd_cookie.lgc_lgl = cathandle->lgh_id;
+        loghandle->u.phd.phd_cookie.lgc_index =
                         loghandle->lgh_hdr->llh_cat_idx;
-        }
 
 out:
         *res = loghandle;
@@ -345,7 +346,7 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
                 cfs_down_write(&cathandle->lgh_lock);
                 if (cathandle->u.chd.chd_current_log == NULL) {
                         rc = llog_open(env, cathandle->lgh_ctxt, &loghandle,
-                                         NULL, NULL);
+                                       NULL, NULL, LLOG_OPEN_NEW);
                         if (rc == 0) {
                                 cathandle->u.chd.chd_current_log = loghandle;
                                 cfs_list_add_tail(&loghandle->u.phd.phd_entry,
@@ -359,7 +360,7 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
                 cfs_down_write(&cathandle->lgh_lock);
                 if (cathandle->u.chd.chd_next_log == NULL) {
                         rc = llog_open(env, cathandle->lgh_ctxt, &loghandle,
-                                         NULL, NULL);
+                                       NULL, NULL, LLOG_OPEN_NEW);
                         if (rc == 0) {
                                 cathandle->u.chd.chd_next_log = loghandle;
                                 cfs_list_add_tail(&loghandle->u.phd.phd_entry,
@@ -600,16 +601,11 @@ int llog_cat_process_thread(void *data)
                 GOTO(out, rc);
 
         logid = *(struct llog_logid *)(args->lpca_arg);
-        rc = llog_open(&env, ctxt, &llh, &logid, NULL);
+        rc = llog_open(&env, ctxt, &llh, &logid, NULL, LLOG_OPEN_OLD);
         if (rc) {
                 CERROR("Cannot open llog "LPX64":%x (%d)\n",
                        logid.lgl_oid, logid.lgl_ogen, rc);
                 GOTO(out_env, rc);
-        }
-        if (!llog_exist(llh)) {
-                CERROR("No such llog "LPX64":%x (%d)\n",
-                       logid.lgl_oid, logid.lgl_ogen, rc);
-                GOTO(release_llh, rc);
         }
         rc = llog_init_handle(llh, LLOG_F_IS_CAT, NULL);
         if (rc) {

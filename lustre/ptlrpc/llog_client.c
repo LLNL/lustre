@@ -84,8 +84,9 @@
 
 /* This is a callback from the llog_* functions.
  * Assumes caller has already pushed us into the kernel context. */
-static int llog_client_open(const struct lu_env *env, struct llog_ctxt *ctxt, struct llog_handle **res,
-                            struct llog_logid *logid, char *name)
+static int llog_client_open(const struct lu_env *env, struct llog_ctxt *ctxt,
+                            struct llog_handle **res, struct llog_logid *logid,
+                            char *name, enum llog_open_flag flags)
 {
         struct obd_import     *imp;
         struct llogd_body     *body;
@@ -95,7 +96,8 @@ static int llog_client_open(const struct lu_env *env, struct llog_ctxt *ctxt, st
         ENTRY;
 
         LLOG_CLIENT_ENTRY(ctxt, imp);
-
+        /* client cannot create llog */
+        LASSERTF(!(flags & LLOG_OPEN_NEW), "%#x\n", flags);
         handle = llog_alloc_handle();
         if (handle == NULL)
                 RETURN(-ENOMEM);
