@@ -63,6 +63,7 @@
 #include <dt_object.h>
 #include <lustre_mds.h>
 #include <lustre_mdt.h>
+#include <lustre_log.h>
 #include "mdt_internal.h"
 #ifdef HAVE_QUOTA_SUPPORT
 # include <lustre_quota.h>
