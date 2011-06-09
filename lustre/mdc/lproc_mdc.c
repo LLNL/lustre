@@ -42,7 +42,6 @@
 #include <linux/vfs.h>
 #include <obd_class.h>
 #include <lprocfs_status.h>
-#include <lustre_log.h>
 
 #ifdef LPROCFS
 

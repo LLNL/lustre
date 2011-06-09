@@ -2524,14 +2524,8 @@ typedef enum {
         LLOG_LOGID_MAGIC   = LLOG_OP_MAGIC | 0x4553b,
 } llog_op_type;
 
-/*
- * for now, continue to support old pad records which have 0 for their
- * type but still need to be swabbed for their length
- */
-#define LLOG_REC_HDR_NEEDS_SWABBING(r)                                  \
-        (((r)->lrh_type & __swab32(LLOG_OP_MASK)) ==                    \
-         __swab32(LLOG_OP_MAGIC) ||                                     \
-         (((r)->lrh_type == 0) && ((r)->lrh_len > LLOG_CHUNK_SIZE)))
+#define LLOG_REC_HDR_NEEDS_SWABBING(r)                                      \
+        (((r)->lrh_type & __swab32(LLOG_OP_MASK)) == __swab32(LLOG_OP_MAGIC))
 
 /** Log record header - stored in little endian order.
  * Each record must start with this struct, end with a llog_rec_tail,
@@ -2828,8 +2822,7 @@ extern void lustre_swab_lov_mds_md(struct lov_mds_md *lmm);
 extern void lustre_swab_llogd_body (struct llogd_body *d);
 extern void lustre_swab_llog_hdr (struct llog_log_hdr *h);
 extern void lustre_swab_llogd_conn_body (struct llogd_conn_body *d);
-extern void lustre_swab_llog_rec(struct llog_rec_hdr  *rec,
-                                 struct llog_rec_tail *tail);
+extern void lustre_swab_llog_rec(struct llog_rec_hdr *rec);
 
 struct lustre_cfg;
 extern void lustre_swab_lustre_cfg(struct lustre_cfg *lcfg);
