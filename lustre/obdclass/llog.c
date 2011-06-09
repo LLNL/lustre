@@ -510,6 +510,10 @@ out:
 }
 EXPORT_SYMBOL(llog_reverse_process);
 
+/**
+ * Helper function to open llog or create it if doesn't exist.
+ * It hides all transaction handling from caller.
+ */
 int llog_open_create(const struct lu_env *env, struct llog_ctxt *ctxt,
                      struct llog_handle **res, struct llog_logid *logid,
                      char *name)
@@ -518,7 +522,7 @@ int llog_open_create(const struct lu_env *env, struct llog_ctxt *ctxt,
         int                rc;
         ENTRY;
 
-        rc = llog_open(env, ctxt, res, logid, name);
+        rc = llog_open(env, ctxt, res, logid, name, LLOG_OPEN_NEW);
         if (rc)
                 RETURN(rc);
 
@@ -546,6 +550,9 @@ out:
 }
 EXPORT_SYMBOL(llog_open_create);
 
+/**
+ * Helper function to delete existent llog.
+ */
 int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
                struct llog_logid *logid, char *name)
 {
@@ -557,15 +564,14 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (name == NULL && logid == NULL)
                 RETURN(0);
 
-        rc = llog_open(env, ctxt, &handle, logid, name);
-        if (rc)
+        rc = llog_open(env, ctxt, &handle, logid, name, LLOG_OPEN_OLD);
+        if (rc < 0)
                 RETURN(rc);
 
-        if (llog_exist(handle)) {
-                rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
-                if (rc == 0)
-                        rc = llog_destroy(env, handle);
-        }
+        rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
+        if (rc == 0)
+                rc = llog_destroy(env, handle);
+
         rc2 = llog_close(env, handle);
         if (rc == 0)
                 rc = rc2;
@@ -574,7 +580,9 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
 EXPORT_SYMBOL(llog_erase);
 
 /*
- * Helper function for write record in llog. It is valid only with local llog.
+ * Helper function for write record in llog.
+ * It hides all transaction handling from caller.
+ * Valid only with local llog.
  */
 int llog_write(const struct lu_env *env, struct llog_handle *loghandle,
                struct llog_rec_hdr *rec, struct llog_cookie *reccookie,
@@ -593,9 +601,6 @@ int llog_write(const struct lu_env *env, struct llog_handle *loghandle,
         th = dt_trans_create(env, dt);
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
-
-        if (!llog_exist(loghandle))
-                GOTO(out_trans, rc = -EEXIST);
 
         rc = llog_declare_write_rec(env, loghandle, rec, idx, th);
         if (rc)
