@@ -46,7 +46,6 @@
 
 #include <obd_class.h>
 #include <lustre_log.h>
-#include <libcfs/list.h>
 #include "llog_internal.h"
 
 /* helper functions for calling the llog obd methods */
@@ -231,7 +230,8 @@ int llog_setup(struct obd_device *obd,  struct obd_llog_group *olg,
                int index, struct obd_device *disk_obd, int count,
                struct llog_logid *logid, struct llog_operations *op)
 {
-        return llog_setup_named(obd,olg,index,disk_obd,count,logid,NULL,op);
+        return llog_setup_named(obd, olg, index, disk_obd, count, logid,
+                                NULL, op);
 }
 EXPORT_SYMBOL(llog_setup);
 
@@ -350,7 +350,7 @@ int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
                 rc = llog_open_create(&env, ctxt, &handle, logid, NULL);
         } else {
                 rc = llog_open_create(&env, ctxt, &handle, NULL, (char *)name);
-                if (!rc && logid)
+                if (rc == 0 && logid)
                         *logid = handle->lgh_id;
         }
         if (rc)
@@ -361,8 +361,7 @@ int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
         if (rc)
                 GOTO(out, rc);
 
-        rc = llog_process(&env, handle, (llog_cb_t)cat_cancel_cb,
-                            NULL, NULL);
+        rc = llog_process(&env, handle, (llog_cb_t)cat_cancel_cb, NULL, NULL);
         if (rc)
                 CERROR("llog_process() with cat_cancel_cb failed: %d\n", rc);
         GOTO(out, rc);

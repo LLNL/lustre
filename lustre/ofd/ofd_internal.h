@@ -9,7 +9,7 @@
 #include <obd.h>
 #include <obd_cksum.h>
 #include <lustre_fid.h>
-#include <lustre_log.h>
+#include <obd_ost.h>
 
 #define OFD_GROUPS_FILE "groups"
 

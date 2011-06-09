@@ -25,6 +25,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -34,6 +35,7 @@
  * lustre/obdclass/llog_test.c
  *
  * Author: Phil Schwan <phil@clusterfs.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #ifndef EXPORT_SYMTAB
@@ -96,7 +98,8 @@ static int verify_handle(char *test, struct llog_handle *llh, int num_recs)
 }
 
 /* Test named-log create/open, close */
-static int llog_test_1(const struct lu_env *env, struct obd_device *obd, char *name)
+static int llog_test_1(const struct lu_env *env, struct obd_device *obd,
+                       char *name)
 {
         struct llog_handle *llh;
         struct llog_ctxt *ctxt = llog_get_context(obd, LLOG_TEST_ORIG_CTXT);
@@ -112,11 +115,16 @@ static int llog_test_1(const struct lu_env *env, struct obd_device *obd, char *n
                 CERROR("1a: llog_create with name %s failed: %d\n", name, rc);
                 GOTO(out, rc);
         }
-        llog_init_handle(llh, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, &uuid);
+        if (rc) {
+                CERROR("1a: can't init llog handle: %d\n", rc);
+                GOTO(out_close, rc);
+        }
 
         rc = verify_handle("1", llh, 1);
 
         CWARN("1b: close newly-created log\n");
+out_close:
         rc2 = llog_close(env, llh);
         if (rc2) {
                 CERROR("1b: close log %s failed: %d\n", name, rc2);
@@ -129,8 +137,8 @@ out:
 }
 
 /* Test named-log reopen; returns opened log on success */
-static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *name,
-                       struct llog_handle **llh)
+static int llog_test_2(const struct lu_env *env, struct obd_device *obd,
+                       char *name, struct llog_handle **llh)
 {
         struct llog_ctxt *ctxt = llog_get_context(obd, LLOG_TEST_ORIG_CTXT);
         struct llog_handle *loghandle;
@@ -145,7 +153,11 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
                 GOTO(out_put, rc);
         }
 
-        llog_init_handle(*llh, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(*llh, LLOG_F_IS_PLAIN, &uuid);
+        if (rc) {
+                CERROR("2a: can't init llog handle: %d\n", rc);
+                GOTO(out_close_llh, rc);
+        }
 
         rc = verify_handle("2", *llh, 1);
         if (rc)
@@ -157,7 +169,12 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
                 CERROR("2b: create log failed\n");
                 GOTO(out_close_llh, rc);
         }
-        llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
+        if (rc) {
+                CERROR("2b: can't init llog handle: %d\n", rc);
+                GOTO(out_close, rc);
+        }
+
         logid = loghandle->lgh_id;
         llog_close(env, loghandle);
 
@@ -168,13 +185,17 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
                 GOTO(out_close_llh, rc);
         }
 
-        llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
+        if (rc) {
+                CERROR("2c: can't init llog handle: %d\n", rc);
+                GOTO(out_close, rc);
+        }
 
         CWARN("2d: destroy this log\n");
         rc = llog_destroy(env, loghandle);
         if (rc)
                 CERROR("2d: destroy log failed\n");
-
+out_close:
         llog_close(env, loghandle);
 out_close_llh:
         if (rc)
@@ -186,7 +207,8 @@ out_put:
 }
 
 /* Test record writing, single and in bulk */
-static int llog_test_3(const struct lu_env *env, struct obd_device *obd, struct llog_handle *llh)
+static int llog_test_3(const struct lu_env *env, struct obd_device *obd,
+                       struct llog_handle *llh)
 {
         struct llog_create_rec lcr;
         int rc, i;
@@ -304,7 +326,12 @@ static int llog_test_4(const struct lu_env *env, struct obd_device *obd)
                 CERROR("4a: llog_create with name %s failed: %d\n", name, rc);
                 GOTO(ctxt_release, rc);
         }
-        llog_init_handle(cath, LLOG_F_IS_CAT, &uuid);
+        rc = llog_init_handle(cath, LLOG_F_IS_CAT, &uuid);
+        if (rc) {
+                CERROR("4a: can't init llog handle: %d\n", rc);
+                GOTO(out, rc);
+        }
+
         num_recs++;
         cat_logid = cath->lgh_id;
 
@@ -446,7 +473,7 @@ static int llog_cancel_rec_cb(const struct lu_env *env, struct llog_handle *llh,
         llog_cat_cancel_records(env, llh->u.phd.phd_cat_handle, 1, &cookie);
         i++;
         if (i == LLOG_TEST_RECNUM)
-                RETURN(-4711);
+                RETURN(-LLOG_EEMPTY);
         RETURN(0);
 }
 
@@ -471,7 +498,11 @@ static int llog_test_5(const struct lu_env *env, struct obd_device *obd)
                 GOTO(out_put, rc);
         }
 
-        llog_init_handle(llh, LLOG_F_IS_CAT, &uuid);
+        rc = llog_init_handle(llh, LLOG_F_IS_CAT, &uuid);
+        if (rc) {
+                CERROR("5a: can't init llog handle: %d\n", rc);
+                GOTO(out, rc);
+        }
 
         CWARN("5b: print the catalog entries.. we expect 2\n");
         cat_counter = 0;
@@ -487,7 +518,7 @@ static int llog_test_5(const struct lu_env *env, struct obd_device *obd)
 
         CWARN("5c: Cancel %d records, see one log zapped\n", LLOG_TEST_RECNUM);
         rc = llog_cat_process(env, llh, llog_cancel_rec_cb, "foobar", 0, 0);
-        if (rc != -4711) {
+        if (rc != -LLOG_EEMPTY) {
                 CERROR("5c: process with cat_cancel_cb failed: %d\n", rc);
                 GOTO(out, rc);
         }
@@ -528,7 +559,8 @@ static int llog_test_5(const struct lu_env *env, struct obd_device *obd)
         plain_counter = 0;
         rc = llog_cat_reverse_process(env, llh, plain_print_cb, "foobar");
         if (rc) {
-                CERROR("5f: reversely process with plain_print_cb failed: %d\n", rc);
+                CERROR("5f: reversely process with plain_print_cb failed:"
+                       "%d\n", rc);
                 GOTO(out, rc);
         }
         if (plain_counter != 6) {
@@ -663,9 +695,10 @@ static int llog_run_tests(struct obd_device *obd)
                 GOTO(cleanup, rc);
 
 cleanup:
-        err = llog_close(&env, llh);
+        err = llog_destroy(&env, llh);
         if (err)
-                CERROR("cleanup: llog_close failed: %d\n", err);
+                CERROR("cleanup: llog_destroy failed: %d\n", err);
+        llog_close(&env, llh);
         if (!rc)
                 rc = err;
 cleanup_env:
@@ -674,7 +707,6 @@ cleanup_ctxt:
         llog_ctxt_put(ctxt);
         return rc;
 }
-
 
 static int llog_test_llog_init(struct obd_device *obd,
                                struct obd_llog_group *olg,
