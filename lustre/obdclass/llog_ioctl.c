@@ -313,12 +313,13 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 rc = str2logid(&logid, data->ioc_inlbuf1, data->ioc_inllen1);
                 if (rc)
                         GOTO(out, rc);
-                rc = llog_open(&env, ctxt, &handle, &logid, NULL);
+                rc = llog_open(&env, ctxt, &handle, &logid, NULL,
+                               LLOG_OPEN_OLD);
                 if (rc)
                         GOTO(out, rc);
         } else if (*data->ioc_inlbuf1 == '$') {
                 char *name = data->ioc_inlbuf1 + 1;
-                rc = llog_open(&env, ctxt, &handle, NULL, name);
+                rc = llog_open(&env, ctxt, &handle, NULL, name, LLOG_OPEN_OLD);
                 if (rc)
                         GOTO(out, rc);
         } else {

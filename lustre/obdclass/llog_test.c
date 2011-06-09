@@ -141,14 +141,11 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
         ENTRY;
 
         CWARN("2a: re-open a log with name: %s\n", name);
-        rc = llog_open(env, ctxt, llh, NULL, name);
+        rc = llog_open(env, ctxt, llh, NULL, name, LLOG_OPEN_OLD);
         if (rc) {
                 CERROR("2a: re-open log with name %s failed: %d\n", name, rc);
                 GOTO(out_put, rc);
         }
-
-        if (!llog_exist(*llh))
-                GOTO(out_close_llh, rc = -ENOENT);
 
         llog_init_handle(*llh, LLOG_F_IS_PLAIN, &uuid);
 
@@ -167,14 +164,11 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
         llog_close(env, loghandle);
 
         CWARN("2c: re-open the log by LOGID\n");
-        rc = llog_open(env, ctxt, &loghandle, &logid, NULL);
+        rc = llog_open(env, ctxt, &loghandle, &logid, NULL, LLOG_OPEN_OLD);
         if (rc) {
                 CERROR("2c: re-open log by LOGID failed\n");
                 GOTO(out_close_llh, rc);
         }
-
-        if (!llog_exist(loghandle))
-                GOTO(out_close, rc = -ENOENT);
 
         llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
 
@@ -182,7 +176,7 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd, char *n
         rc = llog_destroy(env, loghandle);
         if (rc)
                 CERROR("2d: destroy log failed\n");
-out_close:
+
         llog_close(env, loghandle);
 out_close_llh:
         if (rc)
@@ -473,14 +467,11 @@ static int llog_test_5(const struct lu_env *env, struct obd_device *obd)
         lmr.lmr_hdr.lrh_type = 0xf00f00;
 
         CWARN("5a: re-open catalog by id\n");
-        rc = llog_open(env, ctxt, &llh, &cat_logid, NULL);
+        rc = llog_open(env, ctxt, &llh, &cat_logid, NULL, LLOG_OPEN_OLD);
         if (rc) {
                 CERROR("5a: llog_create with logid failed: %d\n", rc);
                 GOTO(out_put, rc);
         }
-
-        if (!llog_exist(llh))
-                GOTO(out, rc = -ENOENT);
 
         llog_init_handle(llh, LLOG_F_IS_CAT, &uuid);
 
@@ -593,7 +584,7 @@ static int llog_test_6(const struct lu_env *env, struct obd_device *obd,
         }
 
         nctxt = llog_get_context(mgc_obd, LLOG_CONFIG_REPL_CTXT);
-        rc = llog_open(env, nctxt, &llh, NULL, name);
+        rc = llog_open(env, nctxt, &llh, NULL, name, LLOG_OPEN_OLD);
         if (rc) {
                 CERROR("6a: llog_create failed %d\n", rc);
                 GOTO(nctxt_put, rc);

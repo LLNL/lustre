@@ -1387,7 +1387,7 @@ int class_config_parse_llog(struct llog_ctxt *ctxt, char *name,
         ENTRY;
 
         CDEBUG(D_INFO, "looking up llog %s\n", name);
-        rc = llog_open(NULL, ctxt, &llh, NULL, name);
+        rc = llog_open(NULL, ctxt, &llh, NULL, name, LLOG_OPEN_OLD);
         if (rc)
                 RETURN(rc);
 
@@ -1484,7 +1484,7 @@ int class_config_dump_llog(struct llog_ctxt *ctxt, char *name,
 
         LCONSOLE_INFO("Dumping config log %s\n", name);
 
-        rc = llog_open(NULL, ctxt, &llh, NULL, name);
+        rc = llog_open(NULL, ctxt, &llh, NULL, name, LLOG_OPEN_OLD);
         if (rc)
                 RETURN(rc);
 
