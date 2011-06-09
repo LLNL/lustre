@@ -1105,14 +1105,13 @@ out:
  */
 static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
                          struct llog_handle **res, struct llog_logid *logid,
-                         char *name)
+                         char *name, enum llog_open_flag flags)
 {
         struct llog_handle        *handle = NULL;
         struct dt_object          *o;
         struct dt_device          *dt;
         struct llog_superblock    *lsb = NULL;
         struct lu_fid              fid;
-        struct llog_logid          tlogid;
         int                        rc = 0;
         ENTRY;
 
@@ -1133,52 +1132,41 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
 
         if (logid != NULL) {
                 logid_to_fid(logid, &fid);
-
-                o = llog_osd_locate(env, lsb, &fid);
-                if (IS_ERR(o))
-                        GOTO(out_free, rc = PTR_ERR(o));
-
-                if (!dt_object_exists(o))
-                        GOTO(out_put, rc = -ENOENT);
-                handle->lgh_id = *logid;
         } else if (name) {
-                logid = &tlogid;
+                struct llog_logid tlogid;
 
-                rc = llog_osd_lookup(env, ctxt, lsb, name, logid);
+                rc = llog_osd_lookup(env, ctxt, lsb, name, &tlogid);
                 if (rc == 0) {
-                        logid_to_fid(logid, &fid);
-                } else {
+                        logid_to_fid(&tlogid, &fid);
+                } else if (flags & LLOG_OPEN_NEW) {
                         /* generate fid for new llog */
-                        rc = 0;
-                        llog_osd_generate_fid(env, lsb, &fid);
-                        fid_to_logid(&fid, logid);
                         OBD_ALLOC(handle->lgh_name, strlen(name) + 1);
                         if (handle->lgh_name)
                                 strcpy(handle->lgh_name, name);
                         else
                                 GOTO(out_free, rc = -ENOMEM);
+                        rc = llog_osd_generate_fid(env, lsb, &fid);
                 }
-
-                o = llog_osd_locate(env, lsb, &fid);
-                if (IS_ERR(o))
-                        GOTO(out_free, rc = PTR_ERR(o));
-
-                fid_to_logid(&fid, &handle->lgh_id);
+                if (rc < 0)
+                        GOTO(out_free, rc);
         } else {
-
+                LASSERTF(flags & LLOG_OPEN_NEW, "%#x\n", flags);
                 /* generate fid for new llog */
-                llog_osd_generate_fid(env, lsb, &fid);
-
-                o = llog_osd_locate(env, lsb, &fid);
-                if (IS_ERR(o))
-                        GOTO(out_free, rc = PTR_ERR(o));
-                LASSERT(!dt_object_exists(o));
-
-                fid_to_logid(&fid, &handle->lgh_id);
-
+                rc = llog_osd_generate_fid(env, lsb, &fid);
+                if (rc < 0)
+                        GOTO(out_free, rc);
                 /* XXX: generate name for this object? */
         }
 
+        o = llog_osd_locate(env, lsb, &fid);
+        if (IS_ERR(o))
+                GOTO(out_free, rc = PTR_ERR(o));
+
+        /* No new llog is expected but doesn't exist */
+        if (!(flags & LLOG_OPEN_NEW) && !dt_object_exists(o))
+                GOTO(out_put, rc = -ENOENT);
+
+        fid_to_logid(&fid, &handle->lgh_id);
         handle->lgh_obj = o;
         handle->lgh_ctxt = ctxt;
         cfs_atomic_inc(&lsb->lsb_refcount);

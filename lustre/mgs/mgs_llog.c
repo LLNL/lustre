@@ -714,12 +714,9 @@ static int mgs_modify(const struct lu_env *env, struct mgs_device *mgs,
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         LASSERT(ctxt != NULL);
 
-        rc = llog_open(env, ctxt, &loghandle, NULL, logname);
+        rc = llog_open(env, ctxt, &loghandle, NULL, logname, LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
-
-        if (!llog_exist(loghandle))
-                GOTO(out_close, rc = 0);
 
         rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
@@ -987,12 +984,10 @@ static int mgs_log_is_empty(const struct lu_env *env,
 
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         LASSERT(ctxt != NULL);
-        rc = llog_open(env, ctxt, &llh, NULL, name);
+        rc = llog_open(env, ctxt, &llh, NULL, name, LLOG_OPEN_OLD);
         if (rc == 0) {
-                if (llog_exist(llh)) {
-                        llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
-                        rc = llog_get_size(llh);
-                }
+                llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+                rc = llog_get_size(llh);
                 llog_close(env, llh);
         }
         llog_ctxt_put(ctxt);
@@ -1292,12 +1287,10 @@ static int mgs_steal_llog_for_mdt_from_client(const struct lu_env *env,
         comp->comp_tmti = tmti;
         comp->comp_obd = mgs->mgs_obd;
 
-        rc = llog_open(env, ctxt, &loghandle, NULL, client_name);
+        rc = llog_open(env, ctxt, &loghandle, NULL, client_name,
+                       LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
-
-        if (!llog_exist(loghandle))
-                GOTO(out_close, rc = 0);
 
         rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
@@ -2518,12 +2511,9 @@ int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env,
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         LASSERT(ctxt != NULL);
 
-        rc = llog_open(env, ctxt, &llh, NULL, logname);
+        rc = llog_open(env, ctxt, &llh, NULL, logname, LLOG_OPEN_OLD);
         if (rc)
-                GOTO(out, rc);
-
-        if (!llog_exist(llh))
-                GOTO(out_close, rc = 0);
+                GOTO(out, rc = 0);
 
         rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)

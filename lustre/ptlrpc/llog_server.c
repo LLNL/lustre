@@ -91,12 +91,10 @@ int llog_origin_handle_open(struct ptlrpc_request *req)
                 RETURN(-ENODEV);
         }
 
-        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle, logid, name);
+        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle, logid,
+                       name, LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
-
-        if (!llog_exist(loghandle))
-                GOTO(out_close, rc = -ENOENT);
 
         rc = req_capsule_server_pack(&req->rq_pill);
         if (rc)
@@ -159,12 +157,9 @@ int llog_origin_handle_next_block(struct ptlrpc_request *req)
                 RETURN(-ENODEV);
 
         rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle,
-                       &body->lgd_logid, NULL);
+                       &body->lgd_logid, NULL, LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
-
-        if (!llog_exist(loghandle))
-                GOTO(out_close, rc = -ENOENT);
 
         flags = body->lgd_llh_flags;
         rc = llog_init_handle(loghandle, flags, NULL);
@@ -212,12 +207,9 @@ int llog_origin_handle_prev_block(struct ptlrpc_request *req)
                 RETURN(-ENODEV);
 
         rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle,
-                         &body->lgd_logid, NULL);
+                         &body->lgd_logid, NULL, LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
-
-        if (!llog_exist(loghandle))
-                GOTO(out_close, rc = -ENOENT);
 
         flags = body->lgd_llh_flags;
         rc = llog_init_handle(loghandle, flags, NULL);
@@ -263,12 +255,11 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         if (ctxt == NULL)
                 RETURN(-ENODEV);
 
-        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle, &body->lgd_logid, NULL);
+        rc = llog_open(req->rq_svc_thread->t_env, ctxt, &loghandle,
+                       &body->lgd_logid, NULL, LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
 
-        if (!llog_exist(loghandle))
-                GOTO(out_close, rc = -ENOENT);
         /*
          * llog_init_handle() reads the llog header
          */
