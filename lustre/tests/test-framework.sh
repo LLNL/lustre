@@ -2987,6 +2987,7 @@ error() {
     # specific lod/osp bits: check space available and in-progress deletes
     lfs df
     do_nodes $(mdts_nodes) "lctl get_param osp.*.sync_*"
+    do_nodes $(mdts_nodes) "lctl get_param osp.*.prealloc_status"
     error_noexit "$@"
     exit 1
 }
