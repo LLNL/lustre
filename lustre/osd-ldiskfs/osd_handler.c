@@ -545,7 +545,7 @@ static struct thandle *osd_trans_create(const struct lu_env *env,
                                         struct dt_device *d)
 {
         struct osd_thread_info *oti = osd_oti_get(env);
-        struct filter_iobuf    *iobuf = &oti->oti_iobuf;
+        struct osd_iobuf       *iobuf = &oti->oti_iobuf;
         struct osd_thandle     *oh;
         struct thandle         *th;
         ENTRY;
@@ -658,7 +658,7 @@ static int osd_trans_stop(const struct lu_env *env, struct thandle *th)
         int                     result = 0;
         struct osd_thandle     *oh;
         struct osd_thread_info *oti = osd_oti_get(env);
-        struct filter_iobuf    *iobuf = &oti->oti_iobuf;
+        struct osd_iobuf       *iobuf = &oti->oti_iobuf;
 
         ENTRY;
 

@@ -261,6 +261,10 @@ struct osd_device {
         unsigned long long        od_readcache_max_filesize;
         int                       od_read_cache;
         int                       od_writethrough_cache;
+
+        struct brw_stats          od_brw_stats;
+        cfs_atomic_t              od_r_in_flight;
+        cfs_atomic_t              od_w_in_flight;
 };
 
 /**
@@ -320,15 +324,21 @@ struct osd_it_iam {
 
 #define MAX_BLOCKS_PER_PAGE (CFS_PAGE_SIZE / 512)
 
-struct filter_iobuf {
-        cfs_atomic_t      dr_numreqs;  /* number of reqs being processed */
-        cfs_waitq_t       dr_wait;
-        int               dr_max_pages;
-        int               dr_npages;
-        int               dr_error;
-        struct page      *dr_pages[PTLRPC_MAX_BRW_PAGES];
-        unsigned long     dr_blocks[PTLRPC_MAX_BRW_PAGES*MAX_BLOCKS_PER_PAGE];
-        unsigned int      dr_ignore_quota:1;
+struct osd_iobuf {
+        cfs_waitq_t        dr_wait;
+        cfs_atomic_t       dr_numreqs;  /* number of reqs being processed */
+        int                dr_max_pages;
+        int                dr_npages;
+        int                dr_error;
+        int                dr_frags;
+        unsigned int       dr_ignore_quota:1;
+        unsigned int       dr_elapsed_valid:1; /* we really did count time */
+        unsigned int       dr_rw:1;
+        struct page       *dr_pages[PTLRPC_MAX_BRW_PAGES];
+        unsigned long      dr_blocks[PTLRPC_MAX_BRW_PAGES*MAX_BLOCKS_PER_PAGE];
+        unsigned long      dr_start_time;
+        unsigned long      dr_elapsed;  /* how long io took */
+        struct osd_device *dr_dev;
 };
 
 struct osd_thread_info {
@@ -408,7 +418,7 @@ struct osd_thread_info {
 #endif
 
         /** 0-copy IO */
-        struct filter_iobuf    oti_iobuf;
+        struct osd_iobuf       oti_iobuf;
 
         /** used by compat stuff */
         struct inode           oti_inode;
@@ -456,6 +466,7 @@ int osd_procfs_fini(struct osd_device *osd);
 void osd_lprocfs_time_start(const struct lu_env *env);
 void osd_lprocfs_time_end(const struct lu_env *env,
                           struct osd_device *osd, int op);
+void osd_brw_stats_update(struct osd_device *osd, struct osd_iobuf *iobuf);
 #endif
 int osd_statfs(const struct lu_env *env, struct dt_device *dev,
                struct obd_statfs *osfs);
@@ -551,6 +562,7 @@ static inline void osd_ipd_put(const struct lu_env *env,
         bag->ic_descr->id_ops->id_ipd_free(ipd);
 }
 
+void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf);
 
 #endif /* __KERNEL__ */
 
