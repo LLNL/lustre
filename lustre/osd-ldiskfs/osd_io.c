@@ -90,7 +90,7 @@ static struct osd_device *osd_obj2dev(const struct osd_object *o)
 int osd_object_auth(const struct lu_env *env, struct dt_object *dt,
                     struct lustre_capa *capa, __u64 opc);
 
-static void filter_init_iobuf(struct filter_iobuf *iobuf)
+static void osd_init_iobuf(struct osd_device *d, struct osd_iobuf *iobuf, int rw)
 {
 
         cfs_waitq_init(&iobuf->dr_wait);
@@ -98,12 +98,35 @@ static void filter_init_iobuf(struct filter_iobuf *iobuf)
         iobuf->dr_max_pages = PTLRPC_MAX_BRW_PAGES;
         iobuf->dr_npages = 0;
         iobuf->dr_error = 0;
+        iobuf->dr_dev = d;
+        iobuf->dr_frags = 0;
+        iobuf->dr_elapsed = 0;
+        /* must be counted before, so assert */
+        LASSERT(iobuf->dr_elapsed_valid == 0);
+        iobuf->dr_rw = rw;
 }
 
-static void filter_iobuf_add_page(struct filter_iobuf *iobuf, struct page *page)
+static void osd_iobuf_add_page(struct osd_iobuf *iobuf, struct page *page)
 {
         LASSERT(iobuf->dr_npages < iobuf->dr_max_pages);
         iobuf->dr_pages[iobuf->dr_npages++] = page;
+}
+
+void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf)
+{
+        int rw = iobuf->dr_rw;
+
+        LASSERT(iobuf->dr_dev == d);
+
+        if (iobuf->dr_elapsed_valid) {
+                iobuf->dr_elapsed_valid = 0;
+                LASSERT(iobuf->dr_frags > 0);
+                lprocfs_oh_tally(&d->od_brw_stats.
+                                 hist[BRW_R_DIO_FRAGS+rw],
+                                 iobuf->dr_frags);
+                lprocfs_oh_tally_log2(&d->od_brw_stats.hist[BRW_R_IO_TIME+rw],
+                                      iobuf->dr_elapsed);
+        }
 }
 
 #ifdef HAVE_BIO_ENDIO_2ARG
@@ -114,7 +137,7 @@ static void dio_complete_routine(struct bio *bio, int error)
 static int dio_complete_routine(struct bio *bio, unsigned int done, int error)
 #endif
 {
-        struct filter_iobuf *iobuf = bio->bi_private;
+        struct osd_iobuf *iobuf = bio->bi_private;
         struct bio_vec *bvl;
         int i;
 
@@ -158,20 +181,28 @@ static int dio_complete_routine(struct bio *bio, unsigned int done, int error)
                         LASSERT(PageLocked(bvl->bv_page));
                         ClearPageConstant(bvl->bv_page);
                 }
-        } else if (iobuf->dr_pages[0]->mapping) {
-                if (mapping_cap_page_constant_write(iobuf->dr_pages[0]->mapping)){
-                        bio_for_each_segment(bvl, bio, i) {
-                                ClearPageConstant(bvl->bv_page);
+                cfs_atomic_dec(&iobuf->dr_dev->od_r_in_flight);
+        } else {
+                struct page *p = iobuf->dr_pages[0];
+                if (p->mapping) {
+                        if (mapping_cap_page_constant_write(p->mapping)){
+                                bio_for_each_segment(bvl, bio, i) {
+                                        ClearPageConstant(bvl->bv_page);
+                                }
                         }
                 }
+                cfs_atomic_dec(&iobuf->dr_dev->od_w_in_flight);
         }
 
         /* any real error is good enough -bzzz */
         if (error != 0 && iobuf->dr_error == 0)
                 iobuf->dr_error = error;
 
-        if (cfs_atomic_dec_and_test(&iobuf->dr_numreqs))
+        if (cfs_atomic_dec_and_test(&iobuf->dr_numreqs)) {
+                iobuf->dr_elapsed = jiffies - iobuf->dr_start_time;
+                iobuf->dr_elapsed_valid = 1;
                 cfs_waitq_signal(&iobuf->dr_wait);
+        }
 
         /* Completed bios used to be chained off iobuf->dr_bios and freed in
          * filter_clear_dreq().  It was then possible to exhaust the biovec-256
@@ -182,10 +213,33 @@ static int dio_complete_routine(struct bio *bio, unsigned int done, int error)
         DIO_RETURN(0);
 }
 
+static void record_start_io(struct osd_iobuf *iobuf, int size)
+{
+        struct osd_device    *osd = iobuf->dr_dev;
+        struct obd_histogram *h = osd->od_brw_stats.hist;
+
+        iobuf->dr_frags++;
+        cfs_atomic_inc(&iobuf->dr_numreqs);
+
+        if (iobuf->dr_rw == 0) {
+                cfs_atomic_inc(&osd->od_r_in_flight);
+                lprocfs_oh_tally(&h[BRW_R_RPC_HIST],
+                                 cfs_atomic_read(&osd->od_r_in_flight));
+                lprocfs_oh_tally_log2(&h[BRW_R_DISK_IOSIZE], size);
+        } else if (iobuf->dr_rw == 1) {
+                cfs_atomic_inc(&osd->od_w_in_flight);
+                lprocfs_oh_tally(&h[BRW_W_RPC_HIST],
+                                 cfs_atomic_read(&osd->od_w_in_flight));
+                lprocfs_oh_tally_log2(&h[BRW_W_DISK_IOSIZE], size);
+        } else {
+                LBUG();
+        }
+}
+
 static void osd_submit_bio(int rw, struct bio *bio)
 {
-        LASSERTF(rw == OBD_BRW_WRITE || rw == OBD_BRW_READ, "%x\n", rw);
-        if (rw == OBD_BRW_READ)
+        LASSERTF(rw == 0 || rw == 1, "%x\n", rw);
+        if (rw == 0)
                 submit_bio(READ, bio);
         else
                 submit_bio(WRITE, bio);
@@ -202,7 +256,8 @@ static int can_be_merged(struct bio *bio, sector_t sector)
         return bio->bi_sector + size == sector ? 1 : 0;
 }
 
-static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
+static int osd_do_bio(struct osd_device *osd, struct inode *inode,
+                      struct osd_iobuf *iobuf)
 {
         int            blocks_per_page = CFS_PAGE_SIZE >> inode->i_blkbits;
         struct page  **pages = iobuf->dr_pages;
@@ -212,7 +267,6 @@ static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
         int            sector_bits = inode->i_sb->s_blocksize_bits - 9;
         unsigned int   blocksize = inode->i_sb->s_blocksize;
         struct bio    *bio = NULL;
-        int            frags = 0;
         struct page   *page;
         unsigned int   page_offset;
         sector_t       sector;
@@ -224,6 +278,9 @@ static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
         ENTRY;
 
         LASSERT(iobuf->dr_npages == npages);
+
+        osd_brw_stats_update(osd, iobuf);
+        iobuf->dr_start_time = cfs_time_current();
 
         for (page_idx = 0, block_idx = 0;
              page_idx < npages;
@@ -239,7 +296,7 @@ static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
                         nblocks = 1;
 
                         if (blocks[block_idx + i] == 0) {  /* hole */
-                                LASSERTF(rw == OBD_BRW_READ,
+                                LASSERTF(iobuf->dr_rw == 0,
                                          "page_idx %u, block_idx %u, i %u\n",
                                          page_idx, block_idx, i);
                                 memset(kmap(page) + page_offset, 0, blocksize);
@@ -261,8 +318,7 @@ static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
                          * It will then make sure the corresponding device
                          * cache of raid5 will be overwritten by this page.
                          * - jay */
-                        if ((rw == OBD_BRW_WRITE) &&
-                            (nblocks == blocks_per_page) &&
+                        if (iobuf->dr_rw && (nblocks == blocks_per_page) &&
                             mapping_cap_page_constant_write(inode->i_mapping))
                                SetPageConstant(page);
 
@@ -287,9 +343,8 @@ static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
                                        bio_hw_segments(q, bio),
                                        queue_max_hw_segments(q));
 
-                                cfs_atomic_inc(&iobuf->dr_numreqs);
-                                osd_submit_bio(rw, bio);
-                                frags++;
+                                record_start_io(iobuf, bio->bi_size);
+                                osd_submit_bio(iobuf->dr_rw, bio);
                         }
 
                         /* allocate new bio, limited by max BIO size, b=9945 */
@@ -316,9 +371,8 @@ static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
         }
 
         if (bio != NULL) {
-                cfs_atomic_inc(&iobuf->dr_numreqs);
-                osd_submit_bio(rw, bio);
-                frags++;
+                record_start_io(iobuf, bio->bi_size);
+                osd_submit_bio(iobuf->dr_rw, bio);
                 rc = 0;
         }
 
@@ -327,9 +381,10 @@ static int osd_do_bio(struct inode *inode, struct filter_iobuf *iobuf, int rw)
          * completion here. instead we proceed with transaction commit in
          * parallel and wait for IO completion once transaction is stopped
          * see osd_trans_stop() for more details -bzzz */
-        if (rw != OBD_BRW_WRITE)
+        if (iobuf->dr_rw == 0) {
                 cfs_wait_event(iobuf->dr_wait,
                                cfs_atomic_read(&iobuf->dr_numreqs) == 0);
+        }
 
         if (rc == 0)
                 rc = iobuf->dr_error;
@@ -455,7 +510,14 @@ cleanup:
 static int osd_bufs_put(const struct lu_env *env, struct dt_object *dt,
                         struct niobuf_local *lb, int npages)
 {
-        int i;
+        struct osd_thread_info *oti = osd_oti_get(env);
+        struct osd_iobuf       *iobuf = &oti->oti_iobuf;
+        struct osd_device      *d = osd_obj2dev(osd_dt_obj(dt));
+        int                     i;
+
+        /* to do IO stats, notice we do this here because
+         * osd_do_bio() doesn't wait for write to complete */
+        osd_fini_iobuf(d, iobuf);
 
         for (i = 0; i < npages; i++) {
                 if (lb[i].page == NULL)
@@ -473,7 +535,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
                           struct niobuf_local *lb, int npages)
 {
         struct osd_thread_info *oti = osd_oti_get(env);
-        struct filter_iobuf *iobuf = &oti->oti_iobuf;
+        struct osd_iobuf *iobuf = &oti->oti_iobuf;
         struct inode *inode = osd_dt_obj(dt)->oo_inode;
         struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
         struct timeval start, end;
@@ -484,7 +546,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
 
         LASSERT(inode);
 
-        filter_init_iobuf(iobuf);
+        osd_init_iobuf(osd, iobuf, 0);
 
         isize = i_size_read(inode);
         maxidx = ((isize + CFS_PAGE_SIZE - 1) >> CFS_PAGE_SHIFT) - 1;
@@ -511,7 +573,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
                         continue;
 
                 if (maxidx >= lb[i].page->index) {
-                        filter_iobuf_add_page(iobuf, lb[i].page);
+                        osd_iobuf_add_page(iobuf, lb[i].page);
                 } else {
                         long off;
                         char *p = kmap(lb[i].page);
@@ -534,8 +596,11 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
                                                        iobuf->dr_npages,
                                                        iobuf->dr_blocks,
                                                        NULL, 0, NULL);
-                if (likely(rc == 0))
-                        rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
+                if (likely(rc == 0)) {
+                        rc = osd_do_bio(osd, inode, iobuf);
+                        /* do IO stats for preparation reads */
+                        osd_fini_iobuf(osd, iobuf);
+                }
         }
         RETURN(rc);
 }
@@ -604,7 +669,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                 struct niobuf_local *lb, int npages, struct thandle *thandle)
 {
         struct osd_thread_info *oti = osd_oti_get(env);
-        struct filter_iobuf *iobuf = &oti->oti_iobuf;
+        struct osd_iobuf *iobuf = &oti->oti_iobuf;
         struct inode *inode = osd_dt_obj(dt)->oo_inode;
         struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
         loff_t isize;
@@ -612,7 +677,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 
         LASSERT(inode);
 
-        filter_init_iobuf(iobuf);
+        osd_init_iobuf(osd, iobuf, 1);
         isize = i_size_read(inode);
 
         for (i = 0; i < npages; i++) {
@@ -636,7 +701,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 
                 SetPageUptodate(lb[i].page);
 
-                filter_iobuf_add_page(iobuf, lb[i].page);
+                osd_iobuf_add_page(iobuf, lb[i].page);
         }
 
         if (OBD_FAIL_CHECK(OBD_FAIL_OST_MAPBLK_ENOSPC)) {
@@ -653,7 +718,9 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                         mark_inode_dirty(inode);
                 }
 
-                rc = osd_do_bio(inode, iobuf, OBD_BRW_WRITE);
+                rc = osd_do_bio(osd, inode, iobuf);
+                /* we don't do stats here as in read path because
+                 * write is async: we'll do this in osd_put_bufs() */
         }
 
         if (unlikely(rc != 0)) {
@@ -673,7 +740,7 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
                          struct niobuf_local *lb, int npages)
 {
         struct osd_thread_info *oti = osd_oti_get(env);
-        struct filter_iobuf *iobuf = &oti->oti_iobuf;
+        struct osd_iobuf *iobuf = &oti->oti_iobuf;
         struct inode *inode = osd_dt_obj(dt)->oo_inode;
         struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
         struct timeval start, end;
@@ -682,7 +749,7 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
 
         LASSERT(inode);
 
-        filter_init_iobuf(iobuf);
+        osd_init_iobuf(osd, iobuf, 0);
 
         if (osd->od_read_cache)
                 cache = 1;
@@ -710,7 +777,7 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
                 } else {
                         lprocfs_counter_add(osd->od_stats,
                                             LPROC_OSD_CACHE_MISS, 1);
-                        filter_iobuf_add_page(iobuf, lb[i].page);
+                        osd_iobuf_add_page(iobuf, lb[i].page);
                 }
                 if (cache == 0)
                         generic_error_remove_page(inode->i_mapping, lb[i].page);
@@ -724,7 +791,9 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
                                                        iobuf->dr_npages,
                                                        iobuf->dr_blocks,
                                                        NULL, 0, NULL);
-                rc = osd_do_bio(inode, iobuf, OBD_BRW_READ);
+                rc = osd_do_bio(osd, inode, iobuf);
+
+                /* IO stats will be done in osd_bufs_put() */
         }
 
         RETURN(rc);
