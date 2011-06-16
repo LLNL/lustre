@@ -665,6 +665,23 @@ static int osd_declare_write_commit(const struct lu_env *env, struct dt_object *
         RETURN(0);
 }
 
+/* Check if a block is allocated or not */
+static int osd_is_mapped(struct inode *inode, obd_size offset)
+{
+        sector_t (*fs_bmap)(struct address_space *, sector_t);
+
+        fs_bmap = inode->i_mapping->a_ops->bmap;
+
+        /* We can't know if we are overwriting or not */
+        if (fs_bmap == NULL)
+                return 0;
+
+        if (fs_bmap(inode->i_mapping, offset >> inode->i_blkbits) == 0)
+                return 0;
+
+        return 1;
+}
+
 static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                 struct niobuf_local *lb, int npages, struct thandle *thandle)
 {
@@ -681,6 +698,12 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
         isize = i_size_read(inode);
 
         for (i = 0; i < npages; i++) {
+                if (lb[i].rc == -ENOSPC &&
+                    osd_is_mapped(inode, lb[i].file_offset)) {
+                        /* Allow the write to proceed if overwriting an
+                         * existing block */
+                        lb[i].rc = 0;
+                }
                 if (lb[i].rc) { /* ENOSPC, network RPC error, etc. */
                         CDEBUG(D_INODE, "Skipping [%d] == %d\n", i, lb[i].rc);
                         continue;
