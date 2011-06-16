@@ -1411,15 +1411,16 @@ wait_delete_completed () {
     # sync MDS transactions
     do_node $mds2sync "lctl set_param -n osd*.*MD*.force_sync 1"
 
-    # wait till all changes are sent to OSTs
+    # wait till all changes are sent and commmitted by OSTs
+    # for ldiskfs space is released upon execution, but DMU
+    # do this upon commit
 
     local WAIT=0
     local MAX_WAIT=20
     while [ "$WAIT" -ne "$MAX_WAIT" ]; do
-        changes=$(do_node $mds2sync "lctl get_param -n osp*.*.sync_changes" | awk '{sum=sum+$1} END{print sum}')
+        changes=$(do_node $mds2sync "lctl get_param -n osp*.*.sync_*" | awk '{sum=sum+$1} END{print sum}')
         #echo "$node: $changes changes on all"
         if [ "$changes" -eq "0" ]; then
-            do_node $(osts_nodes) "lctl set_param -n osd*.*OS*.force_sync 1"
             etime=`date +%s`
             #echo "delete took $((etime-stime)) seconds"
             return
