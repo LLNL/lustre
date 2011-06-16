@@ -232,7 +232,7 @@ static obd_size ofd_grant_space_left(struct obd_export *exp)
         left -= min_t(obd_size, left, ofd_grant_reserved(ofd, avail));
 
         /* Align left on block size */
-        left &= ~(ofd->ofd_osfs.os_bsize - 1);
+        left &= ~((1ULL << ofd->ofd_blockbits) - 1);
 
         CDEBUG(D_CACHE, "%s: cli %s/%p avail "LPU64" left "LPU64" unstable "
                LPU64" tot_grant "LPU64" pending "LPU64"\n", obd->obd_name,
@@ -523,7 +523,7 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
 
         grant = min(want, left >> 3);
         /* align grant on block size */
-        grant &= ~(ofd->ofd_osfs.os_bsize - 1);
+        grant &= ~((1ULL << ofd->ofd_blockbits) - 1);
 
         if (!grant)
                 return 0;
