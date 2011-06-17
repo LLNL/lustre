@@ -2804,7 +2804,6 @@ static int filter_reconnect(const struct lu_env *env,
         RETURN(rc);
 }
 
-/* nearly identical to mds_connect */
 static int filter_connect(const struct lu_env *env,
                           struct obd_export **exp, struct obd_device *obd,
                           struct obd_uuid *cluuid,
@@ -2842,7 +2841,7 @@ static int filter_connect(const struct lu_env *env,
 
         group = data->ocd_group;
 
-        CWARN("%s: Received MDS connection ("LPX64"); group %d\n",
+        CDEBUG(D_INFO, "%s: Received connection ("LPX64"); group %d\n",
               obd->obd_name, lexp->exp_handle.h_cookie, group);
 
         push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
