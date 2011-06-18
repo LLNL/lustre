@@ -379,6 +379,13 @@ static int osp_sync_interpret(const struct lu_env *env,
                 cfs_spin_unlock(&d->opd_syn_lock);
 
                 cfs_waitq_signal(&d->opd_syn_waitq);
+        } else if (unlikely(d->opd_pre_status == -ENOSPC)) {
+                /*
+                 * if current status is -ENOSPC (lack of free space on OST)
+                 * then we should poll OST immediately once object destroy
+                 * is replied
+                 */
+                osp_statfs_need_now(d);
         }
 
         LASSERT(d->opd_syn_rpc_in_flight > 0);
@@ -391,7 +398,7 @@ static int osp_sync_interpret(const struct lu_env *env,
 
         osp_sync_check_for_work(d);
 
-        return 0; 
+        return 0;
 }
 
 /*
@@ -609,6 +616,16 @@ static void osp_sync_process_committed(const struct lu_env *env, struct osp_devi
 
         if (cfs_list_empty(&d->opd_syn_committed_there))
                 return;
+
+        /*
+         * if current status is -ENOSPC (lack of free space on OST)
+         * then we should poll OST immediately once object destroy
+         * is committed.
+         * notice: we do this upon commit as well because some backends
+         * (like DMU) do not release space right away.
+         */
+        if (unlikely(d->opd_pre_status == -ENOSPC))
+                osp_statfs_need_now(d);
 
         /*
          * now cancel them all
