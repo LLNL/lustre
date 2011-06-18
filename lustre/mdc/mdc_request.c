@@ -1408,7 +1408,7 @@ static int mdc_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
                 GOTO(out, rc);
         case OBD_IOC_PARSE: {
                 ctxt = llog_get_context(exp->exp_obd, LLOG_CONFIG_REPL_CTXT);
-                rc = class_config_parse_llog(ctxt, data->ioc_inlbuf1, NULL);
+                rc = class_config_parse_llog(NULL, ctxt, data->ioc_inlbuf1, NULL);
                 llog_ctxt_put(ctxt);
                 GOTO(out, rc);
         }

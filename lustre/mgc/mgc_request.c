@@ -1042,7 +1042,8 @@ int mgc_process_log(struct obd_device *mgc,
            copy of the instance for the update.  The cfg_last_idx will
            be updated here. */
         if (rcl == 0)
-                rc = class_config_parse_llog(ctxt, cld->cld_logname, &cld->cld_cfg);
+                rc = class_config_parse_llog(NULL, ctxt, cld->cld_logname,
+                                             &cld->cld_cfg);
 out:
         llog_ctxt_put(ctxt);
 
