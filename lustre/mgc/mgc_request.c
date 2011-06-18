@@ -1444,7 +1444,8 @@ static int mgc_process_cfg_log(struct obd_device *mgc,
         /* logname and instance info should be the same, so use our
            copy of the instance for the update.  The cfg_last_idx will
            be updated here. */
-        rc = class_config_parse_llog(ctxt, cld->cld_logname, &cld->cld_cfg);
+        rc = class_config_parse_llog(NULL, ctxt, cld->cld_logname,
+                                     &cld->cld_cfg);
         llog_ctxt_put(ctxt);
         /*
          * update settings on existing OBDs. doing it inside
