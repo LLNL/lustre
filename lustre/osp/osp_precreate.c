@@ -101,7 +101,10 @@ static int osp_statfs_interpret(const struct lu_env *env,
         /* schedule next update */
         d->opd_statfs_fresh_till = cfs_time_shift(d->opd_statfs_maxage);
         cfs_timer_arm(&d->opd_statfs_timer, d->opd_statfs_fresh_till);
+        d->opd_statfs_update_in_progress = 0;
+
         CDEBUG(D_CACHE, "updated statfs %p\n", d);
+
         RETURN(0);
 out:
         /* couldn't update statfs, try again as soon as possible */
@@ -150,8 +153,29 @@ static int osp_statfs_update(struct osp_device *d)
          * no updates till reply
          */
         d->opd_statfs_fresh_till = cfs_time_shift(obd_timeout * 1000);
+        d->opd_statfs_update_in_progress = 1;
 
         RETURN(0);
+}
+
+/*
+ * XXX: there might be a case where removed object(s) do not add free
+ * space (empty object). if the number of such deletions is high, then
+ * we can start to update statfs too often - a rpc storm
+ * TODO: some throttling is needed
+ */
+void osp_statfs_need_now(struct osp_device *d)
+{
+        if (!d->opd_statfs_update_in_progress) {
+                /*
+                 * if current status is -ENOSPC (lack of free space on OST)
+                 * then we should poll OST immediately once object destroy
+                 * is replied
+                 */
+                d->opd_statfs_fresh_till = cfs_time_shift(-1);
+                cfs_timer_disarm(&d->opd_statfs_timer);
+                cfs_waitq_signal(&d->opd_pre_waitq);
+        }
 }
 
 
@@ -570,6 +594,20 @@ static int osp_precreate_thread(void *_arg)
         RETURN(0);
 }
 
+static int osp_precreate_ready_condition(struct osp_device *d)
+{
+        /* ready if got enough precreated objects */
+        if (d->opd_pre_next + d->opd_pre_reserved < d->opd_pre_last_created)
+                return 1;
+
+        /* ready if OST reported no space and no destoys in progress */
+        if (d->opd_syn_changes + d->opd_syn_rpc_in_progress == 0 &&
+                        d->opd_pre_status != 0)
+                return 1;
+
+        return 0;
+}
+
 /*
  * called to reserve object in the pool
  * return codes:
@@ -577,7 +615,7 @@ static int osp_precreate_thread(void *_arg)
  *  EAGAIN - precreation is in progress, try later
  *  EIO    - no access to OST
  */
-int osp_precreate_reserve(struct osp_device *d)
+int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
 {
         struct l_wait_info lwi = { 0 };
         int                precreated, rc;
@@ -626,18 +664,29 @@ int osp_precreate_reserve(struct osp_device *d)
                 /*
                  * all precreated objects have been used and no-space
                  * status leave us no chance to succeed very soon
+                 * but if there is destroy in progress, then we should
+                 * wait till that is done - some space might be released
                  */
-                if (unlikely(rc == -ENOSPC))
-                        break;
+                if (unlikely(rc == -ENOSPC)) {
+                        if (d->opd_syn_changes) {
+                                /* force local commit to release space sooner */
+                                dt_commit_async(env, d->opd_storage);
+                        }
+                        if (d->opd_syn_rpc_in_progress) {
+                                /* just wait till destroys are done */
+                                /* see l_wait_even() few lines below */
+                        }
+                        if (d->opd_syn_changes + d->opd_syn_rpc_in_progress == 0) {
+                                /* no hope for free space */
+                                break;
+                        }
+                }
 
                 /* XXX: don't wake up if precreation is in progress */
                 cfs_waitq_signal(&d->opd_pre_waitq);
 
                 l_wait_event(d->opd_pre_user_waitq,
-                             (d->opd_pre_last_created > d->opd_pre_next &&
-                              (d->opd_pre_last_created - d->opd_pre_next >
-                               d->opd_pre_reserved)) ||
-                             d->opd_pre_status != 0, &lwi);
+                             osp_precreate_ready_condition(d), &lwi);
         }
 
         RETURN(rc);
