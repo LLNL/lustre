@@ -965,7 +965,7 @@ out_free:
         case OBD_IOC_DUMP_LOG: {
                 struct llog_ctxt *ctxt;
                 ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
-                rc = class_config_dump_llog(ctxt, data->ioc_inlbuf1, NULL);
+                rc = class_config_dump_llog(&env, ctxt, data->ioc_inlbuf1, NULL);
                 llog_ctxt_put(ctxt);
                 break;
         }
