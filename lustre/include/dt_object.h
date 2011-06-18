@@ -1241,4 +1241,13 @@ static inline int dt_delete(const struct lu_env *env,
         return dt->do_index_ops->dio_delete(env, dt, key, th, capa);
 }
 
+static inline int dt_commit_async(const struct lu_env *env,
+                                  struct dt_device *dev)
+{
+        LASSERT(dev);
+        LASSERT(dev->dd_ops);
+        LASSERT(dev->dd_ops->dt_commit_async);
+        return dev->dd_ops->dt_commit_async(env, dev);
+}
+
 #endif /* __LUSTRE_DT_OBJECT_H */
