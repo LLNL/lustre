@@ -145,6 +145,7 @@ struct osp_device {
         struct obd_statfs               opd_statfs;
         cfs_time_t                      opd_statfs_fresh_till;
         cfs_timer_t                     opd_statfs_timer;
+        int                             opd_statfs_update_in_progress;
         /* how often to update statfs data */
         int                             opd_statfs_maxage;
 
@@ -266,11 +267,12 @@ static inline struct dt_object* osp_object_child(struct osp_object *o)
 
 /* osp_precreate.c */
 int osp_init_precreate(struct osp_device *d);
-int osp_precreate_reserve(struct osp_device *d);
+int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d);
 __u64 osp_precreate_get_id(struct osp_device *d);
 void osp_precreate_fini(struct osp_device *d);
 int osp_object_truncate(const struct lu_env *env, struct dt_object *dt, __u64);
 void osp_pre_update_status(struct osp_device *d, int rc);
+void osp_statfs_need_now(struct osp_device *d);
 
 /* osp_sync.c */
 int osp_sync_init(const struct lu_env *env, struct osp_device *d);
