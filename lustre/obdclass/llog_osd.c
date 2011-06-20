@@ -83,7 +83,7 @@ struct llog_superblock {
         /* data used to generate new fids */
         cfs_spinlock_t          lsb_id_lock;
         __u64                   lsb_seq;
-        __u64                   lsb_last_oid;
+        __u32                   lsb_last_oid;
 
         struct dt_device        lsb_top_dev;
 };
@@ -264,9 +264,9 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
 
         /* initialize data allowing to generate new fids,
          * literally we need a sequece */
-        lsb->lsb_seq = FID_SEQ_LLOG_OBJ;
+        lsb->lsb_seq = FID_SEQ_LLOG;
 
-        fid.f_seq = FID_SEQ_LLOG_OBJ;
+        fid.f_seq = FID_SEQ_LLOG;
         fid.f_oid = 1;
         fid.f_ver = 0;
 
