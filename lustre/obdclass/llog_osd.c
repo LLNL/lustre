@@ -83,7 +83,7 @@ struct llog_superblock {
         /* data used to generate new fids */
         cfs_spinlock_t          lsb_id_lock;
         __u64                   lsb_seq;
-        __u64                   lsb_last_oid;
+        __u32                   lsb_last_oid;
 
         struct dt_device        lsb_top_dev;
 };
