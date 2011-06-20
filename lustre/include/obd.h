@@ -952,7 +952,6 @@ static inline int mdt_to_obd_objseq(int mdtid)
 
 struct obd_llog_group {
         cfs_list_t         olg_list;
-        int                olg_seq;
         struct llog_ctxt  *olg_ctxts[LLOG_MAX_CTXTS];
         cfs_waitq_t        olg_waitq;
         cfs_spinlock_t     olg_lock;
