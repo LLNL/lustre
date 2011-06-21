@@ -2494,9 +2494,10 @@ struct llog_catid {
 typedef enum {
         LLOG_PAD_MAGIC     = LLOG_OP_MAGIC | 0x00000,
         OST_SZ_REC         = LLOG_OP_MAGIC | 0x00f00,
-        OST_RAID1_REC      = LLOG_OP_MAGIC | 0x01000,
+        OST_RAID1_REC      = LLOG_OP_MAGIC | 0x01000, /* obsolete */
         MDS_UNLINK_REC     = LLOG_OP_MAGIC | 0x10000 | (MDS_REINT << 8) | REINT_UNLINK,
-        MDS_SETATTR_REC    = LLOG_OP_MAGIC | 0x10000 | (MDS_REINT << 8) | REINT_SETATTR,
+        MDS_UNLINK64_REC   = LLOG_OP_MAGIC | 0x90000 | (MDS_REINT << 8) | REINT_UNLINK,
+        MDS_SETATTR_REC    = LLOG_OP_MAGIC | 0x12401, /* obsoleted */
         MDS_SETATTR64_REC  = LLOG_OP_MAGIC | 0x90000 | (MDS_REINT << 8) | REINT_SETATTR,
         OBD_CFG_REC        = LLOG_OP_MAGIC | 0x20000,
         PTL_CFG_REC        = LLOG_OP_MAGIC | 0x30000, /* obsolete */
@@ -2531,28 +2532,9 @@ struct llog_logid_rec {
         struct llog_rec_hdr     lid_hdr;
         struct llog_logid       lid_id;
         __u32                   padding1;
-        __u32                   padding2;
-        __u32                   padding3;
-        __u32                   padding4;
-        __u32                   padding5;
+        __u64                   padding2;
+        __u64                   padding3;
         struct llog_rec_tail    lid_tail;
-} __attribute__((packed));
-
-struct llog_create_rec {
-        struct llog_rec_hdr     lcr_hdr;
-        struct ll_fid           lcr_fid;
-        obd_id                  lcr_oid;
-        obd_count               lcr_oseq;
-        __u32                   padding;
-        struct llog_rec_tail    lcr_tail;
-} __attribute__((packed));
-
-struct llog_orphan_rec {
-        struct llog_rec_hdr     lor_hdr;
-        obd_id                  lor_oid;
-        obd_count               lor_ogen;
-        __u32                   padding;
-        struct llog_rec_tail    lor_tail;
 } __attribute__((packed));
 
 struct llog_unlink_rec {
@@ -2563,25 +2545,25 @@ struct llog_unlink_rec {
         struct llog_rec_tail    lur_tail;
 } __attribute__((packed));
 
-struct llog_setattr_rec {
-        struct llog_rec_hdr     lsr_hdr;
-        obd_id                  lsr_oid;
-        obd_count               lsr_oseq;
-        __u32                   lsr_uid;
-        __u32                   lsr_gid;
-        __u32                   padding;
-        struct llog_rec_tail    lsr_tail;
+struct llog_unlink64_rec {
+        struct llog_rec_hdr     lur_hdr;
+        struct lu_fid           lur_fid;
+        obd_count               lur_count; /* to destroy the lost precreated */
+        __u32                   padding1;
+        __u64                   padding2;
+        __u64                   padding3;
+        struct llog_rec_tail    lur_tail;
 } __attribute__((packed));
 
 struct llog_setattr64_rec {
         struct llog_rec_hdr     lsr_hdr;
         obd_id                  lsr_oid;
-        obd_count               lsr_oseq;
-        __u32                   padding;
+        obd_seq                 lsr_oseq;
         __u32                   lsr_uid;
         __u32                   lsr_uid_h;
         __u32                   lsr_gid;
         __u32                   lsr_gid_h;
+        __u64                   padding;
         struct llog_rec_tail    lsr_tail;
 } __attribute__((packed));
 
@@ -2589,7 +2571,9 @@ struct llog_size_change_rec {
         struct llog_rec_hdr     lsc_hdr;
         struct ll_fid           lsc_fid;
         __u32                   lsc_ioepoch;
-        __u32                   padding;
+        __u32                   padding1;
+        __u64                   padding2;
+        __u64                   padding3;
         struct llog_rec_tail    lsc_tail;
 } __attribute__((packed));
 
@@ -2627,16 +2611,21 @@ struct llog_changelog_user_rec {
         struct llog_rec_tail  cur_tail;
 } __attribute__((packed));
 
+/* Old llog gen for compatibility */
 struct llog_gen {
-        __u64 mnt_cnt;
-        __u64 conn_cnt;
+         __u64 mnt_cnt;
+         __u64 conn_cnt;
 } __attribute__((packed));
 
 struct llog_gen_rec {
         struct llog_rec_hdr     lgr_hdr;
         struct llog_gen         lgr_gen;
+        __u64                   padding1;
+        __u64                   padding2;
+        __u64                   padding3;
         struct llog_rec_tail    lgr_tail;
 };
+
 /* On-disk header structure of each log object, stored in little endian order */
 #define LLOG_CHUNK_SIZE         8192
 #define LLOG_HEADER_SIZE        (96)
@@ -2664,9 +2653,9 @@ struct llog_log_hdr {
         struct llog_rec_tail    llh_tail;
 } __attribute__((packed));
 
-#define LLOG_BITMAP_SIZE(llh)  ((llh->llh_hdr.lrh_len -         \
-                                 llh->llh_bitmap_offset -       \
-                                 sizeof(llh->llh_tail)) * 8)
+#define LLOG_BITMAP_SIZE(llh)  (__u32)((llh->llh_hdr.lrh_len -      \
+                                        llh->llh_bitmap_offset -    \
+                                        sizeof(llh->llh_tail)) * 8)
 
 /** log cookies are used to reference a specific log file and a record therein */
 struct llog_cookie {

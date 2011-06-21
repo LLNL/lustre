@@ -136,8 +136,6 @@ void lustre_swab_llog_rec(struct llog_rec_hdr *rec)
                 tail = &lsc->lsc_tail;
                 break;
         }
-        case OST_RAID1_REC:
-                break;
         case MDS_UNLINK_REC:
         {
                 struct llog_unlink_rec *lur = (struct llog_unlink_rec *)rec;
@@ -148,15 +146,13 @@ void lustre_swab_llog_rec(struct llog_rec_hdr *rec)
                 tail = &lur->lur_tail;
                 break;
         }
-        case MDS_SETATTR_REC:
+        case MDS_UNLINK64_REC:
         {
-                struct llog_setattr_rec *lsr = (struct llog_setattr_rec *)rec;
+                struct llog_unlink64_rec *lur = (struct llog_unlink64_rec *)rec;
 
-                __swab64s(&lsr->lsr_oid);
-                __swab32s(&lsr->lsr_oseq);
-                __swab32s(&lsr->lsr_uid);
-                __swab32s(&lsr->lsr_gid);
-                tail = &lsr->lsr_tail;
+                lustre_swab_lu_fid(&lur->lur_fid);
+                __swab32s(&lur->lur_count);
+                tail = &lur->lur_tail;
                 break;
         }
         case CHANGELOG_REC:
@@ -189,7 +185,7 @@ void lustre_swab_llog_rec(struct llog_rec_hdr *rec)
                 struct llog_setattr64_rec *lsr = (struct llog_setattr64_rec *)rec;
 
                 __swab64s(&lsr->lsr_oid);
-                __swab32s(&lsr->lsr_oseq);
+                __swab64s(&lsr->lsr_oseq);
                 __swab32s(&lsr->lsr_uid);
                 __swab32s(&lsr->lsr_uid_h);
                 __swab32s(&lsr->lsr_gid);

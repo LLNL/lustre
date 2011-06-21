@@ -833,8 +833,6 @@ static int llog_osd_write_rec(const struct lu_env *env,
                         reccookie->lgc_subsys = -1;
                 rc = 1;
         }
-        if (rc == 0 && rec->lrh_type == LLOG_GEN_REC)
-                rc = 1;
 out:
         OBD_FREE_PTR(attr);
         RETURN(rc);
@@ -914,8 +912,7 @@ static int llog_osd_next_block(const struct lu_env *env,
 
                 ppos = *cur_offset;
                 /* read up to next LLOG_CHUNK_SIZE block */
-                toread = ((ppos & ~(LLOG_CHUNK_SIZE-1)) + LLOG_CHUNK_SIZE) - ppos;
-                //toread = LLOG_CHUNK_SIZE - (ppos & (LLOG_CHUNK_SIZE - 1));
+                toread = LLOG_CHUNK_SIZE - (ppos & (LLOG_CHUNK_SIZE - 1));
                 rc = llog_osd_record_read(env, o, buf, toread, &ppos);
                 if (rc) {
                         CERROR("Cant read llog block at log id "LPU64
@@ -1179,7 +1176,8 @@ out:
 static int llog_osd_exist(struct llog_handle *handle)
 {
         LASSERT(handle->lgh_obj);
-        return dt_object_exists(handle->lgh_obj);
+        return (dt_object_exists(handle->lgh_obj) &&
+                !lu_object_is_dying(handle->lgh_obj->do_lu.lo_header));
 }
 
 static int llog_osd_declare_create(const struct lu_env *env,
