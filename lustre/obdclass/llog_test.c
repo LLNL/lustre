@@ -212,18 +212,18 @@ out_put:
 static int llog_test_3(const struct lu_env *env, struct obd_device *obd,
                        struct llog_handle *llh)
 {
-        struct llog_create_rec lcr;
+        struct llog_gen_rec lgr;
         int rc, i;
         int num_recs = 1;       /* 1 for the header */
         ENTRY;
 
-        lcr.lcr_hdr.lrh_len = lcr.lcr_tail.lrt_len = sizeof(lcr);
-        lcr.lcr_hdr.lrh_type = OST_SZ_REC;
+        lgr.lgr_hdr.lrh_len = lgr.lgr_tail.lrt_len = sizeof(lgr);
+        lgr.lgr_hdr.lrh_type = LLOG_GEN_REC;
 
         CWARN("3a: write one create_rec\n");
-        rc = llog_write(env, llh,  &lcr.lcr_hdr, NULL, 0, NULL, -1);
+        rc = llog_write(env, llh,  &lgr.lgr_hdr, NULL, 0, NULL, -1);
         num_recs++;
-        if (rc) {
+        if (rc < 0) {
                 CERROR("3a: write one log record failed: %d\n", rc);
                 RETURN(rc);
         }
@@ -240,7 +240,7 @@ static int llog_test_3(const struct lu_env *env, struct obd_device *obd,
                 hdr.lrh_type = OBD_CFG_REC;
                 memset(buf, 0, sizeof buf);
                 rc = llog_write(env, llh, &hdr, NULL, 0, buf, -1);
-                if (rc) {
+                if (rc < 0) {
                         CERROR("3b: write 10 records failed at #%d: %d\n",
                                i + 1, rc);
                         RETURN(rc);
@@ -254,8 +254,8 @@ static int llog_test_3(const struct lu_env *env, struct obd_device *obd,
 
         CWARN("3c: write 1000 more log records\n");
         for (i = 0; i < 1000; i++) {
-                rc = llog_write(env, llh, &lcr.lcr_hdr, NULL, 0, NULL, -1);
-                if (rc) {
+                rc = llog_write(env, llh, &lgr.lgr_hdr, NULL, 0, NULL, -1);
+                if (rc < 0) {
                         CERROR("3c: write 1000 records failed at #%d: %d\n",
                                i + 1, rc);
                         RETURN(rc);
@@ -652,6 +652,193 @@ ctxt_release:
         RETURN(rc);
 }
 
+static union {
+        struct llog_rec_hdr            lrh;   /* common header */
+        struct llog_logid_rec          llr;   /* LLOG_LOGID_MAGIC */
+        struct llog_unlink_rec         lur;   /* MDS_UNLINK_REC */
+        struct llog_setattr64_rec      lsr64; /* MDS_SETATTR64_REC */
+        struct llog_size_change_rec    lscr;  /* OST_SZ_REC */
+        struct llog_changelog_rec      lcr;   /* CHANGELOG_REC */
+        struct llog_changelog_user_rec lcur;  /* CHANGELOG_USER_REC */
+        struct llog_gen_rec            lgr;   /* LLOG_GEN_REC */
+} llog_records;
+
+static int test_7_print_cb(const struct lu_env *env, struct llog_handle *llh,
+                           struct llog_rec_hdr *rec, void *data)
+{
+        struct lu_fid fid;
+
+        logid_to_fid(&llh->lgh_id, &fid);
+
+        CDEBUG(D_OTHER, "record type %#x at index %d in log "DFID"\n",
+               rec->lrh_type, rec->lrh_index, PFID(&fid));
+
+        plain_counter++;
+        return 0;
+}
+
+static int test_7_cancel_cb(const struct lu_env *env, struct llog_handle *llh,
+                            struct llog_rec_hdr *rec, void *data)
+{
+        plain_counter++;
+        /* test LLOG_DEL_RECORD is working */
+        return LLOG_DEL_RECORD;
+}
+
+static int llog_test_7_sub(const struct lu_env *env, struct llog_ctxt *ctxt)
+{
+        struct llog_handle *llh;
+        int rc = 0, i, process_count;
+        int num_recs = 0;
+        ENTRY;
+
+        rc = llog_open_create(env, ctxt, &llh, NULL, NULL);
+        if (rc) {
+                CERROR("7_sub: create log failed\n");
+                RETURN(rc);
+        }
+
+        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN | LLOG_F_ZAP_WHEN_EMPTY,
+                              &uuid);
+        if (rc) {
+                CERROR("7_sub: can't init llog handle: %d\n", rc);
+                GOTO(out_close, rc);
+        }
+
+        for (i = 0; i < LLOG_BITMAP_SIZE(llh->lgh_hdr); i++) {
+                rc = llog_write(env, llh, &llog_records.lrh, NULL, 0,
+                                NULL, -1);
+                if (rc == -ENOSPC) {
+                        break;
+                } else if (rc < 0) {
+                        CERROR("7_sub: write recs failed at #%d: %d\n",
+                               i + 1, rc);
+                        GOTO(out_close, rc);
+                }
+                num_recs++;
+        }
+        if (rc != -ENOSPC) {
+                CWARN("7_sub: write record more than BITMAP size!\n");
+                GOTO(out_close, rc = -EINVAL);
+        }
+
+        rc = verify_handle("7_sub", llh, num_recs + 1);
+        if (rc) {
+                CERROR("7_sub: verify handle failed: %d\n", rc);
+                GOTO(out_close, rc);
+        }
+
+        if (num_recs < LLOG_BITMAP_SIZE(llh->lgh_hdr) - 1)
+                CWARN("7_sub: records are not aligned, written %d from %u\n",
+                      num_recs, LLOG_BITMAP_SIZE(llh->lgh_hdr) - 1);
+
+        plain_counter = 0;
+        rc = llog_process(env, llh, test_7_print_cb, "test 7", NULL);
+        if (rc) {
+                CERROR("7_sub: llog process failed: %d\n", rc);
+                GOTO(out_close, rc);
+        }
+        process_count = plain_counter;
+        if (process_count != num_recs)
+                CERROR("7_sub: processed %d records from %d total\n",
+                       process_count, num_recs);
+
+        plain_counter = 0;
+        rc = llog_reverse_process(env, llh, test_7_cancel_cb, "test 7", NULL);
+        if (rc) {
+                CERROR("7_sub: reverse llog process failed: %d\n", rc);
+                GOTO(out_close, rc);
+        }
+        if (process_count != plain_counter)
+                CERROR("7_sub: Reverse/direct processing found different"
+                       "number of records: %d/%d\n",
+                       plain_counter, process_count);
+
+        if (llog_exist(llh))
+                CERROR("7_sub: llog exists but should be zapped\n");
+
+        rc = verify_handle("7_sub", llh, 1);
+out_close:
+        if (rc)
+                llog_destroy(env, llh);
+        llog_close(env, llh);
+        RETURN(rc);
+}
+
+/* Test all llog records writing and processing */
+static int llog_test_7(const struct lu_env *env, struct obd_device *obd)
+{
+        struct llog_ctxt *ctxt = llog_get_context(obd, LLOG_TEST_ORIG_CTXT);
+        int rc;
+        ENTRY;
+
+        CWARN("7a: test llog_logid_rec\n");
+        llog_records.llr.lid_hdr.lrh_len = sizeof(llog_records.llr);
+        llog_records.llr.lid_tail.lrt_len = sizeof(llog_records.llr);
+        llog_records.llr.lid_hdr.lrh_type = LLOG_LOGID_MAGIC;
+
+        rc = llog_test_7_sub(env, ctxt);
+        if (rc)
+                CERROR("7a: llog_logid_rec test failed\n");
+
+        CWARN("7b: test llog_unlink_rec\n");
+        llog_records.lur.lur_hdr.lrh_len = sizeof(llog_records.lur);
+        llog_records.lur.lur_tail.lrt_len = sizeof(llog_records.lur);
+        llog_records.lur.lur_hdr.lrh_type = MDS_UNLINK_REC;
+
+        rc = llog_test_7_sub(env, ctxt);
+        if (rc)
+                CERROR("7b: llog_unlink_rec test failed\n");
+
+        CWARN("7c: test llog_setattr64_rec\n");
+        llog_records.lsr64.lsr_hdr.lrh_len = sizeof(llog_records.lsr64);
+        llog_records.lsr64.lsr_tail.lrt_len = sizeof(llog_records.lsr64);
+        llog_records.lsr64.lsr_hdr.lrh_type = MDS_SETATTR64_REC;
+
+        rc = llog_test_7_sub(env, ctxt);
+        if (rc)
+                CERROR("7c: llog_setattr64_rec test failed\n");
+
+        CWARN("7d: test llog_size_change_rec\n");
+        llog_records.lscr.lsc_hdr.lrh_len = sizeof(llog_records.lscr);
+        llog_records.lscr.lsc_tail.lrt_len = sizeof(llog_records.lscr);
+        llog_records.lscr.lsc_hdr.lrh_type = OST_SZ_REC;
+
+        rc = llog_test_7_sub(env, ctxt);
+        if (rc)
+                CERROR("7d: llog_size_change_rec test failed\n");
+
+        CWARN("7e: test llog_changelog_rec\n");
+        llog_records.lcr.cr_hdr.lrh_len = sizeof(llog_records.lcr);
+        llog_records.lcr.cr_tail.lrt_len = sizeof(llog_records.lcr);
+        llog_records.lcr.cr_hdr.lrh_type = CHANGELOG_REC;
+
+        rc = llog_test_7_sub(env, ctxt);
+        if (rc)
+                CERROR("7e: llog_changelog_rec test failed\n");
+
+        CWARN("7f: test llog_changelog_user_rec\n");
+        llog_records.lcur.cur_hdr.lrh_len = sizeof(llog_records.lcur);
+        llog_records.lcur.cur_tail.lrt_len = sizeof(llog_records.lcur);
+        llog_records.lcur.cur_hdr.lrh_type = CHANGELOG_USER_REC;
+
+        rc = llog_test_7_sub(env, ctxt);
+        if (rc)
+                CERROR("7f: llog_changelog_user_rec test failed\n");
+
+        CWARN("7g: test llog_gen_rec\n");
+        llog_records.lgr.lgr_hdr.lrh_len = sizeof(llog_records.lgr);
+        llog_records.lgr.lgr_tail.lrt_len = sizeof(llog_records.lgr);
+        llog_records.lgr.lgr_hdr.lrh_type = LLOG_GEN_REC;
+
+        rc = llog_test_7_sub(env, ctxt);
+        if (rc)
+                CERROR("7g: llog_size_change_rec test failed\n");
+
+        llog_ctxt_put(ctxt);
+        RETURN(rc);
+}
+
 /* -------------------------------------------------------------------------
  * Tests above, OSD API functions below
  * ------------------------------------------------------------------------- */
@@ -684,6 +871,7 @@ static int llog_run_tests(struct obd_device *obd)
         rc = llog_test_3(&env, obd, llh);
         if (rc)
                 GOTO(cleanup, rc);
+
         rc = llog_test_4(&env, obd);
         if (rc)
                 GOTO(cleanup, rc);
@@ -693,6 +881,10 @@ static int llog_run_tests(struct obd_device *obd)
                 GOTO(cleanup, rc);
 
         rc = llog_test_6(&env, obd, name);
+        if (rc)
+                GOTO(cleanup, rc);
+
+        rc = llog_test_7(&env, obd);
         if (rc)
                 GOTO(cleanup, rc);
 

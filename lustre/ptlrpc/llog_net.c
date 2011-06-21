@@ -100,7 +100,7 @@ int llog_origin_connect(struct llog_ctxt *ctxt,
         LASSERT(ctxt->loc_handle);
         rc = llog_cat_add(&env, ctxt->loc_handle, &lgr->lgr_hdr, NULL, NULL);
         OBD_FREE_PTR(lgr);
-        if (rc != 1)
+        if (rc)
                 GOTO(out_env, rc);
 
         LASSERT(ctxt->loc_imp);
