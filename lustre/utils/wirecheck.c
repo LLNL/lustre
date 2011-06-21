@@ -1246,10 +1246,13 @@ check_llog_logid(void)
         CHECK_CVALUE(OST_RAID1_REC);
         CHECK_CVALUE(MDS_UNLINK_REC);
         CHECK_CVALUE(MDS_SETATTR_REC);
+        CHECK_CVALUE(MDS_SETATTR64_REC);
         CHECK_CVALUE(OBD_CFG_REC);
         CHECK_CVALUE(PTL_CFG_REC);
         CHECK_CVALUE(LLOG_GEN_REC);
         CHECK_CVALUE(LLOG_JOIN_REC);
+        CHECK_CVALUE(CHANGELOG_REC);
+        CHECK_CVALUE(CHANGELOG_USER_REC);
         CHECK_CVALUE(LLOG_HDR_MAGIC);
         CHECK_CVALUE(LLOG_LOGID_MAGIC);
 }
@@ -1295,34 +1298,7 @@ check_llog_logid_rec(void)
         CHECK_MEMBER(llog_logid_rec, lid_padding1);
         CHECK_MEMBER(llog_logid_rec, lid_padding2);
         CHECK_MEMBER(llog_logid_rec, lid_padding3);
-        CHECK_MEMBER(llog_logid_rec, lid_padding4);
-        CHECK_MEMBER(llog_logid_rec, lid_padding5);
         CHECK_MEMBER(llog_logid_rec, lid_tail);
-}
-
-static void
-check_llog_create_rec(void)
-{
-        BLANK_LINE();
-        CHECK_STRUCT(llog_create_rec);
-        CHECK_MEMBER(llog_create_rec, lcr_hdr);
-        CHECK_MEMBER(llog_create_rec, lcr_fid);
-        CHECK_MEMBER(llog_create_rec, lcr_oid);
-        CHECK_MEMBER(llog_create_rec, lcr_oseq);
-        CHECK_MEMBER(llog_create_rec, lcr_padding);
-        CHECK_MEMBER(llog_create_rec, lcr_tail);
-}
-
-static void
-check_llog_orphan_rec(void)
-{
-        BLANK_LINE();
-        CHECK_STRUCT(llog_orphan_rec);
-        CHECK_MEMBER(llog_orphan_rec, lor_hdr);
-        CHECK_MEMBER(llog_orphan_rec, lor_oid);
-        CHECK_MEMBER(llog_orphan_rec, lor_ogen);
-        CHECK_MEMBER(llog_orphan_rec, lor_padding);
-        CHECK_MEMBER(llog_orphan_rec, lor_tail);
 }
 
 static void
@@ -1338,17 +1314,17 @@ check_llog_unlink_rec(void)
 }
 
 static void
-check_llog_setattr_rec(void)
+check_llog_unlink64_rec(void)
 {
         BLANK_LINE();
-        CHECK_STRUCT(llog_setattr_rec);
-        CHECK_MEMBER(llog_setattr_rec, lsr_hdr);
-        CHECK_MEMBER(llog_setattr_rec, lsr_oid);
-        CHECK_MEMBER(llog_setattr_rec, lsr_oseq);
-        CHECK_MEMBER(llog_setattr_rec, lsr_uid);
-        CHECK_MEMBER(llog_setattr_rec, lsr_gid);
-        CHECK_MEMBER(llog_setattr_rec, lsr_padding);
-        CHECK_MEMBER(llog_setattr_rec, lsr_tail);
+        CHECK_STRUCT(llog_unlink64_rec);
+        CHECK_MEMBER(llog_unlink64_rec, lur_hdr);
+        CHECK_MEMBER(llog_unlink64_rec, lur_fid);
+        CHECK_MEMBER(llog_unlink64_rec, lur_count);
+        CHECK_MEMBER(llog_unlink64_rec, lur_tail);
+        CHECK_MEMBER(llog_unlink64_rec, lur_padding1);
+        CHECK_MEMBER(llog_unlink64_rec, lur_padding2);
+        CHECK_MEMBER(llog_unlink64_rec, lur_padding3);
 }
 
 static void
@@ -1359,11 +1335,11 @@ check_llog_setattr64_rec(void)
         CHECK_MEMBER(llog_setattr64_rec, lsr_hdr);
         CHECK_MEMBER(llog_setattr64_rec, lsr_oid);
         CHECK_MEMBER(llog_setattr64_rec, lsr_oseq);
-        CHECK_MEMBER(llog_setattr64_rec, lsr_padding);
         CHECK_MEMBER(llog_setattr64_rec, lsr_uid);
         CHECK_MEMBER(llog_setattr64_rec, lsr_uid_h);
         CHECK_MEMBER(llog_setattr64_rec, lsr_gid);
         CHECK_MEMBER(llog_setattr64_rec, lsr_gid_h);
+        CHECK_MEMBER(llog_setattr64_rec, lsr_padding);
         CHECK_MEMBER(llog_setattr64_rec, lsr_tail);
 }
 
@@ -1375,7 +1351,9 @@ check_llog_size_change_rec(void)
         CHECK_MEMBER(llog_size_change_rec, lsc_hdr);
         CHECK_MEMBER(llog_size_change_rec, lsc_fid);
         CHECK_MEMBER(llog_size_change_rec, lsc_ioepoch);
-        CHECK_MEMBER(llog_size_change_rec, lsc_padding);
+        CHECK_MEMBER(llog_size_change_rec, lsc_padding1);
+        CHECK_MEMBER(llog_size_change_rec, lsc_padding2);
+        CHECK_MEMBER(llog_size_change_rec, lsc_padding3);
         CHECK_MEMBER(llog_size_change_rec, lsc_tail);
 }
 
@@ -1442,6 +1420,9 @@ check_llog_gen_rec(void)
         CHECK_MEMBER(llog_gen_rec, lgr_hdr);
         CHECK_MEMBER(llog_gen_rec, lgr_gen);
         CHECK_MEMBER(llog_gen_rec, lgr_tail);
+        CHECK_MEMBER(llog_gen_rec, padding1);
+        CHECK_MEMBER(llog_gen_rec, padding2);
+        CHECK_MEMBER(llog_gen_rec, padding3);
 }
 
 static void
@@ -2034,10 +2015,8 @@ main(int argc, char **argv)
         check_llog_rec_hdr();
         check_llog_rec_tail();
         check_llog_logid_rec();
-        check_llog_create_rec();
-        check_llog_orphan_rec();
         check_llog_unlink_rec();
-        check_llog_setattr_rec();
+        check_llog_unlink64_rec();
         check_llog_setattr64_rec();
         check_llog_size_change_rec();
         check_changelog_rec();

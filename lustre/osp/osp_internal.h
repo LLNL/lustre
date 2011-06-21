@@ -168,6 +168,7 @@ struct osp_thread_info {
         loff_t               osi_off;
         union {
                 struct llog_rec_hdr       hdr;
+                 /* XXX: replace with llog_unlink64_rec */
                 struct llog_unlink_rec    unlink;
                 struct llog_setattr64_rec setattr;
                 struct llog_gen_rec       gen;
