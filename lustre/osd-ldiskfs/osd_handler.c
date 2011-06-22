@@ -1498,7 +1498,7 @@ static int osd_declare_punch(const struct lu_env *env, struct dt_object *dt,
         /* 
          * we don't need to reserve credits for whole truncate
          * it's not possible as truncate may need to free too many
-         * blocks and that won't fit a single trunsaction. instead
+         * blocks and that won't fit a single transaction. instead
          * we reserve credits to change i_size and put inode onto
          * orphan list. if needed truncate will extend or restart
          * transaction
@@ -1551,10 +1551,7 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
                  * transaction has changed during truncate
                  * we need to restart the handle with our credits
                  */
-                CERROR("transaction has changed: %lu -> %lu\n",
-                       (unsigned long) tid,
-                       (unsigned long) h->h_transaction->t_tid);
-                if (h->h_buffer_credits > oh->ot_credits) {
+                if (h->h_buffer_credits < oh->ot_credits) {
                         if (ldiskfs_journal_extend(h, oh->ot_credits))
                                 rc2 = ldiskfs_journal_restart(h, oh->ot_credits);
                 }
