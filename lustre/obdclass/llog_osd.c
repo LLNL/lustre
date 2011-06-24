@@ -635,7 +635,7 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
         /* each time we update header */
         rc = dt_declare_record_write(env, o, sizeof(struct llog_log_hdr),
                                      0, th);
-        if (rc || idx != 0) /* if error or just header */
+        if (rc || idx == 0) /* if error or just header */
                 GOTO(out, rc);
 
         if (dt_object_exists(o)) {
