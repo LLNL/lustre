@@ -4222,9 +4222,16 @@ static int osd_device_init0(const struct lu_env *env,
                             struct osd_device *o,
                             struct lustre_cfg *cfg)
 {
-        struct osd_thread_info *info = osd_oti_get(env);
         struct lu_device       *l = osd2lu_dev(o);
+        struct osd_thread_info *info;
         int                     rc;
+
+        /* if the module was re-loaded, env can loose its keys */
+        rc = lu_env_refill((struct lu_env *) env);
+        if (rc)
+                GOTO(out, rc);
+        info = osd_oti_get(env);
+        LASSERT(info);
 
         l->ld_ops = &osd_lu_ops;
         o->od_dt_dev.dd_ops = &osd_dt_ops;
