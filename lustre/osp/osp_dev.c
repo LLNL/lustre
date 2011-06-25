@@ -426,7 +426,6 @@ out_ref:
 out_disconnect:
         obd_disconnect(m->opd_storage_exp);
 out_fini:
-        dt_device_fini(&m->opd_dt_dev);
         RETURN(rc);
 }
 
