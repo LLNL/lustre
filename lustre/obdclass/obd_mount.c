@@ -1101,6 +1101,7 @@ static void server_wait_finished(struct lustre_sb_info *lsi)
 static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
 {
         struct lustre_mount_data *lmd = lsi->lsi_lmd;
+        struct obd_device        *obd;
         char                      flagstr[16];
         int                       rc;
         ENTRY;
@@ -1116,6 +1117,17 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
         rc = lustre_start_simple(lsi->lsi_osd_obdname, LUSTRE_OSD_NAME,
                                  lsi->lsi_osd_uuid, lmd->lmd_dev, flagstr,
                                  0, lsi->lsi_svname);
+        if (rc == 0) {
+                obd = class_name2obd(lsi->lsi_osd_obdname);
+                LASSERT(obd);
+                rc = obd_connect(NULL, &lsi->lsi_osd_exp, obd, &obd->obd_uuid,
+                                 NULL, NULL);
+                if (rc) {
+                        obd->obd_force = 1;
+                        class_manual_cleanup(obd);
+                        lsi->lsi_dt_dev = NULL;
+                }
+        }
         RETURN(rc);
 }
 
@@ -1176,9 +1188,17 @@ static int lustre_server_mount(struct lustre_sb_info *lsi, unsigned long mflags)
         if (rc)
                 GOTO(out_mnt, rc);
  
+        if (lsi->lsi_osd_exp) {
+                obd_disconnect(lsi->lsi_osd_exp);
+                lsi->lsi_osd_exp = NULL;
+        }
         RETURN(0);
 
 out_lsi:
+        if (lsi->lsi_osd_exp) {
+                obd_disconnect(lsi->lsi_osd_exp);
+                lsi->lsi_osd_exp = NULL;
+        }
         lustre_put_lsi(lsi);
         RETURN(rc);
 
@@ -1186,6 +1206,10 @@ out_mnt:
         /* We jump here in case of failure while starting targets or MGS.
          * In this case we can't just put @mnt and have to do real cleanup
          * with stopping targets, osd, etc. */
+        if (lsi->lsi_osd_exp) {
+                obd_disconnect(lsi->lsi_osd_exp);
+                lsi->lsi_osd_exp = NULL;
+        }
         lustre_server_umount(lsi);
         RETURN(rc);
 
