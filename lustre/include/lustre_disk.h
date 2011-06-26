@@ -457,6 +457,7 @@ struct lustre_sb_info {
         char                      lsi_svname[MTI_NAME_MAXLEN];
         char                      lsi_osd_obdname[64];
         char                      lsi_osd_uuid[64];
+        struct obd_export        *lsi_osd_exp;
         char                     *lsi_osd_type;
         struct backing_dev_info   lsi_bdi;     /* each client mountpoint needs
                                                   own backing_dev_info */
