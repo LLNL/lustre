@@ -144,10 +144,11 @@ static int osp_declare_object_create(const struct lu_env *env,
                                      struct dt_object_format *dof,
                                      struct thandle *th)
 {
-        struct osp_device   *d = lu2osp_dev(dt->do_lu.lo_dev);
-        struct osp_object   *o = dt2osp_obj(dt);
-        const struct lu_fid *fid;
-        int                  rc = 0;
+        struct osp_thread_info *osi = osp_env_info(env);
+        struct osp_device      *d = lu2osp_dev(dt->do_lu.lo_dev);
+        struct osp_object      *o = dt2osp_obj(dt);
+        const struct lu_fid    *fid;
+        int                     rc = 0;
         ENTRY;
 
         LASSERT(d->opd_last_used_file);
@@ -183,8 +184,10 @@ static int osp_declare_object_create(const struct lu_env *env,
                 o->opo_reserved = 1;
 
                 /* XXX: for compatibility use common for all OSPs file */
+                osi->osi_off = sizeof(osi->osi_id) * d->opd_index;
                 rc = dt_declare_record_write(env, d->opd_last_used_file,
-                                             8, 0, th);
+                                             sizeof(osi->osi_id), osi->osi_off,
+                                             th);
         } else {
                 /* not needed in the cache anymore */
                 cfs_set_bit(LU_OBJECT_HEARD_BANSHEE,
