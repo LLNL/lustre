@@ -262,10 +262,40 @@ static int osp_init_last_used(const struct lu_env *env, struct osp_device *m)
                 if (rc != 0)
                         GOTO(out, rc);
                 m->opd_last_used_id = le64_to_cpu(osi->osi_id);
+        } else {
+                /* reset value to 0, just to make sure and change file's size */
+                struct thandle *th;
+
+                osi->osi_id = 0;
+                osp_objid_buf_prep(osi, m->opd_index);
+
+                th = dt_trans_create(env, m->opd_storage);
+                if (IS_ERR(th))
+                        GOTO(out, rc = PTR_ERR(th));
+
+                rc = dt_declare_record_write(env, m->opd_last_used_file,
+                                             8, osi->osi_off, th);
+                if (rc) {
+                        dt_trans_stop(env, m->opd_storage, th);
+                        GOTO(out, rc);
+                }
+
+                rc = dt_trans_start_local(env, m->opd_storage, th);
+                if (rc) {
+                        dt_trans_stop(env, m->opd_storage, th);
+                        GOTO(out, rc);
+                }
+
+                rc = dt_record_write(env, m->opd_last_used_file, &osi->osi_lb,
+                                     &osi->osi_off, th);
+                dt_trans_stop(env, m->opd_storage, th);
+                if (rc)
+                        GOTO(out, rc);
         }
         RETURN(0);
 out:
         /* object will be released in device cleanup path */
+        CERROR("%s: can't initialize lov_objid: %d\n", m->opd_obd->obd_name, rc);
         lu_object_put(env, &o->do_lu);
         m->opd_last_used_file = NULL;
         RETURN(rc);
