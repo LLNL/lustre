@@ -116,10 +116,9 @@ void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf)
 {
         int rw = iobuf->dr_rw;
 
-        LASSERT(iobuf->dr_dev == d);
-
         if (iobuf->dr_elapsed_valid) {
                 iobuf->dr_elapsed_valid = 0;
+                LASSERT(iobuf->dr_dev == d);
                 LASSERT(iobuf->dr_frags > 0);
                 lprocfs_oh_tally(&d->od_brw_stats.
                                  hist[BRW_R_DIO_FRAGS+rw],
