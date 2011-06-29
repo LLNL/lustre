@@ -318,14 +318,15 @@ static int ofd_destroy_export(struct obd_export *exp)
         RETURN(0);
 }
 
-static int ofd_adapt_sptlrpc_conf(struct obd_device *obd, int initial)
+static int ofd_adapt_sptlrpc_conf(const struct lu_env *env,
+                                  struct obd_device *obd, int initial)
 {
         struct filter_obd       *ofd = &obd->u.filter;
         struct sptlrpc_rule_set  tmp_rset;
         int                      rc;
 
         sptlrpc_rule_set_init(&tmp_rset);
-        rc = sptlrpc_conf_target_get_rules(obd, &tmp_rset, initial);
+        rc = sptlrpc_conf_target_get_rules(env, obd, &tmp_rset, initial);
         if (rc) {
                 CERROR("obd %s: failed get sptlrpc rules: %d\n",
                        obd->obd_name, rc);
@@ -358,12 +359,10 @@ static int ofd_set_info_async(const struct lu_env *env,
                               struct ptlrpc_request_set *set)
 {
         struct ofd_device *ofd = ofd_exp(exp);
-        struct obd_device *obd;
         int                rc = 0;
         ENTRY;
 
-        obd = exp->exp_obd;
-        if (obd == NULL) {
+        if (exp->exp_obd == NULL) {
                 CDEBUG(D_IOCTL, "invalid export %p\n", exp);
                 RETURN(-EINVAL);
         }
@@ -373,7 +372,7 @@ static int ofd_set_info_async(const struct lu_env *env,
                 if (rc)
                         CERROR("ofd update capability key failed: %d\n", rc);
         } else if (KEY_IS(KEY_SPTLRPC_CONF)) {
-                ofd_adapt_sptlrpc_conf(obd, 0);
+                ofd_adapt_sptlrpc_conf(env, exp->exp_obd, 0);
         } else if (KEY_IS(KEY_MDS_CONN)) {
                 rc = ofd_set_mds_conn(exp, val);
         } else if (KEY_IS(KEY_GRANT_SHRINK)) {
@@ -382,7 +381,8 @@ static int ofd_set_info_async(const struct lu_env *env,
                 /** handle grant shrink, similar to a read request */
                 ofd_grant_prepare_read(env, exp, &body->oa);
         } else {
-                CERROR("Invalid key %s\n", (char*)key);
+                CERROR("%s: Invalid key %s\n",
+                       exp->exp_obd->obd_name, (char*)key);
                 rc = -EINVAL;
         }
 
@@ -562,7 +562,7 @@ int ofd_statfs_internal(const struct lu_env *env, struct ofd_device *ofd,
 static int ofd_statfs(const struct lu_env *env, struct obd_export *exp,
                       struct obd_statfs *osfs, __u64 max_age, __u32 flags)
 {
-        struct ofd_device *ofd = ofd_dev(exp->exp_obd->obd_lu_dev);
+        struct ofd_device *ofd = ofd_exp(exp);
         int rc;
         ENTRY;
 
