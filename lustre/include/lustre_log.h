@@ -710,8 +710,25 @@ static inline int llog_connect(struct llog_ctxt *ctxt,
 }
 
 
-/*
- * new API
+/**
+ * new llog API
+ *
+ * API functions:
+ *      llog_open - open llog, may not exist
+ *      llog_exist - check if llog exists
+ *      llog_close - close opened llog, pair for open, frees llog_handle
+ *      llog_declare_create - declare llog creation
+ *      llog_create - create new llog on disk, need transaction handle
+ *      llog_declare_write_rec - declaration of llog write
+ *      llog_write_rec - write llog record on disk, need transaction handle
+ *      llog_declare_add - declare llog catalog record addition
+ *      llog_add - add llog record in catalog, need transaction handle
+ *
+ * Helper functions:
+ *      llog_open_create - open llog, check it exists and create the new one
+ *      if not, hides all transaction stuff.
+ *      llog_erase - open llog and destroy if exists.
+ *      llog_write - write single llog record, hides all transaction stuff
  */
 static inline int llog_open(const struct lu_env *env,
                             struct llog_ctxt *ctxt, struct llog_handle **res,
