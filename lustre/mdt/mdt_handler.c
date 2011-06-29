@@ -4397,14 +4397,15 @@ static void mdt_fini(const struct lu_env *env, struct mdt_device *m)
         EXIT;
 }
 
-static int mdt_adapt_sptlrpc_conf(struct obd_device *obd, int initial)
+static int mdt_adapt_sptlrpc_conf(const struct lu_env *env,
+                                  struct obd_device *obd, int initial)
 {
         struct mdt_device       *m = mdt_dev(obd->obd_lu_dev);
         struct sptlrpc_rule_set  tmp_rset;
         int                      rc;
 
         sptlrpc_rule_set_init(&tmp_rset);
-        rc = sptlrpc_conf_target_get_rules(obd, &tmp_rset, initial);
+        rc = sptlrpc_conf_target_get_rules(env, obd, &tmp_rset, initial);
         if (rc) {
                 CERROR("mdt %s: failed get sptlrpc rules: %d\n",
                        obd->obd_name, rc);
@@ -4645,7 +4646,7 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
                         GOTO(err_llog_cleanup, rc);
         }
 #endif
-        mdt_adapt_sptlrpc_conf(obd, 1);
+        mdt_adapt_sptlrpc_conf(env, obd, 1);
 
         dt_conf_get(env, m->mdt_bottom, &ddp);
         m->mdt_opts.mo_user_xattr = !!(ddp.ddp_mntopts & MNTOPT_USERXATTR);
@@ -4914,18 +4915,26 @@ static int mdt_obd_set_info_async(struct obd_export *exp,
                                   __u32 vallen, void *val,
                                   struct ptlrpc_request_set *set)
 {
-        struct obd_device     *obd = exp->exp_obd;
-        int                    rc;
+        struct lu_env env;
+        int           rc;
         ENTRY;
 
-        LASSERT(obd);
+        LASSERT(exp->exp_obd);
+
+        rc = lu_env_init(&env, LCT_DT_THREAD);
+        if (rc)
+                RETURN(rc);
 
         if (KEY_IS(KEY_SPTLRPC_CONF)) {
-                rc = mdt_adapt_sptlrpc_conf(obd, 0);
-                RETURN(rc);
+                rc = mdt_adapt_sptlrpc_conf(&env, exp->exp_obd, 0);
+        } else {
+                CERROR("%s: Invalid key %s\n",
+                       exp->exp_obd->obd_name, (char*)key);
+                rc = -EINVAL;
         }
 
-        RETURN(0);
+        lu_env_fini(&env);
+        RETURN(rc);
 }
 
 /* mds_connect_internal */

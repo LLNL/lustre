@@ -963,8 +963,8 @@ static void rule2string(struct sptlrpc_rule *r, char *buf, int buflen)
         buf[buflen - 1] = '\0';
 }
 
-static int sptlrpc_record_rule_set(struct llog_handle *llh,
-                                   char *target,
+static int sptlrpc_record_rule_set(const struct lu_env *env,
+                                   struct llog_handle *llh, char *target,
                                    struct sptlrpc_rule_set *rset)
 {
         struct lustre_cfg_bufs  bufs;
@@ -987,7 +987,7 @@ static int sptlrpc_record_rule_set(struct llog_handle *llh,
                                         lcfg->lcfg_buflens);
                 rec.lrh_len = llog_data_len(buflen);
                 rec.lrh_type = OBD_CFG_REC;
-                rc = llog_write(NULL, llh, &rec, NULL, 0, (void *)lcfg, -1);
+                rc = llog_write(env, llh, &rec, NULL, 0, (void *)lcfg, -1);
                 if (rc)
                         CERROR("failed to write a rec: rc = %d\n", rc);
                 lustre_cfg_free(lcfg);
@@ -995,15 +995,16 @@ static int sptlrpc_record_rule_set(struct llog_handle *llh,
         return 0;
 }
 
-static int sptlrpc_record_rules(struct llog_handle *llh,
+static int sptlrpc_record_rules(const struct lu_env *env,
+                                struct llog_handle *llh,
                                 struct sptlrpc_conf *conf)
 {
         struct sptlrpc_conf_tgt *conf_tgt;
 
-        sptlrpc_record_rule_set(llh, conf->sc_fsname, &conf->sc_rset);
+        sptlrpc_record_rule_set(env, llh, conf->sc_fsname, &conf->sc_rset);
 
         cfs_list_for_each_entry(conf_tgt, &conf->sc_tgts, sct_list) {
-                sptlrpc_record_rule_set(llh, conf_tgt->sct_name,
+                sptlrpc_record_rule_set(env, llh, conf_tgt->sct_name,
                                         &conf_tgt->sct_rset);
         }
         return 0;
@@ -1013,7 +1014,8 @@ static int sptlrpc_record_rules(struct llog_handle *llh,
 #define LOG_SPTLRPC     "sptlrpc"
 
 static
-int sptlrpc_target_local_copy_conf(struct obd_device *obd,
+int sptlrpc_target_local_copy_conf(const struct lu_env *env,
+                                   struct obd_device *obd,
                                    struct sptlrpc_conf *conf)
 {
         struct llog_handle   *llh = NULL;
@@ -1044,7 +1046,7 @@ int sptlrpc_target_local_copy_conf(struct obd_device *obd,
         }
 
         /* erase the old tmp log */
-        rc = llog_erase(NULL, ctxt, NULL, LOG_SPTLRPC_TMP);
+        rc = llog_erase(env, ctxt, NULL, LOG_SPTLRPC_TMP);
         if (rc) {
                 CERROR("target %s: cannot erase temporary sptlrpc log: "
                        "rc = %d\n", obd->obd_name, rc);
@@ -1052,17 +1054,17 @@ int sptlrpc_target_local_copy_conf(struct obd_device *obd,
         }
 
         /* write temporary log */
-        rc = llog_open_create(NULL, ctxt, &llh, NULL, LOG_SPTLRPC_TMP);
+        rc = llog_open_create(env, ctxt, &llh, NULL, LOG_SPTLRPC_TMP);
         if (rc)
                 GOTO(out_dput, rc);
         rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
-        rc = sptlrpc_record_rules(llh, conf);
+        rc = sptlrpc_record_rules(env, llh, conf);
 
 out_close:
-        llog_close(NULL, llh);
+        llog_close(env, llh);
 
         if (rc == 0) {
                 rc = lustre_rename(dentry, obd->obd_lvfs_ctxt.pwdmnt,
@@ -1111,7 +1113,8 @@ static int local_read_handler(const struct lu_env *env, struct llog_handle *llh,
 }
 
 static
-int sptlrpc_target_local_read_conf(struct obd_device *obd,
+int sptlrpc_target_local_read_conf(const struct lu_env *env,
+                                   struct obd_device *obd,
                                    struct sptlrpc_conf *conf)
 {
         struct llog_handle    *llh = NULL;
@@ -1130,7 +1133,7 @@ int sptlrpc_target_local_read_conf(struct obd_device *obd,
 
         push_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
 
-        rc = llog_open(NULL, ctxt, &llh, NULL, LOG_SPTLRPC, LLOG_OPEN_OLD);
+        rc = llog_open(env, ctxt, &llh, NULL, LOG_SPTLRPC, LLOG_OPEN_OLD);
         if (rc)
                 GOTO(out_pop, rc);
 
@@ -1143,7 +1146,7 @@ int sptlrpc_target_local_read_conf(struct obd_device *obd,
                 GOTO(out_close, rc = 0);
         }
 
-        rc = llog_process(NULL, llh, local_read_handler, (void *) conf, NULL);
+        rc = llog_process(env, llh, local_read_handler, (void *) conf, NULL);
 
         if (rc == 0) {
                 conf->sc_local = 1;
@@ -1152,7 +1155,7 @@ int sptlrpc_target_local_read_conf(struct obd_device *obd,
         }
 
 out_close:
-        llog_close(NULL, llh);
+        llog_close(env, llh);
 out_pop:
         pop_ctxt(&saved, &obd->obd_lvfs_ctxt, NULL);
         llog_ctxt_put(ctxt);
@@ -1167,7 +1170,8 @@ out_pop:
  * called by target devices, extract sptlrpc rules which applies to
  * this target, to be used for future rpc flavor checking.
  */
-int sptlrpc_conf_target_get_rules(struct obd_device *obd,
+int sptlrpc_conf_target_get_rules(const struct lu_env *env,
+                                  struct obd_device *obd,
                                   struct sptlrpc_rule_set *rset,
                                   int initial)
 {
@@ -1208,13 +1212,13 @@ int sptlrpc_conf_target_get_rules(struct obd_device *obd,
                 if (conf->sc_local)
                         sptlrpc_conf_free_rsets(conf);
 
-                sptlrpc_target_local_read_conf(obd, conf);
+                sptlrpc_target_local_read_conf(env, obd, conf);
         } else {
                 LASSERT(conf->sc_local == 0);
 
                 /* write a local copy */
                 if (initial || conf->sc_modified)
-                        sptlrpc_target_local_copy_conf(obd, conf);
+                        sptlrpc_target_local_copy_conf(env, obd, conf);
                 else
                         CDEBUG(D_SEC, "unchanged, skip updating local copy\n");
         }

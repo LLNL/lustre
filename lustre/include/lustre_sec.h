@@ -45,6 +45,7 @@
 /*
  * to avoid include
  */
+struct lu_env;
 struct obd_import;
 struct obd_export;
 struct ptlrpc_request;
@@ -347,7 +348,8 @@ void sptlrpc_conf_log_stop(const char *logname);
 void sptlrpc_conf_log_update_begin(const char *logname);
 void sptlrpc_conf_log_update_end(const char *logname);
 void sptlrpc_conf_client_adapt(struct obd_device *obd);
-int  sptlrpc_conf_target_get_rules(struct obd_device *obd,
+int  sptlrpc_conf_target_get_rules(const struct lu_env *env,
+                                   struct obd_device *obd,
                                    struct sptlrpc_rule_set *rset,
                                    int initial);
 void sptlrpc_target_choose_flavor(struct sptlrpc_rule_set *rset,
