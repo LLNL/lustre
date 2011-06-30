@@ -58,9 +58,9 @@ void dump_lniobuf(struct niobuf_local *nb)
 {
         CDEBUG(D_RPCTRACE,
                "niobuf_local: offset="LPD64", len=%d, page=%p, rc=%d\n",
-               nb->file_offset, nb->len, nb->page, nb->rc);
-        CDEBUG(D_RPCTRACE, "nb->page: index = %ld\n",
-               nb->page ? cfs_page_index(nb->page) : -1);
+               nb->lnb_file_offset, nb->lnb_len, nb->lnb_page, nb->lnb_rc);
+        CDEBUG(D_RPCTRACE, "nb->lnb_page: index = %ld\n",
+               nb->lnb_page ? cfs_page_index(nb->lnb_page) : -1);
 }
 EXPORT_SYMBOL(dump_lniobuf);
 

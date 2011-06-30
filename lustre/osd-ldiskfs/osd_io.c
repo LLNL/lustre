@@ -396,13 +396,13 @@ static int osd_map_remote_to_local(loff_t offset, ssize_t len, int *nrpages,
 
                 if (plen > len)
                         plen = len;
-                lnb->file_offset = offset;
-                lnb->page_offset = poff;
-                lnb->len = plen;
+                lnb->lnb_file_offset = offset;
+                lnb->lnb_page_offset = poff;
+                lnb->lnb_len = plen;
                 /* lb->flags = rnb->flags; */
-                lnb->flags = 0;
-                lnb->page = NULL;
-                lnb->rc = 0;
+                lnb->lnb_flags = 0;
+                lnb->lnb_page = NULL;
+                lnb->lnb_rc = 0;
 
                 LASSERTF(plen <= len, "plen %u, len %lld\n", plen,
                          (long long) len);
@@ -466,10 +466,10 @@ int osd_bufs_get(const struct lu_env *env, struct dt_object *d, loff_t pos,
                 /* We still set up for ungranted pages so that granted pages
                  * can be written to disk as they were promised, and portals
                  * needs to keep the pages all aligned properly. */
-                lnb->obj = obj;
+                lnb->lnb_obj = obj;
 
-                lnb->page = osd_get_page(d, lnb->file_offset, rw);
-                if (lnb->page == NULL)
+                lnb->lnb_page = osd_get_page(d, lnb->lnb_file_offset, rw);
+                if (lnb->lnb_page == NULL)
                         GOTO(cleanup, rc = -ENOMEM);
 
                 /* DLM locking protects us from write and truncate competing
@@ -480,8 +480,8 @@ int osd_bufs_get(const struct lu_env *env, struct dt_object *d, loff_t pos,
                  * be able to proceed in filter_commitrw_write(). thus let's
                  * just wait for writeout completion, should be rare enough.
                  * -bzzz */
-                wait_on_page_writeback(lnb->page);
-                BUG_ON(PageWriteback(lnb->page));
+                wait_on_page_writeback(lnb->lnb_page);
+                BUG_ON(PageWriteback(lnb->lnb_page));
 
                 lu_object_get(&d->do_lu);
         }
@@ -504,13 +504,13 @@ static int osd_bufs_put(const struct lu_env *env, struct dt_object *dt,
         osd_fini_iobuf(d, iobuf);
 
         for (i = 0; i < npages; i++) {
-                if (lnb[i].page == NULL)
+                if (lnb[i].lnb_page == NULL)
                         continue;
-                LASSERT(PageLocked(lnb[i].page));
-                unlock_page(lnb[i].page);
-                page_cache_release(lnb[i].page);
+                LASSERT(PageLocked(lnb[i].lnb_page));
+                unlock_page(lnb[i].lnb_page);
+                page_cache_release(lnb[i].lnb_page);
                 lu_object_put(env, &dt->do_lu);
-                lnb[i].page = NULL;
+                lnb[i].lnb_page = NULL;
         }
         RETURN(0);
 }
@@ -548,32 +548,32 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
 
                 if (cache == 0)
                         generic_error_remove_page(inode->i_mapping,
-                                                  lnb[i].page);
+                                                  lnb[i].lnb_page);
 
                 /*
                  * till commit the content of the page is undefined
                  * we'll set it uptodate once bulk is done. otherwise
                  * subsequent reads can access non-stable data
                  */
-                ClearPageUptodate(lnb[i].page);
+                ClearPageUptodate(lnb[i].lnb_page);
 
-                if (lnb[i].len == CFS_PAGE_SIZE)
+                if (lnb[i].lnb_len == CFS_PAGE_SIZE)
                         continue;
 
-                if (maxidx >= lnb[i].page->index) {
-                        osd_iobuf_add_page(iobuf, lnb[i].page);
+                if (maxidx >= lnb[i].lnb_page->index) {
+                        osd_iobuf_add_page(iobuf, lnb[i].lnb_page);
                 } else {
                         long off;
-                        char *p = kmap(lnb[i].page);
+                        char *p = kmap(lnb[i].lnb_page);
 
-                        off = lnb[i].page_offset;
+                        off = lnb[i].lnb_page_offset;
                         if (off)
                                 memset(p, 0, off);
-                        off = (lnb[i].page_offset + lnb[i].len) &
+                        off = (lnb[i].lnb_page_offset + lnb[i].lnb_len) &
                               ~CFS_PAGE_MASK;
                         if (off)
                                 memset(p + off, 0, CFS_PAGE_SIZE - off);
-                        kunmap(lnb[i].page);
+                        kunmap(lnb[i].lnb_page);
                 }
         }
         cfs_gettimeofday(&end);
@@ -618,8 +618,8 @@ static int osd_declare_write_commit(const struct lu_env *env,
 
         /* calculate number of extents (probably better to pass nb) */
         for (i = 1; i < npages; i++)
-                if (lnb[i].file_offset !=
-                    lnb[i - 1].file_offset + lnb[i - 1].len)
+                if (lnb[i].lnb_file_offset !=
+                    lnb[i - 1].lnb_file_offset + lnb[i - 1].lnb_len)
                         extents++;
 
         /*
@@ -695,37 +695,38 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
         isize = i_size_read(inode);
 
         for (i = 0; i < npages; i++) {
-                if (lnb[i].rc == -ENOSPC &&
-                    osd_is_mapped(inode, lnb[i].file_offset)) {
+                if (lnb[i].lnb_rc == -ENOSPC &&
+                    osd_is_mapped(inode, lnb[i].lnb_file_offset)) {
                         /* Allow the write to proceed if overwriting an
                          * existing block */
-                        lnb[i].rc = 0;
+                        lnb[i].lnb_rc = 0;
                 }
 
-                if (lnb[i].rc) { /* ENOSPC, network RPC error, etc. */
+                if (lnb[i].lnb_rc) { /* ENOSPC, network RPC error, etc. */
                         CDEBUG(D_INODE, "Skipping [%d] == %d\n", i,
-                               lnb[i].rc);
-                        LASSERT(lnb[i].page);
-                        generic_error_remove_page(inode->i_mapping,lnb[i].page);
+                               lnb[i].lnb_rc);
+                        LASSERT(lnb[i].lnb_page);
+                        generic_error_remove_page(inode->i_mapping,
+                                                  lnb[i].lnb_page);
                         continue;
                 }
 
-                LASSERT(PageLocked(lnb[i].page));
-                LASSERT(!PageWriteback(lnb[i].page));
+                LASSERT(PageLocked(lnb[i].lnb_page));
+                LASSERT(!PageWriteback(lnb[i].lnb_page));
 
-                if (lnb[i].file_offset + lnb[i].len > isize)
-                        isize = lnb[i].file_offset + lnb[i].len;
+                if (lnb[i].lnb_file_offset + lnb[i].lnb_len > isize)
+                        isize = lnb[i].lnb_file_offset + lnb[i].lnb_len;
 
                 /*
                  * Since write and truncate are serialized by oo_sem, even
                  * partial-page truncate should not leave dirty pages in the
                  * page cache.
                  */
-                LASSERT(!PageDirty(lnb[i].page));
+                LASSERT(!PageDirty(lnb[i].lnb_page));
 
-                SetPageUptodate(lnb[i].page);
+                SetPageUptodate(lnb[i].lnb_page);
 
-                osd_iobuf_add_page(iobuf, lnb[i].page);
+                osd_iobuf_add_page(iobuf, lnb[i].lnb_page);
         }
 
         if (OBD_FAIL_CHECK(OBD_FAIL_OST_MAPBLK_ENOSPC)) {
@@ -756,10 +757,11 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
         if (unlikely(rc != 0)) {
                 /* if write fails, we should drop pages from the cache */
                 for (i = 0; i < npages; i++) {
-                        if (lnb[i].page == NULL)
+                        if (lnb[i].lnb_page == NULL)
                                 continue;
-                        LASSERT(PageLocked(lnb[i].page));
-                        generic_error_remove_page(inode->i_mapping,lnb[i].page);
+                        LASSERT(PageLocked(lnb[i].lnb_page));
+                        generic_error_remove_page(inode->i_mapping,
+                                                  lnb[i].lnb_page);
                 }
         }
 
@@ -789,29 +791,30 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
         cfs_gettimeofday(&start);
         for (i = 0; i < npages; i++) {
 
-                if (i_size_read(inode) <= lnb[i].file_offset)
+                if (i_size_read(inode) <= lnb[i].lnb_file_offset)
                         /* If there's no more data, abort early.
                          * lnb->rc == 0, so it's easy to detect later. */
                         break;
 
                 if (i_size_read(inode) <
-                    lnb[i].file_offset + lnb[i].len - 1)
-                        lnb[i].rc = i_size_read(inode) - lnb[i].file_offset;
+                    lnb[i].lnb_file_offset + lnb[i].lnb_len - 1)
+                        lnb[i].lnb_rc = i_size_read(inode) -
+                                        lnb[i].lnb_file_offset;
                 else
-                        lnb[i].rc = lnb[i].len;
-                m += lnb[i].len;
+                        lnb[i].lnb_rc = lnb[i].lnb_len;
+                m += lnb[i].lnb_len;
 
                 lprocfs_counter_add(osd->od_stats, LPROC_OSD_CACHE_ACCESS, 1);
-                if (PageUptodate(lnb[i].page)) {
+                if (PageUptodate(lnb[i].lnb_page)) {
                         lprocfs_counter_add(osd->od_stats,
                                             LPROC_OSD_CACHE_HIT, 1);
                 } else {
                         lprocfs_counter_add(osd->od_stats,
                                             LPROC_OSD_CACHE_MISS, 1);
-                        osd_iobuf_add_page(iobuf, lnb[i].page);
+                        osd_iobuf_add_page(iobuf, lnb[i].lnb_page);
                 }
                 if (cache == 0)
-                        generic_error_remove_page(inode->i_mapping,lnb[i].page);
+                        generic_error_remove_page(inode->i_mapping,lnb[i].lnb_page);
         }
         cfs_gettimeofday(&end);
         timediff = cfs_timeval_sub(&end, &start, NULL);

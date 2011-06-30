@@ -296,9 +296,9 @@ static int echo_map_nb_to_lb(struct obdo *oa, struct obd_ioobj *obj,
         int debug_setup = (!ispersistent &&
                            (oa->o_valid & OBD_MD_FLFLAGS) != 0 &&
                            (oa->o_flags & OBD_FL_DEBUG_CHECK) != 0);
-        struct niobuf_local *res = lb;
-        obd_off offset = nb->offset;
-        int len = nb->len;
+        struct niobuf_local *lnb = lb;
+        obd_off offset = nb->rnb_offset;
+        int len = nb->rnb_len;
 
         while (len > 0) {
                 int plen = CFS_PAGE_SIZE - (offset & (CFS_PAGE_SIZE-1));
@@ -309,20 +309,20 @@ static int echo_map_nb_to_lb(struct obdo *oa, struct obd_ioobj *obj,
                 if (*left == 0)
                         return -EINVAL;
 
-                res->file_offset = offset;
-                res->len = plen;
-                LASSERT((res->file_offset & ~CFS_PAGE_MASK) + res->len <= CFS_PAGE_SIZE);
-
+                lnb->lnb_file_offset = offset;
+                lnb->lnb_len = plen;
+                LASSERT((lnb->lnb_file_offset & ~CFS_PAGE_MASK) +
+                         lnb->lnb_len <= CFS_PAGE_SIZE);
 
                 if (ispersistent &&
-                    (res->file_offset >> CFS_PAGE_SHIFT) < ECHO_PERSISTENT_PAGES) {
-                        res->page = echo_persistent_pages[res->file_offset >>
-                                CFS_PAGE_SHIFT];
+                    (offset >> CFS_PAGE_SHIFT) < ECHO_PERSISTENT_PAGES) {
+                        lnb->lnb_page = echo_persistent_pages[offset >>
+                                                                CFS_PAGE_SHIFT];
                         /* Take extra ref so __free_pages() can be called OK */
-                        cfs_get_page (res->page);
+                        cfs_get_page (lnb->lnb_page);
                 } else {
-                        OBD_PAGE_ALLOC(res->page, gfp_mask);
-                        if (res->page == NULL) {
+                        OBD_PAGE_ALLOC(lnb->lnb_page, gfp_mask);
+                        if (lnb->lnb_page == NULL) {
                                 CERROR("can't get page for id " LPU64"\n",
                                        obj->ioo_id);
                                 return -ENOMEM;
@@ -330,18 +330,19 @@ static int echo_map_nb_to_lb(struct obdo *oa, struct obd_ioobj *obj,
                 }
 
                 CDEBUG(D_PAGE, "$$$$ get page %p @ "LPU64" for %d\n",
-                       res->page, res->file_offset, res->len);
+                       lnb->lnb_page, lnb->lnb_file_offset, lnb->lnb_len);
 
                 if (cmd & OBD_BRW_READ)
-                        res->rc = res->len;
+                        lnb->lnb_rc = lnb->lnb_len;
 
                 if (debug_setup)
-                        echo_page_debug_setup(res->page, cmd, obj->ioo_id,
-                                              res->file_offset, res->len);
+                        echo_page_debug_setup(lnb->lnb_page, cmd, obj->ioo_id,
+                                              lnb->lnb_file_offset,
+                                              lnb->lnb_len);
 
                 offset += plen;
                 len -= plen;
-                res++;
+                lnb++;
 
                 (*left)--;
                 (*pages)++;
@@ -354,15 +355,19 @@ static int echo_finalize_lb(struct obdo *oa, struct obd_ioobj *obj,
                             struct niobuf_remote *rb, int *pgs,
                             struct niobuf_local *lb, int verify)
 {
-        struct niobuf_local *res = lb;
-        obd_off start  = rb->offset >> CFS_PAGE_SHIFT;
-        obd_off end    = (rb->offset + rb->len + CFS_PAGE_SIZE - 1) >> CFS_PAGE_SHIFT;
-        int     count  = (int)(end - start);
-        int     rc     = 0;
+        struct niobuf_local *lnb = lb;
+        obd_off start, end;
+        int     count;
+        int     rc = 0;
         int     i;
 
-        for (i = 0; i < count; i++, (*pgs) ++, res++) {
-                cfs_page_t *page = res->page;
+        start = rb->rnb_offset >> CFS_PAGE_SHIFT;
+        end = rb->rnb_offset + rb->rnb_len + CFS_PAGE_SIZE - 1;
+        end = end >> CFS_PAGE_SHIFT;
+        count = (int)(end - start);
+
+        for (i = 0; i < count; i++, (*pgs) ++, lnb++) {
+                cfs_page_t *page = lnb->lnb_page;
                 void       *addr;
 
                 if (page == NULL) {
@@ -374,11 +379,12 @@ static int echo_finalize_lb(struct obdo *oa, struct obd_ioobj *obj,
                 addr = cfs_kmap(page);
 
                 CDEBUG(D_PAGE, "$$$$ use page %p, addr %p@"LPU64"\n",
-                       res->page, addr, res->file_offset);
+                       lnb->lnb_page, addr, lnb->lnb_file_offset);
 
                 if (verify) {
                         int vrc = echo_page_debug_check(page, obj->ioo_id,
-                                                        res->file_offset, res->len);
+                                                        lnb->lnb_file_offset,
+                                                        lnb->lnb_len);
                         /* check all the pages always */
                         if (vrc != 0 && rc == 0)
                                 rc = vrc;
@@ -393,8 +399,8 @@ static int echo_finalize_lb(struct obdo *oa, struct obd_ioobj *obj,
 }
 
 int echo_preprw(int cmd, struct obd_export *export, struct obdo *oa,
-                int objcount, struct obd_ioobj *obj, struct niobuf_remote *nb,
-                int *pages, struct niobuf_local *res,
+                int objcount, struct obd_ioobj *obj, struct niobuf_remote *rnb,
+                int *pages, struct niobuf_local *lnb,
                 struct obd_trans_info *oti, struct lustre_capa *unused)
 {
         struct obd_device *obd;
@@ -410,7 +416,7 @@ int echo_preprw(int cmd, struct obd_export *export, struct obdo *oa,
         /* Temp fix to stop falling foul of osc_announce_cached() */
         oa->o_valid &= ~(OBD_MD_FLBLOCKS | OBD_MD_FLGRANT);
 
-        memset(res, 0, sizeof(*res) * *pages);
+        memset(lnb, 0, sizeof(*lnb) * *pages);
 
         CDEBUG(D_PAGE, "%s %d obdos with %d IOs\n",
                cmd == OBD_BRW_READ ? "reading" : "writing", objcount, *pages);
@@ -424,14 +430,14 @@ int echo_preprw(int cmd, struct obd_export *export, struct obdo *oa,
         for (i = 0; i < objcount; i++, obj++) {
                 int j;
 
-                for (j = 0 ; j < obj->ioo_bufcnt ; j++, nb++) {
+                for (j = 0 ; j < obj->ioo_bufcnt ; j++, rnb++) {
 
-                        rc = echo_map_nb_to_lb(oa, obj, nb, pages,
-                                               res + *pages, cmd, &left);
+                        rc = echo_map_nb_to_lb(oa, obj, rnb, pages,
+                                                lnb + *pages, cmd, &left);
                         if (rc)
                                 GOTO(preprw_cleanup, rc);
 
-                        tot_bytes += nb->len;
+                        tot_bytes += rnb->rnb_len;
                 }
         }
 
@@ -457,11 +463,11 @@ preprw_cleanup:
          */
         CERROR("cleaning up %u pages (%d obdos)\n", *pages, objcount);
         for (i = 0; i < *pages; i++) {
-                cfs_kunmap(res[i].page);
+                cfs_kunmap(lnb[i].lnb_page);
                 /* NB if this is a persistent page, __free_pages will just
                  * lose the extra ref gained above */
-                OBD_PAGE_FREE(res[i].page);
-                res[i].page = NULL;
+                OBD_PAGE_FREE(lnb[i].lnb_page);
+                lnb[i].lnb_page = NULL;
                 cfs_atomic_dec(&obd->u.echo.eo_prep);
         }
 
@@ -470,8 +476,8 @@ preprw_cleanup:
 
 int echo_commitrw(int cmd, struct obd_export *export, struct obdo *oa,
                   int objcount, struct obd_ioobj *obj,
-                  struct niobuf_remote *rb, int niocount,
-                  struct niobuf_local *res, struct obd_trans_info *oti, int rc)
+                  struct niobuf_remote *rnb, int niocount,
+                  struct niobuf_local *lnb, struct obd_trans_info *oti, int rc)
 {
         struct obd_device *obd;
         int pgs = 0;
@@ -493,8 +499,8 @@ int echo_commitrw(int cmd, struct obd_export *export, struct obdo *oa,
                        objcount, niocount);
         }
 
-        if (niocount && res == NULL) {
-                CERROR("NULL res niobuf with niocount %d\n", niocount);
+        if (niocount && lnb == NULL) {
+                CERROR("NULL local niobuf with niocount %d\n", niocount);
                 RETURN(-EINVAL);
         }
 
@@ -507,8 +513,9 @@ int echo_commitrw(int cmd, struct obd_export *export, struct obdo *oa,
                               (oa->o_flags & OBD_FL_DEBUG_CHECK) != 0);
                 int j;
 
-                for (j = 0 ; j < obj->ioo_bufcnt ; j++, rb++) {
-                        int vrc = echo_finalize_lb(oa, obj, rb, &pgs, &res[pgs], verify);
+                for (j = 0 ; j < obj->ioo_bufcnt ; j++, rnb++) {
+                        int vrc = echo_finalize_lb(oa, obj, rnb, &pgs,
+                                                   &lnb[pgs], verify);
 
                         if (vrc == 0)
                                 continue;
@@ -535,7 +542,7 @@ commitrw_cleanup:
                niocount - pgs - 1, objcount);
 
         while (pgs < niocount) {
-                cfs_page_t *page = res[pgs++].page;
+                cfs_page_t *page = lnb[pgs++].lnb_page;
 
                 if (page == NULL)
                         continue;

@@ -43,11 +43,10 @@
 
 #include "ofd_internal.h"
 
-static int ofd_preprw_read(const struct lu_env *env,
-                              struct ofd_device *ofd, struct lu_fid *fid,
-                              struct lu_attr *la, int niocount,
-                              struct niobuf_remote *nb, int *nr_local,
-                              struct niobuf_local *res)
+static int ofd_preprw_read(const struct lu_env *env, struct ofd_device *ofd,
+                           struct lu_fid *fid, struct lu_attr *la, int niocount,
+                           struct niobuf_remote *rnb, int *nr_local,
+                           struct niobuf_local *lnb)
 {
         struct ofd_object *fo;
         int i, j, rc, tot_bytes = 0;
@@ -64,14 +63,14 @@ static int ofd_preprw_read(const struct lu_env *env,
 
         /* parse remote buffers to local buffers and prepare the latter */
         for (i = 0, j = 0; i < niocount; i++) {
-                rc = dt_bufs_get(env, ofd_object_child(fo), nb + i,
-                                 res + j, 0, ofd_object_capa(env, fo));
+                rc = dt_bufs_get(env, ofd_object_child(fo), rnb + i,
+                                 lnb + j, 0, ofd_object_capa(env, fo));
                 LASSERT(rc > 0);
                 LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
                 /* correct index for local buffers to continue with */
                 j += rc;
                 LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
-                tot_bytes += nb[i].len;
+                tot_bytes += rnb[i].rnb_len;
         }
 
         *nr_local = j;
@@ -80,7 +79,7 @@ static int ofd_preprw_read(const struct lu_env *env,
                          ofd_object_capa(env, fo));
         if (unlikely(rc))
                 GOTO(unlock, rc);
-        rc = dt_read_prep(env, ofd_object_child(fo), res, *nr_local);
+        rc = dt_read_prep(env, ofd_object_child(fo), lnb, *nr_local);
         lprocfs_counter_add(ofd_obd(ofd)->obd_stats,
                             LPROC_OFD_READ_BYTES, tot_bytes);
 unlock:
@@ -95,8 +94,8 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                                struct ofd_device *ofd, struct lu_fid *fid,
                                struct lu_attr *la, struct obdo *oa,
                                int objcount, struct obd_ioobj *obj,
-                               struct niobuf_remote *nb, int *nr_local,
-                               struct niobuf_local *res,
+                               struct niobuf_remote *rnb, int *nr_local,
+                               struct niobuf_local *lnb,
                                struct obd_trans_info *oti)
 {
         struct ofd_object *fo;
@@ -153,21 +152,21 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
         /* parse remote buffers to local buffers and prepare the latter */
         for (i = 0, j = 0; i < obj->ioo_bufcnt; i++) {
                 rc = dt_bufs_get(env, ofd_object_child(fo),
-                                 nb + i, res + j, 1,
+                                 rnb + i, lnb + j, 1,
                                  ofd_object_capa(env, fo));
                 LASSERT(rc > 0);
                 LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
                 /* correct index for local buffers to continue with */
                 for (k = 0; k < rc; k++) {
-                        res[j+k].flags = nb[i].flags;
-                        if (!(nb[i].flags & OBD_BRW_ASYNC))
+                        lnb[j+k].lnb_flags = rnb[i].rnb_flags;
+                        if (!(rnb[i].rnb_flags & OBD_BRW_ASYNC))
                                 oti->oti_sync_write = 1;
-                        if (!(nb[i].flags & OBD_BRW_FROM_GRANT))
+                        if (!(rnb[i].rnb_flags & OBD_BRW_FROM_GRANT))
                                 from_grant = 0;
                 }
                 j += rc;
                 LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
-                tot_bytes += nb[i].len;
+                tot_bytes += rnb[i].rnb_len;
         }
         *nr_local = j;
         LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
@@ -177,15 +176,15 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
          * cache (flag OBD_BRW_FROM_GRANT not set) and not enough free space
          * remains.
          */
-        rc = ofd_grant_prepare_write(env, exp, oa, res, *nr_local, from_grant);
+        rc = ofd_grant_prepare_write(env, exp, oa, lnb, *nr_local, from_grant);
         if (rc == 0) {
                 lprocfs_counter_add(ofd_obd(ofd)->obd_stats,
                                     LPROC_OFD_WRITE_BYTES, tot_bytes);
-                rc = dt_write_prep(env, ofd_object_child(fo), res, *nr_local);
+                rc = dt_write_prep(env, ofd_object_child(fo), lnb, *nr_local);
         }
 
         if (unlikely(rc != 0)) {
-                dt_bufs_put(env, ofd_object_child(fo), res, *nr_local);
+                dt_bufs_put(env, ofd_object_child(fo), lnb, *nr_local);
                 ofd_read_unlock(env, fo);
         }
 
@@ -195,10 +194,10 @@ out2:
 }
 
 int ofd_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
-                  int objcount, struct obd_ioobj *obj,
-                  struct niobuf_remote *nb, int *nr_local,
-                  struct niobuf_local *res, struct obd_trans_info *oti,
-                  struct lustre_capa *capa)
+               int objcount, struct obd_ioobj *obj,
+               struct niobuf_remote *rnb, int *nr_local,
+               struct niobuf_local *lnb, struct obd_trans_info *oti,
+               struct lustre_capa *capa)
 {
         struct lu_env *env = oti->oti_env;
         struct ofd_device *ofd = ofd_exp(exp);
@@ -230,7 +229,7 @@ int ofd_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
                         la_from_obdo(&info->fti_attr, oa, OBD_MD_FLGETATTR);
                         rc = ofd_preprw_write(env, exp, ofd, &info->fti_fid,
                                                  &info->fti_attr, oa, objcount,
-                                                 obj, nb, nr_local, res, oti);
+                                                 obj, rnb, nr_local, lnb, oti);
                 }
         } else if (cmd == OBD_BRW_READ) {
                 rc = ofd_auth_capa(ofd, &info->fti_fid, oa->o_seq,
@@ -239,7 +238,7 @@ int ofd_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
                         ofd_grant_prepare_read(env, exp, oa);
                         rc = ofd_preprw_read(env, ofd, &info->fti_fid,
                                              &info->fti_attr, obj->ioo_bufcnt,
-                                             nb, nr_local, res);
+                                             rnb, nr_local, lnb);
                         obdo_from_la(oa, &info->fti_attr, LA_ATIME);
                 }
         } else {
@@ -252,7 +251,7 @@ int ofd_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
 static int
 ofd_commitrw_read(const struct lu_env *env, struct ofd_device *ofd,
                      struct lu_fid *fid, int objcount, int niocount,
-                     struct niobuf_local *res)
+                     struct niobuf_local *lnb)
 {
         struct ofd_object *fo;
         ENTRY;
@@ -264,7 +263,7 @@ ofd_commitrw_read(const struct lu_env *env, struct ofd_device *ofd,
                 RETURN(PTR_ERR(fo));
         LASSERT(fo != NULL);
         LASSERT(ofd_object_exists(fo));
-        dt_bufs_put(env, ofd_object_child(fo), res, niocount);
+        dt_bufs_put(env, ofd_object_child(fo), lnb, niocount);
 
         ofd_read_unlock(env, fo);
         ofd_object_put(env, fo);
@@ -276,7 +275,7 @@ static int
 ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
                       struct lu_fid *fid, struct lu_attr *la,
                       struct filter_fid *ff, int objcount,
-                      int niocount, struct niobuf_local *res,
+                      int niocount, struct niobuf_local *lnb,
                       struct obd_trans_info *oti, int old_rc)
 {
         struct ofd_thread_info *info = ofd_info(env);
@@ -330,7 +329,7 @@ retry:
                         GOTO(out_stop, rc);
         }
 
-        rc = dt_declare_write_commit(env, o, res, niocount, th);
+        rc = dt_declare_write_commit(env, o, lnb, niocount, th);
         if (rc)
                 GOTO(out_stop, rc);
 
@@ -344,7 +343,7 @@ retry:
         if (rc)
                 GOTO(out_stop, rc);
 
-        rc = dt_write_commit(env, o, res, niocount, th);
+        rc = dt_write_commit(env, o, lnb, niocount, th);
         if (rc)
                 GOTO(out_stop, rc);
 
@@ -378,7 +377,7 @@ out_stop:
         }
 out:
         ofd_grant_commit(env, info->fti_exp, old_rc);
-        dt_bufs_put(env, o, res, niocount);
+        dt_bufs_put(env, o, lnb, niocount);
         ofd_read_unlock(env, fo);
         ofd_object_put(env, fo);
 
@@ -403,8 +402,9 @@ void ofd_prepare_fidea(struct filter_fid *ff, struct obdo *oa)
 
 int ofd_commitrw(int cmd, struct obd_export *exp,
                     struct obdo *oa, int objcount, struct obd_ioobj *obj,
-                    struct niobuf_remote *nb, int npages, struct niobuf_local *res,
-                    struct obd_trans_info *oti, int old_rc)
+                    struct niobuf_remote *rnb, int npages,
+                    struct niobuf_local *lnb, struct obd_trans_info *oti,
+                    int old_rc)
 {
         struct ofd_device      *ofd = ofd_exp(exp);
         struct lu_env             *env = oti->oti_env;
@@ -439,7 +439,7 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
 
                 rc = ofd_commitrw_write(env, ofd, &info->fti_fid,
                                            &info->fti_attr, &info->fti_mds_fid,
-                                           objcount, npages, res, oti, old_rc);
+                                           objcount, npages, lnb, oti, old_rc);
                 if (rc == 0)
                         obdo_from_la(oa, &info->fti_attr,
                                      OFD_VALID_FLAGS | LA_GID | LA_UID);
@@ -452,8 +452,8 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                                 memset(rcs, 0, npages * sizeof(__u32));
                                 /* XXX: update rcs */
                                 /* for (i = 0; i < npages; i++)
-                                if (res[i].rc < 0)
-                                        rcs[res[i].rindex] = res[i].rc;
+                                if (lnb[i].lnb_rc < 0)
+                                        rcs[lnb[i].rindex] = lnb[i].lnb_rc;
                                 */
                         }
 #endif
@@ -476,7 +476,7 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                         }
                 }
                 rc = ofd_commitrw_read(env, ofd, &info->fti_fid, objcount,
-                                          npages, res);
+                                          npages, lnb);
                 if (old_rc)
                         rc = old_rc;
         } else {

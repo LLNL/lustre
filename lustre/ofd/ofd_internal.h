@@ -374,13 +374,12 @@ extern struct ldlm_valblock_ops ofd_lvbo;
 
 /* ofd_io.c */
 int ofd_preprw(int cmd, struct obd_export *exp, struct obdo *oa, int objcount,
-               struct obd_ioobj *obj, struct niobuf_remote *nb, int *nr_local,
-               struct niobuf_local *res, struct obd_trans_info *oti,
+               struct obd_ioobj *obj, struct niobuf_remote *rnb, int *nr_local,
+               struct niobuf_local *lnb, struct obd_trans_info *oti,
                struct lustre_capa *capa);
-int ofd_commitrw(int cmd, struct obd_export *exp, struct obdo *oa,
-                 int objcount, struct obd_ioobj *obj, struct niobuf_remote *nb,
-                 int npages, struct niobuf_local *res,
-                 struct obd_trans_info *oti, int rc);
+int ofd_commitrw(int cmd, struct obd_export *exp, struct obdo *oa, int objcount,
+                 struct obd_ioobj *obj, struct niobuf_remote *rnb, int npages,
+                 struct niobuf_local *lnb, struct obd_trans_info *oti, int rc);
 void flip_into_page_cache(struct inode *inode, struct page *new_page);
 
 /* ofd_io_*.c */
@@ -475,10 +474,9 @@ long ofd_grant_connect(const struct lu_env *env, struct obd_export *exp,
 void ofd_grant_discard(struct obd_export *exp);
 void ofd_grant_prepare_read(const struct lu_env *env,
                             struct obd_export *exp, struct obdo *oa);
-int ofd_grant_prepare_write(const struct lu_env *env,
-                            struct obd_export *exp, struct obdo *oa,
-                            struct niobuf_local *res, int niocount,
-                            int sync_write);
+int ofd_grant_prepare_write(const struct lu_env *env, struct obd_export *exp,
+                            struct obdo *oa, struct niobuf_local *lnb,
+                            int niocount, int sync_write);
 void ofd_grant_commit(const struct lu_env *env, struct obd_export *exp, int rc);
 /* ofd_obd.c */
 int ofd_create(struct obd_export *exp, struct obdo *oa,
