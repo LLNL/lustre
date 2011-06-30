@@ -482,10 +482,9 @@ long ofd_grant_connect(const struct lu_env *env, struct obd_export *exp,
 void ofd_grant_discard(struct obd_export *exp);
 void ofd_grant_prepare_read(const struct lu_env *env,
                             struct obd_export *exp, struct obdo *oa);
-int ofd_grant_prepare_write(const struct lu_env *env,
-                            struct obd_export *exp, struct obdo *oa,
-                            struct niobuf_local *res, int niocount,
-                            int sync_write);
+int ofd_grant_prepare_write(const struct lu_env *env, struct obd_export *exp,
+                            struct obdo *oa, struct niobuf_local *lnb,
+                            int niocount, int sync_write);
 void ofd_grant_commit(const struct lu_env *env, struct obd_export *exp, int rc);
 
 /* The same as osc_build_res_name() */
