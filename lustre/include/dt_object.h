@@ -1021,7 +1021,7 @@ static inline int dt_bufs_get(const struct lu_env *env, struct dt_object *d,
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_get_bufs);
-        return d->do_body_ops->dbo_get_bufs(env, d, r->offset, r->len,
+        return d->do_body_ops->dbo_get_bufs(env, d, r->rnb_offset, r->rnb_len,
                                             l, rw, capa);
 }
 

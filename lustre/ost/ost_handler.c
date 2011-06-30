@@ -564,17 +564,17 @@ static int ost_brw_lock_get(int mode, struct obd_export *exp,
         LASSERT(mode == LCK_PR || mode == LCK_PW);
         LASSERT(!lustre_handle_is_used(lh));
 
-        if (nrbufs == 0 || !(nb[0].flags & OBD_BRW_SRVLOCK))
+        if (nrbufs == 0 || !(nb[0].rnb_flags & OBD_BRW_SRVLOCK))
                 RETURN(0);
 
         for (i = 1; i < nrbufs; i ++)
-                if ((nb[0].flags & OBD_BRW_SRVLOCK) !=
-                    (nb[i].flags & OBD_BRW_SRVLOCK))
+                if ((nb[0].rnb_flags & OBD_BRW_SRVLOCK) !=
+                    (nb[i].rnb_flags & OBD_BRW_SRVLOCK))
                         RETURN(-EFAULT);
 
-        policy.l_extent.start = nb[0].offset & CFS_PAGE_MASK;
-        policy.l_extent.end   = (nb[nrbufs - 1].offset +
-                                 nb[nrbufs - 1].len - 1) | ~CFS_PAGE_MASK;
+        policy.l_extent.start = nb[0].rnb_offset & CFS_PAGE_MASK;
+        policy.l_extent.end   = (nb[nrbufs - 1].rnb_offset +
+                                 nb[nrbufs - 1].rnb_len - 1) | ~CFS_PAGE_MASK;
 
         RETURN(ldlm_cli_enqueue_local(exp->exp_obd->obd_namespace, &res_id,
                                       LDLM_EXTENT, &policy, mode, &flags,
@@ -588,8 +588,9 @@ static void ost_brw_lock_put(int mode,
 {
         ENTRY;
         LASSERT(mode == LCK_PR || mode == LCK_PW);
-        LASSERT((obj->ioo_bufcnt > 0 && (niob[0].flags & OBD_BRW_SRVLOCK)) ==
-                lustre_handle_is_used(lh));
+        LASSERT((obj->ioo_bufcnt > 0 &&
+                (niob[0].rnb_flags & OBD_BRW_SRVLOCK)) ==
+                 lustre_handle_is_used(lh));
         if (lustre_handle_is_used(lh))
                 ldlm_lock_decref(lh, mode);
         EXIT;
@@ -669,9 +670,10 @@ static int ost_rw_prolong_locks(struct ptlrpc_request *req, struct obd_ioobj *ob
 
         opd.opd_mode = mode;
         opd.opd_exp = req->rq_export;
-        opd.opd_policy.l_extent.start = nb[0].offset & CFS_PAGE_MASK;
-        opd.opd_policy.l_extent.end = (nb[nrbufs - 1].offset +
-                                       nb[nrbufs - 1].len - 1) | ~CFS_PAGE_MASK;
+        opd.opd_policy.l_extent.start = nb[0].rnb_offset & CFS_PAGE_MASK;
+        opd.opd_policy.l_extent.end = (nb[nrbufs - 1].rnb_offset +
+                                       nb[nrbufs - 1].rnb_len - 1);
+        opd.opd_policy.l_extent.end |= ~CFS_PAGE_MASK;
 
         /* prolong locks for the current service time of the corresponding
          * portal (= OST_IO_PORTAL) */
@@ -863,7 +865,7 @@ static int ost_brw_read(struct ptlrpc_request *req, struct obd_trans_info *oti)
 
         nob = 0;
         for (i = 0; i < npages; i++) {
-                int page_rc = local_nb[i].rc;
+                int page_rc = local_nb[i].lnb_rc;
 
                 if (page_rc < 0) {              /* error */
                         rc = page_rc;
@@ -872,15 +874,16 @@ static int ost_brw_read(struct ptlrpc_request *req, struct obd_trans_info *oti)
 
                 nob += page_rc;
                 if (page_rc != 0) {             /* some data! */
-                        LASSERT (local_nb[i].page != NULL);
-                        ptlrpc_prep_bulk_page(desc, local_nb[i].page,
-                                              local_nb[i].page_offset, page_rc);
+                        LASSERT (local_nb[i].lnb_page != NULL);
+                        ptlrpc_prep_bulk_page(desc, local_nb[i].lnb_page,
+                                              local_nb[i].lnb_page_offset,
+                                              page_rc);
                 }
 
-                if (page_rc != local_nb[i].len) { /* short read */
+                if (page_rc != local_nb[i].lnb_len) { /* short read */
                         /* All subsequent pages should be 0 */
                         while(++i < npages)
-                                LASSERT(local_nb[i].rc == 0);
+                                LASSERT(local_nb[i].lnb_rc == 0);
                         break;
                 }
         }
@@ -1010,7 +1013,7 @@ static int ost_brw_write(struct ptlrpc_request *req, struct obd_trans_info *oti)
             &RMF_NIOBUF_REMOTE, RCL_CLIENT) / sizeof(*remote_nb)))
                 GOTO(out, rc = -EFAULT);
 
-        if ((remote_nb[0].flags & OBD_BRW_MEMALLOC) &&
+        if ((remote_nb[0].rnb_flags & OBD_BRW_MEMALLOC) &&
             (exp->exp_connection->c_peer.nid == exp->exp_connection->c_self))
                 cfs_memory_pressure_set();
 
@@ -1094,8 +1097,9 @@ static int ost_brw_write(struct ptlrpc_request *req, struct obd_trans_info *oti)
         /* NB Having prepped, we must commit... */
 
         for (i = 0; i < npages; i++)
-                ptlrpc_prep_bulk_page(desc, local_nb[i].page,
-                                      local_nb[i].page_offset, local_nb[i].len);
+                ptlrpc_prep_bulk_page(desc, local_nb[i].lnb_page,
+                                      local_nb[i].lnb_page_offset,
+                                      local_nb[i].lnb_len);
 
         rc = sptlrpc_svc_prep_bulk(req, desc);
         if (rc != 0)
@@ -1184,9 +1188,9 @@ skip_transfer:
                                    body->oa.o_id,
                                    body->oa.o_valid & OBD_MD_FLGROUP ?
                                                 body->oa.o_seq : (__u64)0,
-                                   local_nb[0].file_offset,
-                                   local_nb[npages-1].file_offset +
-                                   local_nb[npages-1].len - 1 );
+                                   local_nb[0].lnb_file_offset,
+                                   local_nb[npages-1].lnb_file_offset +
+                                   local_nb[npages-1].lnb_len - 1 );
                 CERROR("client csum %x, original server csum %x, "
                        "server csum now %x\n",
                        client_cksum, server_cksum, new_cksum);
@@ -1197,15 +1201,15 @@ skip_transfer:
 
                 /* set per-requested niobuf return codes */
                 for (i = j = 0; i < niocount; i++) {
-                        int len = remote_nb[i].len;
+                        int len = remote_nb[i].rnb_len;
 
                         nob += len;
                         rcs[i] = 0;
                         do {
                                 LASSERT(j < npages);
-                                if (local_nb[j].rc < 0)
-                                        rcs[i] = local_nb[j].rc;
-                                len -= local_nb[j].len;
+                                if (local_nb[j].lnb_rc < 0)
+                                        rcs[i] = local_nb[j].lnb_rc;
+                                len -= local_nb[j].lnb_len;
                                 j++;
                         } while (len > 0);
                         LASSERT(len == 0);
@@ -1816,9 +1820,9 @@ static int ost_rw_hpreq_lock_match(struct ptlrpc_request *req,
         if (opc == OST_READ)
                 mode |= LCK_PR;
 
-        start = nb[0].offset & CFS_PAGE_MASK;
-        end = (nb[ioo->ioo_bufcnt - 1].offset +
-               nb[ioo->ioo_bufcnt - 1].len - 1) | ~CFS_PAGE_MASK;
+        start = nb[0].rnb_offset & CFS_PAGE_MASK;
+        end = (nb[ioo->ioo_bufcnt - 1].rnb_offset +
+               nb[ioo->ioo_bufcnt - 1].rnb_len - 1) | ~CFS_PAGE_MASK;
 
         LASSERT(lock->l_resource != NULL);
         if (!osc_res_name_eq(ioo->ioo_id, ioo->ioo_seq,
@@ -1878,7 +1882,7 @@ static int ost_rw_hpreq_check(struct ptlrpc_request *req)
             niocount != (req_capsule_get_size(&req->rq_pill, &RMF_NIOBUF_REMOTE,
             RCL_CLIENT) / sizeof(*nb)))
                 RETURN(-EFAULT);
-        if (niocount != 0 && (nb[0].flags & OBD_BRW_SRVLOCK))
+        if (niocount != 0 && (nb[0].rnb_flags & OBD_BRW_SRVLOCK))
                 RETURN(-EFAULT);
 
         mode = LCK_PW;
@@ -2053,7 +2057,7 @@ static int ost_hpreq_handler(struct ptlrpc_request *req)
                                 RETURN(-EFAULT);
                         }
 
-                        if (niocount == 0 || !(nb[0].flags & OBD_BRW_SRVLOCK))
+                        if (niocount == 0 || !(nb[0].rnb_flags & OBD_BRW_SRVLOCK))
                                 req->rq_ops = &ost_hpreq_rw;
                 } else if (opc == OST_PUNCH) {
                         req_capsule_init(&req->rq_pill, req, RCL_SERVER);
