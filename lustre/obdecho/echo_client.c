@@ -2552,9 +2552,9 @@ static int echo_client_prep_commit(struct obd_export *exp, int rw,
                         npages = tot_pages;
 
                 for (i = 0; i < npages; i++, off += CFS_PAGE_SIZE) {
-                        rnb[i].offset = off;
-                        rnb[i].len = CFS_PAGE_SIZE;
-                        rnb[i].flags = brw_flags;
+                        rnb[i].rnb_offset = off;
+                        rnb[i].rnb_len = CFS_PAGE_SIZE;
+                        rnb[i].rnb_flags = brw_flags;
                 }
 
                 ioo.ioo_bufcnt = npages;
@@ -2568,10 +2568,10 @@ static int echo_client_prep_commit(struct obd_export *exp, int rw,
                 LASSERT(lpages == npages);
 
                 for (i = 0; i < lpages; i++) {
-                        cfs_page_t *page = lnb[i].page;
+                        cfs_page_t *page = lnb[i].lnb_page;
 
                         /* read past eof? */
-                        if (page == NULL && lnb[i].rc == 0)
+                        if (page == NULL && lnb[i].lnb_rc == 0)
                                 continue;
 
                         if (oa->o_id == ECHO_PERSISTENT_OBJID ||
@@ -2582,13 +2582,13 @@ static int echo_client_prep_commit(struct obd_export *exp, int rw,
                         if (rw == OBD_BRW_WRITE)
                                 echo_client_page_debug_setup(lsm, page, rw,
                                                              oa->o_id,
-                                                             rnb[i].offset,
-                                                             rnb[i].len);
+                                                             rnb[i].rnb_offset,
+                                                             rnb[i].rnb_len);
                         else
                                 echo_client_page_debug_check(lsm, page,
                                                              oa->o_id,
-                                                             rnb[i].offset,
-                                                             rnb[i].len);
+                                                             rnb[i].rnb_offset,
+                                                             rnb[i].rnb_len);
                 }
 
                 ret = obd_commitrw(rw, exp, oa, 1, &ioo, rnb, npages, lnb,

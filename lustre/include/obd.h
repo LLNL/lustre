@@ -741,23 +741,14 @@ struct lmv_obd {
 };
 
 struct niobuf_local {
-        __u64           file_offset;
-        __u32           page_offset;
-        __u32           len;
-        __u32           flags;
-        int             rc;
-        cfs_page_t     *page;
-        void           *obj;
+        __u64           lnb_file_offset;
+        __u32           lnb_page_offset;
+        __u32           lnb_len;
+        __u32           lnb_flags;
+        int             lnb_rc;
+        cfs_page_t     *lnb_page;
+        void           *lnb_obj;
 };
-
- /* XXX compat macros until struct niobuf_local fields are renamed */
-#define lnb_file_offset file_offset
-#define lnb_page_offset page_offset
-#define lnb_len         len
-#define lnb_flags       flags
-#define lnb_rc          rc
-#define lnb_page        page
-#define lnb_obj         obj
 
 #define LUSTRE_FLD_NAME         "fld"
 #define LUSTRE_SEQ_NAME         "seq"
