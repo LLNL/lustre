@@ -1181,6 +1181,7 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 						  oa->o_seq);
 			if (rc)
 				break;
+			}
 		}
 		if (i > 0) {
 			/* some objects got created, we can return

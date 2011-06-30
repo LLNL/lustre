@@ -576,12 +576,4 @@ static inline void ofd_prepare_fidea(struct filter_fid *ff, struct obdo *oa)
 	ff->ff_seq = cpu_to_le64(oa->o_seq);
 }
 
-/* niobuf_remote has no rnb_ prefix in master */
-#define rnb_offset offset
-#define rnb_flags  flags
-#define rnb_len    len
-/* the same for niobuf_local */
-#define lnb_flags flags
-#define lnb_rc    rc
-
 #endif /* _OFD_INTERNAL_H */

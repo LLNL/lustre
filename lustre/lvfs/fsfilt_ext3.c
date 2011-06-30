@@ -348,8 +348,8 @@ static int fsfilt_ext3_credits_needed(int objcount, struct fsfilt_objinfo *fso,
 
         for (i = 0, j = 0; i < objcount; i++, fso++) {
                 /* two or more dindirect blocks in case we cross boundary */
-                int ndind = (long)((nb[j + fso->fso_bufcnt - 1].lnb_file_offset -
-                                    nb[j].lnb_file_offset) >>
+                int ndind = (long)((nb[j + fso->fso_bufcnt - 1].lnb_file_offset
+                                   - nb[j].lnb_file_offset) >>
                                    sb->s_blocksize_bits) /
                         (EXT3_ADDR_PER_BLOCK(sb) * EXT3_ADDR_PER_BLOCK(sb));
                 nbitmaps += min(fso->fso_bufcnt, ndind > 0 ? ndind : 2);
@@ -367,7 +367,8 @@ static int fsfilt_ext3_credits_needed(int objcount, struct fsfilt_objinfo *fso,
                         nbitmaps++;     /* additional indirect */
                         next_indir = nb[i].lnb_file_offset +
                                 (EXT3_ADDR_PER_BLOCK(sb)<<sb->s_blocksize_bits);
-                } else if (nb[i].lnb_file_offset != nb[i - 1].lnb_file_offset + sb->s_blocksize) {
+                } else if (nb[i].lnb_file_offset !=
+                           nb[i - 1].lnb_file_offset + sb->s_blocksize) {
                         nbitmaps++;     /* additional indirect */
                 }
                 nbitmaps += blockpp;    /* each leaf in different group? */

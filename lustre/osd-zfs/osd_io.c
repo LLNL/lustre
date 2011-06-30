@@ -210,27 +210,27 @@ static int osd_bufs_put(const struct lu_env *env, struct dt_object *dt,
 	LASSERT(obj->oo_db);
 
 	for (i = 0; i < npages; i++) {
-		if (lnb[i].page == NULL)
+		if (lnb[i].lnb_page == NULL)
 			continue;
-		if (lnb[i].page->mapping == (void *)obj) {
+		if (lnb[i].lnb_page->mapping == (void *)obj) {
 			/* this is anonymous page allocated for copy-write */
-			lnb[i].page->mapping = NULL;
-			__free_page(lnb[i].page);
+			lnb[i].lnb_page->mapping = NULL;
+			__free_page(lnb[i].lnb_page);
 			cfs_atomic_dec(&osd->od_zerocopy_alloc);
 		} else {
 			/* see comment in osd_bufs_get_read() */
-			ptr = (unsigned long)lnb[i].dentry;
+			ptr = (unsigned long)lnb[i].lnb_obj;
 			if (ptr & 1UL) {
 				ptr &= ~1UL;
 				dmu_buf_rele((void *)ptr, osd_zerocopy_tag);
 				cfs_atomic_dec(&osd->od_zerocopy_pin);
-			} else if (lnb[i].dentry != NULL) {
-				dmu_return_arcbuf((void *)lnb[i].dentry);
+			} else if (lnb[i].lnb_obj != NULL) {
+				dmu_return_arcbuf((void *)lnb[i].lnb_obj);
 				cfs_atomic_dec(&osd->od_zerocopy_loan);
 			}
 		}
-		lnb[i].page = NULL;
-		lnb[i].dentry = NULL;
+		lnb[i].lnb_page = NULL;
+		lnb[i].lnb_obj = NULL;
 	}
 
 	return 0;
@@ -265,8 +265,8 @@ static int osd_bufs_get_read(const struct lu_env *env, struct osd_object *obj,
 	 */
 	while (len > 0) {
 		rc = -dmu_buf_hold_array_by_bonus(obj->oo_db, off, len, TRUE,
-						osd_zerocopy_tag, &numbufs,
-						&dbp);
+						  osd_zerocopy_tag, &numbufs,
+						  &dbp);
 		LASSERT(rc == 0);
 
 		for (i = 0; i < numbufs; i++) {
@@ -289,15 +289,15 @@ static int osd_bufs_get_read(const struct lu_env *env, struct osd_object *obj,
 				thispage -= bufoff & (CFS_PAGE_SIZE - 1);
 				thispage = min(tocpy, thispage);
 
-				lnb->rc = 0;
+				lnb->lnb_rc = 0;
 				lnb->lnb_file_offset = off;
-				lnb->offset = bufoff & ~CFS_PAGE_MASK;
-				lnb->len = thispage;
-				lnb->page = kmem_to_page(dbp[i]->db_data +
-								bufoff);
+				lnb->lnb_page_offset = bufoff & ~CFS_PAGE_MASK;
+				lnb->lnb_len = thispage;
+				lnb->lnb_page = kmem_to_page(dbp[i]->db_data +
+							     bufoff);
 				/* mark just a single slot: we need this
 				 * reference to dbuf to be release once */
-				lnb->dentry = dbf;
+				lnb->lnb_obj = dbf;
 				dbf = NULL;
 
 				tocpy -= thispage;
@@ -357,21 +357,21 @@ static int osd_bufs_get_write(const struct lu_env *env, struct osd_object *obj,
 				plen = min_t(int, sz_in_block, CFS_PAGE_SIZE);
 
 				lnb[i].lnb_file_offset = off;
-				lnb[i].offset = 0;
-				lnb[i].len = plen;
-				lnb[i].rc = 0;
+				lnb[i].lnb_page_offset = 0;
+				lnb[i].lnb_len = plen;
+				lnb[i].lnb_rc = 0;
 				if (sz_in_block == bs)
-					lnb[i].dentry = (void *)abuf;
+					lnb[i].lnb_obj = (void *)abuf;
 				else
-					lnb[i].dentry = NULL;
+					lnb[i].lnb_obj = NULL;
 
 				/* this one is not supposed to fail */
-				lnb[i].page = kmem_to_page(abuf->b_data +
-							off_in_block);
-				LASSERT(lnb[i].page);
+				lnb[i].lnb_page = kmem_to_page(abuf->b_data +
+							       off_in_block);
+				LASSERT(lnb[i].lnb_page);
 
 				lprocfs_counter_add(osd->od_stats,
-						LPROC_OSD_ZEROCOPY_IO, 1);
+						    LPROC_OSD_ZEROCOPY_IO, 1);
 
 				sz_in_block -= plen;
 				len -= plen;
@@ -382,26 +382,26 @@ static int osd_bufs_get_write(const struct lu_env *env, struct osd_object *obj,
 			}
 		} else {
 			if (off_in_block == 0 && len < bs &&
-					off + len >= obj->oo_attr.la_size)
+			    off + len >= obj->oo_attr.la_size)
 				lprocfs_counter_add(osd->od_stats,
-						LPROC_OSD_TAIL_IO, 1);
+						    LPROC_OSD_TAIL_IO, 1);
 
 			/* can't use zerocopy, allocate temp. buffers */
 			while (sz_in_block > 0) {
 				plen = min_t(int, sz_in_block, CFS_PAGE_SIZE);
 
 				lnb[i].lnb_file_offset = off;
-				lnb[i].offset = 0;
-				lnb[i].len = plen;
-				lnb[i].rc = 0;
-				lnb[i].dentry = NULL;
+				lnb[i].lnb_page_offset = 0;
+				lnb[i].lnb_len = plen;
+				lnb[i].lnb_rc = 0;
+				lnb[i].lnb_obj = NULL;
 
-				lnb[i].page = alloc_page(OSD_GFP_IO);
-				if (unlikely(lnb[i].page == NULL))
+				lnb[i].lnb_page = alloc_page(OSD_GFP_IO);
+				if (unlikely(lnb[i].lnb_page == NULL))
 					GOTO(out_err, -ENOMEM);
 
-				LASSERT(lnb[i].page->mapping == NULL);
-				lnb[i].page->mapping = (void *)obj;
+				LASSERT(lnb[i].lnb_page->mapping == NULL);
+				lnb[i].lnb_page->mapping = (void *)obj;
 
 				cfs_atomic_inc(&osd->od_zerocopy_alloc);
 				lprocfs_counter_add(osd->od_stats,
@@ -473,7 +473,7 @@ static int osd_declare_write_commit(const struct lu_env *env,
 	oh = container_of0(th, struct osd_thandle, ot_super);
 
 	for (i = 0; i < npages; i++) {
-		if (lnb[i].rc)
+		if (lnb[i].lnb_rc)
 			/* ENOSPC, network RPC error, etc.
 			 * We don't want to book space for pages which will be
 			 * skipped in osd_write_commit(). Hence we skip pages
@@ -482,19 +482,19 @@ static int osd_declare_write_commit(const struct lu_env *env,
 		if (size == 0) {
 			/* first valid lnb */
 			offset = lnb[i].lnb_file_offset;
-			size = lnb[i].len;
+			size = lnb[i].lnb_len;
 			continue;
 		}
 		if (offset + size == lnb[i].lnb_file_offset) {
 			/* this lnb is contiguous to the previous one */
-			size += lnb[i].len;
+			size += lnb[i].lnb_len;
 			continue;
 		}
 
 		dmu_tx_hold_write(oh->ot_tx, obj->oo_db->db_object, offset,size);
 
 		offset = lnb->lnb_file_offset;
-		size = lnb->len;
+		size = lnb->lnb_len;
 	}
 
 	if (size)
@@ -527,40 +527,40 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 
 	for (i = 0; i < npages; i++) {
 		CDEBUG(D_INODE, "write %u bytes at %u\n",
-			(unsigned) lnb[i].len,
+			(unsigned) lnb[i].lnb_len,
 			(unsigned) lnb[i].lnb_file_offset);
 
-		if (lnb[i].rc) {
+		if (lnb[i].lnb_rc) {
 			/* ENOSPC, network RPC error, etc.
 			 * Unlike ldiskfs, zfs allocates new blocks on rewrite,
 			 * so we skip this page if lnb_rc is set to -ENOSPC */
 			CDEBUG(D_INODE, "obj "DFID": skipping lnb[%u]: rc=%d\n",
 				PFID(lu_object_fid(&dt->do_lu)), i,
-				lnb[i].rc);
+				lnb[i].lnb_rc);
 			continue;
 		}
 
-		if (lnb[i].page->mapping == (void *)obj) {
+		if (lnb[i].lnb_page->mapping == (void *)obj) {
 			dmu_write(osd->od_objset.os, obj->oo_db->db_object,
-				lnb[i].lnb_file_offset, lnb[i].len,
-				kmap(lnb[i].page), oh->ot_tx);
-			kunmap(lnb[i].page);
-		} else if (lnb[i].dentry) {
-			LASSERT(((unsigned long)lnb[i].dentry & 1) == 0);
+				  lnb[i].lnb_file_offset, lnb[i].lnb_len,
+				  kmap(lnb[i].lnb_page), oh->ot_tx);
+			kunmap(lnb[i].lnb_page);
+		} else if (lnb[i].lnb_obj) {
+			LASSERT(((unsigned long)lnb[i].lnb_obj & 1) == 0);
 			/* buffer loaned for zerocopy, try to use it.
 			 * notice that dmu_assign_arcbuf() is smart
 			 * enough to recognize changed blocksize
 			 * in this case it fallbacks to dmu_write() */
 			dmu_assign_arcbuf(obj->oo_db, lnb[i].lnb_file_offset,
-					(void *)lnb[i].dentry, oh->ot_tx);
+					(void *)lnb[i].lnb_obj, oh->ot_tx);
 			/* drop the reference, otherwise osd_put_bufs()
 			 * will be releasing it - bad! */
-			lnb[i].dentry = NULL;
+			lnb[i].lnb_obj = NULL;
 			cfs_atomic_dec(&osd->od_zerocopy_loan);
 		}
 
-		if (new_size < lnb[i].lnb_file_offset + lnb[i].len)
-			new_size = lnb[i].lnb_file_offset + lnb[i].len;
+		if (new_size < lnb[i].lnb_file_offset + lnb[i].lnb_len)
+			new_size = lnb[i].lnb_file_offset + lnb[i].lnb_len;
 	}
 
 	if (unlikely(new_size == 0)) {
@@ -599,20 +599,20 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
 	LASSERT(obj->oo_db);
 
 	for (i = 0; i < npages; i++) {
-		buf.lb_buf = kmap(lnb[i].page);
-		buf.lb_len = lnb[i].len;
+		buf.lb_buf = kmap(lnb[i].lnb_page);
+		buf.lb_len = lnb[i].lnb_len;
 		offset = lnb[i].lnb_file_offset;
 
 		CDEBUG(D_OTHER, "read %u bytes at %u\n",
-			(unsigned) lnb[i].len,
+			(unsigned) lnb[i].lnb_len,
 			(unsigned) lnb[i].lnb_file_offset);
-		lnb[i].rc = osd_read(env, dt, &buf, &offset, NULL);
-		kunmap(lnb[i].page);
+		lnb[i].lnb_rc = osd_read(env, dt, &buf, &offset, NULL);
+		kunmap(lnb[i].lnb_page);
 
-		if (lnb[i].rc < buf.lb_len) {
+		if (lnb[i].lnb_rc < buf.lb_len) {
 			/* all subsequent rc should be 0 */
 			while (++i < npages)
-				lnb[i].rc = 0;
+				lnb[i].lnb_rc = 0;
 			break;
 		}
 	}
