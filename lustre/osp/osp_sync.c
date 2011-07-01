@@ -864,7 +864,8 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
         OBD_SET_CTXT_MAGIC(&obd->obd_lvfs_ctxt);
         obd->obd_lvfs_ctxt.dt = d->opd_storage;
 
-        rc = llog_get_cat_list(obd, NULL, d->opd_index, 1, &osi->osi_cid);
+        rc = llog_get_cat_list(env, d->opd_storage, d->opd_index, 1,
+                               &osi->osi_cid);
         if (rc) {
                 CERROR("can't get id from catalogs: %d\n", rc);
                 RETURN(rc);
@@ -889,7 +890,8 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
                 RETURN(rc);
         }
 
-        rc = llog_put_cat_list(obd, NULL, d->opd_index, 1, &osi->osi_cid);
+        rc = llog_put_cat_list(env, d->opd_storage, d->opd_index, 1,
+                               &osi->osi_cid);
         if (rc) {
                 CERROR("rc: %d\n", rc);
                 ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
