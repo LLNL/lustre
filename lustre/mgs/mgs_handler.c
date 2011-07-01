@@ -966,12 +966,9 @@ out_free:
                 OBD_FREE(lcfg, data->ioc_plen1);
                 break;
         }
-
-        case OBD_IOC_POOL: {
+        case OBD_IOC_POOL:
                 rc = mgs_iocontrol_pool(&env, mgs, data);
                 break;
-        }
-
         case OBD_IOC_DUMP_LOG: {
                 struct llog_ctxt *ctxt;
                 ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
@@ -979,7 +976,6 @@ out_free:
                 llog_ctxt_put(ctxt);
                 break;
         }
-
         case OBD_IOC_LLOG_CHECK:
         case OBD_IOC_LLOG_INFO:
         case OBD_IOC_LLOG_PRINT: {
@@ -990,10 +986,10 @@ out_free:
                 llog_ctxt_put(ctxt);
                 break;
         }
-
         default:
-                CDEBUG(D_INFO, "unknown command %x\n", cmd);
-                rc = -EINVAL;
+                CERROR("%s: unknown command %#x\n",
+                       mgs->mgs_obd->obd_name, cmd);
+                rc = -ENOTTY;
                 break;
         }
 
@@ -1009,7 +1005,7 @@ static int mgs_connect_to_osd(struct mgs_device *m, const char *nextdev)
         int                      rc;
         ENTRY;
 
-        OBD_ALLOC(data, sizeof(*data));
+        OBD_ALLOC_PTR(data);
         if (data == NULL)
                 GOTO(out, rc = -ENOMEM);
 
@@ -1029,14 +1025,11 @@ static int mgs_connect_to_osd(struct mgs_device *m, const char *nextdev)
         }
 
         m->mgs_bottom = lu2dt_dev(m->mgs_bottom_exp->exp_obd->obd_lu_dev);
-        m->mgs_dt_dev.dd_lu_dev.ld_site =
-                m->mgs_bottom_exp->exp_obd->obd_lu_dev->ld_site;
+        m->mgs_dt_dev.dd_lu_dev.ld_site = m->mgs_bottom->dd_lu_dev.ld_site;
         LASSERT(m->mgs_dt_dev.dd_lu_dev.ld_site);
-        m->mgs_bottom = lu2dt_dev(m->mgs_bottom_exp->exp_obd->obd_lu_dev);
-
 out:
         if (data)
-                OBD_FREE(data, sizeof(*data));
+                OBD_FREE_PTR(data);
         RETURN(rc);
 }
 
@@ -1084,7 +1077,7 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
         }
 
         rc = llog_setup_named(obd, &obd->obd_olg, LLOG_CONFIG_ORIG_CTXT,
-                        obd, 0, NULL, "CONFIGS", &llog_osd_ops);
+                              obd, 0, NULL, "CONFIGS", &llog_osd_ops);
         if (rc)
                 GOTO(err_fs, rc);
 
@@ -1180,7 +1173,7 @@ static int mgs_process_config(const struct lu_env *env,
 }
 
 static int mgs_object_init(const struct lu_env *env, struct lu_object *o,
-                            const struct lu_object_conf *unused)
+                           const struct lu_object_conf *unused)
 {
         struct mgs_device *d = lu2mgs_dev(o->lo_dev);
         struct lu_device  *under;
