@@ -59,7 +59,7 @@ void llog_unpack_buffer(int fd, struct llog_log_hdr *llog_buf,
 #define CANCELLED 0x678
 
 #define PTL_CMD_BASE 100
-char* portals_command[17]=
+char* portals_command[17] =
 {
         "REGISTER_PEER_FD",
         "CLOSE_CONNECTION",
@@ -89,13 +89,13 @@ int main(int argc, char **argv)
 
         setlinebuf(stdout);
 
-        if(argc != 2 ){
+        if (argc != 2) {
                 printf("Usage: llog_reader filename\n");
                 return -1;
         }
 
         fd = open(argv[1],O_RDONLY);
-        if (fd < 0){
+        if (fd < 0) {
                 printf("Could not open the file %s\n", argv[1]);
                 goto out;
         }
@@ -123,20 +123,20 @@ int llog_pack_buffer(int fd, struct llog_log_hdr **llog,
         int rc = 0, recs_num,rd;
         off_t file_size;
         struct stat st;
-        char *file_buf=NULL, *recs_buf=NULL;
-        struct llog_rec_hdr **recs_pr=NULL;
-        char *ptr=NULL;
+        char *file_buf = NULL, *recs_buf = NULL;
+        struct llog_rec_hdr **recs_pr = NULL;
+        char *ptr = NULL;
         int i;
 
         rc = fstat(fd,&st);
-        if (rc < 0){
+        if (rc < 0) {
                 printf("Get file stat error.\n");
                 goto out;
         }
         file_size = st.st_size;
 
         file_buf = malloc(file_size);
-        if (file_buf == NULL){
+        if (file_buf == NULL) {
                 printf("Memory Alloc for file_buf error.\n");
                 rc = -ENOMEM;
                 goto out;
@@ -144,17 +144,17 @@ int llog_pack_buffer(int fd, struct llog_log_hdr **llog,
         *llog = (struct llog_log_hdr*)file_buf;
 
         rd = read(fd,file_buf,file_size);
-        if (rd < file_size){
+        if (rd < file_size) {
                 printf("Read file error.\n");
                 rc = -EIO; /*FIXME*/
                 goto clear_file_buf;
         }
 
         /* the llog header not countable here.*/
-        recs_num = le32_to_cpu((*llog)->llh_count)-1;
+        recs_num = le32_to_cpu((*llog)->llh_count) - 1;
 
         recs_buf = malloc(recs_num * sizeof(struct llog_rec_hdr *));
-        if (recs_buf == NULL){
+        if (recs_buf == NULL) {
                 printf("Memory Alloc for recs_buf error.\n");
                 rc = -ENOMEM;
                 goto clear_file_buf;
@@ -164,7 +164,7 @@ int llog_pack_buffer(int fd, struct llog_log_hdr **llog,
         ptr = file_buf + le32_to_cpu((*llog)->llh_hdr.lrh_len);
         i = 0;
 
-        while (i < recs_num){
+        while (i < recs_num) {
                 struct llog_rec_hdr *cur_rec = (struct llog_rec_hdr*)ptr;
                 int idx = le32_to_cpu(cur_rec->lrh_index);
                 recs_pr[i] = cur_rec;
@@ -201,7 +201,7 @@ clear_recs_buf:
 clear_file_buf:
         free(file_buf);
 
-        *llog=NULL;
+        *llog = NULL;
         goto out;
 }
 
@@ -224,7 +224,7 @@ void print_llog_header(struct llog_log_hdr *llog_buf)
         printf("Time : %s", ctime(&t));
 
         printf("Number of records: %u\n",
-               le32_to_cpu(llog_buf->llh_count)-1);
+               le32_to_cpu(llog_buf->llh_count) - 1);
 
         printf("Target uuid : %s \n",
                (char *)(&llog_buf->llh_tgtuuid));
@@ -244,7 +244,7 @@ static void print_1_cfg(struct lustre_cfg *lcfg)
                        lcfg->lcfg_nid);
         if (lcfg->lcfg_nal)
                 printf("nal=%d ", lcfg->lcfg_nal);
-        for (i = 0; i <  lcfg->lcfg_bufcount; i++)
+        for (i = 0; i < lcfg->lcfg_bufcount; i++)
                 printf("%d:%.*s  ", i, lcfg->lcfg_buflens[i],
                        (char*)lustre_cfg_buf(lcfg, i));
         return;
@@ -270,7 +270,7 @@ static void print_setup_cfg(struct lustre_cfg *lcfg)
                 printf("setup     ");
                 print_1_cfg(lcfg);
         }
-        
+
         return;
 }
 
@@ -281,100 +281,81 @@ void print_lustre_cfg(struct lustre_cfg *lcfg, int *skip)
         if (*skip > 0)
                 printf("SKIP ");
 
-        switch(cmd){
-        case(LCFG_ATTACH):{
+        switch (cmd) {
+        case LCFG_ATTACH:
                 printf("attach    ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_SETUP):{
+        case LCFG_SETUP:
                 print_setup_cfg(lcfg);
                 break;
-        }
-        case(LCFG_DETACH):{
+        case LCFG_DETACH:
                 printf("detach    ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_CLEANUP):{
+        case LCFG_CLEANUP:
                 printf("cleanup   ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_ADD_UUID):{
+        case LCFG_ADD_UUID:
                 printf("add_uuid  ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_DEL_UUID):{
+        case LCFG_DEL_UUID:
                 printf("del_uuid  ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_ADD_CONN):{
+        case LCFG_ADD_CONN:
                 printf("add_conn  ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_DEL_CONN):{
+        case LCFG_DEL_CONN:
                 printf("del_conn  ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_LOV_ADD_OBD):{
+        case LCFG_LOV_ADD_OBD:
                 printf("lov_modify_tgts add ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_LOV_DEL_OBD):{
+        case LCFG_LOV_DEL_OBD:
                 printf("lov_modify_tgts del ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_ADD_MDC):{
+        case LCFG_ADD_MDC:
                 printf("modify_mdc_tgts add ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_DEL_MDC):{
+        case LCFG_DEL_MDC:
                 printf("modify_mdc_tgts del ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_MOUNTOPT):{
+        case LCFG_MOUNTOPT:
                 printf("mount_option ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_DEL_MOUNTOPT):{
+        case LCFG_DEL_MOUNTOPT:
                 printf("del_mount_option ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_SET_TIMEOUT):{
+        case LCFG_SET_TIMEOUT:
                 printf("set_timeout=%d ", lcfg->lcfg_num);
                 break;
-        }
-        case(LCFG_SET_LDLM_TIMEOUT):{
+        case LCFG_SET_LDLM_TIMEOUT:
                 printf("set_ldlm_timeout=%d ", lcfg->lcfg_num);
                 break;
-        }
-        case(LCFG_SET_UPCALL):{
+        case LCFG_SET_UPCALL:
                 printf("set_lustre_upcall ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_PARAM):{
+        case LCFG_PARAM:
                 printf("param ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_SPTLRPC_CONF):{
+        case LCFG_SPTLRPC_CONF:
                 printf("sptlrpc_conf ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_MARKER):{
+        case LCFG_MARKER: {
                 struct cfg_marker *marker = lustre_cfg_buf(lcfg, 1);
                 char createtime[26], canceltime[26] = "";
                 time_t time_tmp;
@@ -431,26 +412,22 @@ void print_lustre_cfg(struct lustre_cfg *lcfg, int *skip)
                        createtime, canceltime);
                 break;
         }
-        case(LCFG_POOL_NEW):{
+        case LCFG_POOL_NEW:
                 printf("pool new ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_POOL_ADD):{
+        case LCFG_POOL_ADD:
                 printf("pool add ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_POOL_REM):{
+        case LCFG_POOL_REM:
                 printf("pool remove ");
                 print_1_cfg(lcfg);
                 break;
-        }
-        case(LCFG_POOL_DEL):{
+        case LCFG_POOL_DEL:
                 printf("pool destroy ");
                 print_1_cfg(lcfg);
                 break;
-        }
         default:
                 printf("unsupported cmd_code = %x\n",cmd);
         }
@@ -463,7 +440,7 @@ void print_records(struct llog_rec_hdr **recs, int rec_number)
         __u32 lopt;
         int i, skip = 0;
 
-        for(i = 0; i < rec_number; i++) {
+        for (i = 0; i < rec_number; i++) {
                 printf("#%.2d (%.3d)", le32_to_cpu(recs[i]->lrh_index),
                        le32_to_cpu(recs[i]->lrh_len));
 
