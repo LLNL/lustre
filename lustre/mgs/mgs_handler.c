@@ -972,7 +972,7 @@ out_free:
                 struct llog_ctxt *ctxt;
                 ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
 
-                rc = llog_ioctl(ctxt, cmd, data);
+                rc = llog_ioctl(&env, ctxt, cmd, data);
                 llog_ctxt_put(ctxt);
                 break;
         }

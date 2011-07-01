@@ -1453,37 +1453,25 @@ struct llog_operations llog_osd_ops = {
 EXPORT_SYMBOL(llog_osd_ops);
 
 /* reads the catalog list */
-int llog_get_cat_list(struct obd_device *disk_obd,
-                      char *name, int idx, int count, struct llog_catid *idarray)
+int llog_get_cat_list(const struct lu_env *env, struct dt_device *d,
+                      int idx, int count, struct llog_catid *idarray)
 {
         int               size = sizeof(*idarray) * count;
         loff_t            off = idx *  sizeof(*idarray);
         struct dt_object *o = NULL;
-        struct dt_device *d;
         struct thandle   *th;
-        struct lu_env     env;
         struct lu_fid     fid;
         struct lu_attr    attr;
         struct lu_buf     lb;
         int               rc;
         ENTRY;
 
-        if (!count)
-                RETURN(0);
-
-        d = disk_obd->obd_lvfs_ctxt.dt;
         LASSERT(d);
 
-        rc = lu_env_init(&env, d->dd_lu_dev.ld_type->ldt_ctx_tags);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                RETURN(rc);
-        }
-
         lu_local_obj_fid(&fid, LLOG_CATALOGS_OID);
-        o = dt_locate(&env, d, &fid);
+        o = dt_locate(env, d, &fid);
         if (IS_ERR(o))
-                GOTO(out_env, rc = PTR_ERR(o));
+                RETURN(PTR_ERR(o));
 
         if (!dt_object_exists(o)) {
                 struct dt_object_format  dof;
@@ -1493,29 +1481,29 @@ int llog_get_cat_list(struct obd_device *disk_obd,
                 attr.la_mode = S_IFREG | 0666;
                 dof.dof_type = dt_mode_to_dft(S_IFREG);
 
-                th = dt_trans_create(&env, d);
+                th = dt_trans_create(env, d);
                 if (IS_ERR(th))
                         GOTO(out, rc = PTR_ERR(th));
 
-                rc = dt_declare_create(&env, o, &attr, NULL, &dof, th);
+                rc = dt_declare_create(env, o, &attr, NULL, &dof, th);
                 if (rc)
                         GOTO(out_trans, rc);
 
-                rc = dt_trans_start_local(&env, d, th);
+                rc = dt_trans_start_local(env, d, th);
                 if (rc)
                         GOTO(out_trans, rc);
 
-                dt_write_lock(&env, o, 0);
+                dt_write_lock(env, o, 0);
                 if (!dt_object_exists(o))
-                        rc = dt_create(&env, o, &attr, NULL, &dof, th);
-                dt_write_unlock(&env, o);
+                        rc = dt_create(env, o, &attr, NULL, &dof, th);
+                dt_write_unlock(env, o);
 out_trans:
-                dt_trans_stop(&env, d, th);
+                dt_trans_stop(env, d, th);
                 if (rc)
                         GOTO(out, rc);
         }
 
-        rc = dt_attr_get(&env, o, &attr, BYPASS_CAPA);
+        rc = dt_attr_get(env, o, &attr, BYPASS_CAPA);
         if (rc)
                 GOTO(out, rc);
 
@@ -1528,14 +1516,22 @@ out_trans:
         CDEBUG(D_CONFIG, "cat list: disk size=%d, read=%d\n",
                (int) attr.la_size, size);
 
+        /* return just number of llogs */
+        if (idarray == NULL) {
+                rc = attr.la_size / sizeof(*idarray);
+                GOTO(out, rc);
+        }
+
         /* read for new ost index or for empty file */
         memset(idarray, 0, size);
-        if (attr.la_size < off + size)
+        if (attr.la_size < off)
                 GOTO(out, rc = 0);
+        if (attr.la_size < off + size)
+                size = attr.la_size - off;
 
         lb.lb_buf = idarray;
         lb.lb_len = size;
-        rc = dt_record_read(&env, o, &lb, &off);
+        rc = dt_record_read(env, o, &lb, &off);
         if (rc) {
                 CERROR("error reading CATALOGS: rc %d\n", rc);
                 GOTO(out, rc);
@@ -1543,23 +1539,19 @@ out_trans:
 
         EXIT;
 out:
-        lu_object_put(&env, &o->do_lu);
-out_env:
-        lu_env_fini(&env);
+        lu_object_put(env, &o->do_lu);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_get_cat_list);
 
 /* writes the cat list */
-int llog_put_cat_list(struct obd_device *disk_obd,
-                      char *name, int idx, int count, struct llog_catid *idarray)
+int llog_put_cat_list(const struct lu_env *env, struct dt_device *d,
+                      int idx, int count, struct llog_catid *idarray)
 {
         int               size = sizeof(*idarray) * count;
         loff_t            off = idx * sizeof(*idarray);
         struct dt_object *o = NULL;
-        struct dt_device *d;
         struct thandle   *th;
-        struct lu_env     env;
         struct lu_fid     fid;
         struct lu_attr    attr;
         struct lu_buf     lb;
@@ -1568,24 +1560,17 @@ int llog_put_cat_list(struct obd_device *disk_obd,
         if (!count)
                 RETURN(0);
 
-        d = disk_obd->obd_lvfs_ctxt.dt;
         LASSERT(d);
 
-        rc = lu_env_init(&env, d->dd_lu_dev.ld_type->ldt_ctx_tags);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                RETURN(rc);
-        }
-
         lu_local_obj_fid(&fid, LLOG_CATALOGS_OID);
-        o = dt_locate(&env, d, &fid);
+        o = dt_locate(env, d, &fid);
         if (IS_ERR(o))
-                GOTO(out_env, rc = PTR_ERR(o));
+                RETURN(PTR_ERR(o));
 
         if (!dt_object_exists(o))
                 GOTO(out, rc = -ENOENT);
 
-        rc = dt_attr_get(&env, o, &attr, BYPASS_CAPA);
+        rc = dt_attr_get(env, o, &attr, BYPASS_CAPA);
         if (rc)
                 GOTO(out, rc);
 
@@ -1595,30 +1580,28 @@ int llog_put_cat_list(struct obd_device *disk_obd,
                 GOTO(out, rc = -ENOENT);
         }
 
-        th = dt_trans_create(&env, d);
+        th = dt_trans_create(env, d);
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
 
-        rc = dt_declare_record_write(&env, o, size, off, th);
+        rc = dt_declare_record_write(env, o, size, off, th);
         if (rc)
                 GOTO(out, rc);
 
-        rc = dt_trans_start_local(&env, d, th);
+        rc = dt_trans_start_local(env, d, th);
         if (rc)
                 GOTO(out_trans, rc);
 
         lb.lb_buf = idarray;
         lb.lb_len = size;
 
-        rc = dt_record_write(&env, o, &lb, &off, th);
+        rc = dt_record_write(env, o, &lb, &off, th);
         if (rc)
                 CDEBUG(D_INODE,"error writeing CATALOGS: %d\n", rc);
 out_trans:
-        dt_trans_stop(&env, d, th);
+        dt_trans_stop(env, d, th);
 out:
-        lu_object_put(&env, &o->do_lu);
-out_env:
-        lu_env_fini(&env);
+        lu_object_put(env, &o->do_lu);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_put_cat_list);
