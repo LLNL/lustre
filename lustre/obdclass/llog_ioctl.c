@@ -280,44 +280,35 @@ static int llog_delete_cb(const struct lu_env *env, struct llog_handle *handle,
         RETURN(rc);
 }
 
-int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
+int llog_ioctl(const struct lu_env *env, struct llog_ctxt *ctxt, int cmd,
+               struct obd_ioctl_data *data)
 {
         struct llog_logid logid;
-        struct lu_env  env;
-        struct dt_device *dt = NULL;
-        int rc = 0, tags;
+        struct dt_device *dt = ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
+        int rc = 0;
         struct llog_handle *handle = NULL;
 
         ENTRY;
 
+        LASSERT(dt);
         LASSERT(ctxt->loc_obd);
-        if (ctxt->loc_obd->obd_lvfs_ctxt.dt) {
-                dt = ctxt->loc_obd->obd_lvfs_ctxt.dt;
-                tags = dt->dd_lu_dev.ld_type->ldt_ctx_tags;
-        } else {
-                /* env for client side */
-                tags = LCT_NOREF;
-        }
-
-        rc = lu_env_init(&env, tags);
-        if (rc)
-                RETURN(rc);
+        LASSERT(env);
 
         if (*data->ioc_inlbuf1 == '#') {
                 rc = str2logid(&logid, data->ioc_inlbuf1, data->ioc_inllen1);
                 if (rc)
-                        GOTO(out, rc);
-                rc = llog_open(&env, ctxt, &handle, &logid, NULL,
+                        RETURN(rc);
+                rc = llog_open(env, ctxt, &handle, &logid, NULL,
                                LLOG_OPEN_OLD);
                 if (rc)
-                        GOTO(out, rc);
+                        RETURN(rc);
         } else if (*data->ioc_inlbuf1 == '$') {
                 char *name = data->ioc_inlbuf1 + 1;
-                rc = llog_open(&env, ctxt, &handle, NULL, name, LLOG_OPEN_OLD);
+                rc = llog_open(env, ctxt, &handle, NULL, name, LLOG_OPEN_OLD);
                 if (rc)
-                        GOTO(out, rc);
+                        RETURN(rc);
         } else {
-                GOTO(out, rc = -EINVAL);
+                RETURN(-EINVAL);
         }
 
         rc = llog_init_handle(handle, 0, NULL);
@@ -353,7 +344,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
         }
         case OBD_IOC_LLOG_CHECK:
                 LASSERT(data->ioc_inllen1);
-                rc = llog_process(&env, handle, llog_check_cb, data, NULL);
+                rc = llog_process(env, handle, llog_check_cb, data, NULL);
                 if (rc == -LLOG_EEMPTY)
                         rc = 0;
                 else if (rc)
@@ -361,7 +352,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 break;
         case OBD_IOC_LLOG_PRINT:
                 LASSERT(data->ioc_inllen1);
-                rc = llog_process(&env, handle, llog_print_cb, data, NULL);
+                rc = llog_process(env, handle, llog_print_cb, data, NULL);
                 if (rc == -LLOG_EEMPTY)
                         rc = 0;
                 else if (rc)
@@ -377,7 +368,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                         GOTO(out_close, rc = -EINVAL);
 
                 if (handle->lgh_hdr->llh_flags & LLOG_F_IS_PLAIN) {
-                        rc = llog_cancel_rec(&env, handle, cookie.lgc_index);
+                        rc = llog_cancel_rec(env, handle, cookie.lgc_index);
                         GOTO(out_close, rc);
                 } else if (!(handle->lgh_hdr->llh_flags & LLOG_F_IS_CAT)) {
                         GOTO(out_close, rc = -EINVAL);
@@ -388,7 +379,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 if (rc)
                         GOTO(out_close, rc);
                 cookie.lgc_lgl = plain;
-                rc = llog_cat_cancel_records(&env, handle, 1, &cookie);
+                rc = llog_cat_cancel_records(env, handle, 1, &cookie);
                 if (rc)
                         GOTO(out_close, rc);
                 break;
@@ -397,7 +388,7 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                 struct llog_logid plain;
 
                 if (handle->lgh_hdr->llh_flags & LLOG_F_IS_PLAIN) {
-                        rc = llog_destroy(&env, handle);
+                        rc = llog_destroy(env, handle);
                         GOTO(out_close, rc);
                 } else if (!(handle->lgh_hdr->llh_flags & LLOG_F_IS_CAT)) {
                         GOTO(out_close, rc = -EINVAL);
@@ -409,12 +400,12 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
                                         data->ioc_inllen2);
                         if (rc)
                                 GOTO(out_close, rc);
-                        rc = llog_remove_log(&env, handle, &plain);
+                        rc = llog_remove_log(env, handle, &plain);
                         if (rc )
                                 GOTO(out_close, rc);
                 } else {
                         /* remove all the log of the catalog */
-                        rc = llog_process(&env, handle, llog_delete_cb, NULL, NULL);
+                        rc = llog_process(env, handle, llog_delete_cb, NULL, NULL);
                         if (rc )
                                 GOTO(out_close, rc);
                 }
@@ -429,17 +420,15 @@ int llog_ioctl(struct llog_ctxt *ctxt, int cmd, struct obd_ioctl_data *data)
 out_close:
         if (handle->lgh_hdr &&
             handle->lgh_hdr->llh_flags & LLOG_F_IS_CAT)
-                llog_cat_close(&env, handle);
+                llog_cat_close(env, handle);
         else
-                llog_close(&env, handle);
-out:
-        lu_env_fini(&env);
+                llog_close(env, handle);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_ioctl);
 
-int llog_catalog_list(struct obd_device *obd, int count,
-                      struct obd_ioctl_data *data)
+int llog_catalog_list(const struct lu_env *env, struct dt_device *d,
+                      int count, struct obd_ioctl_data *data)
 {
         int size, i;
         struct llog_catid *idarray;
@@ -448,13 +437,21 @@ int llog_catalog_list(struct obd_device *obd, int count,
         int l, remains, rc = 0;
 
         ENTRY;
+
+        if (count == 0) { /* get total number of logs */
+                rc = llog_get_cat_list(env, d, 0, 0, NULL);
+                if (rc < 0)
+                        RETURN(rc);
+                count = rc;
+        }
+
         size = sizeof(*idarray) * count;
 
         OBD_ALLOC_LARGE(idarray, size);
         if (!idarray)
                 RETURN(-ENOMEM);
 
-        rc = llog_get_cat_list(obd, NULL, 0, count, idarray);
+        rc = llog_get_cat_list(env, d, 0, count, idarray);
         if (rc)
                 GOTO(out, rc);
 
