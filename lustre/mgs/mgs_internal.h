@@ -204,13 +204,17 @@ int mgs_write_log_target(const struct lu_env *env, struct mgs_device *mgs, struc
                          struct fs_db *fsdb);
 int mgs_upgrade_sv_14(struct obd_device *obd, struct mgs_target_info *mti,
                       struct fs_db *fsdb);
-int mgs_erase_log(const struct lu_env *env, struct mgs_device *mgs, char *name);
-int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs, char *fsname);
-int mgs_setparam(const struct lu_env *env, struct mgs_device *mgs, struct lustre_cfg *lcfg, char *fsname);
-
+int mgs_erase_log(const struct lu_env *env, struct mgs_device *mgs,
+                  char *name);
+int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs,
+                   char *fsname);
+int mgs_setparam(const struct lu_env *env, struct mgs_device *mgs,
+                 struct lustre_cfg *lcfg, char *fsname);
+int mgs_list_logs(const struct lu_env *env, struct mgs_device *mgs,
+                  struct obd_ioctl_data *data);
 int mgs_pool_cmd(const struct lu_env *env, struct mgs_device *mgs,
-                 enum lcfg_command_type cmd, char *poolname, char *fsname, char *ostname);
-
+                 enum lcfg_command_type cmd, char *poolname, char *fsname,
+                 char *ostname);
 /* mgs_handler.c */
 void mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type);
 

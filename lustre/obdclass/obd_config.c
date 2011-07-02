@@ -1425,12 +1425,16 @@ int class_config_dump_handler(const struct lu_env *env,
         int rc = 0;
         ENTRY;
 
-        OBD_ALLOC(outstr, 256);
+        if (data) {
+                outstr = data;
+        } else {
+                OBD_ALLOC(outstr, 256);
+                if (outstr == NULL)
+                        RETURN(-ENOMEM);
+        }
         end = outstr + 256;
         ptr = outstr;
-        if (!outstr) {
-                RETURN(-ENOMEM);
-        }
+
         if (rec->lrh_type == OBD_CFG_REC) {
                 struct lustre_cfg *lcfg;
                 int i;
@@ -1466,13 +1470,15 @@ int class_config_dump_handler(const struct lu_env *env,
                                                 lustre_cfg_string(lcfg, i));
                         }
                 }
-                LCONSOLE(D_WARNING, "   %s\n", outstr);
+                if (data == NULL)
+                        LCONSOLE(D_WARNING, "   %s\n", outstr);
         } else {
                 LCONSOLE(D_WARNING, "unhandled lrh_type: %#x\n", rec->lrh_type);
                 rc = -EINVAL;
         }
 out:
-        OBD_FREE(outstr, 256);
+        if (data == NULL)
+                OBD_FREE(outstr, 256);
         RETURN(rc);
 }
 

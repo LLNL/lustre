@@ -219,6 +219,19 @@ static int llog_print_cb(const struct lu_env *env, struct llog_handle *handle,
                              "[index]: %05d  [logid]: #"LPX64"#"LPX64"#%08x\n",
                              cur_index, lir->lid_id.lgl_oid,
                              lir->lid_id.lgl_oseq, lir->lid_id.lgl_ogen);
+        } else if (rec->lrh_type == OBD_CFG_REC) {
+                int rc;
+                char *cfg;
+
+                OBD_ALLOC(cfg, 256);
+                if (cfg == NULL)
+                        RETURN(-ENOMEM);
+                rc = class_config_dump_handler(env, handle, rec, cfg);
+                if (rc == 0)
+                        l = snprintf(out, remains, "%s\n", cfg);
+                OBD_FREE(cfg, 256);
+                if (rc)
+                        RETURN(rc);
         } else {
                 l = snprintf(out, remains,
                              "[index]: %05d  [type]: %02x  [len]: %04d\n",
