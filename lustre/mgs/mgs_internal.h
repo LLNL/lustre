@@ -113,22 +113,29 @@ struct mgs_object {
 
 int mgs_init_fsdb_list(struct mgs_device *mgs);
 int mgs_cleanup_fsdb_list(struct mgs_device *mgs);
-int mgs_find_or_make_fsdb(const struct lu_env *env, struct mgs_device *mgs, char *name, 
-                          struct fs_db **dbh);
-int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env, struct mgs_device *mgs, struct fs_db *fsdb);
-int mgs_check_index(const struct lu_env *env, struct mgs_device *mgs, struct mgs_target_info *mti);
-int mgs_check_failnid(const struct lu_env *env, struct mgs_device *mgs, struct mgs_target_info *mti);
-int mgs_write_log_target(const struct lu_env *env, struct mgs_device *mgs, struct mgs_target_info *mti,
-                         struct fs_db *fsdb);
+int mgs_find_or_make_fsdb(const struct lu_env *env, struct mgs_device *mgs,
+                          char *name, struct fs_db **dbh);
+int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env,
+                                struct mgs_device *mgs, struct fs_db *fsdb);
+int mgs_check_index(const struct lu_env *env, struct mgs_device *mgs,
+                    struct mgs_target_info *mti);
+int mgs_check_failnid(const struct lu_env *env, struct mgs_device *mgs,
+                      struct mgs_target_info *mti);
+int mgs_write_log_target(const struct lu_env *env, struct mgs_device *mgs,
+                         struct mgs_target_info *mti, struct fs_db *fsdb);
 int mgs_upgrade_sv_14(struct obd_device *obd, struct mgs_target_info *mti,
                       struct fs_db *fsdb);
-int mgs_erase_log(const struct lu_env *env, struct mgs_device *mgs, char *name);
-int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs, char *fsname);
-int mgs_setparam(const struct lu_env *env, struct mgs_device *mgs, struct lustre_cfg *lcfg, char *fsname);
-
+int mgs_erase_log(const struct lu_env *env, struct mgs_device *mgs,
+                  char *name);
+int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs,
+                   char *fsname);
+int mgs_setparam(const struct lu_env *env, struct mgs_device *mgs,
+                 struct lustre_cfg *lcfg, char *fsname);
+int mgs_list_logs(const struct lu_env *env, struct mgs_device *mgs,
+                  struct obd_ioctl_data *data);
 int mgs_pool_cmd(const struct lu_env *env, struct mgs_device *mgs,
-                 enum lcfg_command_type cmd, char *poolname, char *fsname, char *ostname);
-
+                 enum lcfg_command_type cmd, char *poolname, char *fsname,
+                 char *ostname);
 /* mgs_handler.c */
 void mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb);
 

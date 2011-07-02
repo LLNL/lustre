@@ -808,6 +808,11 @@ out_free:
                 llog_ctxt_put(ctxt);
                 break;
         }
+        case OBD_IOC_CATLOGLIST:
+                rc = mgs_list_logs(&env, mgs, data);
+                break;
+        case OBD_IOC_LLOG_CANCEL:
+        case OBD_IOC_LLOG_REMOVE:
         case OBD_IOC_LLOG_CHECK:
         case OBD_IOC_LLOG_INFO:
         case OBD_IOC_LLOG_PRINT: {
