@@ -357,27 +357,27 @@ command_t cmdlist[] = {
         /* Llog operations */
         {"llog_catlist", jt_llog_catlist, 0,
          "list all catalog logs on current device.\n"
-         "usage: llog_catlist"},
+         "usage: llog_catlist [<name|devno>]"},
         {"llog_info", jt_llog_info, 0,
          "print log header information.\n"
-         "usage: llog_info <$logname|#oid#ogr#ogen>\n"
+         "usage: llog_info <$logname|#oid#ogr#ogen> [<name|devno>]\n"
          "       oid, ogr and ogen are hexadecimal."},
         {"llog_print", jt_llog_print, 0,
          "print log content information.\n"
-         "usage: llog_print <$logname|#oid#ogr#ogen> [from] [to]\n"
+         "usage: llog_print <$logname|#oid#ogr#ogen> [from] [to] [<name|devno>]\n"
          "       oid, ogr and ogen are hexadecimal.\n"
          "       print all records from index 1 by default."},
         {"llog_check", jt_llog_check, 0,
          "print log content information.\n"
-         "usage: llog_check <$logname|#oid#ogr#ogen> [from] [to]\n"
+         "usage: llog_check <$logname|#oid#ogr#ogen> [from] [to] [<name|devno>]\n"
          "       oid, ogr and ogen are hexadecimal.\n"
          "       check all records from index 1 by default."},
          {"llog_cancel", jt_llog_cancel, 0,
          "cancel one record in log.\n"
-         "usage: llog_cancel <catalog id|catalog name> <log id> <index>"},
+         "usage: llog_cancel <catalog id|catalog name> <log id> <index> [<name|devno>]"},
         {"llog_remove", jt_llog_remove, 0,
-         "remove one log from catalog, erase it from disk.\n"
-         "usage: llog_remove <catalog id|catalog name> <log id>"},
+         "remove one log from catalog or plain log, erase it from disk.\n"
+         "usage: llog_remove <catalog id|catalog name> <log id> [<name|devno>]"},
         /* network operations */
         {"add_interface", jt_ptl_add_interface, 0, "add interface entry\n"
          "usage: add_interface ip [netmask]"},
