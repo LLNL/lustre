@@ -2556,12 +2556,17 @@ int jt_llog_catlist(int argc, char **argv)
         struct obd_ioctl_data data;
         char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
         int rc;
+        int dev;
 
-        if (argc != 1)
+        if (argc == 1)
+                dev = cur_device;
+        else if (argc == 2)
+                dev = parse_devname("llog_catlist", argv[1]);
+        else
                 return CMD_HELP;
 
         memset(&data, 0, sizeof(data));
-        data.ioc_dev = cur_device;
+        data.ioc_dev = dev;
         data.ioc_inllen1 = sizeof(rawbuf) - cfs_size_round(sizeof(data));
         memset(buf, 0, sizeof(rawbuf));
         rc = obd_ioctl_pack(&data, &buf, sizeof(rawbuf));
@@ -2584,17 +2589,21 @@ int jt_llog_info(int argc, char **argv)
 {
         struct obd_ioctl_data data;
         char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
-        int rc;
+        int rc, dev;
 
-        if (argc != 2)
+        if (argc == 2)
+                dev = cur_device;
+        else if (argc == 3)
+                dev = parse_devname("llog_info", argv[2]);
+        else
                 return CMD_HELP;
 
         memset(&data, 0, sizeof(data));
-        data.ioc_dev = cur_device;
+        data.ioc_dev = dev;
         data.ioc_inllen1 = strlen(argv[1]) + 1;
         data.ioc_inlbuf1 = argv[1];
         data.ioc_inllen2 = sizeof(rawbuf) - cfs_size_round(sizeof(data)) -
-                cfs_size_round(data.ioc_inllen1);
+                           cfs_size_round(data.ioc_inllen1);
         memset(buf, 0, sizeof(rawbuf));
         rc = obd_ioctl_pack(&data, &buf, sizeof(rawbuf));
         if (rc) {
@@ -2617,16 +2626,22 @@ int jt_llog_print(int argc, char **argv)
 {
         struct obd_ioctl_data data;
         char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
-        int rc;
+        int rc, dev;
 
-        if (argc != 2 && argc != 4)
+        if (argc == 2 || argc == 4)
+                dev = cur_device;
+        else if (argc == 3)
+                dev = parse_devname("llog_print", argv[2]);
+        else if (argc == 5)
+                dev = parse_devname("llog_print", argv[4]);
+        else
                 return CMD_HELP;
 
         memset(&data, 0, sizeof(data));
-        data.ioc_dev = cur_device;
+        data.ioc_dev = dev;
         data.ioc_inllen1 = strlen(argv[1]) + 1;
         data.ioc_inlbuf1 = argv[1];
-        if (argc == 4) {
+        if (argc >= 4) {
                 data.ioc_inllen2 = strlen(argv[2]) + 1;
                 data.ioc_inlbuf2 = argv[2];
                 data.ioc_inllen3 = strlen(argv[3]) + 1;
@@ -2639,9 +2654,9 @@ int jt_llog_print(int argc, char **argv)
                 data.ioc_inlbuf3 = to;
         }
         data.ioc_inllen4 = sizeof(rawbuf) - cfs_size_round(sizeof(data)) -
-                cfs_size_round(data.ioc_inllen1) -
-                cfs_size_round(data.ioc_inllen2) -
-                cfs_size_round(data.ioc_inllen3);
+                           cfs_size_round(data.ioc_inllen1) -
+                           cfs_size_round(data.ioc_inllen2) -
+                           cfs_size_round(data.ioc_inllen3);
         memset(buf, 0, sizeof(rawbuf));
         rc = obd_ioctl_pack(&data, &buf, sizeof(rawbuf));
         if (rc) {
@@ -2663,20 +2678,37 @@ int jt_llog_print(int argc, char **argv)
 int jt_llog_cancel(int argc, char **argv)
 {
         struct obd_ioctl_data data;
-        char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
-        int rc;
+        char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf, *idx;
+        int rc, dev;
 
-        if (argc != 4)
+        if (argc == 3) { /* logid idx */
+                dev = cur_device;
+                idx = argv[2];
+        } else if (argc == 4) {
+                if (argv[2][0] == '#') { /* catid logid idx*/
+                        dev = cur_device;
+                        idx = argv[3];
+                } else { /* logid idx device */
+                        dev = parse_devname("llog_cancel", argv[3]);
+                        idx = argv[2];
+                }
+        } else if (argc == 5) { /* catid logid idx device */
+                dev = parse_devname("llog_cancel", argv[4]);
+                idx = argv[3];
+        } else {
                 return CMD_HELP;
+        }
 
         memset(&data, 0, sizeof(data));
-        data.ioc_dev = cur_device;
+        data.ioc_dev = dev;
         data.ioc_inllen1 = strlen(argv[1]) + 1;
         data.ioc_inlbuf1 = argv[1];
-        data.ioc_inllen2 = strlen(argv[2]) + 1;
-        data.ioc_inlbuf2 = argv[2];
-        data.ioc_inllen3 = strlen(argv[3]) + 1;
-        data.ioc_inlbuf3 = argv[3];
+        if (argc > 3 && argv[2][0] == '#') { /* if 2nd param is logid */
+                data.ioc_inllen2 = strlen(argv[2]) + 1;
+                data.ioc_inlbuf2 = argv[2];
+        }
+        data.ioc_inllen3 = strlen(idx) + 1;
+        data.ioc_inlbuf3 = idx;
         memset(buf, 0, sizeof(rawbuf));
         rc = obd_ioctl_pack(&data, &buf, sizeof(rawbuf));
         if (rc) {
@@ -2699,16 +2731,22 @@ int jt_llog_check(int argc, char **argv)
 {
         struct obd_ioctl_data data;
         char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
-        int rc;
+        int rc, dev;
 
-        if (argc != 2 && argc != 4)
+        if (argc == 2 || argc == 4)
+                dev = cur_device;
+        else if (argc == 3)
+                dev = parse_devname("llog_check", argv[2]);
+        else if (argc == 5)
+                dev = parse_devname("llog_check", argv[4]);
+        else
                 return CMD_HELP;
 
         memset(&data, 0, sizeof(data));
-        data.ioc_dev = cur_device;
+        data.ioc_dev = dev;
         data.ioc_inllen1 = strlen(argv[1]) + 1;
         data.ioc_inlbuf1 = argv[1];
-        if (argc == 4) {
+        if (argc >= 4) {
                 data.ioc_inllen2 = strlen(argv[2]) + 1;
                 data.ioc_inlbuf2 = argv[2];
                 data.ioc_inllen3 = strlen(argv[3]) + 1;
@@ -2721,9 +2759,9 @@ int jt_llog_check(int argc, char **argv)
                 data.ioc_inlbuf3 = to;
         }
         data.ioc_inllen4 = sizeof(rawbuf) - cfs_size_round(sizeof(data)) -
-                cfs_size_round(data.ioc_inllen1) -
-                cfs_size_round(data.ioc_inllen2) -
-                cfs_size_round(data.ioc_inllen3);
+                           cfs_size_round(data.ioc_inllen1) -
+                           cfs_size_round(data.ioc_inllen2) -
+                           cfs_size_round(data.ioc_inllen3);
         memset(buf, 0, sizeof(rawbuf));
         rc = obd_ioctl_pack(&data, &buf, sizeof(rawbuf));
         if (rc) {
@@ -2745,16 +2783,26 @@ int jt_llog_remove(int argc, char **argv)
 {
         struct obd_ioctl_data data;
         char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
-        int rc;
+        int rc, dev;
 
-        if (argc != 3 && argc != 2)
+        if (argc == 2) { /* catid */
+                dev = cur_device;
+        } else if (argc == 3) {
+                if (argv[2][0] == '#') /* catid logid */
+                        dev = cur_device;
+                else /* catid device */
+                        dev = parse_devname("llog_remove", argv[2]);
+        } else if (argc == 4) { /* catid logid device */
+                dev = parse_devname("llog_remove", argv[3]);
+        } else {
                 return CMD_HELP;
+        }
 
         memset(&data, 0, sizeof(data));
-        data.ioc_dev = cur_device;
+        data.ioc_dev = dev;
         data.ioc_inllen1 = strlen(argv[1]) + 1;
         data.ioc_inlbuf1 = argv[1];
-        if (argc == 3){
+        if (argc >= 3 && argv[2][0] == '#') { /* only if 2nd param is logid */
                 data.ioc_inllen2 = strlen(argv[2]) + 1;
                 data.ioc_inlbuf2 = argv[2];
         }

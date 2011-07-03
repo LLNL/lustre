@@ -387,7 +387,9 @@ int llog_ioctl(const struct lu_env *env, struct llog_ctxt *ctxt, int cmd,
                         GOTO(out_close, rc = -EINVAL);
                 }
 
-                LASSERT(data->ioc_inlbuf2);
+                if (data->ioc_inlbuf2 == NULL) /* catalog but no logid */
+                        GOTO(out_close, rc = -ENOTTY);
+
                 rc = str2logid(&plain, data->ioc_inlbuf2, data->ioc_inllen2);
                 if (rc)
                         GOTO(out_close, rc);
