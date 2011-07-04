@@ -19,11 +19,6 @@ GRANT_CHECK_LIST=${GRANT_CHECK_LIST:-""}
 
 require_dsh_mds || exit 0
 
-
-# Orion exceptions
-# 61d -- MGS issue
-ALWAYS_EXCEPT="61d $ALWAYS_EXCEPT"
-
 #                                         63 min  7 min  AT AT AT AT"
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="12 16  44a     44b    65 66 67 68"
 FAIL_ON_ERROR=false
@@ -1518,13 +1513,13 @@ test_61c() {
 }
 run_test 61c "test race mds llog sync vs llog cleanup"
 
-test_61d() { # bug 16002 # bug 17466 # bug 22137
+test_61d() { # bug 16002 # bug 17466 # bug 22137 # LU-472
 #   OBD_FAIL_OBD_LLOG_SETUP        0x605
-    stop mgs
-    do_facet mgs "lctl set_param fail_loc=0x80000605"
-    start mgs $MGSDEV $MGS_MOUNT_OPTS && error "mgs start should have failed"
-    do_facet mgs "lctl set_param fail_loc=0"
-    start mgs $MGSDEV $MGS_MOUNT_OPTS || error "cannot restart mgs"
+    stop $SINGLEMDS
+    do_facet $SINGLEMDS "lctl set_param fail_loc=0x80000605"
+    start $SINGLEMDS $(mdsdevname 1) $MDS_MOUNT_OPTS && error "mds start should have failed"
+    do_facet $SINGLEMDS "lctl set_param fail_loc=0"
+    start $SINGLEMDS $(mdsdevname 1) $MDS_MOUNT_OPTS || error "cannot restart mds"
 }
 run_test 61d "error in llog_setup should cleanup the llog context correctly"
 

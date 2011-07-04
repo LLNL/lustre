@@ -1102,6 +1102,12 @@ err_ns:
         ldlm_namespace_free(obd->obd_namespace, NULL, 0);
         obd->obd_namespace = NULL;
 err_ops:
+        lu_site_purge(env, mgs2lu_dev(mgs)->ld_site, ~0);
+        if (!cfs_hash_is_empty(mgs2lu_dev(mgs)->ld_site->ls_obj_hash)) {
+                static DECLARE_LU_CDEBUG_PRINT_INFO(cookie, D_ERROR);
+                lu_site_print(env, mgs2lu_dev(mgs)->ld_site, &cookie,
+                              lu_cdebug_printer);
+        }
         obd_disconnect(mgs->mgs_bottom_exp);
         RETURN(rc);
 }
