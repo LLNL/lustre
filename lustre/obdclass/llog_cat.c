@@ -68,8 +68,8 @@ static int llog_cat_new_log(const struct lu_env *env,
                             struct llog_handle *loghandle,
                             struct thandle *th)
 {
+        struct llog_thread_info *lgi = llog_info(env);
         struct llog_log_hdr *llh;
-        struct llog_logid_rec rec = { { 0 }, };
         int rc, index, bitmap_size;
         ENTRY;
 
@@ -122,15 +122,15 @@ static int llog_cat_new_log(const struct lu_env *env,
                LPX64"\n", loghandle->lgh_id.lgl_oid, loghandle->lgh_id.lgl_ogen,
                index, cathandle->lgh_id.lgl_oid);
         /* build the record for this log in the catalog */
-        rec.lid_hdr.lrh_len = sizeof(rec);
-        rec.lid_hdr.lrh_index = index;
-        rec.lid_hdr.lrh_type = LLOG_LOGID_MAGIC;
-        rec.lid_id = loghandle->lgh_id;
-        rec.lid_tail.lrt_len = sizeof(rec);
-        rec.lid_tail.lrt_index = index;
+        lgi->lgi_lid.lid_hdr.lrh_len = sizeof(lgi->lgi_lid);
+        lgi->lgi_lid.lid_hdr.lrh_index = index;
+        lgi->lgi_lid.lid_hdr.lrh_type = LLOG_LOGID_MAGIC;
+        lgi->lgi_lid.lid_id = loghandle->lgh_id;
+        lgi->lgi_lid.lid_tail.lrt_len = sizeof(lgi->lgi_lid);
+        lgi->lgi_lid.lid_tail.lrt_index = index;
 
         /* update the catalog: header and record */
-        rc = llog_write_rec(env, cathandle, &rec.lid_hdr,
+        rc = llog_write_rec(env, cathandle, &lgi->lgi_lid.lid_hdr,
                             &loghandle->u.phd.phd_cookie, 1, NULL, index, th);
         if (rc < 0)
                 GOTO(out_destroy, rc);
@@ -598,7 +598,7 @@ int llog_cat_process_thread(void *data)
         struct llog_ctxt *ctxt = args->lpca_ctxt;
         struct llog_handle *llh = NULL;
         llog_cb_t cb = args->lpca_cb;
-        struct llog_logid logid;
+        struct llog_thread_info *lgi;
         struct dt_device   *dt = NULL;
         struct lu_env       env;
         int rc;
@@ -611,12 +611,15 @@ int llog_cat_process_thread(void *data)
         rc = lu_env_init(&env, dt ? dt->dd_lu_dev.ld_type->ldt_ctx_tags : 0);
         if (rc)
                 GOTO(out, rc);
+        lgi = llog_info(&env);
+        LASSERT(lgi);
 
-        logid = *(struct llog_logid *)(args->lpca_arg);
-        rc = llog_open(&env, ctxt, &llh, &logid, NULL, LLOG_OPEN_OLD);
+        lgi->lgi_logid = *(struct llog_logid *)(args->lpca_arg);
+        rc = llog_open(&env, ctxt, &llh, &lgi->lgi_logid, NULL, LLOG_OPEN_OLD);
         if (rc) {
                 CERROR("Cannot open llog "LPX64":%x (%d)\n",
-                       logid.lgl_oid, logid.lgl_ogen, rc);
+                       lgi->lgi_logid.lgl_oid,
+                       lgi->lgi_logid.lgl_ogen, rc);
                 GOTO(out_env, rc);
         }
         rc = llog_init_handle(llh, LLOG_F_IS_CAT, NULL);
@@ -684,15 +687,15 @@ int llog_cat_reverse_process(const struct lu_env *env,
                              struct llog_handle *cat_llh,
                              llog_cb_t cb, void *data)
 {
-        struct llog_process_data d;
+        struct llog_thread_info *lgi = llog_info(env);
         struct llog_process_cat_data cd;
         struct llog_log_hdr *llh = cat_llh->lgh_hdr;
         int rc;
         ENTRY;
 
         LASSERT(llh->llh_flags & LLOG_F_IS_CAT);
-        d.lpd_data = data;
-        d.lpd_cb = cb;
+        lgi->lgi_lpd.lpd_data = data;
+        lgi->lgi_lpd.lpd_cb = cb;
 
         if (llh->llh_cat_idx > cat_llh->lgh_last_idx) {
                 CWARN("catalog "LPX64" crosses index zero\n",
@@ -701,17 +704,17 @@ int llog_cat_reverse_process(const struct lu_env *env,
                 cd.lpcd_first_idx = 0;
                 cd.lpcd_last_idx = cat_llh->lgh_last_idx;
                 rc = llog_reverse_process(env, cat_llh, llog_cat_reverse_process_cb,
-                                          &d, &cd);
+                                          &lgi->lgi_lpd, &cd);
                 if (rc != 0)
                         GOTO(out, rc);
 
                 cd.lpcd_first_idx = le32_to_cpu(llh->llh_cat_idx);
                 cd.lpcd_last_idx = 0;
                 rc = llog_reverse_process(env, cat_llh, llog_cat_reverse_process_cb,
-                                          &d, &cd);
+                                          &lgi->lgi_lpd, &cd);
         } else {
                 rc = llog_reverse_process(env, cat_llh, llog_cat_reverse_process_cb,
-                                          &d, NULL);
+                                          &lgi->lgi_lpd, NULL);
         }
 
 out:

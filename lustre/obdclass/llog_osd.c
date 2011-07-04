@@ -226,20 +226,12 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
                                                struct dt_device *dev,
                                                struct thandle *th)
 {
+        struct llog_thread_info       *lgi = llog_info(env);
         struct llog_superblock_ondisk  sbd;
         struct llog_superblock        *lsb;
         struct dt_object              *o;
         struct thandle                *_th;
-        struct lu_fid                  fid;
-        struct lu_attr                *attr = NULL;
-        struct dt_object_format        dof;
-        struct lu_buf                  lb;
-        loff_t                         pos;
         int                            rc;
-
-        OBD_ALLOC_PTR(attr);
-        if (unlikely(attr == NULL))
-                RETURN(ERR_PTR(-ENOMEM));
 
         cfs_mutex_lock(&lsb_list_mutex);
         lsb = __llog_osd_find_sb(dev);
@@ -266,30 +258,31 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
          * literally we need a sequece */
         lsb->lsb_seq = FID_SEQ_LLOG;
 
-        fid.f_seq = FID_SEQ_LLOG;
-        fid.f_oid = 1;
-        fid.f_ver = 0;
+        lgi->lgi_fid.f_seq = FID_SEQ_LLOG;
+        lgi->lgi_fid.f_oid = 1;
+        lgi->lgi_fid.f_ver = 0;
 
-        o = llog_osd_locate(env, lsb, &fid);
+        o = llog_osd_locate(env, lsb, &lgi->lgi_fid);
         if(IS_ERR(o))
                 GOTO(out, lsb = ERR_PTR(PTR_ERR(o)));
 
-        pos = 0;
-        lb.lb_buf = &sbd;
-        lb.lb_len = sizeof(sbd);
+        lgi->lgi_off = 0;
+        lgi->lgi_buf.lb_buf = &sbd;
+        lgi->lgi_buf.lb_len = sizeof(sbd);
 
         if (!dt_object_exists(o)) {
                 LASSERT(th == NULL);
 
-                attr->la_valid = LA_TYPE | LA_MODE;
-                attr->la_mode = S_IFREG | 0666;
-                dof.dof_type = dt_mode_to_dft(S_IFREG);
+                lgi->lgi_attr.la_valid = LA_TYPE | LA_MODE;
+                lgi->lgi_attr.la_mode = S_IFREG | 0666;
+                lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
                 _th = dt_trans_create(env, dev);
                 if (IS_ERR(_th))
                         GOTO(out, lsb = ERR_PTR(PTR_ERR(_th)));
 
-                rc = dt_declare_create(env, o, attr, NULL, &dof, _th);
+                rc = dt_declare_create(env, o, &lgi->lgi_attr, NULL,
+                                       &lgi->lgi_dof, _th);
                 if (rc)
                         GOTO(out_trans, rc);
 
@@ -303,7 +296,8 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
 
                 dt_write_lock(env, o, 0);
                 LASSERT(!dt_object_exists(o));
-                rc = dt_create(env, o, attr, NULL, &dof, _th);
+                rc = dt_create(env, o, &lgi->lgi_attr, NULL,
+                               &lgi->lgi_dof, _th);
                 dt_write_unlock(env, o);
                 if (rc)
                         GOTO(out_trans, rc);
@@ -311,14 +305,15 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
 
                 sbd.next_id = 2;
 
-                rc = dt_record_write(env, o, &lb, &pos, _th);
+                rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off,
+                                     _th);
                 if (rc)
                         GOTO(out_trans, rc);
 out_trans:
                 dt_trans_stop(env, dev, _th);
                 _th = NULL;
         } else {
-                rc = dt_record_read(env, o, &lb, &pos);
+                rc = dt_record_read(env, o, &lgi->lgi_buf, &lgi->lgi_off);
         }
 
         if (rc) {
@@ -329,25 +324,7 @@ out_trans:
         }
 out:
         cfs_mutex_unlock(&lsb_list_mutex);
-        OBD_FREE_PTR(attr);
         return lsb;
-}
-
-static int llog_osd_lookup(const struct lu_env *env,
-                           struct llog_ctxt *ctxt,
-                           struct llog_superblock *lsb,
-                           char *name,
-                           struct llog_logid *logid)
-{
-        struct lu_fid     fid;
-        int               rc;
-
-        LASSERT(ctxt->loc_dir);
-
-        rc = dt_lookup(env, ctxt->loc_dir, name, &fid);
-        if (rc == 0)
-                fid_to_logid(&fid, logid);
-        return rc;
 }
 
 static void llog_osd_put_sb(const struct lu_env *env, struct llog_superblock *lsb)
@@ -386,10 +363,9 @@ static int llog_osd_generate_fid(const struct lu_env *env,
                                  struct llog_superblock *lsb,
                                  struct lu_fid *fid)
 {
+        struct llog_thread_info *lgi = llog_info(env);
         struct llog_superblock_ondisk  sbd;
         struct thandle                *th;
-        struct lu_buf                  lb;
-        loff_t                         pos;
         int                            rc;
         ENTRY;
 
@@ -415,12 +391,13 @@ static int llog_osd_generate_fid(const struct lu_env *env,
         if (rc != 0)
                 GOTO(out_trans, rc);
 
-        pos = 0;
+        lgi->lgi_off = 0;
         sbd.next_id = lsb->lsb_last_oid;
-        lb.lb_buf = &sbd;
-        lb.lb_len = sizeof(sbd);
+        lgi->lgi_buf.lb_buf = &sbd;
+        lgi->lgi_buf.lb_len = sizeof(sbd);
 
-        rc = dt_record_write(env, lsb->lsb_obj, &lb, &pos, th);
+        rc = dt_record_write(env, lsb->lsb_obj, &lgi->lgi_buf, &lgi->lgi_off,
+                             th);
 out_trans:
         dt_trans_stop(env, lsb->lsb_dev, th);
         RETURN(rc);
@@ -431,48 +408,43 @@ static int llog_osd_pad(const struct lu_env *env,
                         loff_t *off, int len, int index,
                         struct thandle *th)
 {
-        struct llog_rec_hdr  rec = { 0 };
-        struct llog_rec_tail tail;
-        struct lu_buf        lb;
-        int                  rc;
+        struct llog_thread_info *lgi = llog_info(env);
+        int rc;
         ENTRY;
 
         LASSERT(th);
         LASSERT(off);
         LASSERT(len >= LLOG_MIN_REC_SIZE && (len & 0x7) == 0);
 
-        tail.lrt_len = rec.lrh_len = len;
-        tail.lrt_index = rec.lrh_index = index;
-        rec.lrh_type = LLOG_PAD_MAGIC;
+        lgi->lgi_tail.lrt_len = lgi->lgi_lrh.lrh_len = len;
+        lgi->lgi_tail.lrt_index = lgi->lgi_lrh.lrh_index = index;
+        lgi->lgi_lrh.lrh_type = LLOG_PAD_MAGIC;
 
-        lb.lb_buf = &rec;
-        lb.lb_len = sizeof(rec);
-        rc = dt_record_write(env, o, &lb, off, th);
+        lgi->lgi_buf.lb_buf = &lgi->lgi_lrh;
+        lgi->lgi_buf.lb_len = sizeof(lgi->lgi_lrh);
+        rc = dt_record_write(env, o, &lgi->lgi_buf, off, th);
         if (rc) {
                 CERROR("error writing padding record: rc %d\n", rc);
-                goto out;
+                RETURN(rc);
         }
 
-        lb.lb_buf = &tail;
-        lb.lb_len = sizeof(tail);
-        *off += len - sizeof(rec) - sizeof(tail);
-        rc = dt_record_write(env, o, &lb, off, th);
-        if (rc) {
+        lgi->lgi_buf.lb_buf = &lgi->lgi_tail;
+        lgi->lgi_buf.lb_len = sizeof(lgi->lgi_tail);
+        *off += len - sizeof(lgi->lgi_lrh) - sizeof(lgi->lgi_tail);
+        rc = dt_record_write(env, o, &lgi->lgi_buf, off, th);
+        if (rc)
                 CERROR("error writing padding record: rc %d\n", rc);
-                goto out;
-        }
-out:
+
         RETURN(rc);
 }
 
 static int llog_osd_write_blob(const struct lu_env *env, struct dt_object *o,
-                               struct llog_rec_hdr *rec, void *buf, loff_t off,
-                               struct thandle *th)
+                               struct llog_rec_hdr *rec, void *buf,
+                               loff_t *off, struct thandle *th)
 {
-        struct llog_rec_tail end;
-        struct lu_buf        lb;
-        int                  buflen = rec->lrh_len;
-        int                  rc;
+        struct llog_thread_info *lgi = llog_info(env);
+        int                      buflen = rec->lrh_len;
+        int                      rc;
         ENTRY;
 
         LASSERT(env);
@@ -481,41 +453,41 @@ static int llog_osd_write_blob(const struct lu_env *env, struct dt_object *o,
         if (buflen == 0)
                 CWARN("0-length record\n");
 
-        CDEBUG(D_OTHER, "write blob with type %x, buf %p/%u at off %u\n", 
-               (unsigned) rec->lrh_type, buf, buflen, (unsigned) off);
+        CDEBUG(D_OTHER, "write blob with type %x, buf %p/%u at off %u\n",
+               (unsigned) rec->lrh_type, buf, buflen, (unsigned) (*off));
 
         if (!buf) {
-                lb.lb_len = buflen;
-                lb.lb_buf = rec;
-                rc = dt_record_write(env, o, &lb, &off, th);
+                lgi->lgi_buf.lb_len = buflen;
+                lgi->lgi_buf.lb_buf = rec;
+                rc = dt_record_write(env, o, &lgi->lgi_buf, off, th);
                 if (rc)
                         CERROR("error writing log record: rc %d\n", rc);
                 RETURN(rc);
         }
 
         /* the buf case */
-        rec->lrh_len = sizeof(*rec) + buflen + sizeof(end);
-        lb.lb_len = sizeof(*rec);
-        lb.lb_buf = rec;
-        rc = dt_record_write(env, o, &lb, &off, th);
+        rec->lrh_len = sizeof(*rec) + buflen + sizeof(lgi->lgi_tail);
+        lgi->lgi_buf.lb_len = sizeof(*rec);
+        lgi->lgi_buf.lb_buf = rec;
+        rc = dt_record_write(env, o, &lgi->lgi_buf, off, th);
         if (rc) {
                 CERROR("error writing log hdr: rc %d\n", rc);
                 goto out;
         }
 
-        lb.lb_len = buflen;
-        lb.lb_buf = buf;
-        rc = dt_record_write(env, o, &lb, &off, th);
+        lgi->lgi_buf.lb_len = buflen;
+        lgi->lgi_buf.lb_buf = buf;
+        rc = dt_record_write(env, o, &lgi->lgi_buf, off, th);
         if (rc) {
                 CERROR("error writing log buffer: rc %d\n", rc);
                 goto out;
         }
 
-        end.lrt_len = rec->lrh_len;
-        end.lrt_index = rec->lrh_index;
-        lb.lb_len = sizeof(end);
-        lb.lb_buf = &end;
-        rc = dt_record_write(env, o, &lb, &off, th);
+        lgi->lgi_tail.lrt_len = rec->lrh_len;
+        lgi->lgi_tail.lrt_index = rec->lrh_index;
+        lgi->lgi_buf.lb_len = sizeof(lgi->lgi_tail);
+        lgi->lgi_buf.lb_buf = &lgi->lgi_tail;
+        rc = dt_record_write(env, o, &lgi->lgi_buf, off, th);
         if (rc)
                 CERROR("error writing log tail: rc %d\n", rc);
 out:
@@ -524,18 +496,18 @@ out:
 }
 
 static int llog_osd_read_blob(const struct lu_env *env, struct dt_object *o,
-                              void *buf, int size, loff_t off)
+                              void *buf, int size, loff_t *off)
 {
-        struct lu_buf lb;
-        int           rc;
+        struct llog_thread_info *lgi = llog_info(env);
+        int rc;
 
         LASSERT(env);
         LASSERT(o);
         LASSERT(buf);
 
-        lb.lb_buf = buf;
-        lb.lb_len = size;
-        rc = dt_record_read(env, o, &lb, &off);
+        lgi->lgi_buf.lb_buf = buf;
+        lgi->lgi_buf.lb_len = size;
+        rc = dt_record_read(env, o, &lgi->lgi_buf, off);
 
         RETURN(rc);
 }
@@ -543,17 +515,13 @@ static int llog_osd_read_blob(const struct lu_env *env, struct dt_object *o,
 static int llog_osd_read_header(struct llog_handle *handle)
 {
         struct dt_object        *o;
-        struct lu_attr          *attr = NULL;
         struct dt_device        *dt;
+        struct llog_thread_info *lgi;
         struct lu_env            env;
         int                      rc;
         ENTRY;
 
         LASSERT(sizeof(*handle->lgh_hdr) == LLOG_CHUNK_SIZE);
-
-        OBD_ALLOC_PTR(attr);
-        if (unlikely(attr == NULL))
-                RETURN(-ENOMEM);
 
         o = handle->lgh_obj;
         LASSERT(o);
@@ -563,22 +531,25 @@ static int llog_osd_read_header(struct llog_handle *handle)
         rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
         if (rc) {
                 CERROR("can't initialize env: %d\n", rc);
-                GOTO(out_attr, rc);
+                RETURN(rc);
         }
 
-        rc = dt_attr_get(&env, o, attr, NULL);
+        lgi = llog_info(&env);
+
+        rc = dt_attr_get(&env, o, &lgi->lgi_attr, NULL);
         if (rc)
                 GOTO(out, rc);
 
-        LASSERT(attr->la_valid & LA_SIZE);
+        LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
 
-        if (attr->la_size == 0) {
+        if (lgi->lgi_attr.la_size == 0) {
                 CDEBUG(D_HA, "not reading header from 0-byte log\n");
                 GOTO(out, rc = LLOG_EEMPTY);
         }
 
+        lgi->lgi_off = 0;
         rc = llog_osd_read_blob(&env, o, handle->lgh_hdr,
-                                 LLOG_CHUNK_SIZE, 0);
+                                LLOG_CHUNK_SIZE, &lgi->lgi_off);
         if (rc) {
                 CERROR("error reading log header from "DFID"\n",
                        PFID(lu_object_fid(&o->do_lu)));
@@ -609,8 +580,6 @@ static int llog_osd_read_header(struct llog_handle *handle)
         handle->lgh_last_idx = handle->lgh_hdr->llh_tail.lrt_index;
 out:
         lu_env_fini(&env);
-out_attr:
-        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -619,9 +588,8 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
                                       struct llog_rec_hdr *rec,
                                       int idx, struct thandle *th)
 {
+        struct llog_thread_info *lgi = llog_info(env);
         struct dt_object *o;
-        struct lu_attr   *attr = NULL;
-        loff_t            pos;
         int               rc;
         ENTRY;
 
@@ -636,28 +604,22 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
         rc = dt_declare_record_write(env, o, sizeof(struct llog_log_hdr),
                                      0, th);
         if (rc || idx == 0) /* if error or just header */
-                GOTO(out, rc);
+                RETURN(rc);
 
         if (dt_object_exists(o)) {
-                OBD_ALLOC_PTR(attr);
-                if (unlikely(attr == NULL))
-                        GOTO(out, rc = -ENOMEM);
-                rc = dt_attr_get(env, o, attr, BYPASS_CAPA);
-                pos = attr->la_size;
-                LASSERT(ergo(rc == 0, attr->la_valid & LA_SIZE));
-                OBD_FREE_PTR(attr);
+                rc = dt_attr_get(env, o, &lgi->lgi_attr, BYPASS_CAPA);
+                lgi->lgi_off = lgi->lgi_attr.la_size;
+                LASSERT(ergo(rc == 0, lgi->lgi_attr.la_valid & LA_SIZE));
                 if (rc)
-                        GOTO(out, rc);
+                        RETURN(rc);
         } else {
-                pos = 0;
+                lgi->lgi_off = 0;
         }
 
         /* XXX: implement declared window or multi-chunks approach */
-        rc = dt_declare_record_write(env, o, 32 * 1024, pos, th);
-        if (rc)
-                GOTO(out, rc);
-out:
-        return rc;
+        rc = dt_declare_record_write(env, o, 32 * 1024, lgi->lgi_off, th);
+
+        RETURN(rc);
 }
 
 /* returns negative in on error; 0 if success && reccookie == 0; 1 otherwise */
@@ -668,14 +630,13 @@ static int llog_osd_write_rec(const struct lu_env *env,
                               struct llog_cookie *reccookie, int cookiecount,
                               void *buf, int idx, struct thandle *th)
 {
-        struct llog_log_hdr       *llh;
-        int                        reclen = rec->lrh_len;
-        int                        index, rc;
-        struct llog_rec_tail      *lrt;
-        struct dt_object          *o;
-        size_t                     left;
-        struct lu_attr            *attr = NULL;
-        loff_t                     off;
+        struct llog_thread_info *lgi = llog_info(env);
+        struct llog_log_hdr     *llh;
+        int                      reclen = rec->lrh_len;
+        int                      index, rc;
+        struct llog_rec_tail    *lrt;
+        struct dt_object        *o;
+        size_t                   left;
         ENTRY;
 
         LASSERT(env);
@@ -697,15 +658,9 @@ static int llog_osd_write_rec(const struct lu_env *env,
         if (rc)
                 RETURN(rc);
 
-        OBD_ALLOC_PTR(attr);
-        if (unlikely(attr == NULL))
-                RETURN(-ENOMEM);
-
-        rc = dt_attr_get(env, o, attr, NULL);
+        rc = dt_attr_get(env, o, &lgi->lgi_attr, NULL);
         if (rc)
-                GOTO(out, rc);
-        LASSERT(attr->la_valid & LA_SIZE);
-        off = attr->la_size;
+                RETURN(rc);
 
         if (buf)
                 /* write_blob adds header and tail to lrh_len. */
@@ -713,50 +668,51 @@ static int llog_osd_write_rec(const struct lu_env *env,
                          sizeof(struct llog_rec_tail);
 
         if (idx != -1) {
-                loff_t saved_offset;
                 /* no header: only allowed to insert record 1 */
-                if (idx != 1 && attr->la_size == 0)
+                if (idx != 1 && lgi->lgi_attr.la_size == 0)
                         LBUG();
 
                 if (idx && llh->llh_size && llh->llh_size != rec->lrh_len)
-                        GOTO(out, rc = -EINVAL);
+                        RETURN(-EINVAL);
 
                 if (!ext2_test_bit(idx, llh->llh_bitmap))
                         CERROR("Modify unset record %u\n", idx);
                 if (idx != rec->lrh_index)
                         CERROR("Index mismatch %d %u\n", idx, rec->lrh_index);
 
-                rc = llog_osd_write_blob(env, o, &llh->llh_hdr, NULL, 0, th);
+                lgi->lgi_off = 0;
+                rc = llog_osd_write_blob(env, o, &llh->llh_hdr, NULL,
+                                         &lgi->lgi_off, th);
                 /* we are done if we only write the header or on error */
                 if (rc || idx == 0)
-                        GOTO(out, rc);
-
-                /* Assumes constant lrh_len */
-                saved_offset = sizeof(*llh) + (idx - 1) * reclen;
+                        RETURN(rc);
 
                 if (buf) {
                         /* We assume that caller has set lgh_cur_* */
-                        saved_offset = loghandle->lgh_cur_offset;
+                        lgi->lgi_off = loghandle->lgh_cur_offset;
                         CDEBUG(D_OTHER,
                                "modify record "LPX64": idx:%d/%u/%d, len:%u "
                                "offset %llu\n",
                                loghandle->lgh_id.lgl_oid, idx, rec->lrh_index,
                                loghandle->lgh_cur_idx, rec->lrh_len,
-                               (long long)(saved_offset - sizeof(*llh)));
+                               (long long)(lgi->lgi_off - sizeof(*llh)));
                         if (rec->lrh_index != loghandle->lgh_cur_idx) {
                                 CERROR("modify idx mismatch %u/%d\n",
                                        idx, loghandle->lgh_cur_idx);
-                                GOTO(out, rc = -EFAULT);
+                                RETURN(-EFAULT);
                         }
+                } else {
+                        /* Assumes constant lrh_len */
+                        lgi->lgi_off = sizeof(*llh) + (idx - 1) * reclen;
                 }
 
-                rc = llog_osd_write_blob(env, o, rec, buf, saved_offset, th);
+                rc = llog_osd_write_blob(env, o, rec, buf, &lgi->lgi_off, th);
                 if (rc == 0 && reccookie) {
                         reccookie->lgc_lgl = loghandle->lgh_id;
                         reccookie->lgc_index = idx;
                         rc = 1;
                 }
-                GOTO(out, rc);
+                RETURN(rc);
         }
 
         /* Make sure that records don't cross a chunk boundary, so we can
@@ -766,20 +722,23 @@ static int llog_osd_write_rec(const struct lu_env *env,
          * We know that llog_current_log() will return a loghandle that is
          * big enough to hold reclen, so all we care about is padding here.
          */
-        left = LLOG_CHUNK_SIZE - (off & (LLOG_CHUNK_SIZE - 1));
+        LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
+        lgi->lgi_off = lgi->lgi_attr.la_size;
+        left = LLOG_CHUNK_SIZE - (lgi->lgi_off & (LLOG_CHUNK_SIZE - 1));
 
         /* NOTE: padding is a record, but no bit is set */
         if (left != 0 && left != reclen &&
             left < (reclen + LLOG_MIN_REC_SIZE)) {
                 index = loghandle->lgh_last_idx + 1;
-                rc = llog_osd_pad(env, o, &off, left, index, th);
+                rc = llog_osd_pad(env, o, &lgi->lgi_off, left, index, th);
                 if (rc)
-                        GOTO(out, rc);
+                        RETURN(rc);
                 loghandle->lgh_last_idx++; /*for pad rec*/
         }
         /* if it's the last idx in log file, then return -ENOSPC */
         if (loghandle->lgh_last_idx >= LLOG_BITMAP_SIZE(llh) - 1)
-                GOTO(out, rc = -ENOSPC);
+                RETURN(-ENOSPC);
+
         loghandle->lgh_last_idx++;
         index = loghandle->lgh_last_idx;
         LASSERT(index < LLOG_BITMAP_SIZE(llh));
@@ -803,19 +762,21 @@ static int llog_osd_write_rec(const struct lu_env *env,
         cfs_spin_unlock(&loghandle->lgh_hdr_lock);
         llh->llh_tail.lrt_index = index;
 
-        rc = llog_osd_write_blob(env, o, &llh->llh_hdr, NULL, 0, th);
+        lgi->lgi_off = 0;
+        rc = llog_osd_write_blob(env, o, &llh->llh_hdr, NULL, &lgi->lgi_off,
+                                 th);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
-        rc = dt_attr_get(env, o, attr, NULL);
+        rc = dt_attr_get(env, o, &lgi->lgi_attr, NULL);
         if (rc)
-                GOTO(out, rc);
-        LASSERT(attr->la_valid & LA_SIZE);
-        off = attr->la_size;
+                RETURN(rc);
+        LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
+        lgi->lgi_off = lgi->lgi_attr.la_size;
 
-        rc = llog_osd_write_blob(env, o, rec, buf, off, th);
+        rc = llog_osd_write_blob(env, o, rec, buf, &lgi->lgi_off, th);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         CDEBUG(D_RPCTRACE, "added record "LPX64": idx: %u, %u \n",
                loghandle->lgh_id.lgl_oid, index, rec->lrh_len);
@@ -833,20 +794,17 @@ static int llog_osd_write_rec(const struct lu_env *env,
                         reccookie->lgc_subsys = -1;
                 rc = 1;
         }
-out:
-        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
 int llog_osd_record_read(const struct lu_env *env, struct dt_object *dt,
                          void *buf, int len, loff_t *pos)
 {
-        struct lu_buf lb;
+        struct llog_thread_info *lgi = llog_info(env);
 
-        lb.lb_buf = buf;
-        lb.lb_len = len;
-
-        return dt_record_read(env, dt, &lb, pos);
+        lgi->lgi_buf.lb_buf = buf;
+        lgi->lgi_buf.lb_len = len;
+        return dt_record_read(env, dt, &lgi->lgi_buf, pos);
 }
 
 /* We can skip reading at least as many log blocks as the number of
@@ -872,13 +830,14 @@ static int llog_osd_next_block(const struct lu_env *env,
                                int next_idx, __u64 *cur_offset, void *buf,
                                int len)
 {
+        struct llog_thread_info *lgi = llog_info(env);
         struct dt_object *o;
         struct dt_device *dt;
-        struct lu_attr   *attr = NULL;
         int               rc;
         ENTRY;
 
         LASSERT(env);
+        LASSERT(lgi);
 
         if (len == 0 || len & (LLOG_CHUNK_SIZE - 1))
                 RETURN(-EINVAL);
@@ -895,15 +854,11 @@ static int llog_osd_next_block(const struct lu_env *env,
         dt = lu2dt_dev(o->do_lu.lo_dev);
         LASSERT(dt);
 
-        OBD_ALLOC_PTR(attr);
-        if (unlikely(attr == NULL))
-                RETURN(-ENOMEM);
-
-        rc = dt_attr_get(env, o, attr, BYPASS_CAPA);
+        rc = dt_attr_get(env, o, &lgi->lgi_attr, BYPASS_CAPA);
         if (rc)
                 GOTO(out, rc);
 
-        while (*cur_offset < attr->la_size) {
+        while (*cur_offset < lgi->lgi_attr.la_size) {
                 struct llog_rec_hdr *rec, *last_rec;
                 struct llog_rec_tail *tail;
                 loff_t ppos, toread;
@@ -979,18 +934,17 @@ static int llog_osd_next_block(const struct lu_env *env,
         }
         GOTO(out, rc = -EIO);
 out:
-        OBD_FREE_PTR(attr);
-        RETURN(rc);
+        return rc;
 }
 
 static int llog_osd_prev_block(const struct lu_env *env,
                                struct llog_handle *loghandle,
                                int prev_idx, void *buf, int len)
 {
+        struct llog_thread_info *lgi = llog_info(env);
         struct dt_object *o;
         struct dt_device *dt;
-        struct lu_attr   *attr = NULL;
-        __u64             cur_offset;
+        loff_t            cur_offset;
         int               rc;
         ENTRY;
 
@@ -1008,25 +962,20 @@ static int llog_osd_prev_block(const struct lu_env *env,
         dt = lu2dt_dev(o->do_lu.lo_dev);
         LASSERT(dt);
 
-        OBD_ALLOC_PTR(attr);
-        if (unlikely(attr == NULL))
-                RETURN(-ENOMEM);
-
         cur_offset = LLOG_CHUNK_SIZE;
         llog_skip_over(&cur_offset, 0, prev_idx);
 
-        rc = dt_attr_get(env, o, attr, BYPASS_CAPA);
+        rc = dt_attr_get(env, o, &lgi->lgi_attr, BYPASS_CAPA);
         if (rc)
                 GOTO(out, rc);
 
-        while (cur_offset < attr->la_size) {
+        while (cur_offset < lgi->lgi_attr.la_size) {
                 struct llog_rec_hdr *rec, *last_rec;
                 struct llog_rec_tail *tail;
-                loff_t ppos;
 
-                ppos = cur_offset;
+                lgi->lgi_off = cur_offset;
 
-                rc = llog_osd_record_read(env, o, buf, len, &ppos);
+                rc = llog_osd_record_read(env, o, buf, len, &lgi->lgi_off);
                 if (rc) {
                         CERROR("Cant read llog block at log id "LPU64
                                "/%u offset "LPU64"\n",
@@ -1037,8 +986,8 @@ static int llog_osd_prev_block(const struct lu_env *env,
                 }
 
                 /* put number of bytes read into rc to make code simpler */
-                rc = ppos - cur_offset;
-                cur_offset = ppos;
+                rc = lgi->lgi_off - cur_offset;
+                cur_offset = lgi->lgi_off;
 
                 if (rc == 0) /* end of file, nothing to do */
                         GOTO(out, rc);
@@ -1085,8 +1034,7 @@ static int llog_osd_prev_block(const struct lu_env *env,
         }
         GOTO(out, rc = -EIO);
 out:
-        OBD_FREE_PTR(attr);
-        RETURN(rc);
+        return rc;
 }
 
 /*
@@ -1096,12 +1044,12 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
                          struct llog_handle **res, struct llog_logid *logid,
                          char *name, enum llog_open_flag flags)
 {
-        struct llog_handle        *handle = NULL;
-        struct dt_object          *o;
-        struct dt_device          *dt;
-        struct llog_superblock    *lsb = NULL;
-        struct lu_fid              fid;
-        int                        rc = 0;
+        struct llog_thread_info *lgi = llog_info(env);
+        struct llog_handle      *handle = NULL;
+        struct dt_object        *o;
+        struct dt_device        *dt;
+        struct llog_superblock  *lsb = NULL;
+        int                      rc = 0;
         ENTRY;
 
         LASSERT(env);
@@ -1120,34 +1068,30 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
         *res = handle;
 
         if (logid != NULL) {
-                logid_to_fid(logid, &fid);
+                logid_to_fid(logid, &lgi->lgi_fid);
         } else if (name) {
-                struct llog_logid tlogid;
-
-                rc = llog_osd_lookup(env, ctxt, lsb, name, &tlogid);
-                if (rc == 0) {
-                        logid_to_fid(&tlogid, &fid);
-                } else if (flags & LLOG_OPEN_NEW) {
+                rc = dt_lookup(env, ctxt->loc_dir, name, &lgi->lgi_fid);
+                if (rc == -ENOENT && flags & LLOG_OPEN_NEW) {
                         /* generate fid for new llog */
                         OBD_ALLOC(handle->lgh_name, strlen(name) + 1);
                         if (handle->lgh_name)
                                 strcpy(handle->lgh_name, name);
                         else
                                 GOTO(out_free, rc = -ENOMEM);
-                        rc = llog_osd_generate_fid(env, lsb, &fid);
+                        rc = llog_osd_generate_fid(env, lsb, &lgi->lgi_fid);
                 }
                 if (rc < 0)
                         GOTO(out_free, rc);
         } else {
                 LASSERTF(flags & LLOG_OPEN_NEW, "%#x\n", flags);
                 /* generate fid for new llog */
-                rc = llog_osd_generate_fid(env, lsb, &fid);
+                rc = llog_osd_generate_fid(env, lsb, &lgi->lgi_fid);
                 if (rc < 0)
                         GOTO(out_free, rc);
                 /* XXX: generate name for this object? */
         }
 
-        o = llog_osd_locate(env, lsb, &fid);
+        o = llog_osd_locate(env, lsb, &lgi->lgi_fid);
         if (IS_ERR(o))
                 GOTO(out_free, rc = PTR_ERR(o));
 
@@ -1155,7 +1099,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (!(flags & LLOG_OPEN_NEW) && !dt_object_exists(o))
                 GOTO(out_put, rc = -ENOENT);
 
-        fid_to_logid(&fid, &handle->lgh_id);
+        fid_to_logid(&lgi->lgi_fid, &handle->lgh_id);
         handle->lgh_obj = o;
         handle->lgh_ctxt = ctxt;
         cfs_atomic_inc(&lsb->lsb_refcount);
@@ -1184,11 +1128,9 @@ static int llog_osd_declare_create(const struct lu_env *env,
                                    struct llog_handle *res,
                                    struct thandle *th)
 {
-        struct dt_object_format dof;
-        struct lu_attr         *attr = NULL;
-        struct dt_object       *o;
-        struct lu_fid           fid;
-        int                     rc;
+        struct llog_thread_info *lgi = llog_info(env);
+        struct dt_object        *o;
+        int                      rc;
         ENTRY;
 
         LASSERT(res->lgh_obj);
@@ -1199,34 +1141,29 @@ static int llog_osd_declare_create(const struct lu_env *env,
         if (dt_object_exists(o))
                 RETURN(0);
 
-        OBD_ALLOC_PTR(attr);
-        if (unlikely(attr == NULL))
-                RETURN(-ENOMEM);
+        lgi->lgi_attr.la_valid = LA_TYPE | LA_MODE;
+        lgi->lgi_attr.la_mode = S_IFREG | 0666;
+        lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
-        attr->la_valid = LA_TYPE | LA_MODE;
-        attr->la_mode = S_IFREG | 0666;
-        dof.dof_type = dt_mode_to_dft(S_IFREG);
-
-        rc = dt_declare_create(env, o, attr, NULL, &dof, th);
+        rc = dt_declare_create(env, o, &lgi->lgi_attr, NULL,
+                               &lgi->lgi_dof, th);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         rc = dt_declare_record_write(env, o, LLOG_CHUNK_SIZE, 0, th);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         if (res->lgh_name) {
                 LASSERT(res->lgh_ctxt->loc_dir);
-                logid_to_fid(&res->lgh_id, &fid);
+                logid_to_fid(&res->lgh_id, &lgi->lgi_fid);
                 rc = dt_declare_insert(env, res->lgh_ctxt->loc_dir,
-                                       (struct dt_rec *) &fid,
+                                       (struct dt_rec *) &lgi->lgi_fid,
                                        (struct dt_key *) res->lgh_name, th);
                 if (rc)
                         CERROR("can't declare named llog %s: %d\n",
                                res->lgh_name, rc);
         }
-out:
-        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -1235,11 +1172,9 @@ out:
 static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
                            struct thandle *th)
 {
-        struct dt_object          *o;
-        struct lu_attr            *attr = NULL;
-        struct dt_object_format    dof;
-        struct lu_fid              fid;
-        int                        rc = 0;
+        struct llog_thread_info *lgi = llog_info(env);
+        struct dt_object        *o;
+        int                      rc = 0;
         ENTRY;
 
         LASSERT(env);
@@ -1250,37 +1185,32 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
         if (dt_object_exists(o))
                 RETURN(-EEXIST);
 
-        OBD_ALLOC_PTR(attr);
-        if (unlikely(attr == NULL))
-                RETURN(-ENOMEM);
-
         dt_write_lock(env, o, 0);
         if (!dt_object_exists(o)) {
-                attr->la_valid = LA_TYPE | LA_MODE;
-                attr->la_mode = S_IFREG | 0666;
-                dof.dof_type = dt_mode_to_dft(S_IFREG);
+                lgi->lgi_attr.la_valid = LA_TYPE | LA_MODE;
+                lgi->lgi_attr.la_mode = S_IFREG | 0666;
+                lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
-                rc = dt_create(env, o, attr, NULL, &dof, th);
+                rc = dt_create(env, o, &lgi->lgi_attr, NULL,
+                               &lgi->lgi_dof, th);
         } else {
                 rc = -EEXIST;
         }
         dt_write_unlock(env, o);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         if (res->lgh_name) {
                 LASSERT(res->lgh_ctxt->loc_dir);
-                logid_to_fid(&res->lgh_id, &fid);
+                logid_to_fid(&res->lgh_id, &lgi->lgi_fid);
                 rc = dt_insert(env, res->lgh_ctxt->loc_dir,
-                               (struct dt_rec *) &fid,
+                               (struct dt_rec *) &lgi->lgi_fid,
                                (struct dt_key *) res->lgh_name,
                                th, BYPASS_CAPA, 1);
                 if (rc)
                         CERROR("can't create named llog %s: %d\n",
                                res->lgh_name, rc);
         }
-out:
-        OBD_FREE_PTR(attr);
         RETURN(rc);
 }
 
@@ -1459,36 +1389,34 @@ EXPORT_SYMBOL(llog_osd_ops);
 int llog_get_cat_list(const struct lu_env *env, struct dt_device *d,
                       int idx, int count, struct llog_catid *idarray)
 {
-        int               size = sizeof(*idarray) * count;
-        loff_t            off = idx *  sizeof(*idarray);
+        struct llog_thread_info *lgi = llog_info(env);
         struct dt_object *o = NULL;
         struct thandle   *th;
-        struct lu_fid     fid;
-        struct lu_attr    attr;
-        struct lu_buf     lb;
-        int               rc;
+        int               rc, size;
         ENTRY;
 
         LASSERT(d);
 
-        lu_local_obj_fid(&fid, LLOG_CATALOGS_OID);
-        o = dt_locate(env, d, &fid);
+        size = sizeof(*idarray) * count;
+        lgi->lgi_off = idx *  sizeof(*idarray);
+
+        lu_local_obj_fid(&lgi->lgi_fid, LLOG_CATALOGS_OID);
+        o = dt_locate(env, d, &lgi->lgi_fid);
         if (IS_ERR(o))
                 RETURN(PTR_ERR(o));
 
         if (!dt_object_exists(o)) {
-                struct dt_object_format  dof;
-
-                memset(&attr, 0, sizeof(attr));
-                attr.la_valid = LA_MODE;
-                attr.la_mode = S_IFREG | 0666;
-                dof.dof_type = dt_mode_to_dft(S_IFREG);
+                memset(&lgi->lgi_attr, 0, sizeof(lgi->lgi_attr));
+                lgi->lgi_attr.la_valid = LA_MODE;
+                lgi->lgi_attr.la_mode = S_IFREG | 0666;
+                lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
                 th = dt_trans_create(env, d);
                 if (IS_ERR(th))
                         GOTO(out, rc = PTR_ERR(th));
 
-                rc = dt_declare_create(env, o, &attr, NULL, &dof, th);
+                rc = dt_declare_create(env, o, &lgi->lgi_attr, NULL,
+                                       &lgi->lgi_dof, th);
                 if (rc)
                         GOTO(out_trans, rc);
 
@@ -1498,7 +1426,8 @@ int llog_get_cat_list(const struct lu_env *env, struct dt_device *d,
 
                 dt_write_lock(env, o, 0);
                 if (!dt_object_exists(o))
-                        rc = dt_create(env, o, &attr, NULL, &dof, th);
+                        rc = dt_create(env, o, &lgi->lgi_attr, NULL,
+                                       &lgi->lgi_dof, th);
                 dt_write_unlock(env, o);
 out_trans:
                 dt_trans_stop(env, d, th);
@@ -1506,35 +1435,35 @@ out_trans:
                         GOTO(out, rc);
         }
 
-        rc = dt_attr_get(env, o, &attr, BYPASS_CAPA);
+        rc = dt_attr_get(env, o, &lgi->lgi_attr, BYPASS_CAPA);
         if (rc)
                 GOTO(out, rc);
 
-        if (!S_ISREG(attr.la_mode)) {
+        if (!S_ISREG(lgi->lgi_attr.la_mode)) {
                 CERROR("CATALOGS is not a regular file!: mode = %o\n",
-                       attr.la_mode);
+                       lgi->lgi_attr.la_mode);
                 GOTO(out, rc = -ENOENT);
         }
 
         CDEBUG(D_CONFIG, "cat list: disk size=%d, read=%d\n",
-               (int) attr.la_size, size);
+               (int) lgi->lgi_attr.la_size, size);
 
         /* return just number of llogs */
         if (idarray == NULL) {
-                rc = attr.la_size / sizeof(*idarray);
+                rc = lgi->lgi_attr.la_size / sizeof(*idarray);
                 GOTO(out, rc);
         }
 
         /* read for new ost index or for empty file */
         memset(idarray, 0, size);
-        if (attr.la_size < off)
+        if (lgi->lgi_attr.la_size < lgi->lgi_off + size)
                 GOTO(out, rc = 0);
-        if (attr.la_size < off + size)
-                size = attr.la_size - off;
+        if (lgi->lgi_attr.la_size < lgi->lgi_off + size)
+                size = lgi->lgi_attr.la_size - lgi->lgi_off;
 
-        lb.lb_buf = idarray;
-        lb.lb_len = size;
-        rc = dt_record_read(env, o, &lb, &off);
+        lgi->lgi_buf.lb_buf = idarray;
+        lgi->lgi_buf.lb_len = size;
+        rc = dt_record_read(env, o, &lgi->lgi_buf, &lgi->lgi_off);
         if (rc) {
                 CERROR("error reading CATALOGS: rc %d\n", rc);
                 GOTO(out, rc);
@@ -1551,35 +1480,34 @@ EXPORT_SYMBOL(llog_get_cat_list);
 int llog_put_cat_list(const struct lu_env *env, struct dt_device *d,
                       int idx, int count, struct llog_catid *idarray)
 {
-        int               size = sizeof(*idarray) * count;
-        loff_t            off = idx * sizeof(*idarray);
+        struct llog_thread_info *lgi = llog_info(env);
         struct dt_object *o = NULL;
         struct thandle   *th;
-        struct lu_fid     fid;
-        struct lu_attr    attr;
-        struct lu_buf     lb;
-        int               rc;
+        int               rc, size;
 
         if (!count)
                 RETURN(0);
 
         LASSERT(d);
 
-        lu_local_obj_fid(&fid, LLOG_CATALOGS_OID);
-        o = dt_locate(env, d, &fid);
+        size = sizeof(*idarray) * count;
+        lgi->lgi_off = idx * sizeof(*idarray);
+
+        lu_local_obj_fid(&lgi->lgi_fid, LLOG_CATALOGS_OID);
+        o = dt_locate(env, d, &lgi->lgi_fid);
         if (IS_ERR(o))
                 RETURN(PTR_ERR(o));
 
         if (!dt_object_exists(o))
                 GOTO(out, rc = -ENOENT);
 
-        rc = dt_attr_get(env, o, &attr, BYPASS_CAPA);
+        rc = dt_attr_get(env, o, &lgi->lgi_attr, BYPASS_CAPA);
         if (rc)
                 GOTO(out, rc);
 
-        if (!S_ISREG(attr.la_mode)) {
+        if (!S_ISREG(lgi->lgi_attr.la_mode)) {
                 CERROR("CATALOGS is not a regular file!: mode = %o\n",
-                       attr.la_mode);
+                       lgi->lgi_attr.la_mode);
                 GOTO(out, rc = -ENOENT);
         }
 
@@ -1587,7 +1515,7 @@ int llog_put_cat_list(const struct lu_env *env, struct dt_device *d,
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
 
-        rc = dt_declare_record_write(env, o, size, off, th);
+        rc = dt_declare_record_write(env, o, size, lgi->lgi_off, th);
         if (rc)
                 GOTO(out, rc);
 
@@ -1595,10 +1523,9 @@ int llog_put_cat_list(const struct lu_env *env, struct dt_device *d,
         if (rc)
                 GOTO(out_trans, rc);
 
-        lb.lb_buf = idarray;
-        lb.lb_len = size;
-
-        rc = dt_record_write(env, o, &lb, &off, th);
+        lgi->lgi_buf.lb_buf = idarray;
+        lgi->lgi_buf.lb_len = size;
+        rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off, th);
         if (rc)
                 CDEBUG(D_INODE,"error writeing CATALOGS: %d\n", rc);
 out_trans:
