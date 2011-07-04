@@ -206,18 +206,19 @@ int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
                 RETURN(rc);
         }
 
-        if (OBD_FAIL_CHECK(OBD_FAIL_OBD_LLOG_SETUP)) {
-                rc = -ENOTSUPP;
-        } else {
-                if (op->lop_setup)
+        if (op->lop_setup) {
+                if (OBD_FAIL_CHECK(OBD_FAIL_OBD_LLOG_SETUP))
+                        rc = -EOPNOTSUPP;
+                else
                         rc = op->lop_setup(obd, olg, index, disk_obd, count,
                                            logid, logname);
         }
 
         if (rc) {
-                /*CERROR("obd %s ctxt %d lop_setup=%p failed %d\n",
-                       obd->obd_name, index, op->lop_setup, rc);*/
-                llog_ctxt_put(ctxt);
+                CERROR("obd %s ctxt %d lop_setup=%p failed %d\n",
+                       obd->obd_name, index, op->lop_setup, rc);
+                llog_group_clear_ctxt(olg, index);
+                llog_ctxt_destroy(ctxt);
         } else {
                 CDEBUG(D_CONFIG, "obd %s ctxt %d is initialized\n",
                        obd->obd_name, index);
@@ -402,8 +403,7 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
                                 /* open but not created llog (new api) */
                                 continue;
                         }
-                        if ((llh->llh_flags &
-                                LLOG_F_ZAP_WHEN_EMPTY) &&
+                        if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
                             (llh->llh_count == 1)) {
                                 rc = llog_destroy(&env, loghandle);
                                 if (rc)

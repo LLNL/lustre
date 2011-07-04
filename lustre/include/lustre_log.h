@@ -605,6 +605,14 @@ static inline struct llog_ctxt *llog_group_get_ctxt(struct obd_llog_group *olg,
         return ctxt;
 }
 
+static inline void llog_group_clear_ctxt(struct obd_llog_group *olg, int index)
+{
+        LASSERT(index >= 0 && index < LLOG_MAX_CTXTS);
+        cfs_spin_lock(&olg->olg_lock);
+        olg->olg_ctxts[index] = NULL;
+        cfs_spin_unlock(&olg->olg_lock);
+}
+
 static inline struct llog_ctxt *llog_get_context(struct obd_device *obd,
                                                  int index)
 {
