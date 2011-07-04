@@ -655,7 +655,7 @@ ctxt_release:
 static union {
         struct llog_rec_hdr            lrh;   /* common header */
         struct llog_logid_rec          llr;   /* LLOG_LOGID_MAGIC */
-        struct llog_unlink_rec         lur;   /* MDS_UNLINK_REC */
+        struct llog_unlink64_rec       lur;   /* MDS_UNLINK64_REC */
         struct llog_setattr64_rec      lsr64; /* MDS_SETATTR64_REC */
         struct llog_size_change_rec    lscr;  /* OST_SZ_REC */
         struct llog_changelog_rec      lcr;   /* CHANGELOG_REC */
@@ -739,9 +739,11 @@ static int llog_test_7_sub(const struct lu_env *env, struct llog_ctxt *ctxt)
                 GOTO(out_close, rc);
         }
         process_count = plain_counter;
-        if (process_count != num_recs)
+        if (process_count != num_recs) {
                 CERROR("7_sub: processed %d records from %d total\n",
                        process_count, num_recs);
+                GOTO(out_close, rc = -EINVAL);
+        }
 
         plain_counter = 0;
         rc = llog_reverse_process(env, llh, test_7_cancel_cb, "test 7", NULL);
@@ -749,13 +751,16 @@ static int llog_test_7_sub(const struct lu_env *env, struct llog_ctxt *ctxt)
                 CERROR("7_sub: reverse llog process failed: %d\n", rc);
                 GOTO(out_close, rc);
         }
-        if (process_count != plain_counter)
+        if (process_count != plain_counter) {
                 CERROR("7_sub: Reverse/direct processing found different"
                        "number of records: %d/%d\n",
                        plain_counter, process_count);
-
-        if (llog_exist(llh))
+                GOTO(out_close, rc = -EINVAL);
+        }
+        if (llog_exist(llh)) {
                 CERROR("7_sub: llog exists but should be zapped\n");
+                GOTO(out_close, rc = -EEXIST);
+        }
 
         rc = verify_handle("7_sub", llh, 1);
 out_close:
@@ -778,17 +783,21 @@ static int llog_test_7(const struct lu_env *env, struct obd_device *obd)
         llog_records.llr.lid_hdr.lrh_type = LLOG_LOGID_MAGIC;
 
         rc = llog_test_7_sub(env, ctxt);
-        if (rc)
+        if (rc) {
                 CERROR("7a: llog_logid_rec test failed\n");
+                GOTO(out, rc);
+        }
 
-        CWARN("7b: test llog_unlink_rec\n");
+        CWARN("7b: test llog_unlink64_rec\n");
         llog_records.lur.lur_hdr.lrh_len = sizeof(llog_records.lur);
         llog_records.lur.lur_tail.lrt_len = sizeof(llog_records.lur);
-        llog_records.lur.lur_hdr.lrh_type = MDS_UNLINK_REC;
+        llog_records.lur.lur_hdr.lrh_type = MDS_UNLINK64_REC;
 
         rc = llog_test_7_sub(env, ctxt);
-        if (rc)
+        if (rc) {
                 CERROR("7b: llog_unlink_rec test failed\n");
+                GOTO(out, rc);
+        }
 
         CWARN("7c: test llog_setattr64_rec\n");
         llog_records.lsr64.lsr_hdr.lrh_len = sizeof(llog_records.lsr64);
@@ -796,8 +805,10 @@ static int llog_test_7(const struct lu_env *env, struct obd_device *obd)
         llog_records.lsr64.lsr_hdr.lrh_type = MDS_SETATTR64_REC;
 
         rc = llog_test_7_sub(env, ctxt);
-        if (rc)
+        if (rc) {
                 CERROR("7c: llog_setattr64_rec test failed\n");
+                GOTO(out, rc);
+        }
 
         CWARN("7d: test llog_size_change_rec\n");
         llog_records.lscr.lsc_hdr.lrh_len = sizeof(llog_records.lscr);
@@ -805,8 +816,10 @@ static int llog_test_7(const struct lu_env *env, struct obd_device *obd)
         llog_records.lscr.lsc_hdr.lrh_type = OST_SZ_REC;
 
         rc = llog_test_7_sub(env, ctxt);
-        if (rc)
+        if (rc) {
                 CERROR("7d: llog_size_change_rec test failed\n");
+                GOTO(out, rc);
+        }
 
         CWARN("7e: test llog_changelog_rec\n");
         llog_records.lcr.cr_hdr.lrh_len = sizeof(llog_records.lcr);
@@ -814,8 +827,10 @@ static int llog_test_7(const struct lu_env *env, struct obd_device *obd)
         llog_records.lcr.cr_hdr.lrh_type = CHANGELOG_REC;
 
         rc = llog_test_7_sub(env, ctxt);
-        if (rc)
+        if (rc) {
                 CERROR("7e: llog_changelog_rec test failed\n");
+                GOTO(out, rc);
+        }
 
         CWARN("7f: test llog_changelog_user_rec\n");
         llog_records.lcur.cur_hdr.lrh_len = sizeof(llog_records.lcur);
@@ -823,8 +838,10 @@ static int llog_test_7(const struct lu_env *env, struct obd_device *obd)
         llog_records.lcur.cur_hdr.lrh_type = CHANGELOG_USER_REC;
 
         rc = llog_test_7_sub(env, ctxt);
-        if (rc)
+        if (rc) {
                 CERROR("7f: llog_changelog_user_rec test failed\n");
+                GOTO(out, rc);
+        }
 
         CWARN("7g: test llog_gen_rec\n");
         llog_records.lgr.lgr_hdr.lrh_len = sizeof(llog_records.lgr);
@@ -832,9 +849,11 @@ static int llog_test_7(const struct lu_env *env, struct obd_device *obd)
         llog_records.lgr.lgr_hdr.lrh_type = LLOG_GEN_REC;
 
         rc = llog_test_7_sub(env, ctxt);
-        if (rc)
+        if (rc) {
                 CERROR("7g: llog_size_change_rec test failed\n");
-
+                GOTO(out, rc);
+        }
+out:
         llog_ctxt_put(ctxt);
         RETURN(rc);
 }
