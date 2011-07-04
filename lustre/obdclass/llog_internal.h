@@ -50,6 +50,35 @@ struct llog_process_info {
         const struct lu_env *lpi_env;
 };
 
+struct llog_thread_info {
+        struct lu_attr           lgi_attr;
+        struct lu_fid            lgi_fid;
+        struct llog_logid        lgi_logid;
+        struct dt_object_format  lgi_dof;
+        struct llog_process_data lgi_lpd;
+
+        struct lu_buf            lgi_buf;
+        loff_t                   lgi_off;
+
+        struct llog_rec_hdr      lgi_lrh;
+        struct llog_rec_tail     lgi_tail;
+        struct llog_logid_rec    lgi_lid;
+};
+
+extern struct lu_context_key llog_thread_key;
+
+static inline struct llog_thread_info * llog_info(const struct lu_env *env)
+{
+        struct llog_thread_info *lgi;
+
+        lgi = lu_context_key_get(&env->le_ctx, &llog_thread_key);
+        LASSERT(lgi);
+        return lgi;
+}
+
+int llog_info_init(void);
+void llog_info_fini(void);
+
 int llog_cat_id2handle(const struct lu_env *, struct llog_handle *,
                        struct llog_handle **, struct llog_logid *);
 int class_config_parse_rec(struct llog_rec_hdr *rec, char *buf, int size);
