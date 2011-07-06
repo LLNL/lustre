@@ -75,6 +75,7 @@ struct osp_device {
         int                             opd_got_disconnected;
         int                             opd_imp_connected;
         int                             opd_imp_active;
+        int                             opd_imp_seen_connected:1;
 
         /* whether local recovery is completed:
          * reported via ->ldo_recovery_complete() */
