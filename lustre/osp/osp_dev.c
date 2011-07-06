@@ -719,6 +719,7 @@ static int osp_import_event(struct obd_device *obd,
                         if (d->opd_got_disconnected)
                                 d->opd_new_connection = 1;
                         d->opd_imp_connected = 1;
+                        d->opd_imp_seen_connected = 1;
                         cfs_waitq_signal(&d->opd_pre_waitq);
                         __osp_sync_check_for_work(d);
                         CDEBUG(D_HA, "got connected\n");
@@ -844,15 +845,15 @@ static struct lu_device_type osp_device_type = {
 static int osp_obd_health_check(struct obd_device *obd)
 {
         struct osp_device *d = lu2osp_dev(obd->obd_lu_dev);
-        int                rc;
         ENTRY;
 
+        /*
+         * 1.8/2.0 behaviour is that OST being connected once at least
+         * is considired "healthy". and one "healty" OST is enough to
+         * allow lustre clients to connect to MDS
+         */
         LASSERT(d);
-        if (d->opd_imp_active)
-                rc = 0;
-        else
-                rc = 1;
-        RETURN(rc);
+        RETURN(!d->opd_imp_seen_connected);
 }
 
 static struct obd_ops osp_obd_device_ops = {
