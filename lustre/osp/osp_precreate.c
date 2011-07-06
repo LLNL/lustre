@@ -617,14 +617,28 @@ static int osp_precreate_ready_condition(struct osp_device *d)
  */
 int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
 {
-        struct l_wait_info lwi = { 0 };
+        struct l_wait_info lwi;
+        cfs_time_t         expire = cfs_time_shift(obd_timeout);
         int                precreated, rc;
         int                count = 0;
         ENTRY;
 
         LASSERT(d->opd_pre_last_created >= d->opd_pre_next);
 
-        while ((rc = d->opd_pre_status) == 0 || rc == -ENOSPC) {
+        lwi = LWI_TIMEOUT(cfs_time_seconds(obd_timeout), NULL, NULL);
+
+        /*
+         * wait till:
+         *  - preallocation is done
+         *  - no free space expected soon
+         *  - can't connect to OST for too long (obd_timeout)
+         */
+        while ((rc = d->opd_pre_status) == 0 || rc == -ENOSPC || rc == -ENODEV) {
+
+                if (unlikely(rc == -ENODEV)) {
+                        if (cfs_time_aftereq(cfs_time_current(), expire))
+                                break;
+                }
 
                 LASSERTF(count++ < 100,
                          "status %d, rc %d, last %Lu, next %Lu\n",
