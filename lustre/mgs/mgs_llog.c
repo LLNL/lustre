@@ -2628,7 +2628,7 @@ static int mgs_write_log_param(const struct lu_env *env,
                                 continue;
                         name_create_mdt(&logname, mti->mti_fsname, i);
                         rc = mgs_modify(env, mgs, fsdb, mti, logname,
-                                        mti->mti_svname, "add osc", flag);
+                                        mti->mti_svname, "add osp", flag);
                         name_destroy(&logname);
                         if (rc)
                                 goto active_err;
