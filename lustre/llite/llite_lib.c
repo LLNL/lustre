@@ -275,7 +275,7 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
                 GOTO(out_md, err);
         }
 
-        err = obd_statfs(obd, osfs,
+        err = obd_statfs(sbi->ll_md_exp, osfs,
                          cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS), 0);
         if (err)
                 GOTO(out_md_fid, err);
@@ -1473,7 +1473,7 @@ int ll_statfs_internal(struct super_block *sb, struct obd_statfs *osfs,
         int rc;
         ENTRY;
 
-        rc = obd_statfs(class_exp2obd(sbi->ll_md_exp), osfs, max_age, flags);
+        rc = obd_statfs(sbi->ll_md_exp, osfs, max_age, flags);
         if (rc) {
                 CERROR("md_statfs fails: rc = %d\n", rc);
                 RETURN(rc);
@@ -1487,8 +1487,7 @@ int ll_statfs_internal(struct super_block *sb, struct obd_statfs *osfs,
         if (sbi->ll_flags & LL_SBI_LAZYSTATFS)
                 flags |= OBD_STATFS_NODELAY;
 
-        rc = obd_statfs_rqset(class_exp2obd(sbi->ll_dt_exp),
-                              &obd_osfs, max_age, flags);
+        rc = obd_statfs_rqset(sbi->ll_dt_exp, &obd_osfs, max_age, flags);
         if (rc) {
                 CERROR("obd_statfs fails: rc = %d\n", rc);
                 RETURN(rc);

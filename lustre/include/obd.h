@@ -1275,9 +1275,9 @@ struct obd_ops {
          */
         int (*o_fid_delete)(struct obd_export *exp, const struct lu_fid *fid);
 
-        int (*o_statfs)(struct obd_device *obd, struct obd_statfs *osfs,
+        int (*o_statfs)(struct obd_export *exp, struct obd_statfs *osfs,
                         __u64 max_age, __u32 flags);
-        int (*o_statfs_async)(struct obd_device *obd, struct obd_info *oinfo,
+        int (*o_statfs_async)(struct obd_export *exp, struct obd_info *oinfo,
                               __u64 max_age, struct ptlrpc_request_set *set);
         int (*o_packmd)(struct obd_export *exp, struct lov_mds_md **disk_tgt,
                         struct lov_stripe_md *mem_src);

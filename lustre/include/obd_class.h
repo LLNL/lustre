@@ -1202,24 +1202,26 @@ obd_lvfs_open_llog(struct obd_export *exp, __u64 id_ino, struct dentry *dentry)
 /* @max_age is the oldest time in jiffies that we accept using a cached data.
  * If the cache is older than @max_age we will get a new value from the
  * target.  Use a value of "cfs_time_current() + HZ" to guarantee freshness. */
-static inline int obd_statfs_async(struct obd_device *obd,
+static inline int obd_statfs_async(struct obd_export *exp,
                                    struct obd_info *oinfo,
                                    __u64 max_age,
                                    struct ptlrpc_request_set *rqset)
 {
         int rc = 0;
+        struct obd_device *obd;
         ENTRY;
 
-        if (obd == NULL)
+        if (exp == NULL || exp->exp_obd == NULL)
                 RETURN(-EINVAL);
 
+        obd = exp->exp_obd;
         OBD_CHECK_DT_OP(obd, statfs, -EOPNOTSUPP);
         OBD_COUNTER_INCREMENT(obd, statfs);
 
         CDEBUG(D_SUPER, "%s: osfs %p age "LPU64", max_age "LPU64"\n",
                obd->obd_name, &obd->obd_osfs, obd->obd_osfs_age, max_age);
         if (cfs_time_before_64(obd->obd_osfs_age, max_age)) {
-                rc = OBP(obd, statfs_async)(obd, oinfo, max_age, rqset);
+                rc = OBP(obd, statfs_async)(exp, oinfo, max_age, rqset);
         } else {
                 CDEBUG(D_SUPER,"%s: use %p cache blocks "LPU64"/"LPU64
                        " objects "LPU64"/"LPU64"\n",
@@ -1236,7 +1238,7 @@ static inline int obd_statfs_async(struct obd_device *obd,
         RETURN(rc);
 }
 
-static inline int obd_statfs_rqset(struct obd_device *obd,
+static inline int obd_statfs_rqset(struct obd_export *exp,
                                    struct obd_statfs *osfs, __u64 max_age,
                                    __u32 flags)
 {
@@ -1251,7 +1253,7 @@ static inline int obd_statfs_rqset(struct obd_device *obd,
 
         oinfo.oi_osfs = osfs;
         oinfo.oi_flags = flags;
-        rc = obd_statfs_async(obd, &oinfo, max_age, set);
+        rc = obd_statfs_async(exp, &oinfo, max_age, set);
         if (rc == 0)
                 rc = ptlrpc_set_wait(set);
         ptlrpc_set_destroy(set);
@@ -1261,10 +1263,11 @@ static inline int obd_statfs_rqset(struct obd_device *obd,
 /* @max_age is the oldest time in jiffies that we accept using a cached data.
  * If the cache is older than @max_age we will get a new value from the
  * target.  Use a value of "cfs_time_current() + HZ" to guarantee freshness. */
-static inline int obd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
+static inline int obd_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                              __u64 max_age, __u32 flags)
 {
         int rc = 0;
+        struct obd_device *obd = exp->exp_obd;
         ENTRY;
 
         if (obd == NULL)
@@ -1276,7 +1279,7 @@ static inline int obd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
         CDEBUG(D_SUPER, "osfs "LPU64", max_age "LPU64"\n",
                obd->obd_osfs_age, max_age);
         if (cfs_time_before_64(obd->obd_osfs_age, max_age)) {
-                rc = OBP(obd, statfs)(obd, osfs, max_age, flags);
+                rc = OBP(obd, statfs)(exp, osfs, max_age, flags);
                 if (rc == 0) {
                         cfs_spin_lock(&obd->obd_osfs_lock);
                         obd->obd_osfs = *osfs;

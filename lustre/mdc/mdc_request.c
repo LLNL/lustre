@@ -1100,9 +1100,10 @@ restart_bulk:
         RETURN(0);
 }
 
-static int mdc_statfs(struct obd_device *obd, struct obd_statfs *osfs,
+static int mdc_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                       __u64 max_age, __u32 flags)
 {
+        struct obd_device     *obd = class_exp2obd(exp);
         struct ptlrpc_request *req;
         struct obd_statfs     *msfs;
         struct obd_import     *imp = NULL;
@@ -1511,7 +1512,7 @@ static int mdc_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
                                          (int) sizeof(struct obd_uuid))))
                         GOTO(out, rc = -EFAULT);
 
-                rc = mdc_statfs(obd, &stat_buf,
+                rc = mdc_statfs(obd->obd_self_export, &stat_buf,
                                 cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS),
                                 0);
                 if (rc != 0)

@@ -3583,7 +3583,7 @@ out:
         RETURN(rc);
 }
 
-static int osc_statfs_async(struct obd_device *obd, struct obd_info *oinfo,
+static int osc_statfs_async(struct obd_export *exp, struct obd_info *oinfo,
                             __u64 max_age, struct ptlrpc_request_set *rqset)
 {
         struct ptlrpc_request *req;
@@ -3597,7 +3597,8 @@ static int osc_statfs_async(struct obd_device *obd, struct obd_info *oinfo,
          * during mount that would help a bit).  Having relative timestamps
          * is not so great if request processing is slow, while absolute
          * timestamps are not ideal because they need time synchronization. */
-        req = ptlrpc_request_alloc(obd->u.cli.cl_import, &RQF_OST_STATFS);
+        req = ptlrpc_request_alloc(class_exp2obd(exp)->u.cli.cl_import,
+                                   &RQF_OST_STATFS);
         if (req == NULL)
                 RETURN(-ENOMEM);
 
@@ -3625,9 +3626,10 @@ static int osc_statfs_async(struct obd_device *obd, struct obd_info *oinfo,
         RETURN(0);
 }
 
-static int osc_statfs(struct obd_device *obd, struct obd_statfs *osfs,
+static int osc_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                       __u64 max_age, __u32 flags)
 {
+        struct obd_device     *obd = class_exp2obd(exp);
         struct obd_statfs     *msfs;
         struct ptlrpc_request *req;
         struct obd_import     *imp = NULL;
