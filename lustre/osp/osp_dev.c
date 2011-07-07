@@ -624,9 +624,10 @@ static int osp_obd_disconnect(struct obd_export *exp)
 /*
  * lprocfs helpers still use OBD API, let's keep obd_statfs() support for a while
  */
-static int osp_obd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
+static int osp_obd_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                           __u64 max_age, __u32 flags)
 {
+        struct obd_device     *obd = class_exp2obd(exp);
         struct obd_statfs     *msfs;
         struct ptlrpc_request *req;
         struct obd_import     *imp = NULL;

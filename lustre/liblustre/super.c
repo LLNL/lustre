@@ -1098,7 +1098,7 @@ static int llu_statfs_internal(struct llu_sb_info *sbi,
         int rc;
         ENTRY;
 
-        rc = obd_statfs(class_exp2obd(sbi->ll_md_exp), osfs, max_age, 0);
+        rc = obd_statfs(sbi->ll_md_exp, osfs, max_age, 0);
         if (rc) {
                 CERROR("md_statfs fails: rc = %d\n", rc);
                 RETURN(rc);
@@ -1107,8 +1107,7 @@ static int llu_statfs_internal(struct llu_sb_info *sbi,
         CDEBUG(D_SUPER, "MDC blocks "LPU64"/"LPU64" objects "LPU64"/"LPU64"\n",
                osfs->os_bavail, osfs->os_blocks, osfs->os_ffree,osfs->os_files);
 
-        rc = obd_statfs_rqset(class_exp2obd(sbi->ll_dt_exp),
-                              &obd_statfs, max_age, 0);
+        rc = obd_statfs_rqset(sbi->ll_dt_exp, &obd_statfs, max_age, 0);
         if (rc) {
                 CERROR("obd_statfs fails: rc = %d\n", rc);
                 RETURN(rc);
@@ -1945,7 +1944,7 @@ llu_fsswop_mount(const char *source,
                 GOTO(out_free, err);
         }
 
-        err = obd_statfs(obd, &osfs, 100000000, 0);
+        err = obd_statfs(sbi->ll_md_exp, &osfs, 100000000, 0);
         if (err)
                 GOTO(out_md, err);
 
