@@ -570,9 +570,10 @@ int ofd_statfs_internal(const struct lu_env *env, struct ofd_device *ofd,
         return 0;
 }
 
-static int ofd_statfs(struct obd_device *obd, struct obd_statfs *osfs,
+static int ofd_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                       __u64 max_age, __u32 flags)
 {
+        struct obd_device *obd = class_exp2obd(exp);
         struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
         struct lu_env env;
         int rc;

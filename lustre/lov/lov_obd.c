@@ -1729,9 +1729,10 @@ int lov_statfs_interpret(struct ptlrpc_request_set *rqset, void *data, int rc)
         RETURN(rc ? rc : err);
 }
 
-static int lov_statfs_async(struct obd_device *obd, struct obd_info *oinfo,
+static int lov_statfs_async(struct obd_export *exp, struct obd_info *oinfo,
                             __u64 max_age, struct ptlrpc_request_set *rqset)
 {
+        struct obd_device      *obd = class_exp2obd(exp);
         struct lov_request_set *set;
         struct lov_request *req;
         cfs_list_t *pos;
@@ -1748,12 +1749,9 @@ static int lov_statfs_async(struct obd_device *obd, struct obd_info *oinfo,
                 RETURN(rc);
 
         cfs_list_for_each (pos, &set->set_list) {
-                struct obd_device *osc_obd;
-
                 req = cfs_list_entry(pos, struct lov_request, rq_link);
-
-                osc_obd = class_exp2obd(lov->lov_tgts[req->rq_idx]->ltd_exp);
-                rc = obd_statfs_async(osc_obd, &req->rq_oi, max_age, rqset);
+                rc = obd_statfs_async(lov->lov_tgts[req->rq_idx]->ltd_exp,
+                                      &req->rq_oi, max_age, rqset);
                 if (rc)
                         break;
         }
@@ -1772,7 +1770,7 @@ static int lov_statfs_async(struct obd_device *obd, struct obd_info *oinfo,
         RETURN(0);
 }
 
-static int lov_statfs(struct obd_device *obd, struct obd_statfs *osfs,
+static int lov_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                       __u64 max_age, __u32 flags)
 {
         struct ptlrpc_request_set *set = NULL;
@@ -1789,7 +1787,7 @@ static int lov_statfs(struct obd_device *obd, struct obd_statfs *osfs,
 
         oinfo.oi_osfs = osfs;
         oinfo.oi_flags = flags;
-        rc = lov_statfs_async(obd, &oinfo, max_age, set);
+        rc = lov_statfs_async(exp, &oinfo, max_age, set);
         if (rc == 0)
                 rc = ptlrpc_set_wait(set);
         ptlrpc_set_destroy(set);
@@ -1834,7 +1832,7 @@ static int lov_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
                         RETURN(-EFAULT);
 
                 /* got statfs data */
-                rc = obd_statfs(osc_obd, &stat_buf,
+                rc = obd_statfs(lov->lov_tgts[index]->ltd_exp, &stat_buf,
                                 cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS),
                                 0);
                 if (rc)

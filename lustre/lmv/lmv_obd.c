@@ -752,7 +752,7 @@ static int lmv_iocontrol(unsigned int cmd, struct obd_export *exp,
                                          (int) sizeof(struct obd_uuid))))
                         RETURN(-EFAULT);
 
-                rc = obd_statfs(mdc_obd, &stat_buf,
+                rc = obd_statfs(lmv->tgts[index].ltd_exp, &stat_buf,
                                 cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS),
                                 0);
                 if (rc)
@@ -1165,9 +1165,10 @@ out:
         RETURN(rc);
 }
 
-static int lmv_statfs(struct obd_device *obd, struct obd_statfs *osfs,
+static int lmv_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                       __u64 max_age, __u32 flags)
 {
+        struct obd_device     *obd = class_exp2obd(exp);
         struct lmv_obd        *lmv = &obd->u.lmv;
         struct obd_statfs     *temp;
         int                    rc = 0;
@@ -1186,7 +1187,7 @@ static int lmv_statfs(struct obd_device *obd, struct obd_statfs *osfs,
                 if (lmv->tgts[i].ltd_exp == NULL)
                         continue;
 
-                rc = obd_statfs(lmv->tgts[i].ltd_exp->exp_obd, temp,
+                rc = obd_statfs(lmv->tgts[i].ltd_exp, temp,
                                 max_age, flags);
                 if (rc) {
                         CERROR("can't stat MDS #%d (%s), error %d\n", i,

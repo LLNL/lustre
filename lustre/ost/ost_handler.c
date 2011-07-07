@@ -313,7 +313,7 @@ static int ost_statfs(struct ptlrpc_request *req)
 
         osfs = req_capsule_server_get(&req->rq_pill, &RMF_OBD_STATFS);
 
-        req->rq_status = obd_statfs(req->rq_export->exp_obd, osfs,
+        req->rq_status = obd_statfs(req->rq_export, osfs,
                                     cfs_time_shift_64(-OBD_STATFS_CACHE_SECONDS),
                                     0);
         if (req->rq_status != 0)
