@@ -1414,70 +1414,75 @@ parse_out:
         RETURN(rc);
 }
 
+/**
+ * parse config record and output dump in supplied buffer.
+ * This is separated from class_config_dump_handler() to use
+ * for ioctl needs as well
+ */
+int class_config_parse_rec(struct llog_rec_hdr *rec, char *buf, int size)
+{
+        struct lustre_cfg *lcfg = (struct lustre_cfg *)(rec + 1);
+        char *ptr = buf;
+        char *end = buf + size;
+        int rc = 0;
+        ENTRY;
+
+        LASSERT(rec->lrh_type == OBD_CFG_REC);
+        rc = lustre_cfg_sanity_check(lcfg, rec->lrh_len);
+        if (rc < 0)
+                RETURN(rc);
+
+        ptr += snprintf(ptr, end - ptr, "cmd=%05x ", lcfg->lcfg_command);
+        if (lcfg->lcfg_flags) {
+                ptr += snprintf(ptr, end - ptr, "flags=%#08x ",
+                                lcfg->lcfg_flags);
+        }
+        if (lcfg->lcfg_num) {
+                ptr += snprintf(ptr, end - ptr, "num=%#08x ",
+                                lcfg->lcfg_num);
+        }
+        if (lcfg->lcfg_nid) {
+                ptr += snprintf(ptr, end - ptr, "nid=%s("LPX64")\n     ",
+                                libcfs_nid2str(lcfg->lcfg_nid),
+                                lcfg->lcfg_nid);
+        }
+        if (lcfg->lcfg_command == LCFG_MARKER) {
+                struct cfg_marker *marker = lustre_cfg_buf(lcfg, 1);
+                ptr += snprintf(ptr, end - ptr, "marker=%d(%#x)%s '%s'",
+                                marker->cm_step, marker->cm_flags,
+                                marker->cm_tgtname, marker->cm_comment);
+        } else {
+                int i;
+                for (i = 0; i <  lcfg->lcfg_bufcount; i++) {
+                        ptr += snprintf(ptr, end - ptr, "%d:%s  ", i,
+                                        lustre_cfg_string(lcfg, i));
+                }
+        }
+        /* return consumed bytes */
+        rc = ptr - buf;
+        RETURN(rc);
+}
+
 int class_config_dump_handler(const struct lu_env *env,
                               struct llog_handle * handle,
                               struct llog_rec_hdr *rec, void *data)
 {
-        int cfg_len = rec->lrh_len;
-        char *cfg_buf = (char*) (rec + 1);
-        char *outstr, *ptr, *end;
+        char *outstr;
         int rc = 0;
         ENTRY;
 
-        if (data) {
-                outstr = data;
-        } else {
-                OBD_ALLOC(outstr, 256);
-                if (outstr == NULL)
-                        RETURN(-ENOMEM);
-        }
-        end = outstr + 256;
-        ptr = outstr;
+        OBD_ALLOC(outstr, 256);
+        if (outstr == NULL)
+                RETURN(-ENOMEM);
 
         if (rec->lrh_type == OBD_CFG_REC) {
-                struct lustre_cfg *lcfg;
-                int i;
-
-                rc = lustre_cfg_sanity_check(cfg_buf, cfg_len);
-                if (rc)
-                        GOTO(out, rc);
-                lcfg = (struct lustre_cfg *)cfg_buf;
-
-                ptr += snprintf(ptr, end-ptr, "cmd=%05x ",
-                                lcfg->lcfg_command);
-                if (lcfg->lcfg_flags) {
-                        ptr += snprintf(ptr, end-ptr, "flags=%#08x ",
-                                        lcfg->lcfg_flags);
-                }
-                if (lcfg->lcfg_num) {
-                        ptr += snprintf(ptr, end-ptr, "num=%#08x ",
-                                        lcfg->lcfg_num);
-                }
-                if (lcfg->lcfg_nid) {
-                        ptr += snprintf(ptr, end-ptr, "nid=%s("LPX64")\n     ",
-                                        libcfs_nid2str(lcfg->lcfg_nid),
-                                        lcfg->lcfg_nid);
-                }
-                if (lcfg->lcfg_command == LCFG_MARKER) {
-                        struct cfg_marker *marker = lustre_cfg_buf(lcfg, 1);
-                        ptr += snprintf(ptr, end-ptr, "marker=%d(%#x)%s '%s'",
-                                        marker->cm_step, marker->cm_flags,
-                                        marker->cm_tgtname, marker->cm_comment);
-                } else {
-                        for (i = 0; i <  lcfg->lcfg_bufcount; i++) {
-                                ptr += snprintf(ptr, end-ptr, "%d:%s  ", i,
-                                                lustre_cfg_string(lcfg, i));
-                        }
-                }
-                if (data == NULL)
-                        LCONSOLE(D_WARNING, "   %s\n", outstr);
+                class_config_parse_rec(rec, outstr, 256);
+                LCONSOLE(D_WARNING, "   %s\n", outstr);
         } else {
                 LCONSOLE(D_WARNING, "unhandled lrh_type: %#x\n", rec->lrh_type);
                 rc = -EINVAL;
         }
-out:
-        if (data == NULL)
-                OBD_FREE(outstr, 256);
+        OBD_FREE(outstr, 256);
         RETURN(rc);
 }
 
