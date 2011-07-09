@@ -4120,7 +4120,7 @@ static int mdt_start_ptlrpc_service(struct mdt_device *m)
 			.tc_thr_name		= "mdt_mdss",
 			.tc_nthrs_init		= MDT_OTHR_NTHRS_INIT,
 			.tc_nthrs_max		= MDT_OTHR_NTHRS_MAX,
-			.tc_ctx_tags		= LCT_MD_THREAD | LCT_DT_THREAD
+			.tc_ctx_tags		= LCT_MD_THREAD,
 		},
 		.psc_ops		= {
 			.so_req_handler		= mdt_mdss_handle,
@@ -4158,7 +4158,7 @@ static int mdt_start_ptlrpc_service(struct mdt_device *m)
 			.tc_thr_name		= "mdt_dtss",
 			.tc_nthrs_init		= MDT_OTHR_NTHRS_INIT,
 			.tc_nthrs_max		= MDT_OTHR_NTHRS_MAX,
-			.tc_ctx_tags		= LCT_MD_THREAD | LCT_DT_THREAD
+			.tc_ctx_tags		= LCT_MD_THREAD,
 		},
 		.psc_ops		= {
 			.so_req_handler		= mdt_dtss_handle,
@@ -5654,7 +5654,7 @@ static int mdt_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
         default:
                 CERROR("Not supported cmd = %d for device %s\n",
                        cmd, obd->obd_name);
-                rc = -EOPNOTSUPP;
+                rc = -ENOTTY;
         }
 
         lu_env_fini(&env);
