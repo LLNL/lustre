@@ -381,7 +381,6 @@ static int llog_osd_read_blob(const struct lu_env *env, struct dt_object *o,
 static int llog_osd_read_header(struct llog_handle *handle)
 {
         struct dt_object        *o;
-        struct dt_device        *dt;
         struct llog_thread_info *lgi;
         struct lu_env            env;
         int                      rc;
@@ -391,10 +390,8 @@ static int llog_osd_read_header(struct llog_handle *handle)
 
         o = handle->lgh_obj;
         LASSERT(o);
-        dt = lu2dt_dev(o->do_lu.lo_dev);
-        LASSERT(dt);
 
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc) {
                 CERROR("can't initialize env: %d\n", rc);
                 RETURN(rc);
@@ -1171,7 +1168,6 @@ static int llog_osd_setup(struct obd_device *obd, struct obd_llog_group *olg,
 {
         struct llog_superblock *lsb;
         struct llog_ctxt       *ctxt;
-        struct dt_device       *dt;
         struct lu_env           env;
         int                     rc;
         ENTRY;
@@ -1180,10 +1176,8 @@ static int llog_osd_setup(struct obd_device *obd, struct obd_llog_group *olg,
         LASSERT(olg->olg_ctxts[ctxt_idx]);
 
         ctxt = llog_ctxt_get(olg->olg_ctxts[ctxt_idx]);
-        dt = obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
-
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        LASSERT(ctxt);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 GOTO(out_ctxt, rc);
 
@@ -1202,21 +1196,18 @@ static int llog_osd_cleanup(struct llog_ctxt *ctxt)
 {
         struct llog_superblock *lsb;
         struct obd_device      *obd;
-        struct dt_device       *dt;
         struct lu_env           env;
         int                     rc;
 
         obd = ctxt->loc_exp->exp_obd;
         LASSERT(obd);
-        dt = obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
-        lsb = llog_osd_find_sb(dt);
+        lsb = llog_osd_find_sb(obd->obd_lvfs_ctxt.dt);
         if (lsb == NULL) {
                 CERROR("Can't find proper lsb\n");
                 return -ENODEV;
         }
 
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc) {
                 CERROR("can't init env: %d\n", rc);
                 return rc;

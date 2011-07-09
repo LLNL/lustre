@@ -68,7 +68,6 @@ int llog_origin_connect(struct llog_ctxt *ctxt,
         struct llog_gen_rec    *lgr;
         struct ptlrpc_request  *req;
         struct llogd_conn_body *req_body;
-        struct dt_device       *dt;
         struct lu_env           env;
         int rc;
 
@@ -83,9 +82,7 @@ int llog_origin_connect(struct llog_ctxt *ctxt,
         llog_gen_init(ctxt);
 
         LASSERT(ctxt->loc_obd);
-        LASSERT(ctxt->loc_obd->obd_lvfs_ctxt.dt);
-        dt = ctxt->loc_obd->obd_lvfs_ctxt.dt;
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 RETURN(rc);
 

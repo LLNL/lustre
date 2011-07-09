@@ -520,7 +520,7 @@ static int lprocfs_osd_wr_force_sync(struct file *file, const char *buffer,
         LASSERT(osd != NULL);
         dt = &osd->od_dt_dev;
 
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 return rc;
         rc = dt_sync(&env, dt);
