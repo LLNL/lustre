@@ -1005,12 +1005,18 @@ enum lu_context_tag {
          * a client.
          */
         LCT_SESSION   = 1 << 4,
-
         /**
-         * This is per-request 
+         * This is per-request
          */
         LCT_OSP_THREAD = 1 << 5,
-
+        /**
+         * MGS thread
+         */
+        LCT_MG_THREAD = 1 << 6,
+        /**
+         * Context for local operations
+         */
+        LCT_LOCAL = 1 << 7,
         /**
          * Set when at least one of keys, having values in this context has
          * non-NULL lu_context_key::lct_exit() method. This is used to
@@ -1162,7 +1168,7 @@ do {                                                    \
 int   lu_context_key_register(struct lu_context_key *key);
 void  lu_context_key_degister(struct lu_context_key *key);
 void *lu_context_key_get     (const struct lu_context *ctx,
-                               const struct lu_context_key *key);
+                              const struct lu_context_key *key);
 void  lu_context_key_quiesce (struct lu_context_key *key);
 void  lu_context_key_revive  (struct lu_context_key *key);
 

@@ -339,7 +339,7 @@ int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
 
         LASSERT(count == 1);
 
-        rc = lu_env_init(&env, disk_obd->obd_lu_dev->ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 RETURN(rc);
 
@@ -379,7 +379,6 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
 {
         struct llog_handle *cathandle, *n, *loghandle;
         struct llog_log_hdr *llh;
-        struct dt_device    *dt;
         struct lu_env        env;
         int rc, index;
         ENTRY;
@@ -387,10 +386,7 @@ int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
         if (!ctxt)
                 RETURN(0);
 
-        dt = ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt;
-        LASSERT(dt);
-
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc) {
                 CERROR("can't initialize env: %d\n", rc);
                 RETURN(rc);
@@ -495,19 +491,21 @@ EXPORT_SYMBOL(obd_llog_finish);
 
 /* context key constructor/destructor: tg_key_init, tg_key_fini */
 LU_KEY_INIT_FINI(llog, struct llog_thread_info);
+
 /* context key: tg_thread_key */
-LU_CONTEXT_KEY_DEFINE(llog, LCT_MD_THREAD|LCT_DT_THREAD);
+LU_CONTEXT_KEY_DEFINE(llog, LCT_MD_THREAD | LCT_MG_THREAD | LCT_LOCAL);
+
 LU_KEY_INIT_GENERIC(llog);
 EXPORT_SYMBOL(llog_thread_key);
 
 int llog_info_init(void)
 {
         llog_key_init_generic(&llog_thread_key, NULL);
-        lu_context_key_register_many(&llog_thread_key, NULL);
+        lu_context_key_register(&llog_thread_key);
         return 0;
 }
 
 void llog_info_fini(void)
 {
-        lu_context_key_degister_many(&llog_thread_key, NULL);
+        lu_context_key_degister(&llog_thread_key);
 }

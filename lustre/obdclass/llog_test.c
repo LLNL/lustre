@@ -868,12 +868,10 @@ static int llog_run_tests(struct obd_device *obd)
         int rc, err;
         char name[10];
         struct lu_env env;
-        struct dt_device *dt = obd->obd_lvfs_ctxt.dt;
         ENTRY;
 
-        LASSERT(dt);
         LASSERT(ctxt);
-        rc = lu_env_init(&env, dt->dd_lu_dev.ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL | LCT_MG_THREAD);
         if (rc)
                 GOTO(cleanup_ctxt, rc);
 
