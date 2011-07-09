@@ -599,7 +599,6 @@ int llog_cat_process_thread(void *data)
         struct llog_handle *llh = NULL;
         llog_cb_t cb = args->lpca_cb;
         struct llog_thread_info *lgi;
-        struct dt_device   *dt = NULL;
         struct lu_env       env;
         int rc;
         ENTRY;
@@ -607,8 +606,7 @@ int llog_cat_process_thread(void *data)
         cfs_daemonize_ctxt("ll_log_process");
 
         LASSERT(ctxt->loc_obd);
-        dt = ctxt->loc_obd->obd_lvfs_ctxt.dt;
-        rc = lu_env_init(&env, dt ? dt->dd_lu_dev.ld_type->ldt_ctx_tags : 0);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 GOTO(out, rc);
         lgi = llog_info(&env);

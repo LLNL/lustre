@@ -780,7 +780,7 @@ static int osp_sync_thread(void *_arg)
         char                    pname[16];
         ENTRY;
 
-        rc = lu_env_init(&env, d->opd_storage->dd_lu_dev.ld_type->ldt_ctx_tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc) {
                 CERROR("can't initialize env: %d\n", rc);
                 RETURN(rc);

@@ -1134,7 +1134,7 @@ int ofd_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
         ENTRY;
 
         CDEBUG(D_IOCTL, "handling ioctl cmd %#x\n", cmd);
-        rc = lu_env_init(&env, LCT_DT_THREAD);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 RETURN(rc);
 
@@ -1154,7 +1154,7 @@ int ofd_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
         default:
                 CERROR("Not supported cmd = %d for device %s\n",
                        cmd, obd->obd_name);
-                rc = -EOPNOTSUPP;
+                rc = -ENOTTY;
         }
 
         lu_env_fini(&env);

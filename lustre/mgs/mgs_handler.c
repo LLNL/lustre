@@ -762,7 +762,7 @@ int mgs_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
         ENTRY;
         CDEBUG(D_IOCTL, "handling ioctl cmd %#x\n", cmd);
 
-        rc = lu_env_init(&env, LCT_DT_THREAD);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 RETURN(rc);
 
@@ -946,7 +946,7 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
                                 mgs_handle, LUSTRE_MGS_NAME,
                                 obd->obd_proc_entry, target_print_req,
                                 MGS_THREADS_AUTO_MIN, MGS_THREADS_AUTO_MAX,
-                                "ll_mgs", LCT_MD_THREAD, NULL);
+                                "ll_mgs", LCT_MG_THREAD, NULL);
         if (!mgs->mgs_service) {
                 CERROR("failed to start service\n");
                 GOTO(err_llog, rc = -ENOMEM);
@@ -1150,7 +1150,7 @@ LU_KEY_INIT_FINI(mgs, struct mgs_thread_info);
 
 LU_TYPE_INIT_FINI(mgs, &mgs_thread_key);
 
-LU_CONTEXT_KEY_DEFINE(mgs, LCT_DT_THREAD);
+LU_CONTEXT_KEY_DEFINE(mgs, LCT_MG_THREAD);
 
 static struct lu_device_type_operations mgs_device_type_ops = {
         .ldto_init           = mgs_type_init,
@@ -1169,7 +1169,7 @@ static struct lu_device_type mgs_device_type = {
         .ldt_tags     = LU_DEVICE_DT,
         .ldt_name     = LUSTRE_MGS_NAME,
         .ldt_ops      = &mgs_device_type_ops,
-        .ldt_ctx_tags = LCT_MD_THREAD
+        .ldt_ctx_tags = LCT_MG_THREAD
 };
 
 

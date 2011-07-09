@@ -378,16 +378,12 @@ static int llog_process_thread(void *arg)
 {
         struct llog_process_info *lpi = (struct llog_process_info *)arg;
         struct lu_env             env;
-        struct dt_device         *dt;
-        int                       rc, tags = 0;
+        int                       rc;
 
         cfs_daemonize_ctxt("llog_process_thread");
 
         /* client env has no keys, tags is just 0 */
-        dt = lpi->lpi_loghandle->lgh_ctxt->loc_obd->obd_lvfs_ctxt.dt;
-        if (dt)
-                tags = dt->dd_lu_dev.ld_type->ldt_ctx_tags;
-        rc = lu_env_init(&env, tags);
+        rc = lu_env_init(&env, LCT_LOCAL);
         if (rc)
                 goto out;
         lpi->lpi_env = &env;
