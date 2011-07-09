@@ -4063,7 +4063,7 @@ static int mdt_start_ptlrpc_service(struct mdt_device *m)
                 .psc_watchdog_factor = MDT_SERVICE_WATCHDOG_FACTOR,
                 .psc_min_threads     = mdt_min_threads,
                 .psc_max_threads     = mdt_max_threads,
-                .psc_ctx_tags        = LCT_MD_THREAD|LCT_DT_THREAD
+                .psc_ctx_tags        = LCT_MD_THREAD
         };
 
         m->mdt_mdss_service =
@@ -4095,7 +4095,7 @@ static int mdt_start_ptlrpc_service(struct mdt_device *m)
                 .psc_watchdog_factor = MDT_SERVICE_WATCHDOG_FACTOR,
                 .psc_min_threads     = mdt_min_threads,
                 .psc_max_threads     = mdt_max_threads,
-                .psc_ctx_tags        = LCT_MD_THREAD|LCT_DT_THREAD
+                .psc_ctx_tags        = LCT_MD_THREAD
         };
 
         m->mdt_dtss_service =
@@ -4122,7 +4122,7 @@ static int mdt_start_ptlrpc_service(struct mdt_device *m)
                 .psc_watchdog_factor = MDT_SERVICE_WATCHDOG_FACTOR,
                 .psc_min_threads     = mdt_min_threads,
                 .psc_max_threads     = mdt_max_threads,
-                .psc_ctx_tags        = LCT_DT_THREAD|LCT_MD_THREAD
+                .psc_ctx_tags        = LCT_MD_THREAD
         };
 
         m->mdt_fld_service =
@@ -5504,7 +5504,7 @@ static int mdt_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
         default:
                 CERROR("Not supported cmd = %d for device %s\n",
                        cmd, obd->obd_name);
-                rc = -EOPNOTSUPP;
+                rc = -ENOTTY;
         }
 
         lu_env_fini(&env);
