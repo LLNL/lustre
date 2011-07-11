@@ -2628,6 +2628,16 @@ if test x$enable_pgstat_track = xyes ; then
                   [enable page state tracking code])
 fi
 
+AC_ARG_ENABLE([large_bs_emulation],
+        AC_HELP_STRING([--enable-large_bs_emulation],
+                [emulate 1MB blocksize in ldiskfs-osd. Only used for testing & debugging purpose.]),
+        [],[])
+AC_MSG_CHECKING([whether to emulate 1MB blocksize in ldiskfs-osd])
+AC_MSG_RESULT([$enable_large_bs_emulation])
+if test x$enable_large_bs_emulation = xyes ; then
+        AC_DEFINE([LARGE_BS_EMULATION], 1, [emulate 1MB blocksize])
+fi
+
          #2.6.29
          LC_WRITE_BEGIN_END
          LC_D_OBTAIN_ALIAS

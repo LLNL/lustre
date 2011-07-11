@@ -445,6 +445,14 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                                      OFD_VALID_FLAGS | LA_GID | LA_UID);
                 else
                         obdo_from_la(oa, &info->fti_attr, LA_GID | LA_UID);
+
+                if (ofd_grant_prohibit(exp, ofd))
+                        /* Trick to prevent clients from waiting for bulk write
+                         * in flight since they won't get any grant in the reply
+                         * anyway so they had better firing the sync write RPC
+                         * straight away */
+                        oa->o_valid |= OBD_MD_FLUSRQUOTA | OBD_MD_FLGRPQUOTA;
+
                 if (old_rc == 0) {
 #if 0
                         /* update per-buffer error codes */

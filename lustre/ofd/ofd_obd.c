@@ -76,6 +76,15 @@ static int ofd_parse_connect_data(const struct lu_env *env,
         }
 #endif
 
+        if (exp->exp_connect_flags & OBD_CONNECT_GRANT_PARAM) {
+                exp->exp_filter_data.fed_pagesize = data->ocd_blocksize;
+                /* ocd_{blocksize,inodespace} are log2 values */
+                data->ocd_blocksize  = ofd->ofd_blockbits;
+                data->ocd_inodespace = ofd->ofd_dt_conf.ddp_inodespace;
+                /* ocd_grant_extent is in 1K blocks */
+                data->ocd_grant_extent = ofd->ofd_dt_conf.ddp_grant_frag >> 10;
+        }
+
         if (exp->exp_connect_flags & OBD_CONNECT_GRANT)
                 data->ocd_grant = ofd_grant_connect(env, exp, data->ocd_grant);
 
@@ -301,8 +310,8 @@ static int ofd_destroy_export(struct obd_export *exp)
         ENTRY;
 
         if (exp->exp_filter_data.fed_pending)
-                CERROR("%s: cli %s/%p has %lu pending on destroyed export\n",
-                       exp->exp_obd->obd_name, exp->exp_client_uuid.uuid,
+                CERROR("%s: cli %s/%p has %lu pending on destroyed export"
+                       "\n", exp->exp_obd->obd_name, exp->exp_client_uuid.uuid,
                        exp, exp->exp_filter_data.fed_pending);
 
         target_destroy_export(exp);
@@ -618,6 +627,18 @@ static int ofd_statfs(struct obd_export *exp, struct obd_statfs *osfs,
         /* OS_STATE_READONLY can be set by OSD already */
         if (ofd->ofd_raid_degraded)
                 osfs->os_state |= OS_STATE_DEGRADED;
+
+        if (obd->obd_self_export != exp && ofd_grant_compat(exp, ofd)) {
+                /* clients which don't support OBD_CONNECT_GRANT_PARAM
+                 * should not see a block size > page size, otherwise
+                 * cl_lost_grant goes mad. Therefore, we emulate a 4KB (=2^12)
+                 * block size which is the biggest block size known to work
+                 * with all client's page size. */
+                osfs->os_blocks <<= ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT;
+                osfs->os_bfree  <<= ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT;
+                osfs->os_bavail <<= ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT;
+                osfs->os_bsize    = 1 << COMPAT_BSIZE_SHIFT;
+        }
 out:
         lu_env_fini(&env);
         RETURN(rc);

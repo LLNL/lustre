@@ -892,6 +892,17 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
          * into account space reservation via sbi->s_dirtyblocks_counter
          */
 
+#ifdef LARGE_BS_EMULATION
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,2,0)
+#warning "check that ldiskfs handles bigalloc large blocksize"
+#endif
+        /* emulate 1MB block size */
+        osfs->os_blocks >>= 20 - sb->s_blocksize_bits;
+        osfs->os_bfree  >>= 20 - sb->s_blocksize_bits;
+        osfs->os_bavail >>= 20 - sb->s_blocksize_bits;
+        osfs->os_bsize    = 1 << 20;
+#endif
+
         return 0;
 }
 
@@ -909,12 +920,17 @@ static void osd_conf_get(const struct lu_env *env,
          */
         param->ddp_max_name_len   = LDISKFS_NAME_LEN;
         param->ddp_max_nlink      = LDISKFS_LINK_MAX;
-        param->ddp_block_shift    = osd_sb(osd_dt_dev(dev))->s_blocksize_bits;
+        param->ddp_block_shift    = sb->s_blocksize_bits;
         param->ddp_mount_type     = LDD_MT_LDISKFS;
         param->ddp_maxbytes       = sb->s_maxbytes;
         /* Unlike DMU, we don't need an error margin for ldiskfs since the
          * overhead estimate is fairly accurate */
         param->ddp_grant_reserved = 0;
+        /* inode are statically allocated, so per-inode space consumption
+         * is 0 for ldiskfs OSD */
+        param->ddp_inodespace     = 0;
+        /* per-fragment overhead to be used by the client code */
+        param->ddp_grant_frag     = 6 * LDISKFS_BLOCK_SIZE(sb);
         param->ddp_mntopts        = 0;
         if (test_opt(sb, XATTR_USER))
                 param->ddp_mntopts |= MNTOPT_USERXATTR;
