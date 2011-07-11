@@ -473,18 +473,18 @@ struct dt_body_operations {
          * > 0 - number of local buffers prepared
          */
         int (*dbo_bufs_get)(const struct lu_env *env, struct dt_object *dt,
-                            loff_t pos, ssize_t len, struct niobuf_local *lb,
+                            loff_t pos, ssize_t len, struct niobuf_local *lnb,
                             int rw, struct lustre_capa *capa);
         /*
          * precondition: dt_object_exists(dt);
          */
         int (*dbo_bufs_put)(const struct lu_env *env, struct dt_object *dt,
-                            struct niobuf_local *lb, int nr);
+                            struct niobuf_local *lnb, int nr);
         /*
          * precondition: dt_object_exists(dt);
          */
         int (*dbo_write_prep)(const struct lu_env *env, struct dt_object *dt,
-                              struct niobuf_local *lb, int nr);
+                              struct niobuf_local *lnb, int nr);
         /*
          * precondition: dt_object_exists(dt);
          */
@@ -1053,8 +1053,8 @@ static inline int dt_bufs_get(const struct lu_env *env, struct dt_object *d,
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_bufs_get);
-        return d->do_body_ops->dbo_bufs_get(env, d, r->rnb_offset, r->rnb_len,
-                                            lnb, rw, capa);
+        return d->do_body_ops->dbo_bufs_get(env, d, rnb->rnb_offset,
+                                            rnb->rnb_len, lnb, rw, capa);
 }
 
 static inline int dt_bufs_put(const struct lu_env *env, struct dt_object *d,
@@ -1123,16 +1123,6 @@ static inline int dt_punch(const struct lu_env *env, struct dt_object *dt,
         LASSERT(dt->do_body_ops);
         LASSERT(dt->do_body_ops->do_punch);
         return dt->do_body_ops->do_punch(env, dt, start, end, th, capa);
-}
-
-static inline int dt_fiemap_get(const struct lu_env *env, struct dt_object *d,
-                                struct ll_user_fiemap *fm)
-{
-        LASSERT(d);
-        if (d->do_body_ops == NULL)
-                return -EPROTO;
-        LASSERT(d->do_body_ops->dbo_fiemap_get);
-        return d->do_body_ops->dbo_fiemap_get(env, d, fm);
 }
 
 static inline int dt_fiemap_get(const struct lu_env *env, struct dt_object *d,
