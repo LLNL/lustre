@@ -1261,7 +1261,7 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
         struct ptlrpc_bulk_desc *desc;
         struct ost_body         *body;
         struct obd_ioobj        *ioobj;
-        struct niobuf_remote    *niobuf;
+        struct niobuf_remote    *rnb;
         int niocount, i, requested_nob, opc, rc;
         struct osc_brw_async_args *aa;
         struct req_capsule      *pill;
@@ -1294,7 +1294,7 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
         req_capsule_set_size(pill, &RMF_OBD_IOOBJ, RCL_CLIENT,
                              sizeof(*ioobj));
         req_capsule_set_size(pill, &RMF_NIOBUF_REMOTE, RCL_CLIENT,
-                             niocount * sizeof(*niobuf));
+                             niocount * sizeof(*rnb));
         osc_set_capa_size(req, &RMF_CAPA1, ocapa);
 
         rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, opc);
@@ -1318,8 +1318,8 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
 
         body = req_capsule_client_get(pill, &RMF_OST_BODY);
         ioobj = req_capsule_client_get(pill, &RMF_OBD_IOOBJ);
-        niobuf = req_capsule_client_get(pill, &RMF_NIOBUF_REMOTE);
-        LASSERT(body != NULL && ioobj != NULL && niobuf != NULL);
+        rnb = req_capsule_client_get(pill, &RMF_NIOBUF_REMOTE);
+        LASSERT(body != NULL && ioobj != NULL && rnb != NULL);
 
         lustre_set_wire_obdo(&body->oa, oa);
 
@@ -1328,7 +1328,7 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
         osc_pack_capa(req, body, ocapa);
         LASSERT (page_count > 0);
         pg_prev = pga[0];
-        for (requested_nob = i = 0; i < page_count; i++, niobuf++) {
+        for (requested_nob = i = 0; i < page_count; i++, rnb++) {
                 struct brw_page *pg = pga[i];
                 int poff = pg->off & ~CFS_PAGE_MASK;
 
@@ -1360,20 +1360,20 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                 requested_nob += pg->count;
 
                 if (i > 0 && can_merge_pages(pg_prev, pg)) {
-                        niobuf--;
-                        niobuf->rnb_len += pg->count;
+                        rnb--;
+                        rnb->rnb_len += pg->count;
                 } else {
-                        niobuf->rnb_offset = pg->off;
-                        niobuf->rnb_len    = pg->count;
-                        niobuf->rnb_flags  = pg->flag;
+                        rnb->rnb_offset = pg->off;
+                        rnb->rnb_len    = pg->count;
+                        rnb->rnb_flags  = pg->flag;
                 }
                 pg_prev = pg;
         }
 
-        LASSERTF((void *)(niobuf - niocount) ==
+        LASSERTF((void *)(rnb - niocount) ==
                 req_capsule_client_get(&req->rq_pill, &RMF_NIOBUF_REMOTE),
                 "want %p - real %p\n", req_capsule_client_get(&req->rq_pill,
-                &RMF_NIOBUF_REMOTE), (void *)(niobuf - niocount));
+                &RMF_NIOBUF_REMOTE), (void *)(rnb - niocount));
 
         osc_announce_cached(cli, &body->oa, opc == OST_WRITE ? requested_nob:0);
         if (resend) {

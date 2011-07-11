@@ -54,13 +54,13 @@
 #include <lustre_debug.h>
 #include <lustre_net.h>
 
-void dump_lniobuf(struct niobuf_local *nb)
+void dump_lniobuf(struct niobuf_local *lnb)
 {
         CDEBUG(D_RPCTRACE,
                "niobuf_local: offset="LPD64", len=%d, page=%p, rc=%d\n",
-               nb->lnb_file_offset, nb->lnb_len, nb->lnb_page, nb->lnb_rc);
-        CDEBUG(D_RPCTRACE, "nb->lnb_page: index = %ld\n",
-               nb->lnb_page ? cfs_page_index(nb->lnb_page) : -1);
+               lnb->lnb_file_offset, lnb->lnb_len, lnb->lnb_page, lnb->lnb_rc);
+        CDEBUG(D_RPCTRACE, "lnb->lnb_page: index = %ld\n",
+               lnb->lnb_page ? cfs_page_index(lnb->lnb_page) : -1);
 }
 EXPORT_SYMBOL(dump_lniobuf);
 

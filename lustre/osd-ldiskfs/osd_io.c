@@ -814,7 +814,8 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
                         osd_iobuf_add_page(iobuf, lnb[i].lnb_page);
                 }
                 if (cache == 0)
-                        generic_error_remove_page(inode->i_mapping,lnb[i].lnb_page);
+                        generic_error_remove_page(inode->i_mapping,
+                                                  lnb[i].lnb_page);
         }
         cfs_gettimeofday(&end);
         timediff = cfs_timeval_sub(&end, &start, NULL);
