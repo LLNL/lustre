@@ -615,6 +615,7 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
         m->ofd_raid_degraded = 0;
         m->ofd_syncjournal = 0;
         ofd_slc_set(m);
+        m->ofd_grant_compat_disable = 0;
 
         /* statfs data */
         cfs_spin_lock_init(&m->ofd_osfs_lock);

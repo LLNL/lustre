@@ -86,6 +86,11 @@ struct dt_device_param {
         unsigned long long ddp_maxbytes;
         /* percentage of available space to reserve for grant error margin */
         int                ddp_grant_reserved;
+        /* per-inode space consumption */
+        short              ddp_inodespace;
+        /* per-fragment grant overhead to be used by client for grant
+         * calculation */
+        int                ddp_grant_frag;
         mntopt_t           ddp_mntopts;
         unsigned           ddp_max_ea_size;
 };
