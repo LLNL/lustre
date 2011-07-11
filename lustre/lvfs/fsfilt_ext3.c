@@ -383,7 +383,7 @@ static void *fsfilt_ext3_start(struct inode *inode, int op, void *desc_private,
  * 1 EXT3_DATA_TRANS_BLOCKS for the last_rcvd update.
  */
 static int fsfilt_ext3_credits_needed(int objcount, struct fsfilt_objinfo *fso,
-                                      int niocount, struct niobuf_local *nb)
+                                      int niocount, struct niobuf_local *lnb)
 {
         struct super_block *sb = fso->fso_dentry->d_inode->i_sb;
         __u64 next_indir;
@@ -394,9 +394,11 @@ static int fsfilt_ext3_credits_needed(int objcount, struct fsfilt_objinfo *fso,
 
         for (i = 0, j = 0; i < objcount; i++, fso++) {
                 /* two or more dindirect blocks in case we cross boundary */
-                int ndind = (long)((nb[j + fso->fso_bufcnt - 1].lnb_file_offset
-                                   - nb[j].lnb_file_offset) >>
-                                   sb->s_blocksize_bits) /
+                int ndind;
+
+                ndind = (long)((lnb[j + fso->fso_bufcnt - 1].lnb_file_offset -
+                                lnb[j].lnb_file_offset) >>
+                                sb->s_blocksize_bits) /
                         (EXT3_ADDR_PER_BLOCK(sb) * EXT3_ADDR_PER_BLOCK(sb));
                 nbitmaps += min(fso->fso_bufcnt, ndind > 0 ? ndind : 2);
 
@@ -406,15 +408,15 @@ static int fsfilt_ext3_credits_needed(int objcount, struct fsfilt_objinfo *fso,
                 j += fso->fso_bufcnt;
         }
 
-        next_indir = nb[0].lnb_file_offset +
+        next_indir = lnb[0].lnb_file_offset +
                 (EXT3_ADDR_PER_BLOCK(sb) << sb->s_blocksize_bits);
         for (i = 1; i < niocount; i++) {
-                if (nb[i].lnb_file_offset >= next_indir) {
+                if (lnb[i].lnb_file_offset >= next_indir) {
                         nbitmaps++;     /* additional indirect */
-                        next_indir = nb[i].lnb_file_offset +
+                        next_indir = lnb[i].lnb_file_offset +
                                 (EXT3_ADDR_PER_BLOCK(sb)<<sb->s_blocksize_bits);
-                } else if (nb[i].lnb_file_offset !=
-                           nb[i - 1].lnb_file_offset + sb->s_blocksize) {
+                } else if (lnb[i].lnb_file_offset !=
+                           lnb[i - 1].lnb_file_offset + sb->s_blocksize) {
                         nbitmaps++;     /* additional indirect */
                 }
                 nbitmaps += blockpp;    /* each leaf in different group? */

@@ -286,17 +286,16 @@ echo_page_debug_check(cfs_page_t *page, obd_id id,
 #define DESC_PRIV 0x10293847
 
 static int echo_map_nb_to_lb(struct obdo *oa, struct obd_ioobj *obj,
-                             struct niobuf_remote *nb, int *pages,
-                             struct niobuf_local *lb, int cmd, int *left)
+                             struct niobuf_remote *rnb, int *pages,
+                             struct niobuf_local *lnb, int cmd, int *left)
 {
         int gfp_mask = (obj->ioo_id & 1) ? CFS_ALLOC_HIGHUSER : CFS_ALLOC_STD;
         int ispersistent = obj->ioo_id == ECHO_PERSISTENT_OBJID;
         int debug_setup = (!ispersistent &&
                            (oa->o_valid & OBD_MD_FLFLAGS) != 0 &&
                            (oa->o_flags & OBD_FL_DEBUG_CHECK) != 0);
-        struct niobuf_local *lnb = lb;
-        obd_off offset = nb->rnb_offset;
-        int len = nb->rnb_len;
+        obd_off offset = rnb->rnb_offset;
+        int len = rnb->rnb_len;
 
         while (len > 0) {
                 int plen = CFS_PAGE_SIZE - (offset & (CFS_PAGE_SIZE-1));
@@ -350,17 +349,16 @@ static int echo_map_nb_to_lb(struct obdo *oa, struct obd_ioobj *obj,
 }
 
 static int echo_finalize_lb(struct obdo *oa, struct obd_ioobj *obj,
-                            struct niobuf_remote *rb, int *pgs,
-                            struct niobuf_local *lb, int verify)
+                            struct niobuf_remote *rnb, int *pgs,
+                            struct niobuf_local *lnb, int verify)
 {
-        struct niobuf_local *lnb = lb;
         obd_off start, end;
         int     count;
         int     rc = 0;
         int     i;
 
-        start = rb->rnb_offset >> CFS_PAGE_SHIFT;
-        end = rb->rnb_offset + rb->rnb_len + CFS_PAGE_SIZE - 1;
+        start = rnb->rnb_offset >> CFS_PAGE_SHIFT;
+        end = rnb->rnb_offset + rnb->rnb_len + CFS_PAGE_SIZE - 1;
         end = end >> CFS_PAGE_SHIFT;
         count = (int)(end - start);
 

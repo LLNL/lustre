@@ -1665,11 +1665,11 @@ void lustre_swab_obd_ioobj (struct obd_ioobj *ioo)
         __swab32s (&ioo->ioo_bufcnt);
 }
 
-void lustre_swab_niobuf_remote (struct niobuf_remote *nbr)
+void lustre_swab_niobuf_remote (struct niobuf_remote *rnb)
 {
-        __swab64s (&nbr->rnb_offset);
-        __swab32s (&nbr->rnb_len);
-        __swab32s (&nbr->rnb_flags);
+        __swab64s (&rnb->rnb_offset);
+        __swab32s (&rnb->rnb_len);
+        __swab32s (&rnb->rnb_flags);
 }
 
 void lustre_swab_ost_body (struct ost_body *b)
@@ -2098,10 +2098,10 @@ void dump_ioo(struct obd_ioobj *ioo)
                ioo->ioo_bufcnt);
 }
 
-void dump_rniobuf(struct niobuf_remote *nb)
+void dump_rniobuf(struct niobuf_remote *rnb)
 {
         CDEBUG(D_RPCTRACE, "niobuf_remote: offset="LPU64", len=%d, flags=%x\n",
-               nb->rnb_offset, nb->rnb_len, nb->rnb_flags);
+               rnb->rnb_offset, rnb->rnb_len, rnb->rnb_flags);
 }
 
 void dump_obdo(struct obdo *oa)

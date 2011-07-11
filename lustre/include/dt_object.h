@@ -474,18 +474,18 @@ struct dt_body_operations {
          * > 0 - number of local buffers prepared
          */
         int (*dbo_get_bufs)(const struct lu_env *env, struct dt_object *dt,
-                            loff_t pos, ssize_t len, struct niobuf_local *lb,
+                            loff_t pos, ssize_t len, struct niobuf_local *lnb,
                             int rw, struct lustre_capa *capa);
         /*
          * precondition: dt_object_exists(dt);
          */
         int (*dbo_put_bufs)(const struct lu_env *env, struct dt_object *dt,
-                            struct niobuf_local *lb, int nr);
+                            struct niobuf_local *lnb, int nr);
         /*
          * precondition: dt_object_exists(dt);
          */
         int (*dbo_write_prep)(const struct lu_env *env, struct dt_object *dt,
-                              struct niobuf_local *lb, int nr);
+                              struct niobuf_local *lnb, int nr);
         /*
          * precondition: dt_object_exists(dt);
          */
@@ -502,7 +502,7 @@ struct dt_body_operations {
          * precondition: dt_object_exists(dt);
          */
         int (*dbo_read_prep)(const struct lu_env *env, struct dt_object *dt,
-                             struct niobuf_local *lb, int nr);
+                             struct niobuf_local *lnb, int nr);
         int (*dbo_fiemap_get)(const struct lu_env *env, struct dt_object *dt,
                               struct ll_user_fiemap *fm);
 };
@@ -1015,62 +1015,63 @@ static inline int dt_punch(const struct lu_env *env, struct dt_object *dt,
 }
 
 static inline int dt_bufs_get(const struct lu_env *env, struct dt_object *d,
-                              struct niobuf_remote *r, struct niobuf_local *l,
-                              int rw, struct lustre_capa *capa)
+                              struct niobuf_remote *rnb,
+                              struct niobuf_local *lnb, int rw,
+                              struct lustre_capa *capa)
 {
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_get_bufs);
-        return d->do_body_ops->dbo_get_bufs(env, d, r->rnb_offset, r->rnb_len,
-                                            l, rw, capa);
+        return d->do_body_ops->dbo_get_bufs(env, d, rnb->rnb_offset,
+                                            rnb->rnb_len, lnb, rw, capa);
 }
 
 static inline int dt_bufs_put(const struct lu_env *env, struct dt_object *d,
-                              struct niobuf_local *l, int n)
+                              struct niobuf_local *lnb, int n)
 {
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_put_bufs);
-        return d->do_body_ops->dbo_put_bufs(env, d, l, n);
+        return d->do_body_ops->dbo_put_bufs(env, d, lnb, n);
 }
 
 static inline int dt_write_prep(const struct lu_env *env, struct dt_object *d,
-                                struct niobuf_local *l, int n)
+                                struct niobuf_local *lnb, int n)
 {
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_write_prep);
-        return d->do_body_ops->dbo_write_prep(env, d, l, n);
+        return d->do_body_ops->dbo_write_prep(env, d, lnb, n);
 }
 
 static inline int dt_declare_write_commit(const struct lu_env *env,
                                           struct dt_object *d,
-                                          struct niobuf_local *l,
+                                          struct niobuf_local *lnb,
                                           int n, struct thandle *th)
 {
         LASSERTF(d != NULL, "dt is NULL when we want to declare write\n");
         LASSERT(th != NULL);
-        return d->do_body_ops->dbo_declare_write_commit(env, d, l, n, th);
+        return d->do_body_ops->dbo_declare_write_commit(env, d, lnb, n, th);
 }
 
 
 static inline int dt_write_commit(const struct lu_env *env,
-                                  struct dt_object *d, struct niobuf_local *l,
+                                  struct dt_object *d, struct niobuf_local *lnb,
                                   int n, struct thandle *th)
 {
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_write_commit);
-        return d->do_body_ops->dbo_write_commit(env, d, l, n, th);
+        return d->do_body_ops->dbo_write_commit(env, d, lnb, n, th);
 }
 
 static inline int dt_read_prep(const struct lu_env *env, struct dt_object *d,
-                               struct niobuf_local *l, int n)
+                               struct niobuf_local *lnb, int n)
 {
         LASSERT(d);
         LASSERT(d->do_body_ops);
         LASSERT(d->do_body_ops->dbo_read_prep);
-        return d->do_body_ops->dbo_read_prep(env, d, l, n);
+        return d->do_body_ops->dbo_read_prep(env, d, lnb, n);
 }
 
 static inline int dt_fiemap_get(const struct lu_env *env, struct dt_object *d,
