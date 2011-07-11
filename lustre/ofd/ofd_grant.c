@@ -47,6 +47,35 @@
 #define OFD_GRANT_CHUNK (2ULL * PTLRPC_MAX_BRW_SIZE)
 #define OFD_GRANT_SHRINK_LIMIT (16ULL * OFD_GRANT_CHUNK)
 
+static inline obd_size ofd_grant_from_cli(struct obd_export *exp,
+                                          struct ofd_device *ofd, obd_size val)
+{
+        if (ofd_grant_compat(exp, ofd))
+                /* clients not supporting OBD_CONNECT_GRANT_PARAM actually
+                 * consume 4KB of grant per block, we should thus inflate
+                 * the grant counters to reflect what was actually consumed */
+                return val << (ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT);
+        return val;
+}
+
+static inline obd_size ofd_grant_to_cli(struct obd_export *exp,
+                                        struct ofd_device *ofd, obd_size val)
+{
+        if (ofd_grant_compat(exp, ofd))
+                return val >> (ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT);
+        return val;
+}
+
+static inline obd_size ofd_grant_chunk(struct obd_export *exp,
+                                       struct ofd_device *ofd)
+{
+        if (ofd_grant_compat(exp, ofd))
+                /* Try to grant enough space to send a full-size RPC */
+                return PTLRPC_MAX_BRW_SIZE <<
+                                      (ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT);
+        return OFD_GRANT_CHUNK;
+}
+
 /**
  * Perform extra sanity checks for grant accounting. This is done at connect,
  * disconnect, and statfs RPC time, so it shouldn't be too bad. We can
@@ -86,7 +115,7 @@ void ofd_grant_sanity_check(struct obd_device *obd, const char *func)
                         error = 1;
                 if (fed->fed_grant + fed->fed_pending > maxsize) {
                         CERROR("%s: cli %s/%p fed_grant(%ld) + fed_pending(%ld)"
-                               " > maxsise("LPU64")\n", obd->obd_name,
+                               " > maxsize("LPU64")\n", obd->obd_name,
                                exp->exp_client_uuid.uuid, exp, fed->fed_grant,
                                fed->fed_pending, maxsize);
                         cfs_spin_unlock(&obd->obd_dev_lock);
@@ -101,14 +130,10 @@ void ofd_grant_sanity_check(struct obd_device *obd, const char *func)
                         cfs_spin_unlock(&ofd->ofd_grant_lock);
                         LBUG();
                 }
-                if (error)
-                        CERROR("%s: cli %s/%p dirty %ld pend %ld grant %ld\n",
-                               obd->obd_name, exp->exp_client_uuid.uuid, exp,
-                               fed->fed_dirty, fed->fed_pending,fed->fed_grant);
-                else
-                        CDEBUG(D_CACHE, "%s: cli %s/%p dirty %ld pend %ld grant %ld\n",
-                               obd->obd_name, exp->exp_client_uuid.uuid, exp,
-                               fed->fed_dirty, fed->fed_pending,fed->fed_grant);
+                CDEBUG_LIMIT(error ? D_ERROR : D_CACHE, "%s: cli %s/%p dirty "
+                             "%ld pend %ld grant %ld\n", obd->obd_name,
+                             exp->exp_client_uuid.uuid, exp, fed->fed_dirty,
+                             fed->fed_pending,fed->fed_grant);
                 tot_granted += fed->fed_grant + fed->fed_pending;
                 tot_pending += fed->fed_pending;
                 tot_dirty += fed->fed_dirty;
@@ -257,6 +282,7 @@ static void ofd_grant_incoming(const struct lu_env *env, struct obd_export *exp,
         struct filter_export_data *fed;
         struct ofd_device         *ofd = ofd_exp(exp);
         struct obd_device         *obd = exp->exp_obd;
+        long                       dirty, dropped, grant_chunk;
         ENTRY;
 
         LASSERT_SPIN_LOCKED(&ofd->ofd_grant_lock);
@@ -274,34 +300,40 @@ static void ofd_grant_incoming(const struct lu_env *env, struct obd_export *exp,
          * out-or-order and have already consumed some grant.  We want to
          * leave this here in case there is a large error in accounting. */
         CDEBUG(D_CACHE,
-               "%s: cli %s/%p reports grant: "LPU64" dropped: %u, local: %lu\n",
+               "%s: cli %s/%p reports grant "LPU64" dropped %u, local %lu\n",
                obd->obd_name, exp->exp_client_uuid.uuid, exp, oa->o_grant,
                oa->o_dropped, fed->fed_grant);
+
+        if ((long long)oa->o_dirty < 0)
+                oa->o_dirty = 0;
+
+        dirty       = ofd_grant_from_cli(exp, ofd, oa->o_dirty);
+        dropped     = ofd_grant_from_cli(exp, ofd, (obd_size)oa->o_dropped);
+        grant_chunk = ofd_grant_chunk(exp, ofd);
 
         /* Update our accounting now so that statfs takes it into account.
          * Note that fed_dirty is only approximate and can become incorrect
          * if RPCs arrive out-of-order.  No important calculations depend
          * on fed_dirty however, but we must check sanity to not assert. */
-        if ((long long)oa->o_dirty < 0)
-                oa->o_dirty = 0;
-        else if (oa->o_dirty > fed->fed_grant + 4 * OFD_GRANT_CHUNK)
-                oa->o_dirty = fed->fed_grant + 4 * OFD_GRANT_CHUNK;
-        ofd->ofd_tot_dirty += oa->o_dirty - fed->fed_dirty;
-        if (fed->fed_grant < oa->o_dropped) {
-                CDEBUG(D_CACHE,"%s: cli %s/%p reports %u dropped > grant %lu\n",
-                       obd->obd_name, exp->exp_client_uuid.uuid, exp,
-                       oa->o_dropped, fed->fed_grant);
-                oa->o_dropped = 0;
+        if (dirty > fed->fed_grant + 4 * grant_chunk)
+                dirty = fed->fed_grant + 4 * grant_chunk;
+        ofd->ofd_tot_dirty += dirty - fed->fed_dirty;
+        if (fed->fed_grant < dropped) {
+                CDEBUG(D_CACHE,
+                       "%s: cli %s/%p reports %lu dropped > grant %lu\n",
+                       obd->obd_name, exp->exp_client_uuid.uuid, exp, dropped,
+                       fed->fed_grant);
+                dropped = 0;
         }
-        if (ofd->ofd_tot_granted < oa->o_dropped) {
-                CERROR("%s: cli %s/%p reports %u dropped > tot_grant "LPU64"\n",
-                       obd->obd_name, exp->exp_client_uuid.uuid, exp,
-                       oa->o_dropped, ofd->ofd_tot_granted);
-                oa->o_dropped = 0;
+        if (ofd->ofd_tot_granted < dropped) {
+                CERROR("%s: cli %s/%p reports %lu dropped > tot_grant "LPU64
+                       "\n", obd->obd_name, exp->exp_client_uuid.uuid, exp,
+                       dropped, ofd->ofd_tot_granted);
+                dropped = 0;
         }
-        ofd->ofd_tot_granted -= oa->o_dropped;
-        fed->fed_grant -= oa->o_dropped;
-        fed->fed_dirty = oa->o_dirty;
+        ofd->ofd_tot_granted -= dropped;
+        fed->fed_grant -= dropped;
+        fed->fed_dirty = dirty;
 
         if (fed->fed_dirty < 0 || fed->fed_grant < 0 || fed->fed_pending < 0) {
                 CERROR("%s: cli %s/%p dirty %ld pend %ld grant %ld\n",
@@ -330,6 +362,7 @@ static void ofd_grant_shrink(struct obd_export *exp,
         struct filter_export_data *fed;
         struct ofd_device         *ofd = ofd_exp(exp);
         struct obd_device         *obd = exp->exp_obd;
+        long                       grant_shrink;
 
         LASSERT_SPIN_LOCKED(&ofd->ofd_grant_lock);
 
@@ -337,13 +370,15 @@ static void ofd_grant_shrink(struct obd_export *exp,
                           OFD_GRANT_SHRINK_LIMIT)
                 return;
 
-        fed = &exp->exp_filter_data;
-        fed->fed_grant -= oa->o_grant;
-        ofd->ofd_tot_granted -= oa->o_grant;
+        grant_shrink = ofd_grant_from_cli(exp, ofd, oa->o_grant);
 
-        CDEBUG(D_CACHE, "%s: cli %s/%p shrink "LPU64"fed_grant %ld total "
+        fed = &exp->exp_filter_data;
+        fed->fed_grant       -= grant_shrink;
+        ofd->ofd_tot_granted -= grant_shrink;
+
+        CDEBUG(D_CACHE, "%s: cli %s/%p shrink %ld fed_grant %ld total "
                LPU64"\n", obd->obd_name, exp->exp_client_uuid.uuid,
-               exp, oa->o_grant, fed->fed_grant, ofd->ofd_tot_granted);
+               exp, grant_shrink, fed->fed_grant, ofd->ofd_tot_granted);
 
         /* client has just released some grant, don't grant any space back */
         oa->o_grant = 0;
@@ -378,8 +413,10 @@ static int ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
         unsigned long              granted = 0;
         int                        i, rc = -ENOSPC;
         int                        resend = 0;
-        int                        blocksize = ofd->ofd_osfs.os_bsize;
+        int                        blocksize;
         struct ofd_thread_info    *info = ofd_info(env);
+
+        LASSERT_SPIN_LOCKED(&ofd->ofd_grant_lock);
 
         if ((oa->o_valid & OBD_MD_FLFLAGS) &&
             (oa->o_flags & OBD_FL_RECOV_RESEND)) {
@@ -388,7 +425,7 @@ static int ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
                                 "accounting\n");
         }
 
-        LASSERT_SPIN_LOCKED(&ofd->ofd_grant_lock);
+        blocksize = 1 << ofd->ofd_blockbits;
 
         for (i = 0; i < niocount; i++) {
                 int tmp, bytes;
@@ -402,6 +439,7 @@ static int ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
 
                 if ((lnb[i].lnb_flags & OBD_BRW_FROM_GRANT) &&
                     (oa->o_valid & OBD_MD_FLGRANT)) {
+                        bytes = ofd_grant_from_cli(exp, ofd, (obd_size)bytes);
                         if (resend) {
                                 /* This is a recoverable resend so grant
                                  * information have already been processed */
@@ -458,9 +496,9 @@ static int ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
         ofd->ofd_tot_pending += info->fti_used;
 
         CDEBUG(D_CACHE,
-               "%s: cli %s/%p granted: %lu ungranted: %lu grant: %lu dirty: %lu\n",
-               obd->obd_name, exp->exp_client_uuid.uuid, exp, granted,
-               ungranted, fed->fed_grant, fed->fed_dirty);
+               "%s: cli %s/%p granted: %lu ungranted: %lu grant: %lu dirty: %lu"
+               "\n", obd->obd_name, exp->exp_client_uuid.uuid, exp,
+               granted, ungranted, fed->fed_grant, fed->fed_dirty);
 
         if (fed->fed_dirty < granted) {
                 CWARN("%s: cli %s/%p claims granted %lu > fed_dirty %lu\n",
@@ -498,7 +536,11 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
         struct obd_device         *obd = exp->exp_obd;
         struct ofd_device         *ofd = ofd_exp(exp);
         struct filter_export_data *fed = &exp->exp_filter_data;
-        __u64                      grant;
+        long                       grant_chunk;
+        obd_size                   grant;
+
+        if (ofd_grant_prohibit(exp, ofd) || left == 0)
+                return 0;
 
         if (want > 0x7fffffff) {
                 CERROR("%s: client %s/%p requesting > 2GB grant "LPU64"\n",
@@ -506,8 +548,11 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
                 return 0;
         }
 
-        if (left == 0)
-                return 0;
+        /* client not supporting OBD_CONNECT_GRANT_PARAM works with a 4KB block
+         * size while the reality is different */
+        curgrant    = ofd_grant_from_cli(exp, ofd, curgrant);
+        want        = ofd_grant_from_cli(exp, ofd, want);
+        grant_chunk = ofd_grant_chunk(exp,ofd);
 
         /* Grant some fraction of the client's requested grant space so that
          * they are not always waiting for write credits (not all of it to
@@ -518,7 +563,7 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
          * has and what we think it has, don't grant very much and let the
          * client consume its grant first.  Either it just has lots of RPCs
          * in flight, or it was evicted and its grants will soon be used up. */
-        if (curgrant >= want || curgrant >= fed->fed_grant + OFD_GRANT_CHUNK)
+        if (curgrant >= want || curgrant >= fed->fed_grant + grant_chunk)
                    return 0;
 
         grant = min(want, left >> 3);
@@ -530,14 +575,14 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
 
         /* Allow >OFD_GRANT_CHUNK size when clients reconnect due to a
          * server reboot. */
-        if ((grant > OFD_GRANT_CHUNK) && (!obd->obd_recovering))
-                grant = OFD_GRANT_CHUNK;
+        if ((grant > grant_chunk) && (!obd->obd_recovering))
+                grant = grant_chunk;
 
         ofd->ofd_tot_granted += grant;
         fed->fed_grant += grant;
 
         if (fed->fed_grant < 0) {
-                CERROR("%s: cli %s/%p grant %ld want "LPU64"current"LPU64"\n",
+                CERROR("%s: cli %s/%p grant %ld want "LPU64" current "LPU64"\n",
                        obd->obd_name, exp->exp_client_uuid.uuid, exp,
                        fed->fed_grant, want, curgrant);
                 cfs_spin_unlock(&ofd->ofd_grant_lock);
@@ -554,7 +599,7 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
                exp, ofd->ofd_tot_dirty, ofd->ofd_tot_granted,
                obd->obd_num_exports);
 
-        return grant;
+        return ofd_grant_to_cli(exp, ofd, grant);
 }
 
 /**
@@ -574,6 +619,11 @@ long ofd_grant_connect(const struct lu_env *env, struct obd_export *exp,
         int                        from_cache;
         int                        force = 0; /* can use cached statfs data */
 
+        /* don't grant space to client with read-only access */
+        if ((exp->exp_connect_flags & OBD_CONNECT_RDONLY) ||
+            ofd_grant_prohibit(exp, ofd))
+                return 0;
+
 refresh:
         ofd_grant_statfs(env, exp, force, &from_cache);
 
@@ -591,10 +641,11 @@ refresh:
                 goto refresh;
         }
 
-        ofd_grant(exp, fed->fed_grant, want, left);
+        ofd_grant(exp, ofd_grant_to_cli(exp, ofd, (obd_size)fed->fed_grant),
+                  want, left);
 
         /* return to client its current grant */
-        grant = fed->fed_grant;
+        grant = ofd_grant_to_cli(exp, ofd, (obd_size)fed->fed_grant);
         ofd->ofd_tot_granted_clients++;
 
         cfs_spin_unlock(&ofd->ofd_grant_lock);
