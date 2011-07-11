@@ -859,6 +859,7 @@ static const char *obd_connect_names[] = {
         "layout_lock",
         "64bithash",
         "object_max_bytes",
+        "grant_param",
         NULL
 };
 

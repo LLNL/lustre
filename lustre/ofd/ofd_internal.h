@@ -164,7 +164,10 @@ struct ofd_device {
         cfs_spinlock_t           ofd_flags_lock;
         unsigned long            ofd_raid_degraded:1,
                                  ofd_syncjournal:1, /* sync journal on writes */
-                                 ofd_sync_lock_cancel:2;/* sync on lock cancel */
+                                 ofd_sync_lock_cancel:2,/* sync on lock cancel */
+                                 /* shall we grant space to clients not
+                                  * supporting OBD_CONNECT_GRANT_PARAM? */
+                                 ofd_grant_compat_disable:1;
 
         /* sptlrpc stuff */
         cfs_rwlock_t             ofd_sptlrpc_lock;
@@ -469,6 +472,33 @@ static inline int ofd_grant_ratio_conv(int percentage)
 {
         return (percentage << OFD_GRANT_RATIO_SHIFT) / 100;
 }
+/* Blocksize used for client not supporting OBD_CONNECT_GRANT_PARAM.
+ * That's 4KB=2^12 which is the biggest block size known to work whatever
+ * the client's page size is. */
+#define COMPAT_BSIZE_SHIFT 12
+static inline int ofd_grant_compat(struct obd_export *exp,
+                                   struct ofd_device *ofd)
+{
+        /* Clients which don't support OBD_CONNECT_GRANT_PARAM cannot handle
+         * a block size > page size and consume CFS_PAGE_SIZE of grant when
+         * dirtying a page regardless of the block size */
+        if (ofd->ofd_blockbits > COMPAT_BSIZE_SHIFT &&
+            (exp->exp_connect_flags & OBD_CONNECT_GRANT_PARAM) == 0)
+                return 1;
+        return 0;
+}
+static inline int ofd_grant_prohibit(struct obd_export *exp,
+                                     struct ofd_device *ofd)
+{
+        /* When ofd_grant_compat_disable is set, we don't grant any space to
+         * clients not supporting OBD_CONNECT_GRANT_PARAM.
+         * Otherwise, space granted to such a client is inflated since it
+         * consumes CFS_PAGE_SIZE of grant space per block */
+        if (ofd_grant_compat(exp, ofd) && ofd->ofd_grant_compat_disable)
+                return 1;
+        return 0;
+}
+
 void ofd_grant_sanity_check(struct obd_device *obd, const char *func);
 long ofd_grant_connect(const struct lu_env *env, struct obd_export *exp,
                        obd_size want);

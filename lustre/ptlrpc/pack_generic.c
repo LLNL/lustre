@@ -1568,8 +1568,8 @@ void lustre_swab_connect(struct obd_connect_data *ocd)
         __swab64s(&ocd->ocd_ibits_known);
         __swab32s(&ocd->ocd_index);
         __swab32s(&ocd->ocd_brw_size);
-        __swab32s(&ocd->ocd_nllu);
-        __swab32s(&ocd->ocd_nllg);
+        __swab16s(&ocd->ocd_grant_frag);
+        __swab32s(&ocd->ocd_unused);
         __swab64s(&ocd->ocd_transno);
         __swab32s(&ocd->ocd_group);
         __swab32s(&ocd->ocd_cksum_types);

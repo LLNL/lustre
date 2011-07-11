@@ -1112,6 +1112,11 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 #define OBD_CONNECT_64BITHASH    0x4000000000ULL /* client supports 64-bits
                                                   * directory hash */
 #define OBD_CONNECT_MAXBYTES     0x8000000000ULL /* max stripe size */
+#define OBD_CONNECT_GRANT_PARAM 0x10000000000ULL /* additional grant parameters
+                                                  * are passed at connect time
+                                                  * to have finer grant space
+                                                  * allocation */
+
 /* also update obd_connect_names[] for lprocfs_rd_connect_flags()
  * and lustre/utils/wirecheck.c */
 
@@ -1189,8 +1194,10 @@ struct obd_connect_data {
         __u32 ocd_index;         /* LOV index to connect to */
         __u32 ocd_brw_size;      /* Maximum BRW size in bytes */
         __u64 ocd_ibits_known;   /* inode bits this client understands */
-        __u32 ocd_nllu;          /* non-local-lustre-user */
-        __u32 ocd_nllg;          /* non-local-lustre-group */
+        __u8  ocd_blocksize;     /* log2 of the backend filesystem blocksize */
+        __u8  ocd_inodespace;    /* log2 of the per-inode space consumption */
+        __u16 ocd_grant_frag;    /* per-fragment grant overhead, in 1K blocks */
+        __u32 ocd_unused;        /* also fix lustre_swab_connect */
         __u64 ocd_transno;       /* first transno from client to be replayed */
         __u32 ocd_group;         /* MDS group on OST */
         __u32 ocd_cksum_types;   /* supported checksum algorithms */

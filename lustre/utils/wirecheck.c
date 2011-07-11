@@ -188,17 +188,16 @@ static void check_obd_connect_data(void)
         CHECK_MEMBER(obd_connect_data, ocd_index);
         CHECK_MEMBER(obd_connect_data, ocd_brw_size);
         CHECK_MEMBER(obd_connect_data, ocd_ibits_known);
-        CHECK_MEMBER(obd_connect_data, ocd_nllu);
-        CHECK_MEMBER(obd_connect_data, ocd_nllg);
+        CHECK_MEMBER(obd_connect_data, ocd_blocksize);
+        CHECK_MEMBER(obd_connect_data, ocd_inodespace);
+        CHECK_MEMBER(obd_connect_data, ocd_grant_frag);
+        CHECK_MEMBER(obd_connect_data, ocd_unused);
         CHECK_MEMBER(obd_connect_data, ocd_transno);
         CHECK_MEMBER(obd_connect_data, ocd_group);
         CHECK_MEMBER(obd_connect_data, ocd_cksum_types);
         CHECK_MEMBER(obd_connect_data, ocd_max_easize);
         CHECK_MEMBER(obd_connect_data, padding);
         CHECK_MEMBER(obd_connect_data, ocd_maxbytes);
-        CHECK_MEMBER(obd_connect_data, padding1);
-        CHECK_MEMBER(obd_connect_data, padding2);
-
         CHECK_CDEFINE(OBD_CONNECT_RDONLY);
         CHECK_CDEFINE(OBD_CONNECT_INDEX);
         CHECK_CDEFINE(OBD_CONNECT_MDS);
@@ -239,6 +238,7 @@ static void check_obd_connect_data(void)
         CHECK_CDEFINE(OBD_CONNECT_LAYOUTLOCK);
         CHECK_CDEFINE(OBD_CONNECT_64BITHASH);
         CHECK_CDEFINE(OBD_CONNECT_MAXBYTES);
+        CHECK_CDEFINE(OBD_CONNECT_GRANT_PARAM);
 }
 
 static void
@@ -463,9 +463,9 @@ check_niobuf_remote(void)
 {
         BLANK_LINE();
         CHECK_STRUCT(niobuf_remote);
-        CHECK_MEMBER(niobuf_remote, offset);
-        CHECK_MEMBER(niobuf_remote, len);
-        CHECK_MEMBER(niobuf_remote, flags);
+        CHECK_MEMBER(niobuf_remote, rnb_offset);
+        CHECK_MEMBER(niobuf_remote, rnb_len);
+        CHECK_MEMBER(niobuf_remote, rnb_flags);
 
         CHECK_VALUE(OBD_BRW_READ);
         CHECK_VALUE(OBD_BRW_WRITE);
