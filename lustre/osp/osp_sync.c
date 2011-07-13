@@ -372,7 +372,8 @@ static int osp_sync_interpret(const struct lu_env *env,
                 /*
                  * error happened, we'll try to repeat on next boot ?
                  */
-                LASSERT(req->rq_transno == 0);
+                LASSERTF(req->rq_transno == 0, "transno %Lu, rc %d\n",
+                         req->rq_transno, rc);
                 LASSERT(d->opd_syn_rpc_in_progress > 0);
                 cfs_spin_lock(&d->opd_syn_lock);
                 d->opd_syn_rpc_in_progress--;
