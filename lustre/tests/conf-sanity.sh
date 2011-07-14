@@ -68,6 +68,11 @@ init_logging
 #
 require_dsh_mds || exit 0
 require_dsh_ost || exit 0
+
+# Orion:
+# ORI-73
+skip_env "$0: is skipped in Orion until ORI-73 work"
+exit 0
 #
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="30a 31 45"
 
