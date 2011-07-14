@@ -25,6 +25,10 @@ CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 # BUG NUMBER:
 ALWAYS_EXCEPT="$REPLAY_OST_SINGLE_EXCEPT"
 
+# Orion:
+# 6 - ORI-124
+ALWAYS_EXCEPT="6 $ALWAYS_EXCEPT"
+
 #					
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="5"
 FAIL_ON_ERROR=false
