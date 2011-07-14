@@ -135,9 +135,9 @@ static int mgsself_srpc_seq_show(struct seq_file *seq, void *v)
         if (rc)
                 goto out;
 
-        cfs_down(&fsdb->fsdb_sem);
+        cfs_mutex_lock(&fsdb->fsdb_sem);
         seq_show_srpc_rules(seq, fsdb->fsdb_name, &fsdb->fsdb_srpc_gen);
-        cfs_up(&fsdb->fsdb_sem);
+        cfs_mutex_unlock(&fsdb->fsdb_sem);
 
 out:
         lu_env_fini(&env);
@@ -202,7 +202,7 @@ static int mgs_live_seq_show(struct seq_file *seq, void *v)
         struct mgs_tgt_srpc_conf *srpc_tgt;
         int i;
 
-        cfs_down(&fsdb->fsdb_sem);
+        cfs_mutex_lock(&fsdb->fsdb_sem);
 
         seq_printf(seq, "fsname: %s\n", fsdb->fsdb_name);
         seq_printf(seq, "flags: %#lx     gen: %d\n",
@@ -228,7 +228,7 @@ static int mgs_live_seq_show(struct seq_file *seq, void *v)
 
         lprocfs_rd_ir_state(seq, fsdb);
 
-        cfs_up(&fsdb->fsdb_sem);
+        cfs_mutex_unlock(&fsdb->fsdb_sem);
         return 0;
 }
 
@@ -239,7 +239,9 @@ static ssize_t mgs_live_seq_write(struct file *file, const char *buf,
         struct fs_db    *fsdb = seq->private;
         ssize_t rc;
 
+        cfs_mutex_lock(&fsdb->fsdb_sem);
         rc = lprocfs_wr_ir_state(file, buf, len, fsdb);
+        cfs_mutex_unlock(&fsdb->fsdb_sem);
         if (rc >= 0)
                 rc = len;
         return rc;

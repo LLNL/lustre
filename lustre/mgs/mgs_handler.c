@@ -493,7 +493,7 @@ static int mgs_connect_check_sptlrpc(struct ptlrpc_request *req)
                 if (rc)
                         return rc;
 
-                cfs_down(&fsdb->fsdb_sem);
+                cfs_mutex_lock(&fsdb->fsdb_sem);
                 if (sptlrpc_rule_set_choose(&fsdb->fsdb_srpc_gen,
                                             LUSTRE_SP_MGC, LUSTRE_SP_MGS,
                                             req->rq_peer.nid,
@@ -501,7 +501,7 @@ static int mgs_connect_check_sptlrpc(struct ptlrpc_request *req)
                         /* by defualt allow any flavors */
                         flvr.sf_rpc = SPTLRPC_FLVR_ANY;
                 }
-                cfs_up(&fsdb->fsdb_sem);
+                cfs_mutex_unlock(&fsdb->fsdb_sem);
 
                 cfs_spin_lock(&exp->exp_lock);
 
@@ -1064,8 +1064,8 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
 
         /* Internal mgs setup */
         mgs_init_fsdb_list(mgs);
-        cfs_sema_init(&mgs->mgs_sem, 1);
         mgs->mgs_start_time = cfs_time_current_sec();
+        cfs_spin_lock_init(&mgs->mgs_lock);
 
         /* Setup proc */
         lprocfs_mgs_init_vars(&lvars);
