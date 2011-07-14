@@ -23,7 +23,8 @@ ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 # Orion: to be fixed
 # 160 -- (bug 22448) changelogs don't work yet
 # 204e - ORI-241
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 160 204e"
+# 124a - LU-479 is not yet merged
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 160 204e"
 
 case `uname -r` in
 2.4*) FSTYPE=${FSTYPE:-ext3} ;;
