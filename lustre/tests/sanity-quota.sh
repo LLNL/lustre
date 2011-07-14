@@ -63,6 +63,10 @@ DIRECTIO=${DIRECTIO:-$LUSTRE/tests/directio}
 require_dsh_mds || exit 0
 require_dsh_ost || exit 0
 
+# Orion
+skip_env "$0: is not functional in Orion until quota rework"
+exit 0
+
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="9 10 11 18b 21"
 
 QUOTALOG=${TESTSUITELOG:-$TMP/$(basename $0 .sh).log}
