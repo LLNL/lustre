@@ -164,7 +164,7 @@ struct mgs_device {
         struct dt_object                *mgs_configs_dir;
         struct dt_object                *mgs_nidtbl_dir;
         cfs_list_t                       mgs_fs_db_list;
-        cfs_semaphore_t                  mgs_sem;
+        cfs_spinlock_t                   mgs_lock; /* covers mgs_fs_db_list */
         cfs_proc_dir_entry_t            *mgs_proc_live;
         cfs_time_t                       mgs_start_time;
         struct obd_device               *mgs_obd;

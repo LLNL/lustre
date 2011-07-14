@@ -1066,8 +1066,8 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
 
         /* Internal mgs setup */
         mgs_init_fsdb_list(mgs);
-        cfs_sema_init(&mgs->mgs_sem, 1);
         mgs->mgs_start_time = cfs_time_current_sec();
+        cfs_spin_lock_init(&mgs->mgs_lock);
 
         /* Setup proc */
         lprocfs_mgs_init_vars(&lvars);

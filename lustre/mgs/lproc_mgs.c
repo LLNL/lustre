@@ -241,7 +241,9 @@ static ssize_t mgs_live_seq_write(struct file *file, const char *buf,
         struct fs_db    *fsdb = seq->private;
         ssize_t rc;
 
+        cfs_mutex_lock(&fsdb->fsdb_mutex);
         rc = lprocfs_wr_ir_state(file, buf, len, fsdb);
+        cfs_mutex_unlock(&fsdb->fsdb_mutex);
         if (rc >= 0)
                 rc = len;
         return rc;
