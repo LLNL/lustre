@@ -25,6 +25,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  *
  * Copyright (c) 2011, Whamcloud, Inc.
@@ -38,21 +39,12 @@
  * Lustre Management Server (MGS) filesystem interface code
  *
  * Author: Nathan Rutman <nathan@clusterfs.com>
+ * Author: Alex Zhuravlev <bzzz@whamcloud.com>
  */
 
 #define DEBUG_SUBSYSTEM S_MGS
 
-#include <linux/module.h>
-#include <linux/kmod.h>
-#include <linux/version.h>
-#include <linux/sched.h>
-#include <linux/mount.h>
-#include <obd_class.h>
-#include <obd_support.h>
-#include <lustre_disk.h>
-#include <lustre_lib.h>
 #include <lustre_fid.h>
-#include <libcfs/list.h>
 #include "mgs_internal.h"
 
 int mgs_export_stats_init(struct obd_device *obd, struct obd_export *exp,
@@ -116,7 +108,6 @@ int mgs_client_free(struct obd_export *exp)
 
 int mgs_fs_setup(const struct lu_env *env, struct mgs_device *mgs)
 {
-        struct obd_device       *obd = mgs->mgs_obd;
         struct lu_fid            fid;
         struct dt_object        *o;
         struct lu_fid            rfid;
@@ -129,8 +120,8 @@ int mgs_fs_setup(const struct lu_env *env, struct mgs_device *mgs)
         if (rc)
                 RETURN(rc);
 
-        OBD_SET_CTXT_MAGIC(&obd->obd_lvfs_ctxt);
-        obd->obd_lvfs_ctxt.dt = mgs->mgs_bottom;
+        OBD_SET_CTXT_MAGIC(&mgs->mgs_obd->obd_lvfs_ctxt);
+        mgs->mgs_obd->obd_lvfs_ctxt.dt = mgs->mgs_bottom;
 
         /* XXX: fix when support for N:1 layering is implemented */
         LASSERT(mgs->mgs_dt_dev.dd_lu_dev.ld_site);
@@ -186,9 +177,7 @@ out:
 
 int mgs_fs_cleanup(const struct lu_env *env, struct mgs_device *mgs)
 {
-        struct obd_device *obd = mgs->mgs_obd;
-
-        class_disconnect_exports(obd); /* cleans up client info too */
+        class_disconnect_exports(mgs->mgs_obd); /* cleans up client info too */
 
         if (mgs->mgs_configs_dir) {
                 lu_object_put(env, &mgs->mgs_configs_dir->do_lu);
