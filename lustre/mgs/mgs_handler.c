@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Whamcloud, Inc.
  * Use is subject to license terms.
  */
 /*
@@ -36,6 +37,8 @@
  * lustre/mgs/mgs_handler.c
  *
  * Author: Nathan Rutman <nathan@clusterfs.com>
+ * Author: Alex Zhuravlev <bzzz@whamcloud.com>
+ * Author: Mikhail Pershin <tappro@whamcloud.com>
  */
 
 #ifndef EXPORT_SYMTAB
@@ -44,27 +47,15 @@
 #define DEBUG_SUBSYSTEM S_MGS
 #define D_MGS D_CONFIG
 
-#ifdef __KERNEL__
-# include <linux/module.h>
-# include <linux/pagemap.h>
-# include <linux/miscdevice.h>
-# include <linux/init.h>
-#else
-# include <liblustre.h>
-#endif
-
 #include <obd_class.h>
-#include <lustre_dlm.h>
 #include <lprocfs_status.h>
-#include <lustre_disk.h>
-#include "mgs_internal.h"
 #include <lustre_param.h>
+#include "mgs_internal.h"
 
 /* Establish a connection to the MGS.*/
-static int mgs_connect(const struct lu_env *env,
-                       struct obd_export **exp, struct obd_device *obd,
-                       struct obd_uuid *cluuid, struct obd_connect_data *data,
-                       void *localdata)
+static int mgs_connect(const struct lu_env *env, struct obd_export **exp,
+                       struct obd_device *obd, struct obd_uuid *cluuid,
+                       struct obd_connect_data *data, void *localdata)
 {
         struct obd_export *lexp;
         struct lustre_handle conn = { 0 };
@@ -79,7 +70,8 @@ static int mgs_connect(const struct lu_env *env,
                 RETURN(rc);
 
         lexp = class_conn2export(&conn);
-        LASSERT(lexp);
+        if (lexp == NULL)
+                RETURN(-EFAULT);
 
         mgs_counter_incr(lexp, LPROC_MGS_CONNECT);
 
@@ -90,20 +82,17 @@ static int mgs_connect(const struct lu_env *env,
         }
 
         rc = mgs_export_stats_init(obd, lexp, localdata);
-
-        if (rc) {
+        if (rc)
                 class_disconnect(lexp);
-        } else {
+        else
                 *exp = lexp;
-        }
 
         RETURN(rc);
 }
 
-static int mgs_reconnect(const struct lu_env *env,
-                         struct obd_export *exp, struct obd_device *obd,
-                         struct obd_uuid *cluuid, struct obd_connect_data *data,
-                         void *localdata)
+static int mgs_reconnect(const struct lu_env *env, struct obd_export *exp,
+                         struct obd_device *obd, struct obd_uuid *cluuid,
+                         struct obd_connect_data *data, void *localdata)
 {
         ENTRY;
 
@@ -333,9 +322,9 @@ static int mgs_handle_target_reg(struct ptlrpc_request *req)
                 if (rc <= 0)
                         /* Nothing wrong, or fatal error */
                         GOTO(out_nolock, rc);
-        } else {
-                if (!(mti->mti_flags & LDD_F_NO_PRIMNODE)
-                    && (rc = mgs_check_failover_reg(mti)))
+        } else if (!(mti->mti_flags & LDD_F_NO_PRIMNODE)) {
+                rc = mgs_check_failover_reg(mti);
+                if (rc)
                         GOTO(out_nolock, rc);
         }
 
@@ -359,6 +348,8 @@ static int mgs_handle_target_reg(struct ptlrpc_request *req)
                 mti->mti_flags |= LDD_F_UPDATE;
                 /* Erased logs means start from scratch. */
                 mti->mti_flags &= ~LDD_F_UPGRADE14;
+                if (rc)
+                        GOTO(out_nolock, rc);
         }
 
         rc = mgs_find_or_make_fsdb(env, mgs, mti->mti_fsname, &fsdb);
@@ -445,16 +436,16 @@ static int mgs_set_info_rpc(struct ptlrpc_request *req)
         if (rc) {
                 CERROR("Error %d in setting the parameter %s for fs %s\n",
                        rc, msp->mgs_param, fsname);
-                RETURN(rc);
+                GOTO(out_cfg, rc);
         }
-
-        lustre_cfg_free(lcfg);
 
         rc = req_capsule_server_pack(&req->rq_pill);
         if (rc == 0) {
                 rep_msp = req_capsule_server_get(&req->rq_pill, &RMF_MGS_SEND_PARAM);
                 rep_msp = msp;
         }
+out_cfg:
+        lustre_cfg_free(lcfg);
         RETURN(rc);
 }
 
@@ -820,91 +811,77 @@ static int mgs_iocontrol_pool(const struct lu_env *env,
                 RETURN(-ENOMEM);
 
         OBD_ALLOC(poolname, LOV_MAXPOOLNAME + 1);
-        if (poolname == NULL) {
-                rc = -ENOMEM;
-                GOTO(out_pool, rc);
-        }
+        if (poolname == NULL)
+                GOTO(out_fsname, rc = -ENOMEM);
+
         rec.lrh_len = llog_data_len(data->ioc_plen1);
 
         if (data->ioc_type == LUSTRE_CFG_TYPE) {
                 rec.lrh_type = OBD_CFG_REC;
         } else {
                 CERROR("unknown cfg record type:%d \n", data->ioc_type);
-                rc = -EINVAL;
-                GOTO(out_pool, rc);
+                GOTO(out_pool, rc = -EINVAL);
         }
 
-        if (data->ioc_plen1 > CFS_PAGE_SIZE) {
-                rc = -E2BIG;
-                GOTO(out_pool, rc);
-        }
+        if (data->ioc_plen1 > CFS_PAGE_SIZE)
+                GOTO(out_pool, rc = -E2BIG);
 
         OBD_ALLOC(lcfg, data->ioc_plen1);
         if (lcfg == NULL)
                 GOTO(out_pool, rc = -ENOMEM);
 
         if (cfs_copy_from_user(lcfg, data->ioc_pbuf1, data->ioc_plen1))
-                GOTO(out_pool, rc = -EFAULT);
+                GOTO(out_lcfg, rc = -EFAULT);
 
-        if (lcfg->lcfg_bufcount < 2) {
-                GOTO(out_pool, rc = -EFAULT);
-        }
+        if (lcfg->lcfg_bufcount < 2)
+                GOTO(out_lcfg, rc = -EFAULT);
 
         /* first arg is always <fsname>.<poolname> */
-        mgs_extract_fs_pool(lustre_cfg_string(lcfg, 1), fsname,
-                            poolname);
+        rc = mgs_extract_fs_pool(lustre_cfg_string(lcfg, 1), fsname,
+                                 poolname);
+        if (rc)
+                GOTO(out_lcfg, rc);
 
         switch (lcfg->lcfg_command) {
-        case LCFG_POOL_NEW: {
+        case LCFG_POOL_NEW:
                 if (lcfg->lcfg_bufcount != 2)
-                        RETURN(-EINVAL);
+                        GOTO(out_lcfg, rc = -EINVAL);
                 rc = mgs_pool_cmd(env, mgs, LCFG_POOL_NEW, fsname,
                                   poolname, NULL);
                 break;
-        }
-        case LCFG_POOL_ADD: {
+        case LCFG_POOL_ADD:
                 if (lcfg->lcfg_bufcount != 3)
-                        RETURN(-EINVAL);
+                        GOTO(out_lcfg, rc = -EINVAL);
                 rc = mgs_pool_cmd(env, mgs, LCFG_POOL_ADD, fsname, poolname,
                                   lustre_cfg_string(lcfg, 2));
                 break;
-        }
-        case LCFG_POOL_REM: {
+        case LCFG_POOL_REM:
                 if (lcfg->lcfg_bufcount != 3)
-                        RETURN(-EINVAL);
+                        GOTO(out_lcfg, rc = -EINVAL);
                 rc = mgs_pool_cmd(env, mgs, LCFG_POOL_REM, fsname, poolname,
                                   lustre_cfg_string(lcfg, 2));
                 break;
-        }
-        case LCFG_POOL_DEL: {
+        case LCFG_POOL_DEL:
                 if (lcfg->lcfg_bufcount != 2)
-                        RETURN(-EINVAL);
+                        GOTO(out_lcfg, rc = -EINVAL);
                 rc = mgs_pool_cmd(env, mgs, LCFG_POOL_DEL, fsname,
                                   poolname, NULL);
                 break;
+        default:
+                rc = -EINVAL;
         }
-        default: {
-                 rc = -EINVAL;
-                 GOTO(out_pool, rc);
-        }
-        }
-
         if (rc) {
                 CERROR("OBD_IOC_POOL err %d, cmd %X for pool %s.%s\n",
                        rc, lcfg->lcfg_command, fsname, poolname);
-                GOTO(out_pool, rc);
+                GOTO(out_lcfg, rc);
         }
 
+out_lcfg:
+        OBD_FREE(lcfg, data->ioc_plen1);
 out_pool:
-        if (lcfg != NULL)
-                OBD_FREE(lcfg, data->ioc_plen1);
-
-        if (fsname != NULL)
-                OBD_FREE(fsname, MTI_NAME_MAXLEN);
-
-        if (poolname != NULL)
-                OBD_FREE(poolname, LOV_MAXPOOLNAME + 1);
-
+        OBD_FREE(poolname, LOV_MAXPOOLNAME + 1);
+out_fsname:
+        OBD_FREE(fsname, MTI_NAME_MAXLEN);
         RETURN(rc);
 }
 
@@ -1002,7 +979,7 @@ static int mgs_connect_to_osd(struct mgs_device *m, const char *nextdev)
 
         OBD_ALLOC_PTR(data);
         if (data == NULL)
-                GOTO(out, rc = -ENOMEM);
+                RETURN(-ENOMEM);
 
         obd = class_name2obd(nextdev);
         if (obd == NULL) {
@@ -1023,14 +1000,13 @@ static int mgs_connect_to_osd(struct mgs_device *m, const char *nextdev)
         m->mgs_dt_dev.dd_lu_dev.ld_site = m->mgs_bottom->dd_lu_dev.ld_site;
         LASSERT(m->mgs_dt_dev.dd_lu_dev.ld_site);
 out:
-        if (data)
-                OBD_FREE_PTR(data);
+        OBD_FREE_PTR(data);
         RETURN(rc);
 }
 
 
 static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
-                      struct lu_device_type *ldt, struct lustre_cfg *cfg)
+                     struct lu_device_type *ldt, struct lustre_cfg *cfg)
 {
         struct lprocfs_static_vars  lvars = { 0 };
         struct obd_device          *obd;
@@ -1111,7 +1087,7 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
                                 "ll_mgs", LCT_MG_THREAD, NULL);
         if (!mgs->mgs_service) {
                 CERROR("failed to start service\n");
-                GOTO(err_llog, rc = -ENOMEM);
+                GOTO(err_lproc, rc = -ENOMEM);
         }
 
         rc = ptlrpc_start_threads(mgs->mgs_service);
@@ -1128,9 +1104,14 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
 
 err_thread:
         ptlrpc_unregister_service(mgs->mgs_service);
-err_llog:
+err_lproc:
         lproc_mgs_cleanup(mgs);
-        obd_llog_finish(obd, 0);
+err_llog:
+        ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
+        if (ctxt) {
+                ctxt->loc_dir = NULL;
+                llog_cleanup(ctxt);
+        }
 err_fs:
         /* No extra cleanup needed for llog_init_commit_thread() */
         mgs_fs_cleanup(env, mgs);
@@ -1270,8 +1251,7 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
 {
         struct mgs_device *mgs = lu2mgs_dev(d);
         struct obd_device *obd = mgs->mgs_obd;
-        struct llog_ctxt  *ctxt;
-        int                rc;
+        struct llog_ctxt *ctxt;
         ENTRY;
 
         LASSERT(mgs->mgs_bottom);
@@ -1285,14 +1265,14 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
 
         mgs_cleanup_fsdb_list(mgs);
         lproc_mgs_cleanup(mgs);
-        mgs_fs_cleanup(env, mgs);
 
-        ctxt = llog_get_context(obd, LLOG_CONFIG_ORIG_CTXT);
+        ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         if (ctxt) {
-                rc = llog_cleanup(ctxt);
-                if (rc)
-                        CERROR("can't cleanup llog: %d\n", rc);
+                ctxt->loc_dir = NULL;
+                llog_cleanup(ctxt);
         }
+
+        mgs_fs_cleanup(env, mgs);
 
         ldlm_namespace_free(obd->obd_namespace, NULL, 1);
         obd->obd_namespace = NULL;
