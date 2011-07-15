@@ -37,13 +37,7 @@
 #ifndef _MGS_INTERNAL_H
 #define _MGS_INTERNAL_H
 
-#ifdef __KERNEL__
-# include <linux/fs.h>
-#endif
 #include <libcfs/libcfs.h>
-#include <lustre/lustre_idl.h>
-#include <lustre_lib.h>
-#include <lustre_dlm.h>
 #include <lustre_log.h>
 #include <lustre_export.h>
 #include <dt_object.h>
@@ -129,13 +123,8 @@ struct fs_db {
         void             *fsdb_ost_index_map;  /* bitmap of used indicies */
         void             *fsdb_mdt_index_map;  /* bitmap of used indicies */
         int               fsdb_mdt_count;
-        /* COMPAT_146 these items must be recorded out of the old client log */
         char             *fsdb_clilov;       /* COMPAT_146 client lov name */
         char             *fsdb_clilmv;
-        char             *fsdb_mdtlov;       /* COMPAT_146 mds lov name */
-        char             *fsdb_mdtlmv;
-        char             *fsdb_mdc;          /* COMPAT_146 mdc name */
-        /* end COMPAT_146 */
         unsigned long     fsdb_flags;
         __u32             fsdb_gen;
 
