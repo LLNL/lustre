@@ -143,7 +143,7 @@ static int mgsself_srpc_seq_show(struct seq_file *seq, void *v)
         LASSERT(obd->obd_lu_dev != NULL);
         mgs = lu2mgs_dev(obd->obd_lu_dev);
 
-        rc = lu_env_init(&env, LCT_DT_THREAD);
+        rc = lu_env_init(&env, LCT_MG_THREAD);
         if (rc)
                 return rc;
 
