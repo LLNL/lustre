@@ -20,6 +20,26 @@ if [ "$FAILURE_MODE" = "HARD" ]; then
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT $CONFIG_EXCEPTIONS"
 fi
 
+# 5b  - ORI-245
+# 5d  - ORI-245
+# 9   - ORI-245
+# 19b - ORI-245
+# 21b - ORI-245
+# 21c - ORI-245
+# 27a - ORI-245
+# 29  - ORI-15
+# 32a - ORI-?? (compatibility with 1.8)
+# 32b - ORI-?? (compatibility with 1.8)
+# 33a - ORI-23
+# 38  - ORI-237
+# 49  - obd_mount doesn't parse options in ldd anymore?
+# 50g - LU-491
+# 55  - ORI-23
+# 56  - ORI-23
+# 57  - tunefs.lustre doesn't work anymore?
+# 58  - ORI-246
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 33a 38 49 50g 55 56 57 58"
+
 SRCDIR=`dirname $0`
 PATH=$PWD/$SRCDIR:$SRCDIR:$SRCDIR/../utils:$PATH
 
@@ -58,11 +78,6 @@ init_logging
 #
 require_dsh_mds || exit 0
 require_dsh_ost || exit 0
-
-# Orion:
-# ORI-73
-skip_env "$0: is skipped in Orion until ORI-73 work"
-exit 0
 #
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="30a 31 45"
 
@@ -70,36 +85,44 @@ exit 0
 assert_DIR
 
 reformat() {
-        formatall
+	formatall
+	writeconf
 }
 
-writeconf1() {
-	local facet=$1
-	local dev=$2
-
-	stop ${facet} -f
-	rm -f ${facet}active
-	# who knows if/where $TUNEFS is installed?  Better reformat if it fails...
-	do_facet ${facet} "$TUNEFS --quiet --writeconf $dev" ||
-		{ echo "tunefs failed, reformatting instead" && reformat_and_config && return 1; }
-	return 0
-}
+WCDIR=$TMP/confsanity_wconf_$$
 
 writeconf() {
-	# we need ldiskfs
-	load_modules
-	# if writeconf fails anywhere, we reformat everything
-	writeconf1 mds `mdsdevname 1` || return 0
-	writeconf1 ost1 `ostdevname 1` || return 0
-	writeconf1 ost2 `ostdevname 2` || return 0
+	# Everybody writeconf next time they mount.
+	# We can't set environment vars inside tests since they run in subshells
+	# so we're left with this suboptimal implementation.
+	mkdir -p $WCDIR
+	touch $WCDIR/wc.m
+	touch $WCDIR/wc.o1
+	touch $WCDIR/wc.o2
 }
+
+writeclean() {
+	[ -e ${WCDIR}/$@ ] && rm ${WCDIR}/$@
+	WRITECONF=""
+	true
+}
+
+writeclean_all() {
+	writeclean wc.m
+	writeclean wc.o1
+	writeclean wc.o2
+	[ -e ${WCDIR} ] && rmdir $WCDIR
+	true
+}
+writeclean_all
 
 gen_config() {
 	# The MGS must be started before the OSTs for a new fs, so start
 	# and stop to generate the startup logs.
 	start_mds
 	start_ost
-        wait_osc_import_state mds ost FULL
+	wait_osc_import_state mds ost FULL
+	do_facet mgs "$LCTL conf_param $FSNAME.sys.timeout=$TIMEOUT"
 	stop_ost
 	stop_mds
 }
@@ -117,13 +140,17 @@ start_mgs () {
 	start mgs $MGSDEV $MGS_MOUNT_OPTS
 }
 
+WCF="-o writeconf"
+
 start_mds() {
 	local facet=$SINGLEMDS
 	# we can not use MDSDEV1 here because SINGLEMDS could be set not to mds1 only
 	local num=$(echo $facet | tr -d "mds")
 	local dev=$(mdsdevname $num)
+	WRITECONF="" && [ -e ${WCDIR}/wc.m ] && WRITECONF=$WCF
 	echo "start mds service on `facet_active_host $facet`"
 	start $facet ${dev} $MDS_MOUNT_OPTS $@ || return 94
+	writeclean wc.m
 }
 
 start_mgsmds() {
@@ -146,8 +173,10 @@ stop_mgs() {
 }
 
 start_ost() {
+	WRITECONF="" && [ -e ${WCDIR}/wc.o1 ] && WRITECONF=$WCF
 	echo "start ost1 service on `facet_active_host ost1`"
 	start ost1 `ostdevname 1` $OST_MOUNT_OPTS $@ || return 95
+	writeclean wc.o1
 }
 
 stop_ost() {
@@ -157,8 +186,10 @@ stop_ost() {
 }
 
 start_ost2() {
+	WRITECONF="" && [ -e ${WCDIR}/wc.o2 ] && WRITECONF=$WCF
 	echo "start ost2 service on `facet_active_host ost2`"
 	start ost2 `ostdevname 2` $OST_MOUNT_OPTS $@ || return 92
+	writeclean wc.o2
 }
 
 stop_ost2() {
@@ -1123,7 +1154,7 @@ test_30b() {
 	# the server.
 	OSTNID=$(do_facet ost1 "$LCTL get_param nis" | tail -1 | awk '{print $1}')
 	ORIGVAL=$(echo $OSTNID | egrep -oi "[0-9]*@")
-	NEWVAL=$((($(echo $ORIGVAL | egrep -oi "[0-9]*") + 20) % 256))
+	NEWVAL=$((($(echo $ORIGVAL | egrep -oi "[0-9]*" | head -n1) + 20) % 256))
 	NEW=$(echo $OSTNID | sed "s/$ORIGVAL/$NEWVAL@/")
 	echo "Using fake nid $NEW"
 
