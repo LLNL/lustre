@@ -245,7 +245,7 @@ init_test_env() {
             f) CONFIG=$OPTARG;;
             r) REFORMAT=--reformat;;
             v) VERBOSE=true;;
-            w) WRITECONF=writeconf;;
+            w) WRITECONF="-o writeconf";;
             \?) usage;;
         esac
     done
@@ -661,7 +661,7 @@ mount_facet() {
     local mntpt=$(facet_mntpt $facet)
 
     echo "Starting ${facet}: ${!opt} $@ ${!dev} $mntpt"
-    do_facet ${facet} "mkdir -p $mntpt; mount -t lustre ${!opt} $@ ${!dev} $mntpt"
+    do_facet ${facet} "mkdir -p $mntpt; mount -t lustre ${!opt} $WRITECONF $@ ${!dev} $mntpt"
     RC=${PIPESTATUS[0]}
     if [ $RC -ne 0 ]; then
         echo "mount -t lustre $@ ${!dev} $mntpt"
@@ -2092,25 +2092,6 @@ remount_client()
         zconf_mount `hostname` $1 || error "mount failed"
 }
 
-writeconf_facet () {
-    local facet=$1
-    local dev=$2
-
-    do_facet $facet "$TUNEFS --writeconf $dev"
-}
-
-writeconf_all () {
-    for num in `seq $MDSCOUNT`; do
-        DEVNAME=$(mdsdevname $num)
-        writeconf_facet mds$num $DEVNAME
-    done
-
-    for num in `seq $OSTCOUNT`; do
-        DEVNAME=$(ostdevname $num)
-        writeconf_facet ost$num $DEVNAME
-    done
-}
-
 setupall() {
     nfs_client_mode && return
 
@@ -2121,8 +2102,6 @@ setupall() {
 
     if [ -z "$CLIENTONLY" ]; then
         echo Setup mgs, mdt, osts
-        echo $WRITECONF | grep -q "writeconf" && \
-            writeconf_all
         if ! combined_mgs_mds ; then
             start mgs $MGSDEV $MGS_MOUNT_OPTS
         fi
