@@ -100,8 +100,6 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 {
         struct ofd_object *fo;
         int i, j, k, rc = 0, tot_bytes = 0;
-        int from_grant = 1;
-
         ENTRY;
         LASSERT(env != NULL);
         LASSERT(objcount == 1);
@@ -147,8 +145,14 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                 ofd_read_unlock(env, fo);
                 GOTO(out2, rc = -ENOENT);
         }
+
         /* Always sync if syncjournal parameter is set */
         oti->oti_sync_write = ofd->ofd_syncjournal;
+
+        /* Process incoming grant info, set OBD_BRW_GRANTED flag and grant some
+         * space back if possible */
+        ofd_grant_prepare_write(env, exp, oa, rnb, obj->ioo_bufcnt);
+
         /* parse remote buffers to local buffers and prepare the latter */
         for (i = 0, j = 0; i < obj->ioo_bufcnt; i++) {
                 rc = dt_bufs_get(env, ofd_object_child(fo),
@@ -159,10 +163,10 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                 /* correct index for local buffers to continue with */
                 for (k = 0; k < rc; k++) {
                         lnb[j+k].lnb_flags = rnb[i].rnb_flags;
+                        if (!(rnb[i].rnb_flags & OBD_BRW_GRANTED))
+                                lnb[j+k].lnb_rc = -ENOSPC;
                         if (!(rnb[i].rnb_flags & OBD_BRW_ASYNC))
                                 oti->oti_sync_write = 1;
-                        if (!(rnb[i].rnb_flags & OBD_BRW_FROM_GRANT))
-                                from_grant = 0;
                 }
                 j += rc;
                 LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
@@ -171,18 +175,9 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
         *nr_local = j;
         LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
 
-        /**
-         * check grant, can return ENOSPC if writes not done from grant
-         * cache (flag OBD_BRW_FROM_GRANT not set) and not enough free space
-         * remains.
-         */
-        rc = ofd_grant_prepare_write(env, exp, oa, lnb, *nr_local, from_grant);
-        if (rc == 0) {
-                lprocfs_counter_add(ofd_obd(ofd)->obd_stats,
-                                    LPROC_OFD_WRITE_BYTES, tot_bytes);
-                rc = dt_write_prep(env, ofd_object_child(fo), lnb, *nr_local);
-        }
-
+        lprocfs_counter_add(ofd_obd(ofd)->obd_stats,
+                            LPROC_OFD_WRITE_BYTES, tot_bytes);
+        rc = dt_write_prep(env, ofd_object_child(fo), lnb, *nr_local);
         if (unlikely(rc != 0)) {
                 dt_bufs_put(env, ofd_object_child(fo), lnb, *nr_local);
                 ofd_read_unlock(env, fo);
