@@ -175,7 +175,6 @@ struct md_attr {
         struct lustre_capa     *ma_capa;
         struct md_som_data     *ma_som;
         int                     ma_lmm_size;
-        int                     ma_big_lmm_used:1;
         int                     ma_lmv_size;
         int                     ma_acl_size;
         __u16                   ma_layout_gen;

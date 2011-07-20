@@ -1277,7 +1277,8 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
                ma->ma_attr.la_mode, msg_flags);
 
         if (req_is_replay(req) ||
-            (req->rq_export->exp_libclient && create_flags&MDS_OPEN_HAS_EA)) {
+            (req->rq_export->exp_libclient &&
+             create_flags & MDS_OPEN_HAS_EA)) {
                 /* This is a replay request or from liblustre with ea. */
                 result = mdt_open_by_fid(info, ldlm_rep);
 

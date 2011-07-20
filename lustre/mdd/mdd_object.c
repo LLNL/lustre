@@ -139,37 +139,6 @@ int mdd_buf_grow(const struct lu_env *env, ssize_t len)
         return 0;
 }
 
-struct lov_mds_md *mdd_max_lmm_buffer(const struct lu_env *env, int size)
-{
-        struct mdd_thread_info *mti = mdd_env_info(env);
-
-        if (unlikely(mti->mti_max_lmm_size < size)) {
-                int rsize = size_roundup_power2(size);
-
-                if (mti->mti_max_lmm_size > 0) {
-                        LASSERT(mti->mti_max_lmm);
-                        OBD_FREE_LARGE(mti->mti_max_lmm,
-                                       mti->mti_max_lmm_size);
-                        mti->mti_max_lmm = NULL;
-                        mti->mti_max_lmm_size = 0;
-                }
-
-                OBD_ALLOC_LARGE(mti->mti_max_lmm, rsize);
-                if (likely(mti->mti_max_lmm != NULL))
-                        mti->mti_max_lmm_size = rsize;
-        }
-        return mti->mti_max_lmm;
-}
-
-struct lov_mds_md *mdd_max_lmm_get(const struct lu_env *env,
-                                   struct mdd_device *mdd)
-{
-        int max_lmm_size;
-
-        max_lmm_size = mdd_lov_mdsize(env, mdd);
-        return mdd_max_lmm_buffer(env, max_lmm_size);
-}
-
 struct lu_object *mdd_object_alloc(const struct lu_env *env,
                                    const struct lu_object_header *hdr,
                                    struct lu_device *d)

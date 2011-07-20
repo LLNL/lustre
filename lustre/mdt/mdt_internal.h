@@ -398,6 +398,8 @@ struct mdt_thread_info {
 
         /* Ops object filename */
         struct lu_name             mti_name;
+        void                      *mti_big_lmm;
+        int                        mti_big_lmmsize;
 };
 
 static inline const struct md_device_operations *
