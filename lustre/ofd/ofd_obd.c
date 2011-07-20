@@ -76,7 +76,7 @@ static int ofd_parse_connect_data(const struct lu_env *env,
         }
 #endif
 
-        if (exp->exp_connect_flags & OBD_CONNECT_GRANT_PARAM) {
+        if (ofd_grant_param_supp(exp)) {
                 exp->exp_filter_data.fed_pagesize = data->ocd_blocksize;
                 /* ocd_{blocksize,inodespace} are log2 values */
                 data->ocd_blocksize  = ofd->ofd_blockbits;
@@ -593,7 +593,6 @@ static int ofd_statfs(struct obd_export *exp, struct obd_statfs *osfs,
                osfs->os_bavail << ofd->ofd_blockbits);
 
         osfs->os_bavail -= min_t(obd_size, osfs->os_bavail,
-                                 ofd_grant_reserved(ofd, osfs->os_bavail) +
                                  ((ofd->ofd_tot_dirty + ofd->ofd_tot_pending +
                                    osfs->os_bsize - 1) >> ofd->ofd_blockbits));
         ofd_grant_sanity_check(obd, __FUNCTION__);
