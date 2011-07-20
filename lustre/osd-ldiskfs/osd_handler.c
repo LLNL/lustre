@@ -923,9 +923,9 @@ static void osd_conf_get(const struct lu_env *env,
         param->ddp_block_shift    = sb->s_blocksize_bits;
         param->ddp_mount_type     = LDD_MT_LDISKFS;
         param->ddp_maxbytes       = sb->s_maxbytes;
-        /* Unlike DMU, we don't need an error margin for ldiskfs since the
-         * overhead estimate is fairly accurate */
-        param->ddp_grant_reserved = 0;
+        /* Overhead estimate should be fairly accurate, so we really take a tiny
+         * error margin which also avoids fragmenting the filesystem too much */
+        param->ddp_grant_reserved = 2; /* end up to be 1.9% after conversion */
         /* inode are statically allocated, so per-inode space consumption
          * is 0 for ldiskfs OSD */
         param->ddp_inodespace     = 0;
