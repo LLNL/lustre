@@ -586,18 +586,20 @@ int mdt_fix_reply(struct mdt_thread_info *info)
 
         /* MDT_MD buffer may be bigger than packed value, let's shrink all
          * buffers before growing it */
-        if (info->mti_attr.ma_big_lmm_used) {
+        if (info->mti_big_lmm != NULL) {
                 LASSERT(req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER));
                 md_packed = req_capsule_get_size(pill, &RMF_MDT_MD,
                                                  RCL_SERVER);
                 LASSERT(md_packed > 0);
                 /* buffer must be allocated separately */
-                LASSERT(info->mti_attr.ma_lmm !=
+                LASSERT(info->mti_big_lmm !=
                         req_capsule_server_get(pill, &RMF_MDT_MD));
                 req_capsule_shrink(pill, &RMF_MDT_MD, 0, RCL_SERVER);
                 /* free big lmm if md_size is not needed */
-                if (md_size == 0)
-                        info->mti_attr.ma_big_lmm_used = 0;
+                if (md_size == 0) {
+                        OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
+                        info->mti_big_lmm = NULL;
+                }
         } else if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER)) {
                 req_capsule_shrink(pill, &RMF_MDT_MD, md_size, RCL_SERVER);
         }
@@ -622,7 +624,7 @@ int mdt_fix_reply(struct mdt_thread_info *info)
          */
 
         /* Grow MD buffer if needed finally */
-        if (info->mti_attr.ma_big_lmm_used) {
+        if (info->mti_big_lmm != NULL) {
                 void *lmm;
 
                 LASSERT(md_size > md_packed);
@@ -641,15 +643,16 @@ int mdt_fix_reply(struct mdt_thread_info *info)
                         lmm = req_capsule_server_get(pill, &RMF_MDT_MD);
                         LASSERT(req_capsule_get_size(pill, &RMF_MDT_MD,
                                                      RCL_SERVER) ==
-                                info->mti_attr.ma_lmm_size);
-                        memcpy(lmm, info->mti_attr.ma_lmm,
-                               info->mti_attr.ma_lmm_size);
+                                info->mti_big_lmmsize);
+                        memcpy(lmm, info->mti_big_lmm,
+                               info->mti_big_lmmsize);
                 }
                 /* update mdt_max_mdsize so clients will be aware about that */
-                if (info->mti_mdt->mdt_max_mdsize < info->mti_attr.ma_lmm_size)
+                if (info->mti_mdt->mdt_max_mdsize < info->mti_big_lmmsize)
                         info->mti_mdt->mdt_max_mdsize =
-                                                    info->mti_attr.ma_lmm_size;
-                info->mti_attr.ma_big_lmm_used = 0;
+                                                    info->mti_big_lmmsize;
+                OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
+                info->mti_big_lmm = NULL;
         }
         RETURN(rc);
 }
@@ -1177,10 +1180,10 @@ static int mdt_rename_unpack(struct mdt_thread_info *info)
  */
 static void mdt_fix_lov_magic(struct mdt_thread_info *info)
 {
-        struct md_op_spec       *sp   = &info->mti_spec;
+        struct mdt_reint_record *rr = &info->mti_rr;
         struct lov_user_md_v1   *v1;
 
-        v1 = (void *) sp->u.sp_ea.eadata;
+        v1 = (void *)rr->rr_eadata;
         LASSERT(v1);
 
         if (unlikely(req_is_replay(mdt_info_req(info)))) {
