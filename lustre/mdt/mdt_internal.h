@@ -399,7 +399,8 @@ struct mdt_thread_info {
 
         /* Ops object filename */
         struct lu_name             mti_name;
-        struct md_attr             mti_tmp_attr;
+        void                      *mti_big_lmm;
+        int                        mti_big_lmmsize;
 };
 
 typedef void (*mdt_cb_t)(const struct mdt_device *mdt, __u64 transno,
@@ -597,7 +598,7 @@ int mdt_close(struct mdt_thread_info *info);
 int mdt_attr_set(struct mdt_thread_info *info, struct mdt_object *mo,
                  struct md_attr *ma, int flags);
 int mdt_done_writing(struct mdt_thread_info *info);
-void mdt_shrink_reply(struct mdt_thread_info *info);
+int mdt_fix_reply(struct mdt_thread_info *info);
 int mdt_handle_last_unlink(struct mdt_thread_info *, struct mdt_object *,
                            const struct md_attr *);
 void mdt_reconstruct_open(struct mdt_thread_info *, struct mdt_lock_handle *);

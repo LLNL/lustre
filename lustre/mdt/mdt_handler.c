@@ -485,6 +485,48 @@ static inline int mdt_body_has_lov(const struct lu_attr *la,
                 (S_ISDIR(la->la_mode) && (body->valid & OBD_MD_FLDIREA )) );
 }
 
+static int mdt_big_lmm_get(const struct lu_env *env, struct mdt_object *o,
+                           struct md_attr *ma)
+{
+        struct mdt_thread_info *info;
+        int rc;
+        ENTRY;
+
+        info = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
+        LASSERT(info != NULL);
+        LASSERT(ma->ma_lmm_size > 0);
+        LASSERT(info->mti_big_lmm == NULL);
+
+        rc = mo_xattr_get(env, mdt_object_child(o), &LU_BUF_NULL,
+                          XATTR_NAME_LOV);
+        if (rc < 0)
+                RETURN(rc);
+
+        info->mti_big_lmmsize = rc;
+        OBD_ALLOC_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
+        if (info->mti_big_lmm == NULL)
+                RETURN(-ENOMEM);
+
+        info->mti_buf.lb_buf = info->mti_big_lmm;
+        info->mti_buf.lb_len = info->mti_big_lmmsize;
+        rc = mo_xattr_get(env, mdt_object_child(o), &info->mti_buf,
+                          XATTR_NAME_LOV);
+        if (rc < 0) {
+                OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
+                info->mti_big_lmm = NULL;
+                RETURN(rc);
+        }
+
+        ma->ma_valid |= MA_LOV;
+        ma->ma_lmm_size = rc;
+
+        /* update mdt_max_mdsize so all clients will be aware about that */
+        if (info->mti_mdt->mdt_max_mdsize < rc)
+                info->mti_mdt->mdt_max_mdsize = rc;
+
+        RETURN(0);
+}
+
 int mdt_attr_get_complex(struct mdt_thread_info *info,
                          struct mdt_object *o, struct md_attr *ma)
 {
@@ -493,7 +535,7 @@ int mdt_attr_get_complex(struct mdt_thread_info *info,
         struct lu_buf       *buf = &info->mti_buf;
         u32                  mode = lu_object_attr(&next->mo_lu);
         int                  need = ma->ma_need;
-        int                  rc, rc2;
+        int                  rc = 0, rc2;
         ENTRY;
 
         /* do we really need PFID */
@@ -520,8 +562,13 @@ int mdt_attr_get_complex(struct mdt_thread_info *info,
                         } else if (rc2 == -ENODATA) {
                                 /* no LOV EA */
                                 ma->ma_lmm_size = 0;
-                        } else
+                        } else if (rc2 == -ERANGE) {
+                                rc2 = mdt_big_lmm_get(env, o, ma);
+                                if (rc2 < 0)
+                                        GOTO(out, rc = rc2);
+                        } else {
                                 GOTO(out, rc = rc2);
+                        }
                 }
         }
 
@@ -597,8 +644,11 @@ static int mdt_getattr_internal(struct mdt_thread_info *info,
                 RETURN(0);
         }
 
-        buffer->lb_buf = req_capsule_server_get(pill, &RMF_MDT_MD);
-        buffer->lb_len = req_capsule_get_size(pill, &RMF_MDT_MD, RCL_SERVER);
+        buffer->lb_len = reqbody->eadatasize;
+        if (buffer->lb_len > 0)
+                buffer->lb_buf = req_capsule_server_get(pill, &RMF_MDT_MD);
+        else
+                buffer->lb_buf = NULL;
 
         /* If it is dir object and client require MEA, then we got MEA */
         if (S_ISDIR(lu_object_attr(&next->mo_lu)) &&
@@ -779,8 +829,7 @@ static int mdt_getattr(struct mdt_thread_info *info)
         struct mdt_body         *reqbody;
         struct mdt_body         *repbody;
         mode_t                   mode;
-        int                      md_size;
-        int rc;
+        int rc, rc2;
         ENTRY;
 
         reqbody = req_capsule_client_get(pill, &RMF_MDT_BODY);
@@ -798,13 +847,9 @@ static int mdt_getattr(struct mdt_thread_info *info)
         LASSERT(lu_object_assert_exists(&obj->mot_obj.mo_lu));
 
         mode = lu_object_attr(&obj->mot_obj.mo_lu);
-        if (S_ISLNK(mode) && (reqbody->valid & OBD_MD_LINKNAME) &&
-            (reqbody->eadatasize > info->mti_mdt->mdt_max_mdsize))
-                md_size = reqbody->eadatasize;
-        else
-                md_size = info->mti_mdt->mdt_max_mdsize;
 
-        req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER, md_size);
+        req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER,
+                             reqbody->eadatasize);
 
         rc = req_capsule_server_pack(pill);
         if (unlikely(rc != 0))
@@ -838,7 +883,9 @@ out_shrink:
         if (rc == 0)
                 mdt_counter_incr(req->rq_export, LPROC_MDT_GETATTR);
 
-        mdt_shrink_reply(info);
+        rc2 = mdt_fix_reply(info);
+        if (rc == 0)
+                rc = rc2;
         return rc;
 }
 
@@ -1180,7 +1227,7 @@ static int mdt_getattr_name(struct mdt_thread_info *info)
         struct mdt_lock_handle *lhc = &info->mti_lh[MDT_LH_CHILD];
         struct mdt_body        *reqbody;
         struct mdt_body        *repbody;
-        int rc;
+        int rc, rc2;
         ENTRY;
 
         reqbody = req_capsule_client_get(info->mti_pill, &RMF_MDT_BODY);
@@ -1205,7 +1252,9 @@ static int mdt_getattr_name(struct mdt_thread_info *info)
         mdt_exit_ucred(info);
         EXIT;
 out_shrink:
-        mdt_shrink_reply(info);
+        rc2 = mdt_fix_reply(info);
+        if (rc == 0)
+                rc = rc2;
         return rc;
 }
 
@@ -1593,16 +1642,24 @@ static int mdt_reint_internal(struct mdt_thread_info *info,
                               __u32 op)
 {
         struct req_capsule      *pill = info->mti_pill;
-        struct mdt_device       *mdt = info->mti_mdt;
         struct md_quota         *mq = md_quota(info->mti_env);
         struct mdt_body         *repbody;
-        int                      rc = 0;
+        int                      rc = 0, rc2;
         ENTRY;
 
-        /* pack reply */
+
+        rc = mdt_reint_unpack(info, op);
+        if (rc != 0) {
+                CERROR("Can't unpack reint, rc %d\n", rc);
+                RETURN(err_serious(rc));
+        }
+
+        /* for replay (no_create) lmm is not needed, client has it already */
         if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER))
                 req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER,
-                                     mdt->mdt_max_mdsize);
+                                     info->mti_rr.rr_eadatalen);
+
+        /* llog cookies are always 0, the field is kept for compatibility */
         if (req_capsule_has_field(pill, &RMF_LOGCOOKIES, RCL_SERVER))
                 req_capsule_set_size(pill, &RMF_LOGCOOKIES, RCL_SERVER, 0);
 
@@ -1619,26 +1676,12 @@ static int mdt_reint_internal(struct mdt_thread_info *info,
                 repbody->aclsize = 0;
         }
 
-        if (OBD_FAIL_CHECK(OBD_FAIL_MDS_REINT_UNPACK))
-                GOTO(out_shrink, rc = err_serious(-EFAULT));
-
-        rc = mdt_reint_unpack(info, op);
-        if (rc != 0) {
-                CERROR("Can't unpack reint, rc %d\n", rc);
-                GOTO(out_shrink, rc = err_serious(rc));
-        }
-
         OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_REINT_DELAY, 10);
 
         /* for replay no cookkie / lmm need, because client have this already */
-        if (info->mti_spec.no_create == 1)  {
+        if (info->mti_spec.no_create)
                 if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER))
                         req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER, 0);
-
-                if (req_capsule_has_field(pill, &RMF_LOGCOOKIES, RCL_SERVER))
-                        req_capsule_set_size(pill, &RMF_LOGCOOKIES, RCL_SERVER,
-                                             0);
-        }
 
         rc = mdt_init_ucred_reint(info);
         if (rc)
@@ -1658,7 +1701,9 @@ static int mdt_reint_internal(struct mdt_thread_info *info,
 out_ucred:
         mdt_exit_ucred(info);
 out_shrink:
-        mdt_shrink_reply(info);
+        rc2 = mdt_fix_reply(info);
+        if (rc == 0)
+                rc = rc2;
         return rc;
 }
 
@@ -2562,13 +2607,10 @@ static int mdt_unpack_req_pack_rep(struct mdt_thread_info *info, __u32 flags)
                 rc = 0;
 
         if (rc == 0 && (flags & HABEO_REFERO)) {
-                struct mdt_device *mdt = info->mti_mdt;
-
                 /* Pack reply. */
-
                 if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER))
                         req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER,
-                                             mdt->mdt_max_mdsize);
+                                             info->mti_body->eadatasize);
                 if (req_capsule_has_field(pill, &RMF_LOGCOOKIES, RCL_SERVER))
                         req_capsule_set_size(pill, &RMF_LOGCOOKIES,
                                              RCL_SERVER, 0);
@@ -3362,7 +3404,7 @@ static int mdt_intent_getattr(enum mdt_it_code opcode,
         struct ptlrpc_request  *req;
         struct mdt_body        *reqbody;
         struct mdt_body        *repbody;
-        int                     rc;
+        int                     rc, rc2;
         ENTRY;
 
         reqbody = req_capsule_client_get(info->mti_pill, &RMF_MDT_BODY);
@@ -3415,7 +3457,9 @@ static int mdt_intent_getattr(enum mdt_it_code opcode,
 out_ucred:
         mdt_exit_ucred(info);
 out_shrink:
-        mdt_shrink_reply(info);
+        rc2 = mdt_fix_reply(info);
+        if (rc == 0)
+                rc = rc2;
         return rc;
 }
 
@@ -4572,8 +4616,7 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
 
         s = m->mdt_md_dev.md_lu_dev.ld_site;
 
-        /* XXX: temporary in b_lod_osp, use MIN_MD_SIZE here */
-        m->mdt_max_mdsize = 4096;
+        m->mdt_max_mdsize = MAX_MD_SIZE; /* 4 stripes */
 
         m->mdt_som_conf = 0;
         m->mdt_opts.mo_user_xattr = 0;
