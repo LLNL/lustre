@@ -471,6 +471,12 @@ static inline int ofd_grant_ratio_conv(int percentage)
 {
         return (percentage << OFD_GRANT_RATIO_SHIFT) / 100;
 }
+static inline int ofd_grant_param_supp(struct obd_export *exp)
+{
+        if (exp->exp_connect_flags & OBD_CONNECT_GRANT_PARAM)
+                return 1;
+        return 0;
+}
 /* Blocksize used for client not supporting OBD_CONNECT_GRANT_PARAM.
  * That's 4KB=2^12 which is the biggest block size known to work whatever
  * the client's page size is. */
@@ -482,7 +488,7 @@ static inline int ofd_grant_compat(struct obd_export *exp,
          * a block size > page size and consume CFS_PAGE_SIZE of grant when
          * dirtying a page regardless of the block size */
         if (ofd->ofd_blockbits > COMPAT_BSIZE_SHIFT &&
-            (exp->exp_connect_flags & OBD_CONNECT_GRANT_PARAM) == 0)
+            !ofd_grant_param_supp(exp))
                 return 1;
         return 0;
 }
@@ -504,9 +510,9 @@ long ofd_grant_connect(const struct lu_env *env, struct obd_export *exp,
 void ofd_grant_discard(struct obd_export *exp);
 void ofd_grant_prepare_read(const struct lu_env *env,
                             struct obd_export *exp, struct obdo *oa);
-int ofd_grant_prepare_write(const struct lu_env *env, struct obd_export *exp,
-                            struct obdo *oa, struct niobuf_local *lnb,
-                            int niocount, int sync_write);
+void ofd_grant_prepare_write(const struct lu_env *env, struct obd_export *exp,
+                             struct obdo *oa, struct niobuf_remote *rnb,
+                             int niocount);
 void ofd_grant_commit(const struct lu_env *env, struct obd_export *exp, int rc);
 /* ofd_obd.c */
 int ofd_create(struct obd_export *exp, struct obdo *oa,
