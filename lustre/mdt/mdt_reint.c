@@ -470,7 +470,7 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
         struct mdt_file_data    *mfd;
         struct mdt_object       *mo;
         struct mdt_body         *repbody;
-        int                      som_au, rc;
+        int                      som_au, rc, rc2;
         ENTRY;
 
         DEBUG_REQ(D_INODE, req, "setattr "DFID" %x", PFID(rr->rr_fid1),
@@ -593,7 +593,9 @@ out:
                 mdt_counter_incr(req->rq_export, LPROC_MDT_SETATTR);
 
         mdt_client_compatibility(info);
-        mdt_shrink_reply(info);
+        rc2 = mdt_fix_reply(info);
+        if (rc == 0)
+                rc = rc2;
         return rc;
 }
 

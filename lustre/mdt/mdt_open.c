@@ -1266,13 +1266,14 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
                ma->ma_attr.la_mode, msg_flags);
 
         if (req_is_replay(req) ||
-            (req->rq_export->exp_libclient && create_flags&MDS_OPEN_HAS_EA)) {
+            (req->rq_export->exp_libclient &&
+             create_flags & MDS_OPEN_HAS_EA)) {
                 /* This is a replay request or from liblustre with ea. */
                 result = mdt_open_by_fid(info, ldlm_rep);
 
                 if (result != -ENOENT) {
                         if (req->rq_export->exp_libclient &&
-                            create_flags&MDS_OPEN_HAS_EA)
+                            create_flags & MDS_OPEN_HAS_EA)
                                 GOTO(out, result = 0);
                         GOTO(out, result);
                 }
@@ -1613,7 +1614,7 @@ int mdt_close(struct mdt_thread_info *info)
         if (mdt_check_resent(info, mdt_reconstruct_generic, NULL)) {
                 mdt_client_compatibility(info);
                 if (rc == 0)
-                        mdt_shrink_reply(info);
+                        mdt_fix_reply(info);
                 RETURN(lustre_msg_get_status(req->rq_repmsg));
         }
 
@@ -1654,7 +1655,7 @@ int mdt_close(struct mdt_thread_info *info)
         }
         if (repbody != NULL) {
                 mdt_client_compatibility(info);
-                mdt_shrink_reply(info);
+                rc = mdt_fix_reply(info);
         }
 
         if (OBD_FAIL_CHECK(OBD_FAIL_MDS_CLOSE_PACK))

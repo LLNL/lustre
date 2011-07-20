@@ -548,12 +548,14 @@ void mdt_dump_lmm(int level, const struct lov_mds_md *lmm)
                        le64_to_cpu(lod->l_object_id));
 }
 
-void mdt_shrink_reply(struct mdt_thread_info *info)
+/* Shrink and/or grow reply buffers */
+int mdt_fix_reply(struct mdt_thread_info *info)
 {
         struct req_capsule *pill = info->mti_pill;
         struct mdt_body    *body;
-        int                md_size;
+        int                md_size, md_packed = 0;
         int                acl_size;
+        int                rc = 0;
         ENTRY;
 
         body = req_capsule_server_get(pill, &RMF_MDT_BODY);
@@ -586,9 +588,25 @@ void mdt_shrink_reply(struct mdt_thread_info *info)
 (optional)  something else
 */
 
-        if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER))
-                req_capsule_shrink(pill, &RMF_MDT_MD, md_size,
-                                   RCL_SERVER);
+        /* MDT_MD buffer may be bigger than packed value, let's shrink all
+         * buffers before growing it */
+        if (info->mti_big_lmm != NULL) {
+                LASSERT(req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER));
+                md_packed = req_capsule_get_size(pill, &RMF_MDT_MD, RCL_SERVER);
+                LASSERT(md_packed > 0);
+                /* buffer must be allocated separately */
+                LASSERT(info->mti_big_lmm !=
+                        req_capsule_server_get(pill, &RMF_MDT_MD));
+                req_capsule_shrink(pill, &RMF_MDT_MD, 0, RCL_SERVER);
+                /* free big lmm if md_size is not needed */
+                if (md_size == 0) {
+                        OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
+                        info->mti_big_lmm = NULL;
+                }
+        } else if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER)) {
+                req_capsule_shrink(pill, &RMF_MDT_MD, md_size, RCL_SERVER);
+        }
+
         if (req_capsule_has_field(pill, &RMF_ACL, RCL_SERVER))
                 req_capsule_shrink(pill, &RMF_ACL, acl_size, RCL_SERVER);
         else if (req_capsule_has_field(pill, &RMF_LOGCOOKIES, RCL_SERVER))
@@ -607,7 +625,33 @@ void mdt_shrink_reply(struct mdt_thread_info *info)
          * Some more field should be shrinked if needed.
          * This should be done by those who added fields to reply message.
          */
-        EXIT;
+
+        /* Grow MD buffer if needed finally */
+        if (info->mti_big_lmm != NULL) {
+                void *lmm;
+
+                LASSERT(md_size > md_packed);
+                CWARN("Enlarge reply buffer, need extra %d bytes\n",
+                      md_size - md_packed);
+                rc = req_capsule_server_grow(pill, &RMF_MDT_MD, md_size);
+                if (rc) {
+                        /* we can't answer with proper LOV EA, drop flags,
+                         * the rc is also returned so this request is
+                         * considered as failed */
+                        body->valid &= ~(OBD_MD_FLDIREA | OBD_MD_FLEASIZE);
+                        /* don't return transno along with error */
+                        lustre_msg_set_transno(pill->rc_req->rq_repmsg, 0);
+                } else {
+                        /* now we need to pack right LOV EA */
+                        lmm = req_capsule_server_get(pill, &RMF_MDT_MD);
+                        LASSERT(req_capsule_get_size(pill, &RMF_MDT_MD, RCL_SERVER) ==
+                                info->mti_big_lmmsize);
+                        memcpy(lmm, info->mti_big_lmm, info->mti_big_lmmsize);
+                }
+                OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
+                info->mti_big_lmm = NULL;
+        }
+        RETURN(rc);
 }
 
 
@@ -815,6 +859,7 @@ static inline int mdt_dlmreq_unpack(struct mdt_thread_info *info) {
 
 static int mdt_setattr_unpack(struct mdt_thread_info *info)
 {
+        struct mdt_reint_record *rr = &info->mti_rr;
         struct md_attr          *ma = &info->mti_attr;
         struct req_capsule      *pill = info->mti_pill;
         int rc;
@@ -827,10 +872,15 @@ static int mdt_setattr_unpack(struct mdt_thread_info *info)
         /* Epoch may be absent */
         mdt_ioepoch_unpack(info);
 
-        ma->ma_lmm_size = req_capsule_get_size(pill, &RMF_EADATA, RCL_CLIENT);
-        if (ma->ma_lmm_size) {
-                ma->ma_lmm = req_capsule_client_get(pill, &RMF_EADATA);
-                ma->ma_valid |= MA_LOV;
+        if (req_capsule_field_present(pill, &RMF_EADATA, RCL_CLIENT)) {
+                rr->rr_eadata = req_capsule_client_get(pill, &RMF_EADATA);
+                rr->rr_eadatalen = req_capsule_get_size(pill, &RMF_EADATA,
+                                                        RCL_CLIENT);
+                ma->ma_lmm_size = rr->rr_eadatalen;
+                if (ma->ma_lmm_size > 0) {
+                        ma->ma_lmm = (void*)rr->rr_eadata;
+                        ma->ma_valid |= MA_LOV;
+                }
         }
 
         rc = mdt_dlmreq_unpack(info);
@@ -909,9 +959,11 @@ static int mdt_create_unpack(struct mdt_thread_info *info)
                 req_capsule_extend(pill, &RQF_MDS_REINT_CREATE_RMT_ACL);
                 LASSERT(req_capsule_field_present(pill, &RMF_EADATA,
                                                   RCL_CLIENT));
-                sp->u.sp_ea.eadata = req_capsule_client_get(pill, &RMF_EADATA);
-                sp->u.sp_ea.eadatalen = req_capsule_get_size(pill, &RMF_EADATA,
-                                                             RCL_CLIENT);
+                rr->rr_eadata = req_capsule_client_get(pill, &RMF_EADATA);
+                rr->rr_eadatalen = req_capsule_get_size(pill, &RMF_EADATA,
+                                                        RCL_CLIENT);
+                sp->u.sp_ea.eadata = rr->rr_eadata;
+                sp->u.sp_ea.eadatalen = rr->rr_eadatalen;
                 sp->u.sp_ea.fid = rr->rr_fid1;
                 RETURN(0);
         }
@@ -926,11 +978,13 @@ static int mdt_create_unpack(struct mdt_thread_info *info)
                        req_capsule_extend(pill, &RQF_MDS_REINT_CREATE_SLAVE);
                        LASSERT(req_capsule_field_present(pill, &RMF_EADATA,
                                                          RCL_CLIENT));
-                       sp->u.sp_ea.eadata = req_capsule_client_get(pill,
-                                                                   &RMF_EADATA);
-                       sp->u.sp_ea.eadatalen = req_capsule_get_size(pill,
-                                                                    &RMF_EADATA,
-                                                                    RCL_CLIENT);
+                       rr->rr_eadata = req_capsule_client_get(pill,
+                                                              &RMF_EADATA);
+                       rr->rr_eadatalen = req_capsule_get_size(pill,
+                                                               &RMF_EADATA,
+                                                               RCL_CLIENT);
+                       sp->u.sp_ea.eadata = rr->rr_eadata;
+                       sp->u.sp_ea.eadatalen = rr->rr_eadatalen;
                        sp->u.sp_ea.fid = rr->rr_fid1;
                        RETURN(0);
                 }
@@ -1123,10 +1177,10 @@ static int mdt_rename_unpack(struct mdt_thread_info *info)
  */
 static void mdt_fix_lov_magic(struct mdt_thread_info *info)
 {
-        struct md_op_spec       *sp   = &info->mti_spec;
+        struct mdt_reint_record *rr = &info->mti_rr;
         struct lov_user_md_v1   *v1;
 
-        v1 = (void *) sp->u.sp_ea.eadata;
+        v1 = (void *)rr->rr_eadata;
         LASSERT(v1);
 
         if (unlikely(req_is_replay(mdt_info_req(info)))) {
@@ -1209,10 +1263,12 @@ static int mdt_open_unpack(struct mdt_thread_info *info)
                 RETURN(-EFAULT);
         rr->rr_namelen = req_capsule_get_size(pill, &RMF_NAME, RCL_CLIENT) - 1;
 
-        sp->u.sp_ea.eadatalen = req_capsule_get_size(pill, &RMF_EADATA,
-                                                     RCL_CLIENT);
-        if (sp->u.sp_ea.eadatalen) {
-                sp->u.sp_ea.eadata = req_capsule_client_get(pill, &RMF_EADATA);
+        if (req_capsule_field_present(pill, &RMF_EADATA, RCL_CLIENT)) {
+                rr->rr_eadata = req_capsule_client_get(pill, &RMF_EADATA);
+                rr->rr_eadatalen = req_capsule_get_size(pill, &RMF_EADATA,
+                                                        RCL_CLIENT);
+                sp->u.sp_ea.eadatalen = rr->rr_eadatalen;
+                sp->u.sp_ea.eadata = rr->rr_eadata;
                 sp->no_create = !!req_is_replay(req);
                 mdt_fix_lov_magic(info);
         }
@@ -1262,11 +1318,20 @@ static int mdt_setxattr_unpack(struct mdt_thread_info *info)
         rr->rr_namelen = req_capsule_get_size(pill, &RMF_NAME, RCL_CLIENT) - 1;
         LASSERT(rr->rr_namelen > 0);
 
-        rr->rr_eadatalen = req_capsule_get_size(pill, &RMF_EADATA, RCL_CLIENT);
-        if (rr->rr_eadatalen > 0) {
-                rr->rr_eadata = req_capsule_client_get(pill, &RMF_EADATA);
-                if (rr->rr_eadata == NULL)
-                        RETURN(-EFAULT);
+        if (req_capsule_field_present(pill, &RMF_EADATA, RCL_CLIENT)) {
+                rr->rr_eadatalen = req_capsule_get_size(pill, &RMF_EADATA,
+                                                        RCL_CLIENT);
+                if (rr->rr_eadatalen > 0) {
+                        rr->rr_eadata = req_capsule_client_get(pill,
+                                                               &RMF_EADATA);
+                        if (rr->rr_eadata == NULL)
+                                RETURN(-EFAULT);
+                } else {
+                        rr->rr_eadata = NULL;
+                }
+        } else if (!(attr->la_valid & OBD_MD_FLXATTRRM)) {
+                CDEBUG(D_INFO, "no xattr data supplied\n");
+                RETURN(-EFAULT);
         }
 
         RETURN(0);
