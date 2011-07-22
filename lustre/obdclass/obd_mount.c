@@ -612,6 +612,13 @@ static int server_stop_servers(int lsiflags)
         int rc = 0;
         ENTRY;
 
+        /*
+         * wait till all in-progress cleanups are done
+         * specifically we're interested in ofd cleanup
+         * as it pins OSS
+         */
+        obd_zombie_barrier();
+
         cfs_mutex_lock(&server_start_lock);
 
         /* Either an MDT or an OST or neither  */
@@ -1165,42 +1172,6 @@ static int lsi_prepare(struct lustre_sb_info *lsi)
                LDD_F_NO_PRIMNODE : 0;
 
         RETURN(0);
-}
-
-/** Wait here forever until the mount refcount is 0 before completing umount,
- * else we risk dereferencing a null pointer.
- * LNET may take e.g. 165s before killing zombies.
- */
-static void server_wait_finished(struct lustre_sb_info *lsi)
-{
-       cfs_waitq_t             waitq;
-       int                     rc, waited = 0;
-       cfs_sigset_t            blocked;
-
-       cfs_waitq_init(&waitq);
-
-       while (cfs_atomic_read(&lsi->lsi_mounts) > 1) {
-               if (waited && (waited % 30 == 0))
-                       LCONSOLE_WARN("Mount still busy with %d refs after "
-                                      "%d secs.\n",
-                                      cfs_atomic_read(&lsi->lsi_mounts),
-                                      waited);
-               /* Cannot use l_event_wait() for an interruptible sleep. */
-               waited += 3;
-               blocked = cfs_block_sigsinv(sigmask(SIGKILL));
-               cfs_waitq_wait_event_interruptible_timeout(
-                       waitq,
-                       (cfs_atomic_read(&lsi->lsi_mounts) == 1),
-                       cfs_time_seconds(3),
-                       rc);
-               cfs_block_sigs(blocked);
-               if (rc < 0) {
-                       LCONSOLE_EMERG("Danger: interrupted umount %s with "
-                                      "%d refs!\n", lsi->lsi_svname,
-                                      cfs_atomic_read(&lsi->lsi_mounts));
-                       break;
-               }
-       }
 }
 
 static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
@@ -1892,10 +1863,6 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
                 lsi->lsi_dt_dev = NULL; */
         }
 
-        /* Wait for the targets to really clean up - can't exit
-         * while the mount is still in use */
-        server_wait_finished(lsi);
-
         /* Clean the mgc and lsi */
         lustre_common_umount(lsi);
 
@@ -1915,7 +1882,6 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
                 OBD_FREE(extraname, strlen(extraname) + 1);
         }
 
-        obd_zombie_barrier();
         LCONSOLE_WARN("server umount %s complete\n", tmpname);
         OBD_FREE(tmpname, tmpname_sz);
         EXIT;
