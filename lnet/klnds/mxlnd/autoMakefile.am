@@ -41,4 +41,4 @@ endif
 endif
 
 MOSTLYCLEANFILES = @MOSTLYCLEANFILES@
-EXTRA_DIST = $(kmxlnd-objs:%.o=%.c) mxlnd.h
+DIST_SOURCES = $(kmxlnd-objs:%.o=%.c) mxlnd.h
