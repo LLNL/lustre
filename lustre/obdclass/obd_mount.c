@@ -617,6 +617,13 @@ static int server_stop_servers(int lsiflags)
         int rc = 0;
         ENTRY;
 
+        /*
+         * wait till all in-progress cleanups are done
+         * specifically we're interested in ofd cleanup
+         * as it pins OSS
+         */
+        obd_zombie_barrier();
+
         cfs_mutex_lock(&server_start_lock);
 
         /* Either an MDT or an OST or neither  */
@@ -1144,7 +1151,6 @@ static int lsi_prepare(struct lustre_sb_info *lsi)
 		RETURN(-ENAMETOOLONG);
 
 	strcpy(lsi->lsi_svname, lsi->lsi_lmd->lmd_profile);
-
 	/* Determine osd type */
 	if (lsi->lsi_lmd->lmd_osd_type != NULL) {
 		if (strlen(lsi->lsi_lmd->lmd_osd_type) >=
@@ -1879,10 +1885,6 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
                 lsi->lsi_dt_dev = NULL; */
         }
 
-        /* Wait for the targets to really clean up - can't exit
-         * while the mount is still in use */
-        server_wait_finished(lsi);
-
         /* Clean the mgc and lsi */
         lustre_common_umount(lsi);
 
@@ -1902,7 +1904,6 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
                 OBD_FREE(extraname, strlen(extraname) + 1);
         }
 
-        obd_zombie_barrier();
         LCONSOLE_WARN("server umount %s complete\n", tmpname);
         OBD_FREE(tmpname, tmpname_sz);
         EXIT;
