@@ -3715,7 +3715,6 @@ run_test 64a "verify filter grant calculations (in kernel) ====="
 
 test_64b () {
 	[ ! -f oos.sh ] && skip_env "missing subtest oos.sh" && return
-	wait_delete_completed
 	sh oos.sh $MOUNT
 }
 run_test 64b "check out-of-space detection on client ==========="
