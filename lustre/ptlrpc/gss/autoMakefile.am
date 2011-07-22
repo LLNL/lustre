@@ -41,5 +41,5 @@ if MODULES
 modulefs_DATA = ptlrpc_gss$(KMODEXT)
 endif # MODULES
 
-EXTRA_DIST = *.c *.h
+DIST_SOURCES = *.c *.h
 MOSTLYCLEANFILES := @MOSTLYCLEANFILES@ 
