@@ -438,7 +438,7 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
         const struct   dt_key *key;
         int            rc = 0;
 
-        if (fid_is_idif(fid)) {
+        if (fid_is_idif(fid) || fid_seq(fid) == FID_SEQ_LLOG) {
                 /* old OSD obj id */
                 rc = osd_compat_objid_lookup(info, osd, fid, id);
         } else if (fid_is_igif(fid)) {
@@ -529,7 +529,7 @@ int osd_oi_insert(struct osd_thread_info *info, struct osd_device *osd,
         if (fid_is_igif(fid))
                 return 0;
 
-        if (fid_is_idif(fid))
+        if (fid_is_idif(fid) || fid_seq(fid) == FID_SEQ_LLOG)
                 return osd_compat_objid_insert(info, osd, fid, id0, th);
 
         /* notice we don't return immediately, but continue to get into OI */
@@ -587,7 +587,7 @@ int osd_oi_delete(struct osd_thread_info *info,
         LASSERT(ergo(fid_seq(fid) == FID_SEQ_LOCAL_FILE,
                      fid_oid(fid) >= OSD_GENERATED_OID));
 
-        if (fid_is_idif(fid))
+        if (fid_is_idif(fid) || fid_seq(fid) == FID_SEQ_LLOG)
                 return osd_compat_objid_delete(info, osd, fid, th);
 
         fid_cpu_to_be(oi_fid, fid);
