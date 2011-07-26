@@ -1067,7 +1067,10 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (logid != NULL) {
                 logid_to_fid(logid, &lgi->lgi_fid);
         } else if (name) {
+                LASSERT(ctxt->loc_dir);
+                dt_read_lock(env, ctxt->loc_dir, 0);
                 rc = dt_lookup(env, ctxt->loc_dir, name, &lgi->lgi_fid);
+                dt_read_unlock(env, ctxt->loc_dir);
                 if (rc == -ENOENT && flags & LLOG_OPEN_NEW) {
                         /* generate fid for new llog */
                         OBD_ALLOC(handle->lgh_name, strlen(name) + 1);
@@ -1085,7 +1088,6 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
                 rc = llog_osd_generate_fid(env, lsb, &lgi->lgi_fid);
                 if (rc < 0)
                         GOTO(out_free, rc);
-                /* XXX: generate name for this object? */
         }
 
         o = llog_osd_locate(env, lsb, &lgi->lgi_fid);
@@ -1200,10 +1202,12 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
         if (res->lgh_name) {
                 LASSERT(res->lgh_ctxt->loc_dir);
                 logid_to_fid(&res->lgh_id, &lgi->lgi_fid);
+                dt_read_lock(env, res->lgh_ctxt->loc_dir, 0);
                 rc = dt_insert(env, res->lgh_ctxt->loc_dir,
                                (struct dt_rec *) &lgi->lgi_fid,
                                (struct dt_key *) res->lgh_name,
                                th, BYPASS_CAPA, 1);
+                dt_read_unlock(env, res->lgh_ctxt->loc_dir);
                 if (rc)
                         CERROR("can't create named llog %s: %d\n",
                                res->lgh_name, rc);
@@ -1282,9 +1286,11 @@ static int llog_osd_destroy(const struct lu_env *env,
                 if (rc)
                         GOTO(out_unlock, rc);
                 if (name) {
+                        dt_read_lock(env, ctxt->loc_dir, 0);
                         rc = dt_delete(env, ctxt->loc_dir,
                                        (struct dt_key *) name,
                                        th, BYPASS_CAPA);
+                        dt_read_unlock(env, ctxt->loc_dir);
                         if (rc)
                                 CERROR("can't remove llog %s: %d\n", name, rc);
                 }

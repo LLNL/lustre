@@ -650,7 +650,7 @@ int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
 
 
         if (fid_oid(fid) >= OFD_GROUP0_LAST_OID &&
-                        fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
+            fid_oid(fid) < OFD_GROUP4K_LAST_OID) {
                 /* on creation of LAST_ID we create O/<group> hierarchy */
                 LASSERT(map);
                 group = fid_oid(fid) - OFD_GROUP0_LAST_OID;
