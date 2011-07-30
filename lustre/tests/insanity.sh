@@ -18,7 +18,7 @@ if [ "$FAILURE_MODE" = "HARD" ]; then
         exit 0
 fi
 
-if [ combined_mgs_mds ]; then
+if combined_mgs_mds; then
         skip_env "$0: is not functional with combined MGS, need separate one"
         exit 0
 fi
