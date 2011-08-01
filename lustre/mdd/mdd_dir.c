@@ -1671,8 +1671,6 @@ static int mdd_create(const struct lu_env *env, struct md_object *pobj,
         if (rc)
                 GOTO(cleanup, rc);
 
-        /* Return attr back. */
-        rc = mdd_attr_get_internal_locked(env, son, ma);
         EXIT;
 cleanup:
         if (rc && created) {

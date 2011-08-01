@@ -509,6 +509,87 @@ void mdt_client_compatibility(struct mdt_thread_info *info)
         EXIT;
 }
 
+int mdt_attr_get_complex(struct mdt_thread_info *info,
+                         struct mdt_object *o, struct md_attr *ma)
+{
+        const struct lu_env *env = info->mti_env;
+        struct md_object    *next = mdt_object_child(o);
+        struct lu_buf       *buf = &info->mti_buf;
+        u32                  mode = lu_object_attr(&next->mo_lu);
+        int                  need = ma->ma_need;
+        int                  rc, rc2;
+        ENTRY;
+
+        /* do we really need PFID */
+        LASSERT((ma->ma_need & MA_PFID) == 0);
+
+        ma->ma_valid = 0;
+
+        if (need & MA_INODE) {
+                ma->ma_need = MA_INODE;
+                rc = mo_attr_get(env, next, ma);
+                if (rc)
+                        GOTO(out, rc);
+                ma->ma_valid |= MA_INODE;
+        }
+
+        if (need & MA_LOV) {
+                if (S_ISREG(mode) || S_ISDIR(mode)) {
+                        buf->lb_buf = ma->ma_lmm;
+                        buf->lb_len = ma->ma_lmm_size;
+                        rc2 = mo_xattr_get(env, next, buf, XATTR_NAME_LOV);
+                        if (rc2 > 0) {
+                                ma->ma_lmm_size = rc2;
+                                ma->ma_valid |= MA_LOV;
+                        } else if (rc2 == -ENODATA) {
+                                /* no LOV EA */
+                                ma->ma_lmm_size = 0;
+                        } else
+                                GOTO(out, rc = rc2);
+                }
+        }
+
+        if (need & MA_LMV && S_ISDIR(mode)) {
+                buf->lb_buf = ma->ma_lmv;
+                buf->lb_len = ma->ma_lmv_size;
+                rc2 = mo_xattr_get(env, next, buf, XATTR_NAME_LMV);
+                if (rc2 > 0) {
+                        ma->ma_lmv_size = rc2;
+                        ma->ma_valid |= MA_LMV;
+                } else if (rc2 == -ENODATA) {
+                        /* no LMV EA */
+                        ma->ma_lmv_size = 0;
+                } else
+                        GOTO(out, rc = rc2);
+        }
+
+
+        //LASSERT((need & MA_SOM) == 0);
+        /*if (rc == 0 && ma->ma_need & (MA_HSM | MA_SOM)) {
+                if (S_ISREG(mdd_object_type(mdd_obj)))
+                        rc = __mdd_lma_get(env, mdd_obj, ma);
+        }*/
+#ifdef CONFIG_FS_POSIX_ACL
+        if (need & MA_ACL_DEF && S_ISDIR(mode)) {
+                buf->lb_buf = ma->ma_acl;
+                buf->lb_len = ma->ma_acl_size;
+                rc2 = mo_xattr_get(env, next, buf, XATTR_NAME_ACL_DEFAULT);
+                if (rc2 > 0) {
+                        ma->ma_acl_size = rc2;
+                        ma->ma_valid |= MA_ACL_DEF;
+                } else if (rc2 == -ENODATA) {
+                        /* no ACLs */
+                        ma->ma_acl_size = 0;
+                } else
+                        GOTO(out, rc = rc2);
+        }
+#endif
+out:
+        ma->ma_need = need;
+        CDEBUG(D_INODE, "after getattr rc = %d, ma_valid = "LPX64" ma_lmm=%p\n",
+               rc, ma->ma_valid, ma->ma_lmm);
+        RETURN(rc);
+}
 
 static int mdt_getattr_internal(struct mdt_thread_info *info,
                                 struct mdt_object *o, int ma_need)
@@ -566,7 +647,7 @@ static int mdt_getattr_internal(struct mdt_thread_info *info,
         if (ma->ma_need & MA_SOM)
                 ma->ma_som = &info->mti_u.som.data;
 
-        rc = mo_attr_get(env, next, ma);
+        rc = mdt_attr_get_complex(info, o, ma);
         if (unlikely(rc)) {
                 CERROR("getattr error for "DFID": %d\n",
                         PFID(mdt_object_fid(o)), rc);
@@ -1067,8 +1148,7 @@ relock:
 
                         ma->ma_valid = 0;
                         ma->ma_need = MA_INODE;
-                        rc = mo_attr_get(info->mti_env,
-                                         mdt_object_child(child), ma);
+                        rc = mdt_attr_get_complex(info, child, ma);
                         if (unlikely(rc != 0))
                                 GOTO(out_child, rc);
 
@@ -1737,15 +1817,13 @@ static int mdt_sync(struct mdt_thread_info *info)
                 if (rc == 0) {
                         rc = mdt_object_sync(info);
                         if (rc == 0) {
-                                struct md_object *next;
                                 const struct lu_fid *fid;
                                 struct lu_attr *la = &info->mti_attr.ma_attr;
 
-                                next = mdt_object_child(info->mti_object);
                                 info->mti_attr.ma_need = MA_INODE;
                                 info->mti_attr.ma_valid = 0;
-                                rc = mo_attr_get(info->mti_env, next,
-                                                 &info->mti_attr);
+                                rc = mdt_attr_get_complex(info, info->mti_object,
+                                                          &info->mti_attr);
                                 if (rc == 0) {
                                         body = req_capsule_server_get(pill,
                                                                 &RMF_MDT_BODY);

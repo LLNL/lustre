@@ -90,7 +90,7 @@ int mdd_def_acl_get(const struct lu_env *env, struct mdd_object *mdd_obj,
  * Hold write_lock for o.
  */
 int mdd_acl_chmod(const struct lu_env *env, struct mdd_object *o, __u32 mode,
-                  struct mdd_thandle *handle)
+                  struct thandle *handle)
 {
         struct lu_buf           *buf;
         posix_acl_xattr_header  *head;
