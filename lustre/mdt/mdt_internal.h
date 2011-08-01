@@ -582,6 +582,8 @@ enum {
         MDT_SOM_ENABLE  = 1,
 };
 
+int mdt_attr_get_complex(struct mdt_thread_info *info,
+                         struct mdt_object *o, struct md_attr *ma);
 int mdt_ioepoch_open(struct mdt_thread_info *info, struct mdt_object *o,
                      int created);
 int mdt_object_is_som_enabled(struct mdt_object *mo);

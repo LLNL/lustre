@@ -337,6 +337,9 @@ static int mdt_md_create(struct mdt_thread_info *info)
                 rc = mdo_create(info->mti_env, next, lname,
                                 mdt_object_child(child),
                                 &info->mti_spec, ma);
+                if (rc == 0)
+                        rc = mdt_attr_get_complex(info, child, ma);
+
                 if (rc == 0) {
                         /* Return fid & attr to client. */
                         if (ma->ma_valid & MA_INODE)
@@ -381,7 +384,7 @@ static int mdt_md_mkobj(struct mdt_thread_info *info)
                  * recovery, just get attr in that case.
                  */
                 if (mdt_object_exists(o) == 1) {
-                        rc = mo_attr_get(info->mti_env, next, ma);
+                        rc = mdt_attr_get_complex(info, o, ma);
                 } else {
                         /*
                          * Here, NO permission check for object_create,
@@ -473,7 +476,6 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
         struct mdt_export_data  *med = &req->rq_export->exp_mdt_data;
         struct mdt_file_data    *mfd;
         struct mdt_object       *mo;
-        struct md_object        *next;
         struct mdt_body         *repbody;
         int                      som_au, rc;
         ENTRY;
@@ -558,8 +560,7 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
 
         ma->ma_need = MA_INODE;
         ma->ma_valid = 0;
-        next = mdt_object_child(mo);
-        rc = mo_attr_get(info->mti_env, next, ma);
+        rc = mdt_attr_get_complex(info, mo, ma);
         if (rc != 0)
                 GOTO(out_put, rc);
 
@@ -744,6 +745,8 @@ static int mdt_reint_unlink(struct mdt_thread_info *info,
         mdt_set_capainfo(info, 1, child_fid, BYPASS_CAPA);
         rc = mdo_unlink(info->mti_env, mdt_object_child(mp),
                         mdt_object_child(mc), lname, ma);
+        if (rc == 0)
+                rc = mdt_attr_get_complex(info, mc, ma);
         if (rc == 0)
                 mdt_handle_last_unlink(info, mc, ma);
 

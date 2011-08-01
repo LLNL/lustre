@@ -941,9 +941,6 @@ static int mdd_create_data(const struct lu_env *env, struct md_object *pobj,
 
         rc = mdd_tx_end(env, handle);
 
-        if (rc == 0)
-               rc = mdd_attr_get_internal(env, son, ma);
-
 cleanup:
         mdd_write_unlock(env, son);
 
@@ -1305,10 +1302,6 @@ static int mdd_create(const struct lu_env *env,
 
 out_unlock:
         mdd_pdo_write_unlock(env, mdd_pobj, dlh);
-
-        /* Return attr back. */
-        if (rc == 0)
-                rc = mdd_attr_get_internal(env, son, ma);
 
         mdd_write_unlock(env, son);
 

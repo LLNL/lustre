@@ -124,6 +124,9 @@ static int mdt_create_data(struct mdt_thread_info *info,
                 rc = mdo_create_data(info->mti_env,
                                      p ? mdt_object_child(p) : NULL,
                                      mdt_object_child(o), spec, ma);
+                if (rc == 0)
+                        rc = mdt_attr_get_complex(info, o, ma);
+
                 if (rc == 0 && ma->ma_valid & MA_LOV)
                         o->mot_flags |= MOF_LOV_CREATED;
         }
@@ -341,7 +344,7 @@ static inline int mdt_ioepoch_close_reg(struct mdt_thread_info *info,
         tmp_ma->ma_som = &info->mti_u.som.data;
         tmp_ma->ma_need = MA_INODE | MA_LOV | MA_SOM;
         tmp_ma->ma_valid = 0;
-        rc = mo_attr_get(info->mti_env, mdt_object_child(o), tmp_ma);
+        rc = mdt_attr_get_complex(info, o, tmp_ma);
         if (rc)
                 GOTO(error_up, rc);
 
@@ -957,11 +960,9 @@ void mdt_reconstruct_open(struct mdt_thread_info *info,
                 }
                 rc = mdt_object_exists(child);
                 if (rc > 0) {
-                        struct md_object *next;
 
                         mdt_set_capainfo(info, 1, rr->rr_fid2, BYPASS_CAPA);
-                        next = mdt_object_child(child);
-                        rc = mo_attr_get(env, next, ma);
+                        rc = mdt_attr_get_complex(info, child, ma);
                         if (rc == 0)
                               rc = mdt_finish_open(info, parent, child,
                                                    flags, 1, ldlm_rep);
@@ -995,7 +996,6 @@ out:
 static int mdt_open_by_fid(struct mdt_thread_info* info,
                            struct ldlm_reply *rep)
 {
-        const struct lu_env     *env = info->mti_env;
         __u32                    flags = info->mti_spec.sp_cr_flags;
         struct mdt_reint_record *rr = &info->mti_rr;
         struct md_attr          *ma = &info->mti_attr;
@@ -1013,7 +1013,7 @@ static int mdt_open_by_fid(struct mdt_thread_info* info,
                                                 DISP_LOOKUP_EXECD |
                                                 DISP_LOOKUP_POS));
 
-                rc = mo_attr_get(env, mdt_object_child(o), ma);
+                rc = mdt_attr_get_complex(info, o, ma);
                 if (rc == 0)
                         rc = mdt_finish_open(info, NULL, o, flags, 0, rep);
         } else if (rc == 0) {
@@ -1093,7 +1093,7 @@ static int mdt_open_anon_by_fid(struct mdt_thread_info *info,
         if (rc)
                 GOTO(out, rc);
 
-        rc = mo_attr_get(env, mdt_object_child(o), ma);
+        rc = mdt_attr_get_complex(info, o, ma);
         if (rc)
                 GOTO(out, rc);
 
@@ -1152,7 +1152,7 @@ static int mdt_cross_open(struct mdt_thread_info* info,
                         goto out;
 
                 mdt_set_capainfo(info, 0, fid, BYPASS_CAPA);
-                rc = mo_attr_get(info->mti_env, mdt_object_child(o), ma);
+                rc = mdt_attr_get_complex(info, o, ma);
                 if (rc == 0)
                         rc = mdt_finish_open(info, NULL, o, flags, 0, rep);
         } else if (rc == 0) {
@@ -1363,14 +1363,18 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
                         mdt_clear_disposition(info, ldlm_rep, DISP_OPEN_CREATE);
                         GOTO(out_child, result);
                 } else {
+
+                        /* XXX: we should call this once, see few lines below */
+                        if (result == 0)
+                                result = mdt_attr_get_complex(info, child, ma);
+
                         if (result != 0)
                                 GOTO(out_child, result);
                 }
                 created = 1;
         } else {
                 /* We have to get attr & lov ea for this object */
-                result = mo_attr_get(info->mti_env, mdt_object_child(child),
-                                     ma);
+                result = mdt_attr_get_complex(info, child, ma);
                 /*
                  * The object is on remote node, return its FID for remote open.
                  */

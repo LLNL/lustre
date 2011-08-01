@@ -719,6 +719,13 @@ int mdd_attr_get_internal_locked(const struct lu_env *env,
         int needlock = ma->ma_need &
                        (MA_LOV | MA_LMV | MA_ACL_DEF | MA_HSM | MA_SOM | MA_PFID);
 
+        LASSERT((ma->ma_need & MA_LOV) == 0);
+        LASSERT((ma->ma_need & MA_LMV) == 0);
+        LASSERT((ma->ma_need & MA_ACL_DEF) == 0);
+        LASSERT((ma->ma_need & MA_HSM) == 0);
+        LASSERT((ma->ma_need & MA_SOM) == 0);
+        LASSERT((ma->ma_need & MA_PFID) == 0);
+
         if (needlock)
                 mdd_read_lock(env, mdd_obj, MOR_TGT_CHILD);
         rc = mdd_attr_get_internal(env, mdd_obj, ma);
@@ -1752,10 +1759,6 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
         }
         EXIT;
 
-        if (rc == 0) {
-                rc = mdd_iattr_get(env, mdd_obj, ma);
-                ma->ma_valid &= ~(MA_LOV | MA_COOKIE);
-        }
 cleanup:
         mdd_write_unlock(env, mdd_obj);
 #ifdef HAVE_QUOTA_SUPPORT
