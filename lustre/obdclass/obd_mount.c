@@ -1217,7 +1217,6 @@ static int lustre_server_mount(struct lustre_sb_info *lsi, unsigned long mflags)
         int rc;
         ENTRY;
 
-        /* the One True Mount */
         rc = lsi_prepare(lsi);
         if (rc) {
                 CERROR("Unable to mount device %s: %d\n",
