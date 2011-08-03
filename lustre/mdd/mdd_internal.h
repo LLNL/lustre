@@ -161,7 +161,8 @@ struct mdd_thread_info {
         struct lu_fid             mti_fid2; /* used for be & cpu converting */
         struct lu_attr            mti_la;
         struct lu_attr            mti_la_for_fix;
-        struct md_attr            mti_ma;
+        struct lu_attr            mti_pattr;
+        struct lu_attr            mti_cattr;
         char                      mti_orph_key[NAME_MAX + 1];
         struct lu_buf             mti_buf;
         struct lu_buf             mti_big_buf; /* biggish persistent buf */
@@ -259,15 +260,15 @@ int mdd_is_subdir(const struct lu_env *env, struct md_object *mo,
 int mdd_may_create(const struct lu_env *env, struct mdd_object *pobj,
                    struct mdd_object *cobj, int check_perm, int check_nlink);
 int mdd_may_unlink(const struct lu_env *env, struct mdd_object *pobj,
-                   const struct md_attr *ma);
+                   const struct lu_attr *attr);
 int mdd_may_delete(const struct lu_env *env, struct mdd_object *pobj,
-                   struct mdd_object *cobj, struct md_attr *ma,
-                   int check_perm, int check_empty);
+                   struct lu_attr *pattr, struct mdd_object *cobj,
+                   struct lu_attr *cattr, int check_perm, int check_empty);
 int mdd_unlink_sanity_check(const struct lu_env *env, struct mdd_object *pobj,
                             struct mdd_object *cobj, struct lu_attr *attr);
 int mdd_object_initialize(const struct lu_env *env, const struct lu_fid *pfid,
                           const struct lu_name *lname, struct mdd_object *child,
-                          struct md_attr *ma, struct thandle *handle,
+                          struct lu_attr *attr, struct thandle *handle,
                           const struct md_op_spec *spec);
 int mdd_link_sanity_check(const struct lu_env *env, struct mdd_object *tgt_obj,
                           const struct lu_name *lname, struct mdd_object *src_obj);
@@ -381,7 +382,7 @@ void mdd_trans_stop(const struct lu_env *env, struct mdd_device *mdd,
 int mdd_declare_object_create_internal(const struct lu_env *env,
                                        struct mdd_object *p,
                                        struct mdd_object *c,
-                                       struct md_attr *ma,
+                                       struct lu_attr *attr,
                                        struct thandle *handle,
                                        const struct md_op_spec *spec);
 /* mdd_device.c */

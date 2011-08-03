@@ -480,213 +480,6 @@ int mdd_get_flags(const struct lu_env *env, struct mdd_object *obj)
         RETURN(rc);
 }
 
-/* get only inode attributes */
-int mdd_iattr_get(const struct lu_env *env, struct mdd_object *mdd_obj,
-                  struct md_attr *ma)
-{
-        int rc = 0;
-        ENTRY;
-
-        if (ma->ma_valid & MA_INODE)
-                RETURN(0);
-
-        rc = mdd_la_get(env, mdd_obj, &ma->ma_attr,
-                        mdd_object_capa(env, mdd_obj));
-        if (rc == 0)
-                ma->ma_valid |= MA_INODE;
-        RETURN(rc);
-}
-
-/* get lov EA only */
-static int __mdd_lmm_get(const struct lu_env *env,
-                         struct mdd_object *mdd_obj, struct md_attr *ma)
-{
-        int rc;
-        ENTRY;
-
-        if (ma->ma_valid & MA_LOV)
-                RETURN(0);
-
-        rc = mdd_get_md(env, mdd_obj, ma->ma_lmm, &ma->ma_lmm_size,
-                        XATTR_NAME_LOV);
-        if (rc > 0) {
-                ma->ma_lmm_size = rc;
-                ma->ma_layout_gen = ma->ma_lmm->lmm_layout_gen;
-                ma->ma_valid |= MA_LOV | MA_LAY_GEN;
-                rc = 0;
-        }
-        RETURN(rc);
-}
-
-/* get the first parent fid from link EA */
-static int mdd_pfid_get(const struct lu_env *env,
-                        struct mdd_object *mdd_obj, struct md_attr *ma)
-{
-        struct lu_buf *buf;
-        struct link_ea_header *leh;
-        struct link_ea_entry *lee;
-        struct lu_fid *pfid = &ma->ma_pfid;
-        ENTRY;
-
-        if (ma->ma_valid & MA_PFID)
-                RETURN(0);
-
-        buf = mdd_links_get(env, mdd_obj);
-        if (IS_ERR(buf))
-                RETURN(PTR_ERR(buf));
-
-        leh = buf->lb_buf;
-        lee = (struct link_ea_entry *)(leh + 1);
-        memcpy(pfid, &lee->lee_parent_fid, sizeof(*pfid));
-        fid_be_to_cpu(pfid, pfid);
-        ma->ma_valid |= MA_PFID;
-        if (buf->lb_len > OBD_ALLOC_BIG)
-                /* if we vmalloced a large buffer drop it */
-                mdd_buf_put(buf);
-        RETURN(0);
-}
-
-int mdd_lmm_get_locked(const struct lu_env *env, struct mdd_object *mdd_obj,
-                       struct md_attr *ma)
-{
-        int rc;
-        ENTRY;
-
-        mdd_read_lock(env, mdd_obj, MOR_TGT_CHILD);
-        rc = __mdd_lmm_get(env, mdd_obj, ma);
-        mdd_read_unlock(env, mdd_obj);
-        RETURN(rc);
-}
-
-/* get lmv EA only*/
-static int __mdd_lmv_get(const struct lu_env *env,
-                         struct mdd_object *mdd_obj, struct md_attr *ma)
-{
-        int rc;
-        ENTRY;
-
-        if (ma->ma_valid & MA_LMV)
-                RETURN(0);
-
-        rc = mdd_get_md(env, mdd_obj, ma->ma_lmv, &ma->ma_lmv_size,
-                        XATTR_NAME_LMV);
-        if (rc > 0) {
-                ma->ma_valid |= MA_LMV;
-                rc = 0;
-        }
-        RETURN(rc);
-}
-
-static int __mdd_lma_get(const struct lu_env *env, struct mdd_object *mdd_obj,
-                         struct md_attr *ma)
-{
-        struct mdd_thread_info *info = mdd_env_info(env);
-        struct lustre_mdt_attrs *lma =
-                                 (struct lustre_mdt_attrs *)info->mti_xattr_buf;
-        int lma_size;
-        int rc;
-        ENTRY;
-
-        /* If all needed data are already valid, nothing to do */
-        if ((ma->ma_valid & (MA_HSM | MA_SOM)) ==
-            (ma->ma_need & (MA_HSM | MA_SOM)))
-                RETURN(0);
-
-        /* Read LMA from disk EA */
-        lma_size = sizeof(info->mti_xattr_buf);
-        rc = mdd_get_md(env, mdd_obj, lma, &lma_size, XATTR_NAME_LMA);
-        if (rc <= 0)
-                RETURN(rc);
-
-        /* Useless to check LMA incompatibility because this is already done in
-         * osd_ea_fid_get(), and this will fail long before this code is
-         * called.
-         * So, if we are here, LMA is compatible.
-         */
-
-        lustre_lma_swab(lma);
-
-        /* Swab and copy LMA */
-        if (ma->ma_need & MA_HSM) {
-                if (lma->lma_compat & LMAC_HSM)
-                        ma->ma_hsm.mh_flags = lma->lma_flags & HSM_FLAGS_MASK;
-                else
-                        ma->ma_hsm.mh_flags = 0;
-                ma->ma_valid |= MA_HSM;
-        }
-
-        /* Copy SOM */
-        if (ma->ma_need & MA_SOM && lma->lma_compat & LMAC_SOM) {
-                LASSERT(ma->ma_som != NULL);
-                ma->ma_som->msd_ioepoch = lma->lma_ioepoch;
-                ma->ma_som->msd_size    = lma->lma_som_size;
-                ma->ma_som->msd_blocks  = lma->lma_som_blocks;
-                ma->ma_som->msd_mountid = lma->lma_som_mountid;
-                ma->ma_valid |= MA_SOM;
-        }
-
-        RETURN(0);
-}
-
-int mdd_attr_get_internal(const struct lu_env *env, struct mdd_object *mdd_obj,
-                                 struct md_attr *ma)
-{
-        int rc = 0;
-        ENTRY;
-
-        if (ma->ma_need & MA_INODE)
-                rc = mdd_iattr_get(env, mdd_obj, ma);
-
-        if (rc == 0 && ma->ma_need & MA_LOV) {
-                if (S_ISREG(mdd_object_type(mdd_obj)) ||
-                    S_ISDIR(mdd_object_type(mdd_obj)))
-                        rc = __mdd_lmm_get(env, mdd_obj, ma);
-        }
-        if (rc == 0 && ma->ma_need & MA_PFID && !(ma->ma_valid & MA_LOV)) {
-                if (S_ISREG(mdd_object_type(mdd_obj)))
-                        rc = mdd_pfid_get(env, mdd_obj, ma);
-        }
-        if (rc == 0 && ma->ma_need & MA_LMV) {
-                if (S_ISDIR(mdd_object_type(mdd_obj)))
-                        rc = __mdd_lmv_get(env, mdd_obj, ma);
-        }
-        if (rc == 0 && ma->ma_need & (MA_HSM | MA_SOM)) {
-                if (S_ISREG(mdd_object_type(mdd_obj)))
-                        rc = __mdd_lma_get(env, mdd_obj, ma);
-        }
-#ifdef CONFIG_FS_POSIX_ACL
-        if (rc == 0 && ma->ma_need & MA_ACL_DEF) {
-                if (S_ISDIR(mdd_object_type(mdd_obj)))
-                        rc = mdd_def_acl_get(env, mdd_obj, ma);
-        }
-#endif
-        CDEBUG(D_INODE, "after getattr rc = %d, ma_valid = "LPX64" ma_lmm=%p\n",
-               rc, ma->ma_valid, ma->ma_lmm);
-        RETURN(rc);
-}
-
-int mdd_attr_get_internal_locked(const struct lu_env *env,
-                                 struct mdd_object *mdd_obj, struct md_attr *ma)
-{
-        int rc;
-        int needlock = ma->ma_need &
-                       (MA_LOV | MA_LMV | MA_ACL_DEF | MA_HSM | MA_SOM | MA_PFID);
-
-        LASSERT((ma->ma_need & MA_LOV) == 0);
-        LASSERT((ma->ma_need & MA_LMV) == 0);
-        LASSERT((ma->ma_need & MA_ACL_DEF) == 0);
-        LASSERT((ma->ma_need & MA_HSM) == 0);
-        LASSERT((ma->ma_need & MA_SOM) == 0);
-        LASSERT((ma->ma_need & MA_PFID) == 0);
-
-        if (needlock)
-                mdd_read_lock(env, mdd_obj, MOR_TGT_CHILD);
-        rc = mdd_attr_get_internal(env, mdd_obj, ma);
-        if (needlock)
-                mdd_read_unlock(env, mdd_obj);
-        return rc;
-}
-
 /*
  * No permission check is needed.
  */
@@ -697,7 +490,16 @@ static int mdd_attr_get(const struct lu_env *env, struct md_object *obj,
         int                rc;
 
         ENTRY;
-        rc = mdd_attr_get_internal_locked(env, mdd_obj, ma);
+        LASSERT((ma->ma_need & MA_LOV) == 0);
+        LASSERT((ma->ma_need & MA_LMV) == 0);
+        LASSERT((ma->ma_need & MA_ACL_DEF) == 0);
+        LASSERT((ma->ma_need & MA_HSM) == 0);
+        LASSERT((ma->ma_need & MA_SOM) == 0);
+        LASSERT((ma->ma_need & MA_PFID) == 0);
+
+        rc = mdd_la_get(env, mdd_obj, &ma->ma_attr,
+                        mdd_object_capa(env, mdd_obj));
+
         RETURN(rc);
 }
 
@@ -874,25 +676,6 @@ int mdd_attr_check_set_internal(const struct lu_env *env,
         RETURN(rc);
 }
 
-int __mdd_xattr_set(const struct lu_env *env, struct mdd_object *obj,
-                    const struct lu_buf *buf, const char *name,
-                    int fl, struct thandle *handle)
-{
-        int rc;
-        ENTRY;
-
-        if (buf->lb_buf && buf->lb_len > 0)
-                rc = mdo_xattr_set(env, obj, buf, name, 0, handle,
-                                   mdd_object_capa(env, obj));
-        else if (buf->lb_buf == NULL && buf->lb_len == 0)
-                rc = mdo_xattr_del(env, obj, name, handle,
-                                   mdd_object_capa(env, obj));
-        else
-                rc = -EINVAL;
-
-        EXIT;
-}
-
 /*
  * This gives the same functionality as the code between
  * sys_chmod and inode_setattr
@@ -902,7 +685,7 @@ int __mdd_xattr_set(const struct lu_env *env, struct mdd_object *obj,
  * the object is supposed to be locked
  */
 static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
-                        struct lu_attr *la, const struct md_attr *ma)
+                        struct lu_attr *la, const unsigned long flags)
 {
         struct lu_attr   *tmp_la     = &mdd_env_info(env)->mti_la;
         struct md_ucred  *uc;
@@ -932,11 +715,10 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
                 RETURN(rc);
 
         if (la->la_valid == LA_CTIME) {
-                if (!(ma->ma_attr_flags & MDS_PERM_BYPASS))
+                if (!(flags & MDS_PERM_BYPASS))
                         /* This is only for set ctime when rename's source is
                          * on remote MDS. */
-                        rc = mdd_may_delete(env, NULL, obj,
-                                            (struct md_attr *)ma, 1, 0);
+                        rc = mdd_may_delete(env, NULL, NULL, obj, tmp_la, 1, 0);
                 if (rc == 0 && la->la_ctime <= tmp_la->la_ctime)
                         la->la_valid &= ~LA_CTIME;
                 RETURN(rc);
@@ -977,7 +759,7 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
 
         if ((mdd_is_immutable(obj) || mdd_is_append(obj)) &&
             (la->la_valid & ~LA_FLAGS) &&
-            !(ma->ma_attr_flags & MDS_PERM_BYPASS))
+            !(flags & MDS_PERM_BYPASS))
                 RETURN(-EPERM);
 
         /* Check for setting the obj time. */
@@ -1014,7 +796,7 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
 
         /* Make sure a caller can chmod. */
         if (la->la_valid & LA_MODE) {
-                if (!(ma->ma_attr_flags & MDS_PERM_BYPASS) &&
+                if (!(flags & MDS_PERM_BYPASS) &&
                     (uc->mu_fsuid != tmp_la->la_uid) &&
                     !mdd_capable(uc, CFS_CAP_FOWNER))
                         RETURN(-EPERM);
@@ -1086,11 +868,11 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
 
         /* For both Size-on-MDS case and truncate case,
          * "la->la_valid & (LA_SIZE | LA_BLOCKS)" are ture.
-         * We distinguish them by "ma->ma_attr_flags & MDS_SOM".
+         * We distinguish them by "flags & MDS_SOM".
          * For SOM case, it is true, the MAY_WRITE perm has been checked
          * when open, no need check again. For truncate case, it is false,
          * the MAY_WRITE perm should be checked here. */
-        if (ma->ma_attr_flags & MDS_SOM) {
+        if (flags & MDS_SOM) {
                 /* For the "Size-on-MDS" setattr update, merge coming
                  * attributes with the set in the inode. BUG 10641 */
                 if ((la->la_valid & LA_ATIME) &&
@@ -1104,9 +886,9 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
                         la->la_valid &= ~(LA_MTIME | LA_CTIME);
         } else {
                 if (la->la_valid & (LA_SIZE | LA_BLOCKS)) {
-                        if (!((ma->ma_attr_flags & MDS_OPEN_OWNEROVERRIDE) &&
+                        if (!((flags & MDS_OPEN_OWNEROVERRIDE) &&
                               (uc->mu_fsuid == tmp_la->la_uid)) &&
-                            !(ma->ma_attr_flags & MDS_PERM_BYPASS)) {
+                            !(flags & MDS_PERM_BYPASS)) {
                                 rc = mdd_permission_internal(env, obj,
                                                              tmp_la, MAY_WRITE);
                                 if (rc)
@@ -1226,6 +1008,7 @@ stop:
         RETURN(rc);
 }
 
+#if 0
 /**
  * Save LMA extended attributes with data from \a ma.
  *
@@ -1290,6 +1073,8 @@ static int __mdd_lma_set(const struct lu_env *env, struct mdd_object *mdd_obj,
         RETURN(rc);
 }
 
+#endif
+
 /* Precedence for choosing record type when multiple
  * attributes change: setattr > mtime > ctime > atime
  * (ctime changes when mtime does, plus chmod/chown.
@@ -1325,37 +1110,18 @@ static int mdd_attr_set_changelog(const struct lu_env *env,
 static int mdd_declare_attr_set(const struct lu_env *env,
                                 struct mdd_device *mdd,
                                 struct mdd_object *obj,
-                                const struct md_attr *ma,
+                                const struct lu_attr *attr,
                                 struct thandle *handle)
 {
-        struct lu_buf *buf = &mdd_env_info(env)->mti_buf;
-        cfs_umode_t    mode = mdd_object_type(mdd_obj);
-        int            rc, stripe, i;
+        int rc;
 
-        rc = mdo_declare_attr_set(env, obj, &ma->ma_attr, handle);
+        rc = mdo_declare_attr_set(env, obj, attr, handle);
         if (rc)
                 return rc;
 
-        if (ma->ma_valid & MA_LOV && (S_ISREG(mode) || S_ISDIR(mode))) {
-                buf->lb_buf = NULL;
-                buf->lb_len = ma->ma_lmm_size;
-                rc = mdo_declare_xattr_set(env, obj, buf, XATTR_NAME_LOV,
-                                           0, handle);
-                if (rc)
-                        return rc;
-        }
-
-        if (ma->ma_valid & (MA_HSM | MA_SOM)) {
-                buf->lb_buf = NULL;
-                buf->lb_len = sizeof(struct lustre_mdt_attrs);
-                rc = mdo_declare_xattr_set(env, obj, buf, XATTR_NAME_LMA,
-                                           0, handle);
-                if (rc)
-                        return rc;
-        }
-
 #ifdef CONFIG_FS_POSIX_ACL
-        if (ma->ma_attr.la_valid & LA_MODE) {
+        if (attr->la_valid & LA_MODE) {
+
                 mdd_read_lock(env, obj, MOR_TGT_CHILD);
                 rc = mdo_xattr_get(env, obj, &LU_BUF_NULL,
                                    XATTR_NAME_ACL_ACCESS, BYPASS_CAPA);
@@ -1366,8 +1132,7 @@ static int mdd_declare_attr_set(const struct lu_env *env,
                         return rc;
 
                 if (rc != 0) {
-                        buf->lb_buf = NULL;
-                        buf->lb_len = rc;
+                        struct lu_buf *buf = mdd_buf_get(env, NULL, rc);
                         rc = mdo_declare_xattr_set(env, obj, buf,
                                                    XATTR_NAME_ACL_ACCESS, 0,
                                                    handle);
@@ -1389,7 +1154,7 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
         struct mdd_device *mdd = mdo2mdd(obj);
         struct thandle *handle;
         struct lu_attr *la_copy = &mdd_env_info(env)->mti_la_for_fix;
-        cfs_umode_t mode = mdd_object_type(mdd_obj);
+        const struct lu_attr *la = &ma->ma_attr;
         int  rc;
 #ifdef HAVE_QUOTA_SUPPORT
         struct obd_device *obd = mdd->mdd_obd_dev;
@@ -1402,27 +1167,25 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
 #endif
         ENTRY;
 
-        *la_copy = ma->ma_attr;
-        rc = mdd_fix_attr(env, mdd_obj, la_copy, ma);
-        if (rc != 0)
+        /* we do not use ->attr_set() for LOV/SOM/HSM EA any more */
+        LASSERT((ma->ma_valid & MA_LOV) == 0);
+        LASSERT((ma->ma_valid & MA_HSM) == 0);
+        LASSERT((ma->ma_valid & MA_SOM) == 0);
+
+        *la_copy = *la;
+        rc = mdd_fix_attr(env, mdd_obj, la_copy, ma->ma_attr_flags);
+        if (rc)
                 RETURN(rc);
 
         /* setattr on "close" only change atime, or do nothing */
-        if (ma->ma_valid == MA_INODE &&
-            ma->ma_attr.la_valid == LA_ATIME && la_copy->la_valid == 0)
+        if (la->la_valid == LA_ATIME && la_copy->la_valid == 0)
                 RETURN(0);
-
-        if ((ma->ma_valid & MA_LOV) && (S_ISREG(mode) || S_ISDIR(mode))) {
-                rc = mdd_lsm_sanity_check(env, mdd_obj);
-                if (rc)
-                        RETURN(rc);
-        }
 
         handle = mdd_trans_create(env, mdd);
         if (IS_ERR(handle))
                 RETURN(PTR_ERR(handle));
 
-        rc = mdd_declare_attr_set(env, mdd, mdd_obj, ma, handle);
+        rc = mdd_declare_attr_set(env, mdd, mdd_obj, la, handle);
         if (rc)
                 GOTO(stop, rc);
 
@@ -1433,12 +1196,12 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
         mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
 
         /* permission changes may require sync operation */
-        if (ma->ma_attr.la_valid & (LA_MODE | LA_UID | LA_GID))
+        if (la->la_valid & (LA_MODE | LA_UID | LA_GID))
                 handle->th_sync |= mdd->mdd_sync_permission;
 
-        if (ma->ma_attr.la_valid & (LA_MTIME | LA_CTIME))
+        if (la->la_valid & (LA_MTIME | LA_CTIME))
                 CDEBUG(D_INODE, "setting mtime "LPU64", ctime "LPU64"\n",
-                       ma->ma_attr.la_mtime, ma->ma_attr.la_ctime);
+                       la->la_mtime, la->la_ctime);
 
 #ifdef HAVE_QUOTA_SUPPORT
         if (mds->mds_quota && la_copy->la_valid & (LA_UID | LA_GID)) {
@@ -1470,33 +1233,15 @@ static int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
 
         if (la_copy->la_valid & LA_FLAGS) {
                 rc = mdd_attr_set_internal(env, mdd_obj, la_copy, handle, 1);
-                if (rc)
-                        GOTO(unlock, rc);
-                mdd_flags_xlate(mdd_obj, la_copy->la_flags);
+                if (rc == 0)
+                        mdd_flags_xlate(mdd_obj, la_copy->la_flags);
         } else if (la_copy->la_valid) { /* setattr */
                 rc = mdd_attr_set_internal(env, mdd_obj, la_copy, handle, 1);
-                if (rc)
-                        GOTO(unlock, rc);
         }
 
-        if ((ma->ma_valid & MA_LOV) && (S_ISREG(mode) || S_ISDIR(mode))) {
-                struct lu_buf *buf;
-
-                buf = mdd_buf_get(env, ma->ma_lmm, ma->ma_lmm_size);
-                rc = __mdd_xattr_set(env, mdd_obj, buf, XATTR_NAME_LOV, 0,
-                                     handle);
-                if (rc)
-                        GOTO(unlock, rc);
-        }
-
-        if ((ma->ma_valid & (MA_HSM | MA_SOM)) && S_ISREG(mode))
-                rc = mdd_lma_set(env, mdd_obj, ma, handle);
-
-unlock:
         mdd_write_unlock(env, mdd_obj);
         if (rc == 0)
-                rc = mdd_attr_set_changelog(env, obj, handle,
-                                            ma->ma_attr.la_valid);
+                rc = mdd_attr_set_changelog(env, obj, handle, la->la_valid);
 stop:
         mdd_trans_stop(env, mdd, rc, handle);
 #ifdef HAVE_QUOTA_SUPPORT
@@ -1592,7 +1337,8 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
                 handle->th_sync |= mdd->mdd_sync_permission;
 
         mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
-        rc = __mdd_xattr_set(env, mdd_obj, buf, name, fl, handle);
+        rc = mdo_xattr_set(env, mdd_obj, buf, name, fl, handle,
+                           mdd_object_capa(env, mdd_obj));
         mdd_write_unlock(env, mdd_obj);
         if (rc)
                 GOTO(stop, rc);
@@ -1690,7 +1436,9 @@ void mdd_object_make_hint(const struct lu_env *env, struct mdd_object *parent,
         struct dt_object *nc = mdd_object_child(child);
 
         /* @hint will be initialized by underlying device. */
+        mdd_write_lock(env, child, MOR_TGT_CHILD);
         nc->do_ops->do_ah_init(env, hint, np, nc, attr->la_mode & S_IFMT);
+        mdd_write_unlock(env, child);
 }
 
 /*
@@ -1798,7 +1546,7 @@ static int mdd_open(const struct lu_env *env, struct md_object *obj,
 }
 
 static int mdd_declare_close(const struct lu_env *env, struct mdd_object *obj,
-                             struct md_attr *ma, struct thandle *handle)
+                             struct thandle *handle)
 {
         int rc;
 
@@ -1845,7 +1593,7 @@ again:
                 if (IS_ERR(handle))
                         RETURN(PTR_ERR(handle));
 
-                rc = mdd_declare_close(env, mdd_obj, ma, handle);
+                rc = mdd_declare_close(env, mdd_obj, handle);
                 if (rc)
                         GOTO(stop, rc);
 
