@@ -916,6 +916,14 @@ out:
         RETURN(rc);
 }
 
+static void osp_sync_llog_fini(struct osp_device *d)
+{
+        struct llog_ctxt *ctxt;
+
+        ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
+        llog_cleanup(ctxt);
+}
+
 /*
  * initializes sync component of OSP
  */
@@ -935,7 +943,7 @@ int osp_sync_init(const struct lu_env *env, struct osp_device *d)
         rc = osp_sync_llog_init(env, d);
         if (rc) {
                 CERROR("can't initialized llog: %d\n", rc);
-                RETURN(rc);
+                GOTO(err_id, rc);
         }
 
         /*
@@ -951,7 +959,7 @@ int osp_sync_init(const struct lu_env *env, struct osp_device *d)
         rc = cfs_create_thread(osp_sync_thread, d, 0);
         if (rc < 0) {
                 CERROR("can't start sync thread %d\n", rc);
-                RETURN(rc);
+                GOTO(err_llog, rc);
         }
 
         l_wait_event(d->opd_syn_thread.t_ctl_waitq,
@@ -959,6 +967,12 @@ int osp_sync_init(const struct lu_env *env, struct osp_device *d)
                      &lwi);
 
         RETURN(0);
+
+err_llog:
+        osp_sync_llog_fini(d);
+err_id:
+        osp_sync_id_traction_fini(d);
+        RETURN(rc);
 }
 
 int osp_sync_fini(struct osp_device *d)
