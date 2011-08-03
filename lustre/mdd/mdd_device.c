@@ -1042,30 +1042,6 @@ out:
         RETURN(rc);
 }
 
-#if 0
-static int mdd_lov_set_nextid(const struct lu_env *env,
-                              struct mdd_device *mdd)
-{
-        struct mds_obd *mds = &mdd->mdd_obd_dev->u.mds;
-        int rc;
-        ENTRY;
-
-        LASSERT(mds->mds_lov_objids != NULL);
-        rc = obd_set_info_async(mds->mds_lov_exp, strlen(KEY_NEXT_ID),
-                                KEY_NEXT_ID, mds->mds_lov_desc.ld_tgt_count,
-                                mds->mds_lov_objids, NULL);
-
-        RETURN(rc);
-}
-
-static int mdd_cleanup_unlink_llog(const struct lu_env *env,
-                                   struct mdd_device *mdd)
-{
-        /* XXX: to be implemented! */
-        return 0;
-}
-#endif
-
 static int mdd_recovery_complete(const struct lu_env *env,
                                  struct lu_device *d)
 {
