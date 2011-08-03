@@ -931,7 +931,8 @@ int class_process_config(struct lustre_cfg *lcfg)
                        " (%s)\n", lustre_cfg_string(lcfg, 1),
                        lcfg->lcfg_nid, libcfs_nid2str(lcfg->lcfg_nid));
 
-                err = class_add_uuid(lustre_cfg_string(lcfg, 1), lcfg->lcfg_nid);
+                err = class_add_uuid(lustre_cfg_string(lcfg, 1),
+                                     lcfg->lcfg_nid);
                 GOTO(out, err);
         }
         case LCFG_DEL_UUID: {
@@ -1191,7 +1192,7 @@ extern int lustre_check_exclusion(struct lustre_sb_info *lsi, char *svname);
  * net records.
  */
 static int class_config_llog_handler(const struct lu_env *env,
-                                     struct llog_handle * handle,
+                                     struct llog_handle *handle,
                                      struct llog_rec_hdr *rec, void *data)
 {
         struct config_llog_instance *clli = data;
@@ -1358,6 +1359,10 @@ static int class_config_llog_handler(const struct lu_env *env,
                 lcfg_new->lcfg_nal = 0; /* illegal value for obsolete field */
 
                 rc = class_process_config(lcfg_new);
+                if (rc != 0 && lcfg_new->lcfg_command == LCFG_SETUP) {
+                        lcfg_new->lcfg_command = LCFG_DETACH;
+                        class_process_config(lcfg_new);
+                }
                 lustre_cfg_free(lcfg_new);
 
                 if (inst)
