@@ -511,7 +511,15 @@ static int dot_lustre_mdd_attr_get(const struct lu_env *env,
 {
         struct mdd_object *mdd_obj = md2mdd_obj(obj);
 
-        return mdd_attr_get_internal_locked(env, mdd_obj, ma);
+        LASSERT((ma->ma_need & MA_LOV) == 0);
+        LASSERT((ma->ma_need & MA_LMV) == 0);
+        LASSERT((ma->ma_need & MA_ACL_DEF) == 0);
+        LASSERT((ma->ma_need & MA_HSM) == 0);
+        LASSERT((ma->ma_need & MA_SOM) == 0);
+        LASSERT((ma->ma_need & MA_PFID) == 0);
+
+        return mdd_la_get(env, mdd_obj, &ma->ma_attr,
+                          mdd_object_capa(env, mdd_obj));
 }
 
 static int dot_lustre_mdd_attr_set(const struct lu_env *env,
@@ -762,46 +770,12 @@ static struct md_dir_operations mdd_dot_lustre_dir_ops = {
 static int obf_attr_get(const struct lu_env *env, struct md_object *obj,
                         struct md_attr *ma)
 {
-        int rc = 0;
+        struct mdd_device *mdd = mdo2mdd(obj);
 
-        if (ma->ma_need & MA_INODE) {
-                struct mdd_device *mdd = mdo2mdd(obj);
-
-                /* "fid" is a virtual object and hence does not have any "real"
-                 * attributes. So we reuse attributes of .lustre for "fid" dir */
-                ma->ma_need |= MA_INODE;
-                rc = dot_lustre_mdd_attr_get(env, &mdd->mdd_dot_lustre->mod_obj,
-                                             ma);
-                if (rc)
-                        return rc;
-                ma->ma_valid |= MA_INODE;
-        }
-
-        /* "fid" directory does not have any striping information. */
-        if (ma->ma_need & MA_LOV) {
-                struct mdd_object *mdd_obj = md2mdd_obj(obj);
-
-                if (ma->ma_valid & MA_LOV)
-                        return 0;
-
-                if (!(S_ISREG(mdd_object_type(mdd_obj)) ||
-                      S_ISDIR(mdd_object_type(mdd_obj))))
-                        return 0;
-
-#if 0
-                /* XXX: mdd can't access striping information directly */
-                if (ma->ma_need & MA_LOV_DEF) {
-                        rc = mdd_get_default_md(mdd_obj, ma->ma_lmm);
-                        if (rc > 0) {
-                                ma->ma_lmm_size = rc;
-                                ma->ma_valid |= MA_LOV;
-                                rc = 0;
-                        }
-                }
-#endif
-        }
-
-        return rc;
+        /* "fid" is a virtual object and hence does not have any "real"
+         * attributes. So we reuse attributes of .lustre for "fid" dir */
+        return mdd_la_get(env, mdd->mdd_dot_lustre, &ma->ma_attr,
+                          mdd_object_capa(env, mdd->mdd_dot_lustre));
 }
 
 static int obf_attr_set(const struct lu_env *env, struct md_object *obj,

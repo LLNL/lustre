@@ -13,6 +13,9 @@ ONLY=${ONLY:-"$*"}
 ALWAYS_EXCEPT="                27u   42a  42b  42c  42d  45   51d   68b   $SANITY_EXCEPT"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
+# disable SOM test
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 132"
+
 # Tests that fail on uml
 CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 #                                    buffer i/o errs             sock spc runas

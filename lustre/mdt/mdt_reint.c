@@ -547,11 +547,22 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
 
                 /* Close the found mfd, update attributes. */
                 mdt_mfd_close(info, mfd);
-        } else {
+        } else if ((ma->ma_valid & MA_INODE) && ma->ma_attr.la_valid) {
+                LASSERT((ma->ma_valid & MA_LOV) == 0);
                 rc = mdt_attr_set(info, mo, ma, rr->rr_flags);
                 if (rc)
                         GOTO(out_put, rc);
-        }
+        } else if ((ma->ma_valid & MA_LOV) && (ma->ma_valid & MA_INODE)) {
+                struct lu_buf *buf  = &info->mti_buf;
+                LASSERT(ma->ma_attr.la_valid == 0);
+                buf->lb_buf = ma->ma_lmm;
+                buf->lb_len = ma->ma_lmm_size;
+                rc = mo_xattr_set(info->mti_env, mdt_object_child(mo),
+                                  buf, XATTR_NAME_LOV, 0);
+                if (rc)
+                        GOTO(out_put, rc);
+        } else
+                LBUG();
 
         ma->ma_need = MA_INODE;
         ma->ma_valid = 0;
