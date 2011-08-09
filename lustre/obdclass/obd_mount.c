@@ -1191,20 +1191,25 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
         strcat(lsi->lsi_osd_uuid, "_UUID");
         sprintf(flagstr, "%lu", mflags);
 
-        rc = lustre_start_simple(lsi->lsi_osd_obdname, LUSTRE_OSD_NAME,
-                                 lsi->lsi_osd_uuid, lmd->lmd_dev, flagstr,
-                                 0, lsi->lsi_svname);
-        if (rc == 0) {
+        obd = class_name2obd(lsi->lsi_osd_obdname);
+        if (obd == NULL) {
+                rc = lustre_start_simple(lsi->lsi_osd_obdname, LUSTRE_OSD_NAME,
+                                         lsi->lsi_osd_uuid, lmd->lmd_dev,
+                                         flagstr, 0, lsi->lsi_svname);
+                if (rc)
+                        GOTO(out, rc);
                 obd = class_name2obd(lsi->lsi_osd_obdname);
                 LASSERT(obd);
-                rc = obd_connect(NULL, &lsi->lsi_osd_exp, obd, &obd->obd_uuid,
-                                 NULL, NULL);
-                if (rc) {
-                        obd->obd_force = 1;
-                        class_manual_cleanup(obd);
-                        lsi->lsi_dt_dev = NULL;
-                }
         }
+
+        rc = obd_connect(NULL, &lsi->lsi_osd_exp, obd, &obd->obd_uuid, NULL, NULL);
+        if (rc) {
+                obd->obd_force = 1;
+                class_manual_cleanup(obd);
+                lsi->lsi_dt_dev = NULL;
+        }
+
+out:
         RETURN(rc);
 }
 

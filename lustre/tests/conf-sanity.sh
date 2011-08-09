@@ -1817,11 +1817,16 @@ test_41b() {
         local MDSDEV=$(mdsdevname ${SINGLEMDS//mds/})
 
         start $SINGLEMDS $MDSDEV $MDS_MOUNT_OPTS -o nosvc -n
+        # pass writeconf as corresponding flag is cleared
+        # in mountdata file on MGS mount (by mount.lustre utility)
+        start $SINGLEMDS $MDSDEV $MDS_MOUNT_OPTS -o nomgs,force,writeconf
         start_ost
-        start $SINGLEMDS $MDSDEV $MDS_MOUNT_OPTS -o nomgs,force
         mkdir -p $MOUNT
         mount_client $MOUNT || return 1
         sleep 5
+
+        # start() didn't cleared WC after reformat(), do this manually
+        writeclean_all
 
         echo "blah blah" > $MOUNT/$tfile
         cat $MOUNT/$tfile || return 200
