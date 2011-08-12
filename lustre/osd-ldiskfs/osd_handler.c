@@ -946,19 +946,6 @@ static void osd_conf_get(const struct lu_env *env,
 
 }
 
-/**
- * Helper function to get and fill the buffer with input values.
- */
-static struct lu_buf *osd_buf_get(const struct lu_env *env, void *area, ssize_t len)
-{
-        struct lu_buf *buf;
-
-        buf = &osd_oti_get(env)->oti_buf;
-        buf->lb_buf = area;
-        buf->lb_len = len;
-        return buf;
-}
-
 /*
  * Concurrency: shouldn't matter.
  */
@@ -2032,30 +2019,6 @@ static int __osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
 }
 
 /**
- * Put the fid into lustre_mdt_attrs, and then place the structure
- * inode's ea. This fid should not be altered during the life time
- * of the inode.
- *
- * \retval +ve, on success
- * \retval -ve, on error
- *
- * FIXME: It is good to have/use ldiskfs_xattr_set_handle() here
- */
-static int osd_ea_fid_set(const struct lu_env *env, struct dt_object *dt,
-                          const struct lu_fid *fid)
-{
-        struct osd_thread_info  *info      = osd_oti_get(env);
-        struct lustre_mdt_attrs *mdt_attrs = &info->oti_mdt_attrs;
-
-        lustre_lma_init(mdt_attrs, fid);
-        lustre_lma_swab(mdt_attrs);
-        return __osd_xattr_set(env, dt,
-                               osd_buf_get(env, mdt_attrs, sizeof *mdt_attrs),
-                               XATTR_NAME_LMA, LU_XATTR_CREATE);
-
-}
-
-/**
  * Helper function to form igif
  */
 static inline void osd_igif_get(const struct lu_env *env, struct inode  *inode,
@@ -2170,10 +2133,6 @@ static int osd_object_ea_create(const struct lu_env *env, struct dt_object *dt,
         OSD_EXEC_OP(th, create);
 
         result = __osd_object_create(info, obj, attr, hint, dof, th);
-        /* objects under osd root shld have igif fid, so dont add fid EA */
-        if (result == 0 && !fid_is_igif(fid))
-                result = osd_ea_fid_set(env, dt, fid);
-
         if (result == 0)
                 result = __osd_oi_insert(env, obj, fid, th);
 

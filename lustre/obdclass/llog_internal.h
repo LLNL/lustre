@@ -56,6 +56,7 @@ struct llog_thread_info {
         struct llog_logid        lgi_logid;
         struct dt_object_format  lgi_dof;
         struct llog_process_data lgi_lpd;
+        struct lustre_mdt_attrs  lgi_lma_attr;
 
         struct lu_buf            lgi_buf;
         loff_t                   lgi_off;

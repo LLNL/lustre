@@ -498,8 +498,6 @@ struct osd_thread_info {
         int                    oti_r_locks;
         int                    oti_w_locks;
         int                    oti_txns;
-        /** used in osd_fid_set() to put xattr */
-        struct lu_buf          oti_buf;
         /** used in osd_ea_fid_set() to set fid into common ea */
         struct lustre_mdt_attrs oti_mdt_attrs;
         /** 0-copy IO */
