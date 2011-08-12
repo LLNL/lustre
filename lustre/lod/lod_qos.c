@@ -579,14 +579,15 @@ static int min_stripe_count(int stripe_cnt, int flags)
 
 static int inline lod_qos_dev_is_full(struct obd_statfs *msfs)
 {
-        __u64          used;
+        __u64 used;
+        int   bs = msfs->os_bsize;
 
-        LASSERT(msfs->os_type);
+        LASSERT(((bs - 1) & bs) == 0);
 
-        used = min_t(__u64,(msfs->os_blocks - msfs->os_bfree) >> 10, 1 << 30);
-        if ((msfs->os_bfree < 32) || (msfs->os_bavail < used))
-                return 1;
-        return 0;
+        /* the minimum of 0.1% used blocks and 1GB bytes. */
+        used = min_t(__u64, (msfs->os_blocks - msfs->os_bfree) >> 10,
+                     1 << (31 - cfs_ffs(bs)));
+        return (msfs->os_bavail < used);
 }
 
 /* Allocate objects on osts with round-robin algorithm */
