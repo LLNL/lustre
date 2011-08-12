@@ -996,7 +996,17 @@ void mdd_object_initialize(const struct lu_env *env, const struct lu_fid *pfid,
                            struct lu_attr *attr, struct mdd_thandle *handle,
                            const struct md_op_spec *spec)
 {
+        struct mdd_thread_info  *info = mdd_env_info(env);
+        struct lustre_mdt_attrs *mdt_attrs = &info->mti_mdt_attrs;
         ENTRY;
+
+
+        lustre_lma_init(mdt_attrs, mdo2fid(child));
+        lustre_lma_swab(mdt_attrs);
+        info->mti_mdt_attrs_buf.lb_buf = mdt_attrs;
+        info->mti_mdt_attrs_buf.lb_len = sizeof(*mdt_attrs);
+        mdd_tx_xattr_set(env, child, &info->mti_mdt_attrs_buf,
+                         XATTR_NAME_LMA, LU_XATTR_CREATE, handle);
 
         /*
          * in case of replay we just set LOVEA provided by the client

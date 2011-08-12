@@ -222,6 +222,64 @@ static struct lu_device_type llog_osd_lu_type = {
         .ldt_ops      = &llog_device_type_ops,
 };
 
+static int llog_osd_declare_new_object(const struct lu_env *env,
+                                       struct dt_object *o,
+                                       struct thandle *th)
+{
+        struct llog_thread_info *lgi = llog_info(env);
+        struct dt_object_format *dof = &lgi->lgi_dof;
+        struct lu_attr          *attr = &lgi->lgi_attr;
+        struct lu_buf           *buf = &lgi->lgi_buf;
+        int                     rc;
+        ENTRY;
+
+        attr->la_valid = LA_TYPE | LA_MODE;
+        attr->la_mode = S_IFREG | 0666;
+        dof->dof_type = dt_mode_to_dft(S_IFREG);
+
+
+        rc = dt_declare_create(env, o, attr, NULL, dof, th);
+        if (rc)
+                GOTO(out, rc);
+
+        buf->lb_buf = NULL;
+        buf->lb_len = sizeof(lgi->lgi_lma_attr);
+        rc = dt_declare_xattr_set(env, o, buf, XATTR_NAME_LMA, 0, th);
+
+out:
+        RETURN(rc);
+}
+
+static int llog_osd_create_new_object(const struct lu_env *env,
+                                      struct dt_object *o,
+                                      struct thandle *th)
+{
+        struct llog_thread_info *lgi = llog_info(env);
+        struct dt_object_format *dof = &lgi->lgi_dof;
+        struct lu_attr          *attr = &lgi->lgi_attr;
+        struct lustre_mdt_attrs *lma = &lgi->lgi_lma_attr;
+        struct lu_buf           *buf = &lgi->lgi_buf;
+        int                      rc;
+        ENTRY;
+
+        attr->la_valid = LA_TYPE | LA_MODE;
+        attr->la_mode = S_IFREG | 0666;
+        dof->dof_type = dt_mode_to_dft(S_IFREG);
+
+        rc = dt_create(env, o, attr, NULL, dof, th);
+        if (rc)
+                GOTO(out, rc);
+
+        lustre_lma_init(lma, lu_object_fid(&o->do_lu));
+        lustre_lma_swab(lma);
+        buf->lb_buf = lma;
+        buf->lb_len = sizeof(*lma);
+        rc = dt_xattr_set(env, o, buf, XATTR_NAME_LMA, 0, th, BYPASS_CAPA);
+
+out:
+        RETURN(rc);
+}
+
 static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
                                                struct dt_device *dev,
                                                struct thandle *th)
@@ -273,16 +331,11 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
         if (!dt_object_exists(o)) {
                 LASSERT(th == NULL);
 
-                lgi->lgi_attr.la_valid = LA_TYPE | LA_MODE;
-                lgi->lgi_attr.la_mode = S_IFREG | 0666;
-                lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
-
                 _th = dt_trans_create(env, dev);
                 if (IS_ERR(_th))
                         GOTO(out, lsb = ERR_PTR(PTR_ERR(_th)));
 
-                rc = dt_declare_create(env, o, &lgi->lgi_attr, NULL,
-                                       &lgi->lgi_dof, _th);
+                rc = llog_osd_declare_new_object(env, o, _th);
                 if (rc)
                         GOTO(out_trans, rc);
 
@@ -296,8 +349,7 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
 
                 dt_write_lock(env, o, 0);
                 LASSERT(!dt_object_exists(o));
-                rc = dt_create(env, o, &lgi->lgi_attr, NULL,
-                               &lgi->lgi_dof, _th);
+                rc = llog_osd_create_new_object(env, o, _th);
                 dt_write_unlock(env, o);
                 if (rc)
                         GOTO(out_trans, rc);
@@ -1140,12 +1192,7 @@ static int llog_osd_declare_create(const struct lu_env *env,
         if (dt_object_exists(o))
                 RETURN(0);
 
-        lgi->lgi_attr.la_valid = LA_TYPE | LA_MODE;
-        lgi->lgi_attr.la_mode = S_IFREG | 0666;
-        lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
-
-        rc = dt_declare_create(env, o, &lgi->lgi_attr, NULL,
-                               &lgi->lgi_dof, th);
+        rc = llog_osd_declare_new_object(env, o, th);
         if (rc)
                 RETURN(rc);
 
@@ -1185,16 +1232,11 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
                 RETURN(-EEXIST);
 
         dt_write_lock(env, o, 0);
-        if (!dt_object_exists(o)) {
-                lgi->lgi_attr.la_valid = LA_TYPE | LA_MODE;
-                lgi->lgi_attr.la_mode = S_IFREG | 0666;
-                lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
+        if (!dt_object_exists(o))
 
-                rc = dt_create(env, o, &lgi->lgi_attr, NULL,
-                               &lgi->lgi_dof, th);
-        } else {
+                rc = llog_osd_create_new_object(env, o, th);
+        else
                 rc = -EEXIST;
-        }
         dt_write_unlock(env, o);
         if (rc)
                 RETURN(rc);
@@ -1403,17 +1445,11 @@ int llog_get_cat_list(const struct lu_env *env, struct dt_device *d,
                 RETURN(PTR_ERR(o));
 
         if (!dt_object_exists(o)) {
-                memset(&lgi->lgi_attr, 0, sizeof(lgi->lgi_attr));
-                lgi->lgi_attr.la_valid = LA_MODE;
-                lgi->lgi_attr.la_mode = S_IFREG | 0666;
-                lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
-
                 th = dt_trans_create(env, d);
                 if (IS_ERR(th))
                         GOTO(out, rc = PTR_ERR(th));
 
-                rc = dt_declare_create(env, o, &lgi->lgi_attr, NULL,
-                                       &lgi->lgi_dof, th);
+                rc = llog_osd_declare_new_object(env, o, th);
                 if (rc)
                         GOTO(out_trans, rc);
 
@@ -1423,8 +1459,7 @@ int llog_get_cat_list(const struct lu_env *env, struct dt_device *d,
 
                 dt_write_lock(env, o, 0);
                 if (!dt_object_exists(o))
-                        rc = dt_create(env, o, &lgi->lgi_attr, NULL,
-                                       &lgi->lgi_dof, th);
+                        rc = llog_osd_create_new_object(env, o, th);
                 dt_write_unlock(env, o);
 out_trans:
                 dt_trans_stop(env, d, th);
