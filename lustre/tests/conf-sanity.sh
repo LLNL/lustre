@@ -1523,8 +1523,15 @@ test_35a() { # bug 12459
 run_test 35a "Reconnect to the last active server first"
 
 test_35b() { # bug 18674
-	remote_mds || { skip "local MDS" && return 0; }
+	#remote_mds || { skip "local MDS" && return 0; }
 	setup
+
+	# fast food^Whack: reset timeout on all the node which can get
+	# out of sync due to writeconf in 35a. to be fixed properly
+	# in ORI-278
+	do_facet mgs "$LCTL conf_param $FSNAME.sys.timeout=$TIMEOUT"
+	sleep 5
+	$LCTL get_param timeout
 
 	debugsave
 	$LCTL set_param debug="ha"
