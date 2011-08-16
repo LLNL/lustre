@@ -438,7 +438,7 @@ static int ofd_get_info(struct obd_export *exp, __u32 keylen, void *key,
                         if (*vallen < sizeof(*last_id))
                                 RETURN(-EOVERFLOW);
                         *last_id = ofd_last_id(ofd,
-                                        exp->exp_filter_data.fed_group);
+                                               exp->exp_filter_data.fed_group);
                 }
                 *vallen = sizeof(*last_id);
         } else if (KEY_IS(KEY_FIEMAP)) {
@@ -877,7 +877,8 @@ int ofd_destroy(struct obd_export *exp,
                 fid_ostid_unpack(&info->fti_fid, &oa->o_oi, 0);
                 lrc = ofd_destroy_by_fid(env, ofd, &info->fti_fid, 0);
                 if (lrc == -ENOENT) {
-                        CDEBUG(D_INODE, "destroying non-existent object "LPU64"\n",
+                        CDEBUG(D_INODE,
+                               "destroying non-existent object "LPU64"\n",
                                oa->o_id);
                         /* rewrite rc with -ENOENT only if it is 0 */
                         if (rc == 0)
@@ -890,14 +891,23 @@ int ofd_destroy(struct obd_export *exp,
                 count--;
                 oa->o_id++;
         }
-        /**
-         * If we have at least one transaction then llog record on server will
-         * be removed upon commit, so for rc != 0 we return no transno and
-         * llog record will be reprocessed.
-         */
-        if (rc != 0)
-                info->fti_transno = 0;
 
+        /* if we have transaction then there were some deletions, we don't
+         * need to return ENOENT in that case because it will not wait
+         * for commit of these deletions. The ENOENT must be returned only
+         * if there were no transations.
+         */
+        if (rc == -ENOENT) {
+                if (info->fti_transno != 0)
+                        rc = 0;
+        } else if (rc != 0) {
+                /*
+                 * If we have at least one transaction then llog record
+                 * on server will be removed upon commit, so for rc != 0
+                 * we return no transno and llog record will be reprocessed.
+                 */
+                info->fti_transno = 0;
+        }
         ofd_info2oti(info, oti);
         RETURN(rc);
 }
@@ -984,7 +994,7 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
         }
         /* former ofd_handle_precreate */
         if ((oa->o_valid & OBD_MD_FLFLAGS) &&
-                   (oa->o_flags & OBD_FL_DELORPHAN)){
+            (oa->o_flags & OBD_FL_DELORPHAN)) {
                 /* destroy orphans */
                 if (oti->oti_conn_cnt < exp->exp_conn_cnt) {
                         CERROR("%s: dropping old orphan cleanup request\n",
@@ -1032,10 +1042,10 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
 
                 CDEBUG(D_HA,
                        "%s: reserve %d objects in group "LPU64" at "LPU64"\n",
-                       ofd_obd(ofd)->obd_name, diff, oa->o_seq, next_id - diff);
+                       ofd_obd(ofd)->obd_name, diff, oa->o_seq, next_id);
                 for (i = 0; i < diff; i++) {
                         rc = ofd_precreate_object(env, ofd, next_id + i,
-                                                     oa->o_seq);
+                                                  oa->o_seq);
                         if (rc)
                                 break;
                 }
