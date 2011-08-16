@@ -67,16 +67,20 @@
                        lod->lod_desc[i].ltd_statfs.os_bsize)
 
 
-int qos_add_tgt(struct lod_device *lod, int index)
+int qos_add_tgt(struct lod_device *lod, int index, struct obd_export *exp)
 {
-        struct lov_obd *lov = lod2lov(lod);
+        struct lov_obd     *lov = lod2lov(lod);
         struct lov_qos_oss *oss = NULL, *temposs;
-        int rc = 0, found = 0;
+        int                rc = 0, found = 0;
         ENTRY;
 
         cfs_down_write(&lod->lod_qos.lq_rw_sem);
-#if 0
-        /* XXX: how do we learn configuration here? */ 
+
+        /*
+         * a bit hacky approach to learn NID of corresponding connection
+         * but there is no official API to access information like this
+         * with OSD API.
+         */
         cfs_list_for_each_entry(oss, &lod->lod_qos.lq_oss_list, lqo_oss_list) {
                 if (obd_uuid_equals(&oss->lqo_uuid,
                                     &exp->exp_connection->c_remote_uuid)) {
@@ -84,18 +88,14 @@ int qos_add_tgt(struct lod_device *lod, int index)
                         break;
                 }
         }
-#endif
 
         if (!found) {
                 OBD_ALLOC_PTR(oss);
                 if (!oss)
                         GOTO(out, rc = -ENOMEM);
-#if 0
-                /* XXX: how do we identify OSTs and OSSs? */
                 memcpy(&oss->lqo_uuid,
                        &exp->exp_connection->c_remote_uuid,
                        sizeof(oss->lqo_uuid));
-#endif
         } else {
                 /* Assume we have to move this one */
                 cfs_list_del(&oss->lqo_oss_list);
