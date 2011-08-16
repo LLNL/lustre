@@ -314,7 +314,7 @@ static int lod_xattr_get(const struct lu_env *env, struct dt_object *dt,
         if (rc == -ENODATA && root && !strcmp(XATTR_NAME_LOV, name)) {
                 struct lov_user_md *lum = buf->lb_buf;
                 struct lod_device  *d = lu2lod_dev(dt->do_lu.lo_dev);
-                struct lov_desc    *desc = &(lod2lov(d)->desc);
+                struct lov_desc    *desc = &d->lod_desc;
 
                 LASSERT(dir);
                 rc = sizeof(struct lov_user_md_v1);
@@ -672,7 +672,7 @@ static void lod_ah_init(const struct lu_env *env,
         /*
          * if the parent doesn't provide with specific pattern, grab fs-wide one
          */
-        desc = &(lod2lov(d)->desc);
+        desc = &d->lod_desc;
         if (lc->mbo_stripenr == 0)
                 lc->mbo_stripenr = desc->ld_default_stripe_count;
         if (lc->mbo_stripe_size == 0)

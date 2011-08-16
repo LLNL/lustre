@@ -50,12 +50,17 @@
 #define LOV_USES_DEFAULT_STRIPE         1
 
 #define LOD_MAX_OSTNR                  128  /* XXX: should be dynamic */
-#define LOD_BITMAP_SIZE                (LOD_MAX_OSTNR / sizeof(unsigned long) + 1)
 
 struct lod_ost_desc {
         struct dt_device  *ltd_ost;
         struct obd_export *ltd_exp;
+        struct obd_uuid    ltd_uuid;
+        __u32              ltd_gen;
+        __u32              ltd_index;
         struct ltd_qos     ltd_qos; /* qos info per target */
+        unsigned long      ltd_active:1,/* is this target up for requests */
+                           ltd_activate:1,/* should  target be activated */
+                           ltd_reap:1;  /* should this target be deleted */
         struct obd_statfs  ltd_statfs;
 };
 
@@ -68,11 +73,14 @@ struct lod_device {
         int                   lod_connects;
         int                   lod_recovery_completed;
 
+        /* lov settings descriptor storing static information */
+        struct lov_desc       lod_desc;
+
         /* list of known OSTs, XXX: to be dynamic */
-        struct lod_ost_desc   lod_desc[LOD_MAX_OSTNR];
+        struct lod_ost_desc  *lod_osts;
 
         /* bitmap of OSTs available */
-        unsigned long         lod_ost_bitmap[LOD_BITMAP_SIZE];
+        cfs_bitmap_t         *lod_ost_bitmap;
 
         /* number of known OSTs */
         int                   lod_ostnr;
@@ -80,6 +88,15 @@ struct lod_device {
         /* maximum EA size underlied OSD may have */
         unsigned int          lod_osd_max_easize;
         struct lov_qos        lod_qos; /* qos info per lod */
+
+        /* OST pool data */
+        struct ost_pool       lod_pool_info; /* all OSTs in a packed array */
+        int                   lod_pool_count;
+        cfs_hash_t           *lod_pools_hash_body; /* used for key access */
+        cfs_list_t            lod_pool_list; /* used for sequential access */
+        cfs_proc_dir_entry_t *lod_pool_proc_entry;
+
+        enum lustre_sec_part  lod_sp_me;
 
         cfs_proc_dir_entry_t *lod_symlink;
 };
@@ -139,11 +156,6 @@ static inline struct obd_device *lod2obd(struct lod_device *d)
         return d->lod_dt_dev.dd_lu_dev.ld_obd;
 }
 
-static inline struct lov_obd *lod2lov(struct lod_device *d)
-{
-        return &d->lod_dt_dev.dd_lu_dev.ld_obd->u.lov;
-}
-
 static inline struct lod_device *dt2lod_dev(struct dt_device *d)
 {
         LASSERT(lu_device_is_lod(&d->dd_lu_dev));
@@ -201,10 +213,10 @@ static inline struct lod_thread_info *lod_env_info(const struct lu_env *env)
 }
 
 /* lod_lov.c */
-int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
-                        char *osp, unsigned index, unsigned gen);
-int lod_lov_del_device(const struct lu_env *env, struct lod_device *m,
-                        char *osp, unsigned gen);
+int lod_add_device(const struct lu_env *env, struct lod_device *m,
+                   char *osp, unsigned index, unsigned gen);
+int lod_del_device(const struct lu_env *env, struct lod_device *m,
+                   char *osp, unsigned gen);
 int lod_generate_and_set_lovea(const struct lu_env *env,
                                 struct lod_object *mo,
                                 struct thandle *th);
@@ -225,15 +237,15 @@ int lod_store_def_striping(const struct lu_env *env, struct dt_object *dt,
                            struct thandle *th);
 
 /* lod_pool.c */
-int lov_ost_pool_add(struct ost_pool *op, __u32 idx, unsigned int min_count);
-int lov_ost_pool_extend(struct ost_pool *op, unsigned int min_count);
-struct pool_desc *lov_find_pool(struct lov_obd *lov, char *poolname);
+int lod_ost_pool_add(struct ost_pool *op, __u32 idx, unsigned int min_count);
+int lod_ost_pool_extend(struct ost_pool *op, unsigned int min_count);
+struct pool_desc *lod_find_pool(struct lod_device *lod, char *poolname);
 void lod_pool_putref(struct pool_desc *pool);
-int lov_ost_pool_free(struct ost_pool *op);
+int lod_ost_pool_free(struct ost_pool *op);
 int lod_pool_del(struct obd_device *obd, char *poolname);
-int lov_ost_pool_init(struct ost_pool *op, unsigned int count);
+int lod_ost_pool_init(struct ost_pool *op, unsigned int count);
 extern cfs_hash_ops_t pool_hash_operations;
-int lov_check_index_in_pool(__u32 idx, struct pool_desc *pool);
+int lod_check_index_in_pool(__u32 idx, struct pool_desc *pool);
 int lod_pool_new(struct obd_device *obd, char *poolname);
 int lod_pool_add(struct obd_device *obd, char *poolname, char *ostname);
 int lod_pool_remove(struct obd_device *obd, char *poolname, char *ostname);

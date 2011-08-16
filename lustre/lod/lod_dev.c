@@ -96,7 +96,7 @@ static int lod_process_config(const struct lu_env *env,
                                 GOTO(out, rc = -EINVAL);
                         if (sscanf(lustre_cfg_buf(lcfg, 3), "%d", &gen) != 1)
                                 GOTO(out, rc = -EINVAL);
-                        rc = lod_lov_add_device(env, lod, arg1, index, gen);
+                        rc = lod_add_device(env, lod, arg1, index, gen);
                         break;
                 }
 
@@ -120,10 +120,9 @@ static int lod_process_config(const struct lu_env *env,
                 }
 
                 case LCFG_CLEANUP:
-                        for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                                if (lod->lod_desc[i].ltd_ost == NULL)
-                                        continue;
-                                next = &lod->lod_desc[i].ltd_ost->dd_lu_dev;
+                        cfs_foreach_bit(lod->lod_ost_bitmap, i) {
+                                LASSERT(lod->lod_osts[i].ltd_ost);
+                                next = &lod->lod_osts[i].ltd_ost->dd_lu_dev;
                                 rc = next->ld_ops->ldo_process_config(env,
                                                                       next,
                                                                       lcfg);
@@ -165,10 +164,9 @@ static int lod_recovery_complete(const struct lu_env *env,
 
         rc = next->ld_ops->ldo_recovery_complete(env, next);
 
-        for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                if (lod->lod_desc[i].ltd_ost == NULL)
-                        continue;
-                next = &lod->lod_desc[i].ltd_ost->dd_lu_dev;
+        cfs_foreach_bit(lod->lod_ost_bitmap, i) {
+                LASSERT(lod->lod_osts[i].ltd_ost);
+                next = &lod->lod_osts[i].ltd_ost->dd_lu_dev;
                 rc = next->ld_ops->ldo_recovery_complete(env, next);
                 if (rc)
                         CERROR("can't complete recovery on #%d: %d\n", i, rc);
@@ -246,10 +244,9 @@ static int lod_sync(const struct lu_env *env, struct dt_device *dev)
         int                rc = 0, i;
         ENTRY;
 
-        for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                if (d->lod_desc[i].ltd_ost == NULL)
-                        continue;
-                rc = dt_sync(env, d->lod_desc[i].ltd_ost);
+        cfs_foreach_bit(d->lod_ost_bitmap, i) {
+                LASSERT(d->lod_osts[i].ltd_ost);
+                rc = dt_sync(env, d->lod_osts[i].ltd_ost);
                 if (rc) {
                         CERROR("can't sync %u: %d\n", i, rc);
                         break;
@@ -638,10 +635,9 @@ static int lod_obd_health_check(struct obd_device *obd)
         ENTRY;
 
         LASSERT(d);
-        for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                if (d->lod_desc[i].ltd_ost == NULL)
-                        continue;
-                rc = obd_health_check(d->lod_desc[i].ltd_exp->exp_obd);
+        cfs_foreach_bit(d->lod_ost_bitmap, i) {
+                LASSERT(d->lod_osts[i].ltd_ost);
+                rc = obd_health_check(d->lod_osts[i].ltd_exp->exp_obd);
                 /* one healthy device is enough */
                 if (rc == 0)
                         break;

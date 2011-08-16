@@ -53,6 +53,9 @@
 #include <obd.h>
 #include "lov_internal.h"
 
+#define pool_tgt(_p, _i) \
+                       _p->pool_lobd->u.lov.lov_tgts[_p->pool_obds.op_array[_i]]
+
 static void lov_pool_getref(struct pool_desc *pool)
 {
         CDEBUG(D_INFO, "pool %p\n", pool);
@@ -448,7 +451,7 @@ int lov_pool_new(struct obd_device *obd, char *poolname)
 
         strncpy(new_pool->pool_name, poolname, LOV_MAXPOOLNAME);
         new_pool->pool_name[LOV_MAXPOOLNAME] = '\0';
-        new_pool->pool_lov = lov;
+        new_pool->pool_lobd = obd;
         /* ref count init to 1 because when created a pool is always used
          * up to deletion
          */
@@ -541,7 +544,6 @@ int lov_pool_del(struct obd_device *obd, char *poolname)
         RETURN(0);
 }
 
-
 int lov_pool_add(struct obd_device *obd, char *poolname, char *ostname)
 {
         struct obd_uuid ost_uuid;
@@ -558,7 +560,6 @@ int lov_pool_add(struct obd_device *obd, char *poolname, char *ostname)
                 RETURN(-ENOENT);
 
         obd_str2uuid(&ost_uuid, ostname);
-
 
         /* search ost in lov array */
         obd_getref(obd);
