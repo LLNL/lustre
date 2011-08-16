@@ -244,7 +244,7 @@ int lod_qos_prep_create(const struct lu_env *env, struct lod_object *lo,
 int lod_alloc_replay(const struct lu_env *env, struct lod_object *lo,
                      struct lu_attr *attr, const struct lu_buf *buf,
                      struct thandle *th);
-int qos_add_tgt(struct lod_device*, int);
+int qos_add_tgt(struct lod_device*, int, struct obd_export *);
 int qos_del_tgt(struct lod_device*, int);
 
 /* lproc_lod.c */
