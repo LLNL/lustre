@@ -48,95 +48,7 @@
 
 #include "lod_internal.h"
 
-static int lov_add_target(struct lov_obd *lov, struct obd_device *tgt_obd,
-                          __u32 index, int gen, int active)
-{
-        struct lov_tgt_desc *tgt;
-        int                  rc;
-        ENTRY;
-
-        LASSERT(lov);
-        LASSERT(tgt_obd);
-
-        cfs_mutex_down(&lov->lov_lock);
-
-        if ((index < lov->lov_tgt_size) && (lov->lov_tgts[index] != NULL)) {
-                tgt = lov->lov_tgts[index];
-                CERROR("UUID %s already assigned at LOD target index %d\n",
-                       obd_uuid2str(&tgt->ltd_uuid), index);
-                cfs_mutex_up(&lov->lov_lock);
-                RETURN(-EEXIST);
-        }
-
-        if (index >= lov->lov_tgt_size) {
-                /* We need to reallocate the lov target array. */
-                struct lov_tgt_desc **newtgts, **old = NULL;
-                __u32 newsize, oldsize = 0;
-
-                newsize = max(lov->lov_tgt_size, (__u32)2);
-                while (newsize < index + 1)
-                        newsize = newsize << 1;
-                OBD_ALLOC(newtgts, sizeof(*newtgts) * newsize);
-                if (newtgts == NULL) {
-                        cfs_mutex_up(&lov->lov_lock);
-                        RETURN(-ENOMEM);
-                }
-
-                if (lov->lov_tgt_size) {
-                        memcpy(newtgts, lov->lov_tgts, sizeof(*newtgts) *
-                               lov->lov_tgt_size);
-                        old = lov->lov_tgts;
-                        oldsize = lov->lov_tgt_size;
-                }
-
-                lov->lov_tgts = newtgts;
-                lov->lov_tgt_size = newsize;
-#ifdef __KERNEL__
-                smp_rmb();
-#endif
-                if (old)
-                        OBD_FREE(old, sizeof(*old) * oldsize);
-
-                CDEBUG(D_CONFIG, "tgts: %p size: %d\n",
-                       lov->lov_tgts, lov->lov_tgt_size);
-        }
-
-        OBD_ALLOC_PTR(tgt);
-        if (!tgt) {
-                cfs_mutex_up(&lov->lov_lock);
-                RETURN(-ENOMEM);
-        }
-
-        rc = lov_ost_pool_add(&lov->lov_packed, index, lov->lov_tgt_size);
-        if (rc) {
-                cfs_mutex_up(&lov->lov_lock);
-                OBD_FREE_PTR(tgt);
-                RETURN(rc);
-        }
-
-        memset(tgt, 0, sizeof(*tgt));
-        tgt->ltd_uuid = tgt_obd->u.cli.cl_target_uuid;
-        tgt->ltd_obd = tgt_obd;
-        /* XXX - add a sanity check on the generation number. */
-        tgt->ltd_gen = gen;
-        tgt->ltd_index = index;
-        /* XXX: how do we control active? */
-        tgt->ltd_active = active;
-        tgt->ltd_activate = active;
-        lov->desc.ld_active_tgt_count++;
-        lov->lov_tgts[index] = tgt;
-        if (index >= lov->desc.ld_tgt_count)
-                lov->desc.ld_tgt_count = index + 1;
-
-        cfs_mutex_up(&lov->lov_lock);
-
-        CDEBUG(D_CONFIG, "idx=%d ltd_gen=%d ld_tgt_count=%d\n",
-                index, tgt->ltd_gen, lov->desc.ld_tgt_count);
-
-        RETURN(0);
-}
-
-int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
+int lod_add_device(const struct lu_env *env, struct lod_device *lod,
                        char *osp, unsigned index, unsigned gen)
 {
         struct obd_connect_data *data = NULL;
@@ -183,39 +95,49 @@ int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
         }
 
         LASSERT(obd->obd_lu_dev);
-        LASSERT(obd->obd_lu_dev->ld_site = m->lod_dt_dev.dd_lu_dev.ld_site);
+        LASSERT(obd->obd_lu_dev->ld_site = lod->lod_dt_dev.dd_lu_dev.ld_site);
 
         ldev = obd->obd_lu_dev;
         d = lu2dt_dev(ldev);
 
-        cfs_mutex_down(&m->lod_mutex);
-
-        if (m->lod_desc[index].ltd_ost != NULL) {
-                CERROR("device %d is registered already\n", index);
+        cfs_mutex_down(&lod->lod_mutex);
+        if (cfs_bitmap_check(lod->lod_ost_bitmap, index)) {
+                CERROR("%s: device %d is registered already\n", obd->obd_name,
+                       index);
                 GOTO(out_mutex, rc = -EINVAL);
         }
 
-        rc = lov_add_target(lod2lov(m), obd, index, gen, 1);
+        lod->lod_osts[index].ltd_ost    = d;
+        lod->lod_osts[index].ltd_exp    = exp;
+        lod->lod_osts[index].ltd_uuid   = obd->u.cli.cl_target_uuid;
+        lod->lod_osts[index].ltd_gen    = gen;
+        lod->lod_osts[index].ltd_index  = index;
+        /* XXX: non-active targets not supported yet */
+        lod->lod_osts[index].ltd_active = 1;
+
+        /* XXX: we pass LOD_MAX_OSTNR for now, should be fixed once lod_osts can
+         * grow dynamically */
+        rc = lod_ost_pool_add(&lod->lod_pool_info, index, LOD_MAX_OSTNR);
         if (rc) {
-                CERROR("can't add target: %d\n", rc);
+                CERROR("%s: can't set up pool: %d\n", obd->obd_name, rc);
                 GOTO(out_mutex, rc);
         }
 
-        rc = qos_add_tgt(m, index, exp);
+        rc = qos_add_tgt(lod, index, exp);
         if (rc) {
                 CERROR("%s: qos_add failed, %d\n", obd->obd_name, rc);
-                OBD_FREE_PTR(obd->u.lov.lov_tgts[index]);
                 GOTO(out_mutex, rc);
         }
 
-        m->lod_desc[index].ltd_ost = d;
-        m->lod_desc[index].ltd_exp = exp;
-        m->lod_ostnr++;
-        cfs_set_bit(index, m->lod_ost_bitmap);
-        if (m->lod_recovery_completed)
+        lod->lod_ostnr++;
+        cfs_bitmap_set(lod->lod_ost_bitmap, index);
+        if (index >= lod->lod_desc.ld_tgt_count)
+                lod->lod_desc.ld_tgt_count = index + 1;
+
+        if (lod->lod_recovery_completed)
                 ldev->ld_ops->ldo_recovery_complete(env, ldev);
 out_mutex:
-        cfs_mutex_up(&m->lod_mutex);
+        cfs_mutex_up(&lod->lod_mutex);
         if (rc)
                 obd_disconnect(exp);
 out_free:
@@ -381,8 +303,8 @@ int lod_initialize_objects(const struct lu_env *env, struct lod_object *mo,
                  * is completed. to be changed to -EINVAL
                  */
 
-                LASSERTF(md->lod_desc[idx].ltd_ost, "idx %d\n", idx);
-                nd = &md->lod_desc[idx].ltd_ost->dd_lu_dev;
+                LASSERTF(md->lod_osts[idx].ltd_ost, "idx %d\n", idx);
+                nd = &md->lod_osts[idx].ltd_ost->dd_lu_dev;
 
                 o = lu_object_find_at(env, nd, &info->lti_fid, NULL);
                 if (IS_ERR(o))
@@ -590,14 +512,12 @@ int lod_lov_init(struct lod_device *lod, struct lustre_cfg *lcfg)
         struct lprocfs_static_vars  lvars = { 0 };
         struct obd_device          *obd;
         struct lov_desc            *desc;
-        struct lov_obd             *lov;
         int                         rc;
         ENTRY;
 
         obd = class_name2obd(lustre_cfg_string(lcfg, 0));
         LASSERT(obd != NULL);
         obd->obd_lu_dev = &lod->lod_dt_dev.dd_lu_dev;
-        lov = &obd->u.lov;
 
         if (LUSTRE_CFG_BUFLEN(lcfg, 1) < 1) {
                 CERROR("LOD setup requires a descriptor\n");
@@ -627,14 +547,11 @@ int lod_lov_init(struct lod_device *lod, struct lustre_cfg *lcfg)
         lod_fix_desc(desc);
 
         desc->ld_active_tgt_count = 0;
-        lov->desc = *desc;
-        lov->lov_tgt_size = 0;
+        lod->lod_desc = *desc;
 
-        cfs_sema_init(&lov->lov_lock, 1);
-        cfs_atomic_set(&lov->lov_refcount, 0);
-        lov->lov_sp_me = LUSTRE_SP_CLI;
+        lod->lod_sp_me = LUSTRE_SP_CLI;
 
-
+        /* Set up allocation policy (QoS and RR) */
         CFS_INIT_LIST_HEAD(&lod->lod_qos.lq_oss_list);
         cfs_init_rwsem(&lod->lod_qos.lq_rw_sem);
         lod->lod_qos.lq_dirty = 1;
@@ -650,64 +567,96 @@ int lod_lov_init(struct lod_device *lod, struct lustre_cfg *lcfg)
                 RETURN(-ENOMEM);
         cfs_waitq_init(&lod->lod_qos.lq_statfs_waitq);
 
-        lov->lov_pools_hash_body = cfs_hash_create("POOLS", HASH_POOLS_CUR_BITS,
+        /* Set up OST pool environment */
+        lod->lod_pools_hash_body = cfs_hash_create("POOLS", HASH_POOLS_CUR_BITS,
                                                    HASH_POOLS_MAX_BITS,
                                                    HASH_POOLS_BKT_BITS, 0,
                                                    CFS_HASH_MIN_THETA,
                                                    CFS_HASH_MAX_THETA,
                                                    &pool_hash_operations,
                                                    CFS_HASH_DEFAULT);
-        CFS_INIT_LIST_HEAD(&lov->lov_pool_list);
-        lov->lov_pool_count = 0;
-        rc = lov_ost_pool_init(&lov->lov_packed, 0);
+        if (!lod->lod_pools_hash_body)
+                GOTO(out_statfs, rc = -ENOMEM);
+        CFS_INIT_LIST_HEAD(&lod->lod_pool_list);
+        lod->lod_pool_count = 0;
+        rc = lod_ost_pool_init(&lod->lod_pool_info, 0);
         if (rc)
-                RETURN(rc);
-        rc = lov_ost_pool_init(&lod->lod_qos.lq_rr.lqr_pool, 0);
-        if (rc) {
-                lov_ost_pool_free(&lov->lov_packed);
-                RETURN(rc);
-        }
+                GOTO(out_hash, rc);
+        rc = lod_ost_pool_init(&lod->lod_qos.lq_rr.lqr_pool, 0);
+        if (rc)
+                GOTO(out_pool_info, rc);
+
+        /* Allocate OST array and bitmap */
+        lod->lod_ost_bitmap = CFS_ALLOCATE_BITMAP(LOD_MAX_OSTNR);
+        if (!lod->lod_ost_bitmap)
+                GOTO(out_pool_rr, rc = -ENOMEM);
+        OBD_ALLOC(lod->lod_osts, sizeof(struct lod_ost_desc) * LOD_MAX_OSTNR);
+        if (!lod->lod_osts)
+                GOTO(out_bitmap, rc = -ENOMEM);
 
         lprocfs_lod_init_vars(&lvars);
         lprocfs_obd_setup(obd, lvars.obd_vars);
-#ifdef LPROCFS
-        {
-                int rc;
 
-                rc = lprocfs_seq_create(obd->obd_proc_entry, "target_obd",
-                                        0444, &lod_proc_target_fops, obd);
-                if (rc)
-                        CWARN("Error adding the target_obd file\n");
+#ifdef LPROCFS
+        rc = lprocfs_seq_create(obd->obd_proc_entry, "target_obd",
+                                0444, &lod_proc_target_fops, obd);
+        if (rc) {
+                CWARN("%s: Error adding the target_obd file %d\n",
+                      obd->obd_name, rc);
+                GOTO(out_array, rc);
         }
-#endif
-        lov->lov_pool_proc_entry = lprocfs_register("pools",
+        lod->lod_pool_proc_entry = lprocfs_register("pools",
                                                     obd->obd_proc_entry,
                                                     NULL, NULL);
-        RETURN(rc);
+        if (IS_ERR(lod->lod_pool_proc_entry)) {
+                int ret = PTR_ERR(lod->lod_pool_proc_entry);
+                lod->lod_pool_proc_entry = NULL;
+                CWARN("%s: Failed to create pool proc file %d\n", obd->obd_name,
+                      ret);
+                rc = lod_lov_fini(lod);
+                RETURN(ret);
+        }
+#endif
+
+        RETURN(0);
+
+out_array:
+        lprocfs_obd_cleanup(obd);
+        OBD_FREE(lod->lod_osts, sizeof(struct lod_ost_desc) * LOD_MAX_OSTNR);
+out_bitmap:
+        CFS_FREE_BITMAP(lod->lod_ost_bitmap);
+out_pool_rr:
+        lod_ost_pool_free(&lod->lod_qos.lq_rr.lqr_pool);
+out_pool_info:
+        lod_ost_pool_free(&lod->lod_pool_info);
+out_hash:
+        cfs_hash_putref(lod->lod_pools_hash_body);
+out_statfs:
+        OBD_FREE_PTR(lod->lod_qos.lq_statfs_data);
+        return rc;
 }
 
 int lod_lov_fini(struct lod_device *lod)
 {
         struct obd_device   *obd = lod2obd(lod);
-        struct lov_obd      *lov = &obd->u.lov;
         cfs_list_t          *pos, *tmp;
         struct pool_desc    *pool;
         struct obd_export   *exp;
         int                  i, rc;
         ENTRY;
 
-        cfs_list_for_each_safe(pos, tmp, &lov->lov_pool_list) {
+        cfs_list_for_each_safe(pos, tmp, &lod->lod_pool_list) {
                 pool = cfs_list_entry(pos, struct pool_desc, pool_list);
                 /* free pool structs */
                 CDEBUG(D_INFO, "delete pool %p\n", pool);
                 lod_pool_del(obd, pool->pool_name);
         }
-        cfs_hash_putref(lov->lov_pools_hash_body);
-        lov_ost_pool_free(&(lod->lod_qos.lq_rr.lqr_pool));
-        lov_ost_pool_free(&lov->lov_packed);
+        cfs_hash_putref(lod->lod_pools_hash_body);
+        lod_ost_pool_free(&(lod->lod_qos.lq_rr.lqr_pool));
+        lod_ost_pool_free(&lod->lod_pool_info);
 
-        for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                exp = lod->lod_desc[i].ltd_exp;
+        cfs_foreach_bit(lod->lod_ost_bitmap, i) {
+                exp = lod->lod_osts[i].ltd_exp;
                 if (exp == NULL)
                         continue;
 
@@ -717,22 +666,19 @@ int lod_lov_fini(struct lod_device *lod)
                 rc = obd_disconnect(exp);
                 if (rc)
                         CERROR("error in disconnect from #%u: %d\n", i, rc);
-
-                if (lov->lov_tgts && lov->lov_tgts[i])
-                        OBD_FREE_PTR(lov->lov_tgts[i]);
-        }
- 
-        if (lov->lov_tgts) {
-                OBD_FREE(lov->lov_tgts, sizeof(*lov->lov_tgts) *
-                         lov->lov_tgt_size);
-                lov->lov_tgt_size = 0;
         }
 
-        /* clear pools parent proc entry only after all pools is killed */
+        /* clear pools parent proc entry only after all pools are killed */
+        if (lod->lod_pool_proc_entry) {
+                lprocfs_remove(&lod->lod_pool_proc_entry);
+                lod->lod_pool_proc_entry = NULL;
+        }
+
         lprocfs_obd_cleanup(obd);
 
         OBD_FREE_PTR(lod->lod_qos.lq_statfs_data);
+        CFS_FREE_BITMAP(lod->lod_ost_bitmap);
+        OBD_FREE(lod->lod_osts, sizeof(struct lod_ost_desc) * LOD_MAX_OSTNR);
 
         RETURN(0);
 }
-

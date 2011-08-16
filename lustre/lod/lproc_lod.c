@@ -45,31 +45,32 @@
 static int lod_rd_stripesize(char *page, char **start, off_t off, int count,
                              int *eof, void *data)
 {
-        struct obd_device *dev = (struct obd_device *)data;
-        struct lov_desc *desc;
+        struct obd_device *dev  = (struct obd_device *)data;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
-        return snprintf(page, count, LPU64"\n", desc->ld_default_stripe_size);
+        return snprintf(page, count, LPU64"\n",
+                        lod->lod_desc.ld_default_stripe_size);
 }
 
 static int lod_wr_stripesize(struct file *file, const char *buffer,
-                               unsigned long count, void *data)
+                             unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
         __u64 val;
         int rc;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         rc = lprocfs_write_u64_helper(buffer, count, &val);
         if (rc)
                 return rc;
 
         lod_fix_desc_stripe_size(&val);
-        desc->ld_default_stripe_size = val;
+        lod->lod_desc.ld_default_stripe_size = val;
         return count;
 }
 
@@ -77,59 +78,60 @@ static int lod_rd_stripeoffset(char *page, char **start, off_t off, int count,
                                int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
-        return snprintf(page, count, LPU64"\n", desc->ld_default_stripe_offset);
+        return snprintf(page, count, LPU64"\n",
+                        lod->lod_desc.ld_default_stripe_offset);
 }
 
 static int lod_wr_stripeoffset(struct file *file, const char *buffer,
                                unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
         __u64 val;
         int rc;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         rc = lprocfs_write_u64_helper(buffer, count, &val);
         if (rc)
                 return rc;
 
-        desc->ld_default_stripe_offset = val;
+        lod->lod_desc.ld_default_stripe_offset = val;
         return count;
 }
 
 static int lod_rd_stripetype(char *page, char **start, off_t off, int count,
                              int *eof, void *data)
 {
-        struct obd_device* dev = (struct obd_device*)data;
-        struct lov_desc *desc;
+        struct obd_device *dev = (struct obd_device*)data;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
-        return snprintf(page, count, "%u\n", desc->ld_pattern);
+        return snprintf(page, count, "%u\n", lod->lod_desc.ld_pattern);
 }
 
 static int lod_wr_stripetype(struct file *file, const char *buffer,
                              unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
         int val, rc;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
                 return rc;
 
         lod_fix_desc_pattern(&val);
-        desc->ld_pattern = val;
+        lod->lod_desc.ld_pattern = val;
         return count;
 }
 
@@ -137,30 +139,30 @@ static int lod_rd_stripecount(char *page, char **start, off_t off, int count,
                               int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
         return snprintf(page, count, "%d\n",
-                        (__s16)(desc->ld_default_stripe_count + 1) - 1);
+                        (__s16)(lod->lod_desc.ld_default_stripe_count + 1) -1);
 }
 
 static int lod_wr_stripecount(struct file *file, const char *buffer,
                               unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
         int val, rc;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
                 return rc;
 
         lod_fix_desc_stripe_count(&val);
-        desc->ld_default_stripe_count = val;
+        lod->lod_desc.ld_default_stripe_count = val;
         return count;
 }
 
@@ -168,12 +170,12 @@ static int lod_rd_numobd(char *page, char **start, off_t off, int count,
                          int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device*)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
-        return snprintf(page, count, "%u\n", desc->ld_tgt_count);
+        return snprintf(page, count, "%u\n", lod->lod_desc.ld_tgt_count);
 
 }
 
@@ -181,27 +183,28 @@ static int lod_rd_activeobd(char *page, char **start, off_t off, int count,
                             int *eof, void *data)
 {
         struct obd_device* dev = (struct obd_device*)data;
-        struct lov_desc *desc;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        desc = &dev->u.lov.desc;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
-        return snprintf(page, count, "%u\n", desc->ld_active_tgt_count);
+        return snprintf(page, count, "%u\n",
+                        lod->lod_desc.ld_active_tgt_count);
 }
 
 static int lod_rd_desc_uuid(char *page, char **start, off_t off, int count,
                             int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device*) data;
-        struct lov_obd *lov;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        lov = &dev->u.lov;
+        lod  = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
-        return snprintf(page, count, "%s\n", lov->desc.ld_uuid.uuid);
+        return snprintf(page, count, "%s\n", lod->lod_desc.ld_uuid.uuid);
 }
 
-/* free priority (0-255): how badly user wants to choose empty osts */ 
+/* free priority (0-255): how badly user wants to choose empty osts */
 static int lod_rd_qos_priofree(char *page, char **start, off_t off, int count,
                                int *eof, void *data)
 {
@@ -210,7 +213,7 @@ static int lod_rd_qos_priofree(char *page, char **start, off_t off, int count,
 
         LASSERT(lod != NULL);
         *eof = 1;
-        return snprintf(page, count, "%d%%\n", 
+        return snprintf(page, count, "%d%%\n",
                         (lod->lod_qos.lq_prio_free * 100) >> 8);
 }
 
@@ -218,9 +221,11 @@ static int lod_wr_qos_priofree(struct file *file, const char *buffer,
                                unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
+        struct lod_device *lod;
         int val, rc;
+
         LASSERT(dev != NULL);
+        lod = lu2lod_dev(dev->obd_lu_dev);
 
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
@@ -238,9 +243,10 @@ static int lod_rd_qos_thresholdrr(char *page, char **start, off_t off,
                                   int count, int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device*) data;
-        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
+        lod = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
         return snprintf(page, count, "%d%%\n",
                         (lod->lod_qos.lq_threshold_rr * 100) >> 8);
@@ -250,9 +256,11 @@ static int lod_wr_qos_thresholdrr(struct file *file, const char *buffer,
                                   unsigned long count, void *data)
 {
         struct obd_device *dev = (struct obd_device *)data;
-        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
+        struct lod_device *lod;
         int val, rc;
+
         LASSERT(dev != NULL);
+        lod = lu2lod_dev(dev->obd_lu_dev);
 
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
@@ -270,12 +278,12 @@ static int lod_rd_qos_maxage(char *page, char **start, off_t off, int count,
                              int *eof, void *data)
 {
         struct obd_device *dev = (struct obd_device*) data;
-        struct lov_obd *lov;
+        struct lod_device *lod;
 
         LASSERT(dev != NULL);
-        lov = &dev->u.lov;
+        lod = lu2lod_dev(dev->obd_lu_dev);
         *eof = 1;
-        return snprintf(page, count, "%u Sec\n", lov->desc.ld_qos_maxage);
+        return snprintf(page, count, "%u Sec\n", lod->lod_desc.ld_qos_maxage);
 }
 
 static int lod_wr_qos_maxage(struct file *file, const char *buffer,
@@ -283,36 +291,32 @@ static int lod_wr_qos_maxage(struct file *file, const char *buffer,
 {
         struct obd_device      *dev = (struct obd_device *)data;
         struct lustre_cfg_bufs  bufs;
-        struct lov_obd         *lov;
+        struct lod_device      *lod;
         struct lu_device       *next;
-        struct lod_device      *d;
         struct lustre_cfg      *lcfg;
         char                    str[32];
         int                     val, rc, i;
 
         LASSERT(dev != NULL);
-        d = lu2lod_dev(dev->obd_lu_dev);
+        lod = lu2lod_dev(dev->obd_lu_dev);
 
-        lov = &dev->u.lov;
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
                 return rc;
 
         if (val <= 0)
                 return -EINVAL;
-        lov->desc.ld_qos_maxage = val;
+        lod->lod_desc.ld_qos_maxage = val;
 
         /*
          * propogate the value down to OSPs
          */
         lustre_cfg_bufs_reset(&bufs, NULL);
-        sprintf(str, "%smaxage=%d", PARAM_OSP, val); 
+        sprintf(str, "%smaxage=%d", PARAM_OSP, val);
         lustre_cfg_bufs_set_string(&bufs, 1, str);
         lcfg = lustre_cfg_new(LCFG_PARAM, &bufs);
-        for (i = 0; i < LOD_MAX_OSTNR; i++) {
-                if (d->lod_desc[i].ltd_ost == NULL)
-                        continue;
-                next = &d->lod_desc[i].ltd_ost->dd_lu_dev;
+        cfs_foreach_bit(lod->lod_ost_bitmap, i) {
+                next = &lod->lod_osts[i].ltd_ost->dd_lu_dev;
                 rc = next->ld_ops->ldo_process_config(NULL, next, lcfg);
                 if (rc)
                         CERROR("can't set maxage on #%d: %d\n", i, rc);
@@ -322,51 +326,60 @@ static int lod_wr_qos_maxage(struct file *file, const char *buffer,
         return count;
 }
 
-static void *lod_tgt_seq_start(struct seq_file *p, loff_t *pos)
+static void *lod_osts_seq_start(struct seq_file *p, loff_t *pos)
 {
         struct obd_device *dev = p->private;
-        struct lov_obd *lov = &dev->u.lov;
+        struct lod_device *lod;
 
-        while (*pos < lov->desc.ld_tgt_count) {
-                if (lov->lov_tgts[*pos])
-                        return lov->lov_tgts[*pos];
-                ++*pos;
-        }
-        return NULL;
+        LASSERT(dev != NULL);
+        lod = lu2lod_dev(dev->obd_lu_dev);
+
+        if (*pos >= lod->lod_ost_bitmap->size)
+                return NULL;
+        if (cfs_bitmap_check(lod->lod_ost_bitmap, *pos))
+                return &lod->lod_osts[*pos];
+        *pos = cfs_find_next_bit(lod->lod_ost_bitmap->data,
+                                 lod->lod_ost_bitmap->size, *pos);
+        if (*pos < lod->lod_ost_bitmap->size)
+                return &lod->lod_osts[*pos];
+        else
+                return NULL;
 }
 
-static void lod_tgt_seq_stop(struct seq_file *p, void *v)
+static void lod_osts_seq_stop(struct seq_file *p, void *v)
 {
 }
 
-static void *lod_tgt_seq_next(struct seq_file *p, void *v, loff_t *pos)
+static void *lod_osts_seq_next(struct seq_file *p, void *v, loff_t *pos)
 {
         struct obd_device *dev = p->private;
-        struct lov_obd *lov = &dev->u.lov;
+        struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
 
-        while (++*pos < lov->desc.ld_tgt_count) {
-                if (lov->lov_tgts[*pos])
-                        return lov->lov_tgts[*pos];
-        }
-        return NULL;
+        if (*pos >= lod->lod_ost_bitmap->size - 1)
+                return NULL;
+
+        *pos = cfs_find_next_bit(lod->lod_ost_bitmap->data,
+                                 lod->lod_ost_bitmap->size, *pos);
+        if (*pos < lod->lod_ost_bitmap->size)
+                return &lod->lod_osts[*pos];
+        else
+                return NULL;
 }
 
-static int lod_tgt_seq_show(struct seq_file *p, void *v)
+static int lod_osts_seq_show(struct seq_file *p, void *v)
 {
         struct obd_device   *obd = p->private;
-        struct lov_tgt_desc *tgt = v;
-        struct lov_obd      *lov;
-        struct lod_device   *d;
+        struct lod_ost_desc *ost_desc = v;
+        struct lod_device   *lod;
         int                  idx, rc;
         struct dt_device    *next;
         struct obd_statfs    sfs;
 
         LASSERT(obd->obd_lu_dev);
-        d = lu2lod_dev(obd->obd_lu_dev);
-        lov = &obd->u.lov;
+        lod = lu2lod_dev(obd->obd_lu_dev);
 
-        idx = tgt->ltd_index;
-        next = d->lod_desc[idx].ltd_ost;
+        idx = ost_desc->ltd_index;
+        next = lod->lod_osts[idx].ltd_ost;
         if (next == NULL)
                 return -EINVAL;
 
@@ -375,27 +388,26 @@ static int lod_tgt_seq_show(struct seq_file *p, void *v)
         if (rc)
                 return rc;
 
-        tgt = lov->lov_tgts[idx];
         return seq_printf(p, "%d: %s %sACTIVE\n", idx,
-                          obd_uuid2str(&tgt->ltd_uuid), 
+                          obd_uuid2str(&ost_desc->ltd_uuid),
                           sfs.os_blocks > 0 ? "" : "IN");
 }
 
-struct seq_operations lod_tgt_sops = {
-        .start = lod_tgt_seq_start,
-        .stop = lod_tgt_seq_stop,
-        .next = lod_tgt_seq_next,
-        .show = lod_tgt_seq_show,
+struct seq_operations lod_osts_sops = {
+        .start = lod_osts_seq_start,
+        .stop = lod_osts_seq_stop,
+        .next = lod_osts_seq_next,
+        .show = lod_osts_seq_show,
 };
 
-static int lod_target_seq_open(struct inode *inode, struct file *file)
+static int lod_osts_seq_open(struct inode *inode, struct file *file)
 {
         struct proc_dir_entry *dp = PDE(inode);
         struct seq_file *seq;
         int rc;
 
         LPROCFS_ENTRY_AND_CHECK(dp);
-        rc = seq_open(file, &lod_tgt_sops);
+        rc = seq_open(file, &lod_osts_sops);
         if (rc) {
                 LPROCFS_EXIT();
                 return rc;
@@ -441,7 +453,7 @@ void lprocfs_lod_init_vars(struct lprocfs_static_vars *lvars)
 
 struct file_operations lod_proc_target_fops = {
         .owner   = THIS_MODULE,
-        .open    = lod_target_seq_open,
+        .open    = lod_osts_seq_open,
         .read    = seq_read,
         .llseek  = seq_lseek,
         .release = lprocfs_seq_release,
