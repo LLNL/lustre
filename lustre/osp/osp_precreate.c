@@ -311,28 +311,27 @@ out_req:
 /**
  * claims connection is originated by MDS
  */
-static int osp_precreate_connection_from_mds(struct osp_device *d)
+static int osp_get_ost_lastid(struct osp_device *d)
 {
         struct ptlrpc_request  *req = NULL;
         struct obd_import      *imp;
         char                   *tmp;
-        int                     rc, group;
+        int                     rc;
+        obd_id                 *last_id;
         ENTRY;
 
         imp = d->opd_obd->u.cli.cl_import;
         LASSERT(imp);
 
-        req = ptlrpc_request_alloc(imp, &RQF_OBD_SET_INFO);
+        req = ptlrpc_request_alloc(imp, &RQF_OST_GET_INFO_LAST_ID);
         if (req == NULL) {
                 CERROR("can't allocate request\n");
                 RETURN(-ENOMEM);
         }
 
         req_capsule_set_size(&req->rq_pill, &RMF_SETINFO_KEY,
-                             RCL_CLIENT, sizeof(KEY_MDS_CONN));
-        req_capsule_set_size(&req->rq_pill, &RMF_SETINFO_VAL,
-                             RCL_CLIENT, sizeof(group));
-        rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_SET_INFO);
+                             RCL_CLIENT, sizeof(KEY_LAST_ID));
+        rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_GET_INFO);
         if (rc) {
                 ptlrpc_request_free(req);
                 CERROR("can't pack request\n");
@@ -340,99 +339,40 @@ static int osp_precreate_connection_from_mds(struct osp_device *d)
         }
 
         tmp = req_capsule_client_get(&req->rq_pill, &RMF_SETINFO_KEY);
-        memcpy(tmp, KEY_MDS_CONN, sizeof(KEY_MDS_CONN));
-        group = FID_SEQ_OST_MDT0; /* XXX: what about CMD? */
-        tmp = req_capsule_client_get(&req->rq_pill, &RMF_SETINFO_VAL);
-        memcpy(tmp, &group, sizeof(group));
+        memcpy(tmp, KEY_LAST_ID, sizeof(KEY_LAST_ID));
 
         ptlrpc_request_set_replen(req);
 
         rc = ptlrpc_queue_wait(req);
         LASSERT(req->rq_transno == 0);
-
-        ptlrpc_req_finished(req);
-
-        RETURN(rc);
-}
-
-/**
- * asks OST to clean precreate orphans
- * and gets next id for new objects
- */
-static int osp_precreate_cleanup_orphans(struct osp_device *d)
-{
-        struct ptlrpc_request  *req = NULL;
-        struct obd_import      *imp;
-        struct ost_body        *body;
-        int                     rc;
-        ENTRY;
-
-        LASSERT(d->opd_recovery_completed);
-        LASSERT(d->opd_pre_reserved == 0);
-
-        imp = d->opd_obd->u.cli.cl_import;
-        LASSERT(imp);
-
-        req = ptlrpc_request_alloc(imp, &RQF_OST_CREATE);
-        if (req == NULL)
-                RETURN(-ENOMEM);
-
-        rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_CREATE);
         if (rc) {
-                ptlrpc_request_free(req);
-                RETURN(rc);
+                CERROR("Failed to get lastid\n");
+                GOTO(out_req, rc);
         }
 
-        body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
-        if (body == NULL)
-                GOTO(out_req, rc = -EPROTO);
-
-        body->oa.o_flags = OBD_FL_DELORPHAN;
-        body->oa.o_valid = OBD_MD_FLFLAGS | OBD_MD_FLGROUP;
-        body->oa.o_seq = FID_SEQ_OST_MDT0; /* XXX: CMD support? */
-
-        /* remove from NEXT after used one */
-        body->oa.o_id = d->opd_last_used_id + 1;
-
-        ptlrpc_request_set_replen(req);
-
-        /* Don't resend the delorphan req */
-        req->rq_no_resend = req->rq_no_delay = 1;
-
-        rc = ptlrpc_queue_wait(req);
-        if (rc)
-                GOTO(out_req, rc);
-
-        LASSERT(req->rq_transno == 0);
-
-        body = req_capsule_server_get(&req->rq_pill, &RMF_OST_BODY);
-        if (body == NULL)
-                GOTO(out_req, rc = -EPROTO);
-
-        /*
-         * OST provides us with id new pool starts from, grab it
-         */
-        CDEBUG(D_HA, "got next id %lu\n", (unsigned long) body->oa.o_id);
+        last_id = req_capsule_server_get(&req->rq_pill, &RMF_OBD_ID);
+        LASSERTF(*last_id >= d->opd_pre_last_created - 1,
+                 "last_id from OST is "LPU64", local last id is "LPU64"\n",
+                 *last_id + 1, d->opd_pre_last_created);
 
         cfs_spin_lock(&d->opd_pre_lock);
-        d->opd_pre_next = body->oa.o_id + 1;
-        /* nothing precreated yet, the pool is empty */
-        d->opd_pre_last_created = d->opd_pre_next;
-        d->opd_pre_grow_count = OST_MIN_PRECREATE;
+        if (d->opd_last_used_id > *last_id) {
+                d->opd_pre_grow_count = OST_MIN_PRECREATE - *last_id +
+                                        d->opd_last_used_id;
+                d->opd_pre_last_created = d->opd_last_used_id + 1;
+        } else {
+                d->opd_pre_grow_count = OST_MIN_PRECREATE;
+                d->opd_pre_last_created = *last_id + 1;
+        }
+        d->opd_pre_next = d->opd_pre_last_created;
         d->opd_pre_grow_slow = 0;
         cfs_spin_unlock(&d->opd_pre_lock);
 
-        /* now we can wakeup all users awaiting for objects */
-        osp_pre_update_status(d, rc);
-        cfs_waitq_signal(&d->opd_pre_user_waitq);
-
+        CDEBUG(D_INFO,
+               "Got last_id "LPU64" from OST, last_used is "LPU64"\n",
+               d->opd_pre_last_created, d->opd_last_used_id);
 out_req:
         ptlrpc_req_finished(req);
-        /*
-         * XXX: how do we do if orphan cleanup failed? deactivate import?
-         * Can we write orphan gap in ids to the unlink llog like for gaps in
-         * transactions?
-         */
         RETURN(rc);
 }
 
@@ -524,7 +464,7 @@ static int osp_precreate_thread(void *_arg)
                         /* got connected, let's initialize connection */
                         d->opd_new_connection = 0;
                         d->opd_got_disconnected = 0;
-                        rc = osp_precreate_connection_from_mds(d);
+                        rc = osp_get_ost_lastid(d);
 
                         /* if initialization went well, move on */
                         if (rc == 0)
@@ -547,11 +487,9 @@ static int osp_precreate_thread(void *_arg)
                              d->opd_got_disconnected, &lwi);
 
                 if (osp_precreate_running(d) && !d->opd_got_disconnected) {
-                        rc = osp_precreate_cleanup_orphans(d);
-                        if (rc) {
-                                /* XXX: error handling? */
-                                CERROR("can't cleanup orphans: %d\n", rc);
-                        }
+                        /* now we can wakeup all users awaiting for objects */
+                        osp_pre_update_status(d, 0);
+                        cfs_waitq_signal(&d->opd_pre_user_waitq);
                 }
 
                 /*
