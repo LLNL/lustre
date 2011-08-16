@@ -201,7 +201,7 @@ int lod_lov_add_device(const struct lu_env *env, struct lod_device *m,
                 GOTO(out_mutex, rc);
         }
 
-        rc = qos_add_tgt(m, index);
+        rc = qos_add_tgt(m, index, exp);
         if (rc) {
                 CERROR("%s: qos_add failed, %d\n", obd->obd_name, rc);
                 OBD_FREE_PTR(obd->u.lov.lov_tgts[index]);
