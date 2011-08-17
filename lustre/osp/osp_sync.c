@@ -317,10 +317,22 @@ int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
 static void osp_sync_request_commit_cb(struct ptlrpc_request *req)
 {
         struct osp_device *d = req->rq_cb_data;
+        struct obd_import *imp = req->rq_import;
 
         CDEBUG(D_HA, "commit req %p, transno %u\n", req, (unsigned) req->rq_transno);
+
         if (unlikely(req->rq_transno == 0))
                 return;
+
+        /* import is being shutted down, this is not real commit */
+        if (req->rq_import_generation < imp->imp_generation) {
+                LASSERT(d->opd_syn_rpc_in_progress > 0);
+                cfs_spin_lock(&d->opd_syn_lock);
+                d->opd_syn_rpc_in_progress--;
+                cfs_spin_unlock(&d->opd_syn_lock);
+
+                return;
+        }
 
         /* XXX: what if request isn't committed for very long? */
         LASSERT(d);
@@ -369,11 +381,15 @@ static int osp_sync_interpret(const struct lu_env *env,
 
                 cfs_waitq_signal(&d->opd_syn_waitq);
         } else if (rc) {
+                struct obd_import *imp = req->rq_import;
                 /*
                  * error happened, we'll try to repeat on next boot ?
                  */
-                LASSERTF(req->rq_transno == 0, "transno %Lu, rc %d\n",
-                         req->rq_transno, rc);
+                LASSERTF(req->rq_transno == 0 ||
+                         req->rq_import_generation < imp->imp_generation,
+                         "transno %Lu, rc %d, gen: req %d, imp %d\n",
+                         req->rq_transno, rc, req->rq_import_generation,
+                         imp->imp_generation);
                 LASSERT(d->opd_syn_rpc_in_progress > 0);
                 cfs_spin_lock(&d->opd_syn_lock);
                 d->opd_syn_rpc_in_progress--;
