@@ -79,6 +79,7 @@ static int osp_statfs_interpret(const struct lu_env *env,
                                 struct ptlrpc_request *req,
                                 union ptlrpc_async_args *aa, int rc)
 {
+        struct obd_import *imp = req->rq_import;
         struct obd_statfs *msfs;
         struct osp_device *d;
         ENTRY;
@@ -109,7 +110,8 @@ static int osp_statfs_interpret(const struct lu_env *env,
 out:
         /* couldn't update statfs, try again as soon as possible */
         cfs_waitq_signal(&d->opd_pre_waitq);
-        CERROR("couldn't update statfs: %d\n", rc);
+        if (req->rq_import_generation == imp->imp_generation)
+                CERROR("couldn't update statfs: %d\n", rc);
         RETURN(rc);
 }
 
