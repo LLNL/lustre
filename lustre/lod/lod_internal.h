@@ -49,19 +49,18 @@
 #define LOV_USES_ASSIGNED_STRIPE        0
 #define LOV_USES_DEFAULT_STRIPE         1
 
-#define LOD_MAX_OSTNR                  128  /* XXX: should be dynamic */
-
 struct lod_ost_desc {
         struct dt_device  *ltd_ost;
+        struct list_head   ltd_kill;
         struct obd_export *ltd_exp;
         struct obd_uuid    ltd_uuid;
         __u32              ltd_gen;
         __u32              ltd_index;
         struct ltd_qos     ltd_qos; /* qos info per target */
+        struct obd_statfs  ltd_statfs;
         unsigned long      ltd_active:1,/* is this target up for requests */
                            ltd_activate:1,/* should  target be activated */
                            ltd_reap:1;  /* should this target be deleted */
-        struct obd_statfs  ltd_statfs;
 };
 
 struct lod_device {
@@ -76,15 +75,24 @@ struct lod_device {
         /* lov settings descriptor storing static information */
         struct lov_desc       lod_desc;
 
-        /* list of known OSTs, XXX: to be dynamic */
-        struct lod_ost_desc  *lod_osts;
-
+        /* list of known OSTs */
+        struct lod_ost_desc **lod_osts;
+        /* Size of the lod_osts array, granted to be a power of 2 */
+        __u32                 lod_osts_size;
+        /* number of registered OSTs */
+        int                   lod_ostnr;
+        /* OSTs scheduled to be deleted */
+        __u32                 lod_death_row;
         /* bitmap of OSTs available */
         cfs_bitmap_t         *lod_ost_bitmap;
+        /* Table refcount used for delayed deletion */
+        int                  lod_refcount;
+        /* mutex to serialize concurrent updates to the ost table */
+        cfs_mutex_t          lod_mutex;
+        /* read/write semaphore used for array relocation */
+        cfs_rw_semaphore_t   lod_rw_sem;
 
-        /* number of known OSTs */
-        int                   lod_ostnr;
-        cfs_semaphore_t       lod_mutex;
+        /* QoS info per LOD */
         struct lov_qos        lod_qos; /* qos info per lod */
 
         /* OST pool data */
@@ -122,8 +130,6 @@ struct lod_object {
 };
 
 struct lod_thread_info {
-        /* array of OSTs selected in striping creation */
-        //int     ost_arr[LOD_MAX_OSTNR];    /* XXX: should be dynamic */
         char         *lti_ea_store;              /* a buffer for lov ea */
         int           lti_ea_store_size;
         struct lu_buf lti_buf;
@@ -211,10 +217,12 @@ static inline struct lod_thread_info *lod_env_info(const struct lu_env *env)
 }
 
 /* lod_lov.c */
+void lod_getref(struct lod_device *lod);
+void lod_putref(struct lod_device *lod);
 int lod_add_device(const struct lu_env *env, struct lod_device *m,
-                   char *osp, unsigned index, unsigned gen);
+                   char *osp, unsigned index, unsigned gen, int active);
 int lod_del_device(const struct lu_env *env, struct lod_device *m,
-                   char *osp, unsigned gen);
+                   char *osp, unsigned index, unsigned gen);
 int lod_generate_and_set_lovea(const struct lu_env *env,
                                 struct lod_object *mo,
                                 struct thandle *th);
@@ -236,6 +244,7 @@ int lod_store_def_striping(const struct lu_env *env, struct dt_object *dt,
 
 /* lod_pool.c */
 int lod_ost_pool_add(struct ost_pool *op, __u32 idx, unsigned int min_count);
+int lod_ost_pool_remove(struct ost_pool *op, __u32 idx);
 int lod_ost_pool_extend(struct ost_pool *op, unsigned int min_count);
 struct pool_desc *lod_find_pool(struct lod_device *lod, char *poolname);
 void lod_pool_putref(struct pool_desc *pool);
@@ -255,8 +264,8 @@ int lod_qos_prep_create(const struct lu_env *env, struct lod_object *lo,
 int lod_alloc_replay(const struct lu_env *env, struct lod_object *lo,
                      struct lu_attr *attr, const struct lu_buf *buf,
                      struct thandle *th);
-int qos_add_tgt(struct lod_device*, int, struct obd_export *);
-int qos_del_tgt(struct lod_device*, int);
+int qos_add_tgt(struct lod_device*, struct lod_ost_desc *);
+int qos_del_tgt(struct lod_device *, struct lod_ost_desc *);
 int lod_verify_striping(struct lod_device *d, const struct lu_buf *buf, int specific);
 
 /* lproc_lod.c */

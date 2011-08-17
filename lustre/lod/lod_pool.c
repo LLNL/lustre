@@ -49,7 +49,7 @@
 #include "lod_internal.h"
 
 #define pool_tgt(_p, _i) \
-    &lu2lod_dev(_p->pool_lobd->obd_lu_dev)->lod_osts[_p->pool_obds.op_array[_i]]
+     lu2lod_dev(_p->pool_lobd->obd_lu_dev)->lod_osts[_p->pool_obds.op_array[_i]]
 
 static void lod_pool_getref(struct pool_desc *pool)
 {
@@ -551,20 +551,20 @@ int lod_pool_add(struct obd_device *obd, char *poolname, char *ostname)
         obd_str2uuid(&ost_uuid, ostname);
 
         /* search ost in lod array */
-        // XXX: obd_getref(obd);
-        cfs_foreach_bit(lod->lod_ost_bitmap, lod_idx) {
-                if (obd_uuid_equals(&ost_uuid,
-                                    &lod->lod_osts[lod_idx].ltd_uuid)) {
-                        rc = 0;
-                        break;
+        lod_getref(lod);
+        if (lod->lod_osts_size > 0)
+                cfs_foreach_bit(lod->lod_ost_bitmap, lod_idx) {
+                        if (obd_uuid_equals(&ost_uuid,
+                                            &lod->lod_osts[lod_idx]->ltd_uuid)){
+                                rc = 0;
+                                break;
+                        }
                 }
-        }
 
         if (rc)
                 GOTO(out, rc);
 
-        /* XXX: to be fixed once lod_osts grows dynamically */
-        rc = lod_ost_pool_add(&pool->pool_obds, lod_idx, LOD_MAX_OSTNR);
+        rc = lod_ost_pool_add(&pool->pool_obds, lod_idx, lod->lod_osts_size);
         if (rc)
                 GOTO(out, rc);
 
@@ -575,7 +575,7 @@ int lod_pool_add(struct obd_device *obd, char *poolname, char *ostname)
 
         EXIT;
 out:
-        // XXX: obd_putref(obd);
+        lod_putref(lod);
         lod_pool_putref(pool);
         return(rc);
 }
@@ -595,15 +595,16 @@ int lod_pool_remove(struct obd_device *obd, char *poolname, char *ostname)
 
         obd_str2uuid(&ost_uuid, ostname);
 
-        // XXX: obd_getref(obd);
+        lod_getref(lod);
         /* search ost in lod array, to get index */
-        cfs_foreach_bit(lod->lod_ost_bitmap, lod_idx) {
-                if (obd_uuid_equals(&ost_uuid,
-                                    &lod->lod_osts[lod_idx].ltd_uuid)) {
-                        rc = 0;
-                        break;
+        if (lod->lod_osts_size > 0)
+                cfs_foreach_bit(lod->lod_ost_bitmap, lod_idx) {
+                        if (obd_uuid_equals(&ost_uuid,
+                                            &lod->lod_osts[lod_idx]->ltd_uuid)){
+                                rc = 0;
+                                break;
+                        }
                 }
-        }
 
         /* test if ost found in lod array */
         if (rc)
@@ -618,7 +619,7 @@ int lod_pool_remove(struct obd_device *obd, char *poolname, char *ostname)
 
         EXIT;
 out:
-        // XXX: obd_putref(obd);
+        lod_putref(lod);
         lod_pool_putref(pool);
         return rc;
 }
