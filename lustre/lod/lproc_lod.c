@@ -315,12 +315,15 @@ static int lod_wr_qos_maxage(struct file *file, const char *buffer,
         sprintf(str, "%smaxage=%d", PARAM_OSP, val);
         lustre_cfg_bufs_set_string(&bufs, 1, str);
         lcfg = lustre_cfg_new(LCFG_PARAM, &bufs);
-        cfs_foreach_bit(lod->lod_ost_bitmap, i) {
-                next = &lod->lod_osts[i].ltd_ost->dd_lu_dev;
-                rc = next->ld_ops->ldo_process_config(NULL, next, lcfg);
-                if (rc)
-                        CERROR("can't set maxage on #%d: %d\n", i, rc);
-        }
+        lod_getref(lod);
+        if (lod->lod_osts_size > 0)
+                cfs_foreach_bit(lod->lod_ost_bitmap, i) {
+                        next = &lod->lod_osts[i]->ltd_ost->dd_lu_dev;
+                        rc = next->ld_ops->ldo_process_config(NULL, next, lcfg);
+                        if (rc)
+                                CERROR("can't set maxage on #%d: %d\n", i, rc);
+                }
+        lod_putref(lod);
         lustre_cfg_free(lcfg);
 
         return count;
@@ -334,20 +337,25 @@ static void *lod_osts_seq_start(struct seq_file *p, loff_t *pos)
         LASSERT(dev != NULL);
         lod = lu2lod_dev(dev->obd_lu_dev);
 
+        lod_getref(lod); /* released in lod_osts_seq_stop */
         if (*pos >= lod->lod_ost_bitmap->size)
                 return NULL;
-        if (cfs_bitmap_check(lod->lod_ost_bitmap, *pos))
-                return &lod->lod_osts[*pos];
         *pos = cfs_find_next_bit(lod->lod_ost_bitmap->data,
                                  lod->lod_ost_bitmap->size, *pos);
         if (*pos < lod->lod_ost_bitmap->size)
-                return &lod->lod_osts[*pos];
+                return lod->lod_osts[*pos];
         else
                 return NULL;
 }
 
 static void lod_osts_seq_stop(struct seq_file *p, void *v)
 {
+        struct obd_device *dev = p->private;
+        struct lod_device *lod;
+
+        LASSERT(dev != NULL);
+        lod = lu2lod_dev(dev->obd_lu_dev);
+        lod_putref(lod);
 }
 
 static void *lod_osts_seq_next(struct seq_file *p, void *v, loff_t *pos)
@@ -357,11 +365,10 @@ static void *lod_osts_seq_next(struct seq_file *p, void *v, loff_t *pos)
 
         if (*pos >= lod->lod_ost_bitmap->size - 1)
                 return NULL;
-
         *pos = cfs_find_next_bit(lod->lod_ost_bitmap->data,
-                                 lod->lod_ost_bitmap->size, *pos);
+                                 lod->lod_ost_bitmap->size, *pos + 1);
         if (*pos < lod->lod_ost_bitmap->size)
-                return &lod->lod_osts[*pos];
+                return lod->lod_osts[*pos];
         else
                 return NULL;
 }
@@ -379,7 +386,7 @@ static int lod_osts_seq_show(struct seq_file *p, void *v)
         lod = lu2lod_dev(obd->obd_lu_dev);
 
         idx = ost_desc->ltd_index;
-        next = lod->lod_osts[idx].ltd_ost;
+        next = lod->lod_osts[idx]->ltd_ost;
         if (next == NULL)
                 return -EINVAL;
 

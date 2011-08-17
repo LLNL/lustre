@@ -85,7 +85,8 @@ static int lod_process_config(const struct lu_env *env,
         ENTRY;
 
         switch(lcfg->lcfg_command) {
-
+                case LCFG_LOV_DEL_OBD:
+                case LCFG_LOV_ADD_INA:
                 case LCFG_LOV_ADD_OBD: {
                         __u32 index;
                         int gen;
@@ -96,16 +97,16 @@ static int lod_process_config(const struct lu_env *env,
                                 GOTO(out, rc = -EINVAL);
                         if (sscanf(lustre_cfg_buf(lcfg, 3), "%d", &gen) != 1)
                                 GOTO(out, rc = -EINVAL);
-                        rc = lod_add_device(env, lod, arg1, index, gen);
+                        if (lcfg->lcfg_command == LCFG_LOV_ADD_OBD)
+                                rc = lod_add_device(env, lod, arg1, index, gen,
+                                                    1);
+                        else if (lcfg->lcfg_command == LCFG_LOV_ADD_INA)
+                                rc = lod_add_device(env, lod, arg1, index, gen,
+                                                    0);
+                        else
+                                rc = lod_del_device(env, lod, arg1, index, gen);
                         break;
                 }
-
-                case LCFG_LOV_DEL_OBD:
-                case LCFG_LOV_ADD_INA:
-                        /* XXX: not implemented yet */
-                        LBUG();
-                        break;
-
                 case LCFG_PARAM: {
                         struct lprocfs_static_vars  lvars = { 0 };
                         struct obd_device          *obd = lod2obd(lod);
@@ -120,16 +121,22 @@ static int lod_process_config(const struct lu_env *env,
                 }
 
                 case LCFG_CLEANUP:
-                        cfs_foreach_bit(lod->lod_ost_bitmap, i) {
-                                LASSERT(lod->lod_osts[i].ltd_ost);
-                                next = &lod->lod_osts[i].ltd_ost->dd_lu_dev;
-                                rc = next->ld_ops->ldo_process_config(env,
-                                                                      next,
-                                                                      lcfg);
-                                if (rc)
-                                        CERROR("can't process %u: %d\n",
-                                               lcfg->lcfg_command, rc);
-                        }
+                        lod_getref(lod);
+                        if (lod->lod_osts_size > 0)
+                                cfs_foreach_bit(lod->lod_ost_bitmap, i) {
+                                        LASSERT(lod->lod_osts[i] &&
+                                                lod->lod_osts[i]->ltd_ost);
+                                        next =
+                                          &lod->lod_osts[i]->ltd_ost->dd_lu_dev;
+                                        rc =
+                                           next->ld_ops->ldo_process_config(env,
+                                                                            next,
+                                                                            lcfg);
+                                        if (rc)
+                                                CERROR("can't process %u: %d\n",
+                                                       lcfg->lcfg_command, rc);
+                                }
+                        lod_putref(lod);
                         /*
                          * do cleanup on underlying storage only when
                          * all OSPs are cleaned up, as they use that OSD as well
@@ -164,13 +171,17 @@ static int lod_recovery_complete(const struct lu_env *env,
 
         rc = next->ld_ops->ldo_recovery_complete(env, next);
 
-        cfs_foreach_bit(lod->lod_ost_bitmap, i) {
-                LASSERT(lod->lod_osts[i].ltd_ost);
-                next = &lod->lod_osts[i].ltd_ost->dd_lu_dev;
-                rc = next->ld_ops->ldo_recovery_complete(env, next);
-                if (rc)
-                        CERROR("can't complete recovery on #%d: %d\n", i, rc);
-        }
+        lod_getref(lod);
+        if (lod->lod_osts_size > 0)
+                cfs_foreach_bit(lod->lod_ost_bitmap, i) {
+                        LASSERT(lod->lod_osts[i] && lod->lod_osts[i]->ltd_ost);
+                        next = &lod->lod_osts[i]->ltd_ost->dd_lu_dev;
+                        rc = next->ld_ops->ldo_recovery_complete(env, next);
+                        if (rc)
+                                CERROR("can't complete recovery on #%d: %d\n",
+                                       i, rc);
+                }
+        lod_putref(lod);
 
         RETURN(rc);
 }
@@ -244,14 +255,17 @@ static int lod_sync(const struct lu_env *env, struct dt_device *dev)
         int                rc = 0, i;
         ENTRY;
 
-        cfs_foreach_bit(d->lod_ost_bitmap, i) {
-                LASSERT(d->lod_osts[i].ltd_ost);
-                rc = dt_sync(env, d->lod_osts[i].ltd_ost);
-                if (rc) {
-                        CERROR("can't sync %u: %d\n", i, rc);
-                        break;
+        lod_getref(d);
+        if (d->lod_osts_size > 0)
+                cfs_foreach_bit(d->lod_ost_bitmap, i) {
+                        LASSERT(d->lod_osts[i] && d->lod_osts[i]->ltd_ost);
+                        rc = dt_sync(env, d->lod_osts[i]->ltd_ost);
+                        if (rc) {
+                                CERROR("can't sync %u: %d\n", i, rc);
+                                break;
+                        }
                 }
-        }
+        lod_putref(d);
         if (rc == 0)
                 rc = dt_sync(env, d->lod_child);
 
@@ -460,7 +474,8 @@ static int lod_init0(const struct lu_env *env, struct lod_device *m,
                 }
         }
 
-        cfs_sema_init(&m->lod_mutex, 1);
+        cfs_mutex_init(&m->lod_mutex);
+        cfs_init_rwsem(&m->lod_rw_sem);
 
         RETURN(0);
 
@@ -635,13 +650,16 @@ static int lod_obd_health_check(struct obd_device *obd)
         ENTRY;
 
         LASSERT(d);
-        cfs_foreach_bit(d->lod_ost_bitmap, i) {
-                LASSERT(d->lod_osts[i].ltd_ost);
-                rc = obd_health_check(d->lod_osts[i].ltd_exp->exp_obd);
-                /* one healthy device is enough */
-                if (rc == 0)
-                        break;
-        }
+        lod_getref(d);
+        if (d->lod_osts_size > 0)
+                cfs_foreach_bit(d->lod_ost_bitmap, i) {
+                        LASSERT(d->lod_osts[i] && d->lod_osts[i]->ltd_ost);
+                        rc = obd_health_check(d->lod_osts[i]->ltd_exp->exp_obd);
+                        /* one healthy device is enough */
+                        if (rc == 0)
+                                break;
+                }
+        lod_putref(d);
         RETURN(rc);
 }
 
