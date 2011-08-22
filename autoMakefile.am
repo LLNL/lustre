@@ -19,6 +19,8 @@ if USES_DPKG
 EXTRA_DIST += debian/*
 endif
 
+@SYMVERFILE@:
+	rm -f @SYMVERFILE@
 if LDISKFS_ENABLED
 if !LDISKFS_IN_KERNEL
 
@@ -30,6 +32,28 @@ EXTRA_DIST += @SYMVERFILE@
 	cat @SYMVERFILE@.old @LDISKFS_DIR@/@SYMVERFILE@ > @SYMVERFILE@
 endif
 endif
+if ZFS_ENABLED
+	@if [ -f @SPL_OBJ@/@SPL_SYMBOLS@ ]; then \
+		cat @SPL_OBJ@/@SPL_SYMBOLS@ >>@SYMVERFILE@; \
+	elif [ -f @SPL_OBJ@/module/@SPL_SYMBOLS@ ]; then \
+		cat @SPL_OBJ@/module/@SPL_SYMBOLS@ >>@SYMVERFILE@; \
+	else \
+		echo -e "\n" \
+		"*** Missing spl symbols. Ensure you have built spl:\n" \
+		"*** - @SPL_OBJ@/@SYMVERFILE@\n"; \
+		exit 1; \
+	fi
+	@if [ -f @ZFS_OBJ@/@ZFS_SYMBOLS@ ]; then \
+		cat @ZFS_OBJ@/@ZFS_SYMBOLS@ >>@SYMVERFILE@; \
+	elif [ -f @ZFS_OBJ@/module/@ZFS_SYMBOLS@ ]; then \
+		cat @ZFS_OBJ@/module/@ZFS_SYMBOLS@ >>@SYMVERFILE@; \
+	else \
+		echo -e "\n" \
+		"*** Missing zfs symbols. Ensure you have built zfs:\n" \
+		"*** - @ZFS_OBJ@/@SYMVERFILE@\n"; \
+		exit 1; \
+	fi
+endif # ZFS_ENABLED
 
 CSTK=/tmp/checkstack
 CSTKO=/tmp/checkstack.orig
