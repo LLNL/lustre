@@ -358,10 +358,10 @@ static int osp_get_ost_lastid(struct osp_device *d)
                  *last_id + 1, d->opd_pre_last_created);
 
         cfs_spin_lock(&d->opd_pre_lock);
-        if (d->opd_last_used_id > *last_id) {
+        if (le64_to_cpu(d->opd_last_used_id) > *last_id) {
                 d->opd_pre_grow_count = OST_MIN_PRECREATE - *last_id +
-                                        d->opd_last_used_id;
-                d->opd_pre_last_created = d->opd_last_used_id + 1;
+                                        le64_to_cpu(d->opd_last_used_id);
+                d->opd_pre_last_created = le64_to_cpu(d->opd_last_used_id) + 1;
         } else {
                 d->opd_pre_grow_count = OST_MIN_PRECREATE;
                 d->opd_pre_last_created = *last_id + 1;
@@ -372,7 +372,7 @@ static int osp_get_ost_lastid(struct osp_device *d)
 
         CDEBUG(D_INFO,
                "Got last_id "LPU64" from OST, last_used is "LPU64"\n",
-               d->opd_pre_last_created, d->opd_last_used_id);
+               *last_id, le64_to_cpu(d->opd_last_used_id));
 out_req:
         ptlrpc_req_finished(req);
         RETURN(rc);
@@ -658,6 +658,11 @@ __u64 osp_precreate_get_id(struct osp_device *d)
         LASSERT(d->opd_pre_next <= d->opd_pre_last_created);
         objid = d->opd_pre_next++;
         d->opd_pre_reserved--;
+        /*
+         * last_used_id must be changed along with getting new id otherwise
+         * we might miscalculate gap causing object loss or leak
+         */
+        osp_update_last_id(d, objid);
         cfs_spin_unlock(&d->opd_pre_lock);
 
         /*
