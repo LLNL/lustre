@@ -39,4 +39,4 @@ modulefs_DATA = lod$(KMODEXT)
 endif
 
 MOSTLYCLEANFILES := @MOSTLYCLEANFILES@
-DIST_SOURCES := $(lod-objs:%.o=%.c) lod_internal.h
+EXTRA_DIST := $(lod-objs:%.o=%.c) lod_internal.h
