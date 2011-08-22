@@ -39,4 +39,4 @@ modulefs_DATA = osp$(KMODEXT)
 endif
 
 MOSTLYCLEANFILES := @MOSTLYCLEANFILES@
-DIST_SOURCES := $(osp-objs:%.o=%.c) osp_internal.h
+EXTRA_DIST := $(osp-objs:%.o=%.c) osp_internal.h
