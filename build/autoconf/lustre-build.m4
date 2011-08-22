@@ -268,23 +268,6 @@ AC_SUBST(LUSTREIOKIT_SUBDIR)
 AC_CONFIG_SUBDIRS(lustre-iokit)
 ])
 
-# Define no libcfs by default.
-AC_DEFUN([LB_LIBCFS_DIR],
-[
-case x$libcfs_is_module in
-	xyes)
-          LIBCFS_INCLUDE_DIR="libcfs/include"
-          LIBCFS_SUBDIR="libcfs"
-          ;;
-        x*)
-          LIBCFS_INCLUDE_DIR="lnet/include"
-          LIBCFS_SUBDIR=""
-          ;;
-esac
-AC_SUBST(LIBCFS_SUBDIR)
-AC_SUBST(LIBCFS_INCLUDE_DIR)
-])
-
 #
 # LB_CONFIG_BGL
 #
@@ -469,6 +452,27 @@ AC_DEFUN([LB_CONFIG_HEADERS],
 CPPFLAGS="-include $PWD/config.h $CPPFLAGS"
 EXTRA_KCFLAGS="-include $PWD/config.h $EXTRA_KCFLAGS"
 AC_SUBST(EXTRA_KCFLAGS)
+])
+
+#
+# LB_LIBCFS_DIR
+#
+# Define no libcfs by default.
+#
+AC_DEFUN([LB_LIBCFS_DIR],
+[
+case x$libcfs_is_module in
+	xyes)
+          LIBCFS_INCLUDE_DIR="libcfs/include"
+          LIBCFS_SUBDIR="libcfs"
+          ;;
+        x*)
+          LIBCFS_INCLUDE_DIR="lnet/include"
+          LIBCFS_SUBDIR=""
+          ;;
+esac
+AC_SUBST(LIBCFS_SUBDIR)
+AC_SUBST(LIBCFS_INCLUDE_DIR)
 ])
 
 #
