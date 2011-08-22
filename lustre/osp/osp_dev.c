@@ -102,20 +102,18 @@ static int osp_last_used_init(const struct lu_env *env, struct osp_device *m)
                 GOTO(out, rc);
 
         m->opd_last_used_file = o;
-        m->opd_last_used_id = 0;
 
         if (osi->osi_attr.la_size >= sizeof(osi->osi_id) * (m->opd_index + 1)) {
-                osp_objid_buf_prep(osi, m->opd_index);
+                osp_objid_buf_prep(osi, m, m->opd_index);
                 rc = dt_record_read(env, o, &osi->osi_lb, &osi->osi_off);
                 if (rc != 0)
                         GOTO(out, rc);
-                m->opd_last_used_id = le64_to_cpu(osi->osi_id);
         } else {
                 /* reset value to 0, just to make sure and change file's size */
                 struct thandle *th;
 
-                osi->osi_id = 0;
-                osp_objid_buf_prep(osi, m->opd_index);
+                m->opd_last_used_id = 0;
+                osp_objid_buf_prep(osi, m, m->opd_index);
 
                 th = dt_trans_create(env, m->opd_storage);
                 if (IS_ERR(th))
