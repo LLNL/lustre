@@ -137,8 +137,8 @@ int  sptlrpc_conf_init(void);
 void sptlrpc_conf_fini(void);
 
 /* sec.c */
-int  __init sptlrpc_init(void);
-void __exit sptlrpc_fini(void);
+int  sptlrpc_init(void);
+void sptlrpc_fini(void);
 
 /* recov_thread.c */
 int llog_recov_init(void);
@@ -150,7 +150,7 @@ static inline int ll_rpc_recoverable_error(int rc)
 }
 
 /* target.c */
-int __init lut_mod_init(void);
-void __exit lut_mod_exit(void);
+int lut_mod_init(void);
+void lut_mod_exit(void);
 
 #endif /* PTLRPC_INTERNAL_H */

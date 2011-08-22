@@ -737,14 +737,14 @@ LU_CONTEXT_KEY_DEFINE(tg, LCT_MD_THREAD|LCT_DT_THREAD);
 LU_KEY_INIT_GENERIC(tg);
 EXPORT_SYMBOL(tg_thread_key);
 
-int __init lut_mod_init(void)
+int lut_mod_init(void)
 {
         tg_key_init_generic(&tg_thread_key, NULL);
         lu_context_key_register_many(&tg_thread_key, NULL);
         return 0;
 }
 
-void __exit lut_mod_exit(void)
+void lut_mod_exit(void)
 {
         lu_context_key_degister_many(&tg_thread_key, NULL);
 }
