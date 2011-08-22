@@ -247,6 +247,7 @@ int lod_alloc_replay(const struct lu_env *env, struct lod_object *lo,
                      struct thandle *th);
 int qos_add_tgt(struct lod_device*, int, struct obd_export *);
 int qos_del_tgt(struct lod_device*, int);
+int lod_verify_striping(struct lod_device *d, const struct lu_buf *buf, int specific);
 
 /* lproc_lod.c */
 extern struct file_operations lod_proc_target_fops;
