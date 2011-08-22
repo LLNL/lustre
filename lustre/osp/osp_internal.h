@@ -58,8 +58,9 @@ struct osp_device {
         struct dt_device                *opd_storage;
         struct dt_object                *opd_last_used_file;
         /* protected by opd_pre_lock */
-        obd_id                           opd_last_used_id;
-
+        volatile obd_id                  opd_last_used_id;
+        obd_id                           opd_gap_start;
+        int                              opd_gap_count;
         /* connection to OST */
         struct obd_device               *opd_obd;
         struct obd_export               *opd_exp;
@@ -81,7 +82,7 @@ struct osp_device {
          * reported via ->ldo_recovery_complete() */
         int                             opd_recovery_completed;
 
-        /* 
+        /*
          * Precreation pool
          */
         cfs_spinlock_t                  opd_pre_lock;
@@ -178,11 +179,12 @@ struct osp_thread_info {
         struct llog_catid    osi_cid;
 };
 
-static inline void osp_objid_buf_prep(struct osp_thread_info *osi, int index)
+static inline void osp_objid_buf_prep(struct osp_thread_info *osi,
+                                      struct osp_device *d, int index)
 {
-        osi->osi_lb.lb_buf = &osi->osi_id;
-        osi->osi_lb.lb_len = sizeof(osi->osi_id);
-        osi->osi_off = sizeof(osi->osi_id) * index;
+        osi->osi_lb.lb_buf = (void*)&d->opd_last_used_id;
+        osi->osi_lb.lb_len = sizeof(d->opd_last_used_id);
+        osi->osi_off = sizeof(d->opd_last_used_id) * index;
 }
 
 extern struct lu_context_key osp_thread_key;
@@ -266,6 +268,24 @@ static inline struct dt_object* osp_object_child(struct osp_object *o)
                              struct dt_object, do_lu);
 }
 
+/* Update opd_last_used_id along with checking for gap in objid sequence */
+static inline void osp_update_last_id(struct osp_device *d, obd_id objid)
+{
+        /*
+         * we might have lost precreated objects due to VBR and precreate
+         * orphans, the gap in objid can be calculated properly only here
+         */
+
+        if (objid > le64_to_cpu(d->opd_last_used_id)) {
+                if (objid - le64_to_cpu(d->opd_last_used_id) > 1) {
+                        d->opd_gap_start = le64_to_cpu(d->opd_last_used_id) + 1;
+                        d->opd_gap_count = objid - d->opd_gap_start;
+                        CDEBUG(D_HA, "Gap in objids: %d, start = %llu\n",
+                               d->opd_gap_count, d->opd_gap_start);
+                }
+                d->opd_last_used_id = cpu_to_le64(objid);
+        }
+}
 
 /* osp_precreate.c */
 int osp_init_precreate(struct osp_device *d);
