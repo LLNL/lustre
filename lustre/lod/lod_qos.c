@@ -1093,6 +1093,77 @@ static int lov_get_stripecnt(struct lov_obd *lov, __u32 stripe_count)
         return stripe_count;
 }
 
+int lod_verify_striping(struct lod_device *d, const struct lu_buf *buf,
+                        int specific)
+{
+        struct lov_user_md_v1 *lum;
+        struct lov_user_md_v3 *v3 = NULL;
+        struct pool_desc      *pool;
+        struct lov_obd        *lov = lod2lov(d);
+        int                    rc;
+        ENTRY;
+
+        lum = buf->lb_buf;
+
+        if (lum->lmm_magic != LOV_USER_MAGIC_V1 &&
+            lum->lmm_magic != LOV_USER_MAGIC_V3 &&
+            lum->lmm_magic != LOV_MAGIC_V1_DEF &&
+            lum->lmm_magic != LOV_MAGIC_V3_DEF) {
+                CDEBUG(D_IOCTL, "bad userland LOV MAGIC: %#x\n",
+                       lum->lmm_magic);
+                RETURN(-EINVAL);
+        }
+
+        if ((specific && lum->lmm_pattern != LOV_PATTERN_RAID0) ||
+            (specific == 0 && lum->lmm_pattern != 0)) {
+                CDEBUG(D_IOCTL, "bad userland stripe pattern: %#x\n",
+                       lum->lmm_pattern);
+                RETURN(-EINVAL);
+        }
+
+        /* 64kB is the largest common page size we see (ia64), and matches the
+         * check in lfs */
+        if (lum->lmm_stripe_size & (LOV_MIN_STRIPE_SIZE - 1)) {
+                CDEBUG(D_IOCTL, "stripe size %u not multiple of %u, fixing\n",
+                       lum->lmm_stripe_size, LOV_MIN_STRIPE_SIZE);
+                RETURN(-EINVAL);
+        }
+
+        if ((lum->lmm_stripe_offset >= d->lod_ostnr) &&
+            (lum->lmm_stripe_offset != (typeof(lum->lmm_stripe_offset))(-1))) {
+                CDEBUG(D_IOCTL, "stripe offset %u > number of OSTs %u\n",
+                       lum->lmm_stripe_offset, d->lod_ostnr);
+                RETURN(-EINVAL);
+        }
+
+        if (lum->lmm_magic == LOV_USER_MAGIC_V3)
+                v3 = buf->lb_buf;
+
+        if (v3 && (pool = lov_find_pool(lov, v3->lmm_pool_name))) {
+                __u16 offs = v3->lmm_stripe_offset;
+
+                if (offs != (typeof(v3->lmm_stripe_offset))(-1)) {
+                        rc = lov_check_index_in_pool(offs, pool);
+                        if (rc < 0) {
+                                lod_pool_putref(pool);
+                                RETURN(-EINVAL);
+                        }
+                }
+
+                if (specific && lum->lmm_stripe_count > pool_tgt_count(pool)) {
+                        CDEBUG(D_IOCTL,
+                               "stripe count %u > # OSTs %u in the pool\n",
+                               lum->lmm_stripe_count, pool_tgt_count(pool));
+                        lod_pool_putref(pool);
+                        RETURN(-EINVAL);
+                }
+
+                lod_pool_putref(pool);
+        }
+
+        RETURN(0);
+}
+
 static int lod_use_defined_striping(const struct lu_env *env, struct lod_object *mo,
                                     const struct lu_buf *buf)
 {
@@ -1103,6 +1174,10 @@ static int lod_use_defined_striping(const struct lu_env *env, struct lod_object 
         __u32                   magic;
         int                     rc;
         ENTRY;
+
+        rc = lod_verify_striping(d, buf, 1);
+        if (rc)
+                RETURN(rc);
 
         magic = le32_to_cpu(v1->lmm_magic);
         if (magic == LOV_MAGIC_V1_DEF) {

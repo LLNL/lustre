@@ -411,6 +411,7 @@ static int lod_xattr_set_lov_on_dir(const struct lu_env *env,
                                     const char *name, int fl, struct thandle *th,
                                     struct lustre_capa *capa)
 {
+        struct lod_device     *d = lu2lod_dev(dt->do_lu.lo_dev);
         struct dt_object      *next = dt_object_child(dt);
         struct lod_object     *l = lod_dt_obj(dt);
         struct lov_user_md_v1 *lum;
@@ -431,6 +432,11 @@ static int lod_xattr_set_lov_on_dir(const struct lu_env *env,
         LASSERT(buf);
         LASSERT(buf->lb_buf);
         lum = buf->lb_buf;
+
+        rc = lod_verify_striping(d, buf, 0);
+        if (rc)
+                RETURN(rc);
+
         if (lum->lmm_magic == LOV_USER_MAGIC_V3)
                 v3 = buf->lb_buf;
 
@@ -467,11 +473,6 @@ static int lod_xattr_set(const struct lu_env *env,
 
         attr = dt->do_lu.lo_header->loh_attr & S_IFMT;
         if (S_ISDIR(attr)) {
-                /*
-                 * XXX: if default per-directory striping is setting,
-                 * shouldn't we make sure it's sane?
-                 */
-
                 if (!strncmp(name, XATTR_NAME_LOV, strlen(XATTR_NAME_LOV)))
                         rc = lod_xattr_set_lov_on_dir(env, dt, buf, name, fl, th, capa);
                 else
