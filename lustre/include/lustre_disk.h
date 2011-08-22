@@ -124,6 +124,7 @@ enum ldd_mount_type {
         LDD_MT_SMFS,
         LDD_MT_REISERFS,
         LDD_MT_LDISKFS2,
+        LDD_MT_ZFS,
         LDD_MT_LAST
 };
 
@@ -134,7 +135,8 @@ static inline char *mt_str(enum ldd_mount_type mt)
                 "ldiskfs",
                 "smfs",
                 "reiserfs",
-                "ldiskfs2"
+                "ldiskfs2",
+                "zfs",
         };
         return mount_type_string[mt];
 }

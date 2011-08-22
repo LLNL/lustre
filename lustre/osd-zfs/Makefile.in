@@ -1,0 +1,9 @@
+MODULES := osd_zfs
+osd_zfs-objs := osd_handler.o osd_lproc.o udmu.o
+
+EXTRA_PRE_CFLAGS += -I@SPL_DIR@ -I@SPL_DIR@/include
+EXTRA_PRE_CFLAGS += -include @SPL_OBJ@/spl_config.h
+EXTRA_PRE_CFLAGS += -I@ZFS_DIR@ -I@ZFS_DIR@/include
+EXTRA_PRE_CFLAGS += -include @ZFS_OBJ@/zfs_config.h
+
+@INCLUDE_RULES@
