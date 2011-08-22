@@ -206,7 +206,6 @@ static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
         struct osp_device      *d = lu2osp_dev(dt->do_lu.lo_dev);
         struct osp_object      *o = dt2osp_obj(dt);
         int                     rc = 0;
-        int                     update = 0;
         ENTRY;
 
         /* XXX: to support CMD we need group here, to be put into config? */
@@ -220,33 +219,13 @@ static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
                 rc = fid_ostid_pack(lu_object_fid(&dt->do_lu), &osi->osi_oi);
                 LASSERT(rc == 0);
                 osi->osi_id = ostid_id(&osi->osi_oi);
+                cfs_spin_lock(&d->opd_pre_lock);
+                osp_update_last_id(d, osi->osi_id);
+                cfs_spin_unlock(&d->opd_pre_lock);
+
         }
 
         LASSERT(osi->osi_id);
-
-        /*
-         * update last_used object id for our OST
-         * XXX: can we use 0-copy OSD methods to save memcpy()
-         * which is going to be each creation * <# stripes>
-         * XXX: needs volatile
-         */
-        if (osi->osi_id > d->opd_last_used_id) {
-                cfs_spin_lock(&d->opd_pre_lock);
-                if (osi->osi_id > d->opd_last_used_id) {
-                        int lost = osi->osi_id - d->opd_last_used_id - 1;
-                        /* we might have lost precreated objects due to VBR */
-                        if (lost > 0) {
-                                CDEBUG(D_HA, "Gap in objids: %d, last = %llu\n",
-                                       lost, osi->osi_id);
-                                osi->osi_oi.oi_id = d->opd_last_used_id + 1;
-                                osi->osi_oi.oi_seq = FID_SEQ_OST_MDT0; /* XXX: CMD support */
-                                osp_sync_gap(env, d, &osi->osi_oi, lost, th);
-                        }
-                        d->opd_last_used_id = osi->osi_id;
-                        update = 1;
-                }
-                cfs_spin_unlock(&d->opd_pre_lock);
-        }
 
         /*
          * it's OK if the import is inactive by this moment - id was created
@@ -254,15 +233,29 @@ static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
          * once import is reconnected, OSP will claim this and other objects
          * used and OST either keep them, if they exist or recreate
          */
-        if (update) {
-                /* we updated last_used in-core, so we update on a disk */
-                osi->osi_id = cpu_to_le64(osi->osi_id);
-                osp_objid_buf_prep(osi, d->opd_index);
-                /* XXX: don't use local var, otherwise racy */
-                /* andreas asked more and more */
-                rc = dt_record_write(env, d->opd_last_used_file, &osi->osi_lb,
-                                     &osi->osi_off, th);
+
+        /* we might have lost precreated objects */
+        if (unlikely(d->opd_gap_count) > 0) {
+                cfs_spin_lock(&d->opd_pre_lock);
+                if (d->opd_gap_count > 0) {
+                        int count = d->opd_gap_count;
+                        osi->osi_oi.oi_id = d->opd_gap_start;
+                        d->opd_gap_count = 0;
+                        cfs_spin_unlock(&d->opd_pre_lock);
+
+                        CDEBUG(D_HA, "Writting gap "LPU64"+%d in llog\n",
+                               d->opd_gap_start, count);
+                        /* XXX: CMD support */
+                        osi->osi_oi.oi_seq = FID_SEQ_OST_MDT0;
+                        osp_sync_gap(env, d, &osi->osi_oi, count, th);
+                } else {
+                        cfs_spin_unlock(&d->opd_pre_lock);
+                }
         }
+
+        osp_objid_buf_prep(osi, d, d->opd_index);
+        rc = dt_record_write(env, d->opd_last_used_file, &osi->osi_lb,
+                             &osi->osi_off, th);
 
         RETURN(rc);
 }
