@@ -162,7 +162,7 @@ static inline void ptlrpc_reqset_put(struct ptlrpc_request_set *set)
 }
 
 /* target.c */
-int __init lut_mod_init(void);
-void __exit lut_mod_exit(void);
+int lut_mod_init(void);
+void lut_mod_exit(void);
 
 #endif /* PTLRPC_INTERNAL_H */
