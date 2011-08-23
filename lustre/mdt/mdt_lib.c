@@ -1263,13 +1263,25 @@ static int mdt_open_unpack(struct mdt_thread_info *info)
         rr->rr_namelen = req_capsule_get_size(pill, &RMF_NAME, RCL_CLIENT) - 1;
 
         if (req_capsule_field_present(pill, &RMF_EADATA, RCL_CLIENT)) {
-                rr->rr_eadata = req_capsule_client_get(pill, &RMF_EADATA);
                 rr->rr_eadatalen = req_capsule_get_size(pill, &RMF_EADATA,
                                                         RCL_CLIENT);
-                sp->u.sp_ea.eadatalen = rr->rr_eadatalen;
-                sp->u.sp_ea.eadata = rr->rr_eadata;
-                sp->no_create = !!req_is_replay(req);
-                mdt_fix_lov_magic(info);
+                if (rr->rr_eadatalen > 0) {
+                        rr->rr_eadata = req_capsule_client_get(pill,
+                                                               &RMF_EADATA);
+                        sp->u.sp_ea.eadatalen = rr->rr_eadatalen;
+                        sp->u.sp_ea.eadata = rr->rr_eadata;
+                        sp->no_create = !!req_is_replay(req);
+                        mdt_fix_lov_magic(info);
+                }
+
+                /*
+                 * Client default md_size may be 0 right after client start,
+                 * until all osc are connected, set here just some reasonable
+                 * value to prevent misbehavior.
+                 */
+                if (rr->rr_eadatalen == 0 &&
+                    !(info->mti_spec.sp_cr_flags & MDS_OPEN_DELAY_CREATE))
+                        rr->rr_eadatalen = MIN_MD_SIZE;
         }
 
         RETURN(0);
