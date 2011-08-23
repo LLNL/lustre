@@ -321,8 +321,9 @@ static int lod_xattr_get(const struct lu_env *env, struct dt_object *dt,
                          struct lu_buf *buf, const char *name,
                          struct lustre_capa *capa)
 {
-        struct dt_object *next = dt_object_child(dt);
-        int               rc, dir;
+        struct lod_thread_info *info = lod_env_info(env);
+        struct dt_object       *next = dt_object_child(dt);
+        int                     rc, dir, root;
         ENTRY;
 
         rc = next->do_ops->do_xattr_get(env, next, buf, name, capa);
@@ -332,12 +333,15 @@ static int lod_xattr_get(const struct lu_env *env, struct dt_object *dt,
          * supply the caller with filesystem-wide default striping
          */
         dir = S_ISDIR(dt->do_lu.lo_header->loh_attr & S_IFMT);
+        lu_local_obj_fid(&info->lti_fid, MDD_ROOT_INDEX_OID);
+        root = lu_fid_eq(&info->lti_fid, lu_object_fid(&dt->do_lu));
 
-        if (rc == -ENODATA && dir && !strcmp(XATTR_NAME_LOV, name)) {
+        if (rc == -ENODATA && root && !strcmp(XATTR_NAME_LOV, name)) {
                 struct lov_user_md *lum = buf->lb_buf;
                 struct lod_device  *d = lu2lod_dev(dt->do_lu.lo_dev);
                 struct lov_desc    *desc = &(lod2lov(d)->desc);
 
+                LASSERT(dir);
                 rc = sizeof(struct lov_user_md_v1);
                 if (buf->lb_len >= sizeof(struct lov_user_md_v1)) {
                         lum->lmm_magic = LOV_USER_MAGIC_V1;
