@@ -1282,7 +1282,8 @@ static int mdt_open_unpack(struct mdt_thread_info *info)
                  */
                 if (rr->rr_eadatalen == 0 &&
                     !(info->mti_spec.sp_cr_flags & MDS_OPEN_DELAY_CREATE))
-                        rr->rr_eadatalen = MIN_MD_SIZE;        }
+                        rr->rr_eadatalen = MIN_MD_SIZE;
+        }
 
         RETURN(0);
 }

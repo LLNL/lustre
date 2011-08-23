@@ -363,7 +363,7 @@ void mdc_unlink_pack(struct ptlrpc_request *req, struct md_op_data *op_data)
 {
         struct mdt_rec_unlink *rec;
         char *tmp;
- 
+
         CLASSERT(sizeof(struct mdt_rec_reint) == sizeof(struct mdt_rec_unlink));
         rec = req_capsule_client_get(&req->rq_pill, &RMF_REC_REINT);
         LASSERT (rec != NULL);
