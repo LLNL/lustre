@@ -25,10 +25,9 @@ ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 
 # Orion: to be fixed
 # 160 -- (bug 22448) changelogs don't work yet
-# 204e - ORI-241
 # 124a - LU-479 is not yet merged
 # 225 - md_echo needs fixes
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 160 204e 225"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 160 225"
 
 case `uname -r` in
 2.6*) FSTYPE=${FSTYPE:-ldiskfs} ;;
