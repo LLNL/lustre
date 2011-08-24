@@ -49,11 +49,6 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <linux/module.h>
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs_jbd2.h>
-#else
-#include <linux/jbd.h>
-#endif
 #include <obd.h>
 #include <obd_class.h>
 #include <obd_support.h>
@@ -62,11 +57,6 @@
 #include <lustre_fid.h>
 
 #include <lustre_param.h>
-#ifdef HAVE_EXT4_LDISKFS
-#include <ldiskfs/ldiskfs.h>
-#else
-#include <linux/ldiskfs_fs.h>
-#endif
 #include <lustre_mds.h>
 #include <lustre/lustre_idl.h>
 
@@ -99,10 +89,10 @@ static void mdd_flags_xlate(struct mdd_object *obj, __u32 flags)
 {
         obj->mod_flags &= ~(APPEND_OBJ|IMMUTE_OBJ);
 
-        if (flags & MDS_APPEND_FL)
+        if (flags & LUSTRE_APPEND_FL)
                 obj->mod_flags |= APPEND_OBJ;
 
-        if (flags & MDS_IMMUTABLE_FL)
+        if (flags & LUSTRE_IMMUTABLE_FL)
                 obj->mod_flags |= IMMUTE_OBJ;
 }
 
@@ -810,7 +800,7 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
         if (la->la_valid & LA_FLAGS) {
                 unsigned int oldflags = 0;
                 unsigned int newflags = la->la_flags &
-                                (MDS_IMMUTABLE_FL | MDS_APPEND_FL);
+                                (LUSTRE_IMMUTABLE_FL | LUSTRE_APPEND_FL);
 
                 if ((uc->mu_fsuid != tmp_la->la_uid) &&
                     !mdd_capable(uc, CFS_CAP_FOWNER))
@@ -819,15 +809,15 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
                 /* XXX: the IMMUTABLE and APPEND_ONLY flags can
                  * only be changed by the relevant capability. */
                 if (mdd_is_immutable(obj))
-                        oldflags |= MDS_IMMUTABLE_FL;
+                        oldflags |= LUSTRE_IMMUTABLE_FL;
                 if (mdd_is_append(obj))
-                        oldflags |= MDS_APPEND_FL;
+                        oldflags |= LUSTRE_APPEND_FL;
                 if ((oldflags ^ newflags) &&
                     !mdd_capable(uc, CFS_CAP_LINUX_IMMUTABLE))
                         RETURN(-EPERM);
 
                 if (!S_ISDIR(tmp_la->la_mode))
-                        la->la_flags &= ~MDS_DIRSYNC_FL;
+                        la->la_flags &= ~LUSTRE_DIRSYNC_FL;
         }
 
         if ((mdd_is_immutable(obj) || mdd_is_append(obj)) &&

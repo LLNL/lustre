@@ -552,11 +552,11 @@ check_mds_body(void)
 
         /* these should be identical to their EXT3_*_FL counterparts, and
          * are redefined only to avoid dragging in ext3_fs.h */
-        CHECK_CDEFINE(MDS_SYNC_FL);
-        CHECK_CDEFINE(MDS_IMMUTABLE_FL);
-        CHECK_CDEFINE(MDS_APPEND_FL);
-        CHECK_CDEFINE(MDS_NOATIME_FL);
-        CHECK_CDEFINE(MDS_DIRSYNC_FL);
+        CHECK_CDEFINE(LUSTRE_SYNC_FL);
+        CHECK_CDEFINE(LUSTRE_IMMUTABLE_FL);
+        CHECK_CDEFINE(LUSTRE_APPEND_FL);
+        CHECK_CDEFINE(LUSTRE_NOATIME_FL);
+        CHECK_CDEFINE(LUSTRE_DIRSYNC_FL);
 
         CHECK_CDEFINE(MDS_INODELOCK_LOOKUP);
         CHECK_CDEFINE(MDS_INODELOCK_UPDATE);

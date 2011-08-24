@@ -326,7 +326,7 @@ int mdd_may_unlink(const struct lu_env *env, struct mdd_object *pobj,
                 RETURN(-ENOENT);
 
         if ((attr->la_valid & LA_FLAGS) &&
-            (attr->la_flags & (MDS_APPEND_FL | MDS_IMMUTABLE_FL)))
+            (attr->la_flags & (LUSTRE_APPEND_FL | LUSTRE_IMMUTABLE_FL)))
                 RETURN(-EPERM);
 
         rc = mdd_permission_internal(env, pobj, NULL, MAY_WRITE | MAY_EXEC);
@@ -416,7 +416,7 @@ int mdd_may_delete(const struct lu_env *env,
                 RETURN(-EPERM);
 
         if ((cattr->la_valid & LA_FLAGS) &&
-            (cattr->la_flags & (MDS_APPEND_FL | MDS_IMMUTABLE_FL)))
+            (cattr->la_flags & (LUSTRE_APPEND_FL | LUSTRE_IMMUTABLE_FL)))
                 RETURN(-EPERM);
 
         if (S_ISDIR(cattr->la_mode)) {
