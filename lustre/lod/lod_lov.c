@@ -475,46 +475,50 @@ int lod_get_lov_ea(const struct lu_env *env, struct lod_object *mo)
         int                     rc;
         ENTRY;
 
-        /* we really don't support that large striping yet? */
         LASSERT(info);
-        LASSERT(info->lti_ea_store_size < 1024*1024);
 
-        if (unlikely(info->lti_ea_store == NULL)) {
-                /* XXX: set initial allocation to fit default fs striping */
-                LASSERT(info->lti_ea_store_size == 0);
-                OBD_ALLOC(info->lti_ea_store, 512);
-                if (info->lti_ea_store == NULL)
-                        RETURN(-ENOMEM);
-                info->lti_ea_store_size = 512;
-        }
-
+        if (unlikely(info->lti_ea_store_size == 0)) {
+                /* just to enter in allocation block below */
+                rc = -ERANGE;
+        } else {
 repeat:
-        info->lti_buf.lb_buf = info->lti_ea_store;
-        info->lti_buf.lb_len = info->lti_ea_store_size;
-        rc = dt_xattr_get(env, next, &info->lti_buf, XATTR_NAME_LOV,
-                          BYPASS_CAPA);
-
+                info->lti_buf.lb_buf = info->lti_ea_store;
+                info->lti_buf.lb_len = info->lti_ea_store_size;
+                rc = dt_xattr_get(env, next, &info->lti_buf, XATTR_NAME_LOV,
+                                  BYPASS_CAPA);
+        }
         /* if object is not striped or inaccessible */
         if (rc == -ENODATA)
                 RETURN(0);
 
         if (rc == -ERANGE) {
+                int size;
+
                 /* EA doesn't fit, reallocate new buffer */
-                /* XXX: what's real limit? */
-                LASSERT(info->lti_buf.lb_len <= 16 * 1024);
+                rc = dt_xattr_get(env, next, &LU_BUF_NULL, XATTR_NAME_LOV,
+                                  BYPASS_CAPA);
+                if (rc == -ENODATA)
+                        RETURN(0);
+                else if (rc < 0)
+                        RETURN(rc);
+
+                LASSERT(rc > 0);
+                size = size_roundup_power2(rc);
+                LASSERT(size <= lov_mds_md_size(LOV_MAX_STRIPE_COUNT, LOV_MAGIC_V3));
                 if (info->lti_ea_store) {
                         LASSERT(info->lti_ea_store_size);
-                        OBD_FREE(info->lti_ea_store, info->lti_ea_store_size);
+                        CWARN("EA store size %d is not enough, need %d\n",
+                              info->lti_ea_store_size, size);
+                        OBD_FREE_LARGE(info->lti_ea_store, info->lti_ea_store_size);
                         info->lti_ea_store = NULL;
                         info->lti_ea_store_size = 0;
                 }
 
-                OBD_ALLOC(info->lti_ea_store, info->lti_buf.lb_len * 2);
+                OBD_ALLOC_LARGE(info->lti_ea_store, size);
                 if (info->lti_ea_store == NULL)
                         RETURN(-ENOMEM);
-                info->lti_ea_store_size = info->lti_buf.lb_len * 2;
-
-                GOTO(repeat, rc);
+                info->lti_ea_store_size = size;
+                goto repeat;
         }
 
         RETURN(rc);
