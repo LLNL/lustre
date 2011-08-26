@@ -131,7 +131,7 @@ struct lod_object {
 
 struct lod_thread_info {
         /* per-thread buffer for LOV EA */
-        char         *lti_ea_store;
+        void         *lti_ea_store;
         int           lti_ea_store_size;
         struct lu_buf lti_buf;
         struct ost_id lti_ostid;
