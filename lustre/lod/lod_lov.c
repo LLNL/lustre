@@ -408,8 +408,8 @@ static int lod_ea_store_resize(struct lod_thread_info *info, int size)
         if (info->lti_ea_store) {
                 LASSERT(info->lti_ea_store_size);
                 LASSERT(info->lti_ea_store_size < round);
-                CWARN("EA store size %d is not enough, need %d\n",
-                      info->lti_ea_store_size, round);
+                CDEBUG(D_INFO, "EA store size %d is not enough, need %d\n",
+                       info->lti_ea_store_size, round);
                 OBD_FREE_LARGE(info->lti_ea_store, info->lti_ea_store_size);
                 info->lti_ea_store = NULL;
                 info->lti_ea_store_size = 0;

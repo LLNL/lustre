@@ -611,7 +611,7 @@ static void lod_key_fini(const struct lu_context *ctx,
          * once. Probably better would be pool of such stores per LOD.
          */
         if (info->lti_ea_store) {
-                OBD_FREE(info->lti_ea_store, info->lti_ea_store_size);
+                OBD_FREE_LARGE(info->lti_ea_store, info->lti_ea_store_size);
                 info->lti_ea_store = NULL;
                 info->lti_ea_store_size = 0;
         }
