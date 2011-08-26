@@ -472,6 +472,7 @@ static int lod_init0(const struct lu_env *env, struct lod_device *m,
 
         cfs_mutex_init(&m->lod_mutex);
         cfs_init_rwsem(&m->lod_rw_sem);
+        cfs_spin_lock_init(&m->lod_desc_lock);
 
         RETURN(0);
 

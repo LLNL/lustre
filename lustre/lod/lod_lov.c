@@ -252,7 +252,6 @@ int lod_add_device(const struct lu_env *env, struct lod_device *lod,
         ost_desc->ltd_uuid   = obd->u.cli.cl_target_uuid;
         ost_desc->ltd_gen    = gen;
         ost_desc->ltd_index  = index;
-        /* XXX: non-active targets not supported yet */
         ost_desc->ltd_active = active;
 
         lod_getref(lod);
