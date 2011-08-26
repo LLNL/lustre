@@ -75,6 +75,9 @@ struct lod_device {
         /* lov settings descriptor storing static information */
         struct lov_desc       lod_desc;
 
+        /* use to protect ld_active_tgt_count and all ltd_active */
+        cfs_spinlock_t        lod_desc_lock;
+
         /* list of known OSTs */
         struct lod_ost_desc **lod_osts;
         /* Size of the lod_osts array, granted to be a power of 2 */
