@@ -151,6 +151,55 @@ out:
         RETURN(rc);
 }
 
+static int lod_statfs_and_check(const struct lu_env *env,
+                                struct lod_device *d, int index,
+                                struct obd_statfs *sfs)
+{
+        struct lod_ost_desc *ost;
+        int                  rc;
+
+        LASSERT(d);
+        LASSERT(d->lod_osts);
+
+        ost = d->lod_osts[index];
+        LASSERT(ost);
+
+        rc = dt_statfs(env, ost->ltd_ost, sfs);
+        if (rc)
+                return rc;
+
+        /* check whether device has changed state (active, inactive) */
+        if (unlikely(sfs->os_blocks == 0 && ost->ltd_active)) {
+                /* turned inactive? */
+                cfs_spin_lock(&d->lod_desc_lock);
+                if (sfs->os_blocks == 0 && ost->ltd_active) {
+                        ost->ltd_active = 0;
+                        LASSERT(d->lod_desc.ld_active_tgt_count > 0);
+                        d->lod_desc.ld_active_tgt_count--;
+                        d->lod_qos.lq_dirty = 1;
+                        d->lod_qos.lq_rr.lqr_dirty = 1;
+                        CDEBUG(D_CONFIG, "%s: turns inactive\n",
+                               ost->ltd_exp->exp_obd->obd_name);
+                }
+                cfs_spin_unlock(&d->lod_desc_lock);
+        } else if (unlikely(sfs->os_blocks && ost->ltd_active == 0)) {
+                /* turned active? */
+                LASSERT(d->lod_desc.ld_active_tgt_count < d->lod_ostnr);
+                cfs_spin_lock(&d->lod_desc_lock);
+                if (sfs->os_blocks && ost->ltd_active == 0) {
+                        ost->ltd_active = 1;
+                        d->lod_desc.ld_active_tgt_count++;
+                        d->lod_qos.lq_dirty = 1;
+                        d->lod_qos.lq_rr.lqr_dirty = 1;
+                        CDEBUG(D_CONFIG, "%s: turns active\n",
+                               ost->ltd_exp->exp_obd->obd_name);
+                }
+                cfs_spin_unlock(&d->lod_desc_lock);
+        }
+
+        return rc;
+}
+
 /*
  * Update statfs data if the current osfs age is older than max_age.
  * If wait is not set, it means that we are called from lov_create()
@@ -180,8 +229,8 @@ static void lod_qos_statfs_update(const struct lu_env *env,
         for (i = 0; i < osts->op_count; i++) {
                 idx = osts->op_array[i];
                 avail = lod->lod_osts[idx]->ltd_statfs.os_bavail;
-                rc = dt_statfs(env, lod->lod_osts[idx]->ltd_ost,
-                               &lod->lod_osts[idx]->ltd_statfs);
+                rc = lod_statfs_and_check(env, lod, idx,
+                                          &lod->lod_osts[idx]->ltd_statfs);
                 if (rc) {
                         /* XXX: disable this OST till next refresh? */
                         CERROR("can't refresh statfs: %d\n", rc);
@@ -663,7 +712,7 @@ repeat_find:
                 if (OBD_FAIL_CHECK(OBD_FAIL_MDS_OSC_PRECREATE) && ost_idx == 0)
                         continue;
 
-                rc = dt_statfs(env, m->lod_osts[ost_idx]->ltd_ost, &sfs);
+                rc = lod_statfs_and_check(env, m, ost_idx, &sfs);
                 if (rc) {
                         /* this OSP doesn't feel well */
                         CERROR("can't statfs #%u: %d\n", ost_idx, rc);
@@ -808,7 +857,7 @@ repeat_find:
                  * start OST, then it can be skipped, otherwise skip it only
                  * if it is inactive/recovering/out-of-space." */
 
-                rc = dt_statfs(env, m->lod_osts[ost_idx]->ltd_ost, &sfs);
+                rc = lod_statfs_and_check(env, m, ost_idx, &sfs);
                 if (rc) {
                         /* this OSP doesn't feel well */
                         CERROR("can't statfs #%u: %d\n", ost_idx, rc);
@@ -946,8 +995,7 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
                 if (!cfs_bitmap_check(m->lod_ost_bitmap, osts->op_array[i]))
                         continue;
 
-                rc = dt_statfs(env, m->lod_osts[osts->op_array[i]]->ltd_ost,
-                               &sfs);
+                rc = lod_statfs_and_check(env, m, osts->op_array[i], &sfs);
                 if (rc) {
                         /* this OSP doesn't feel well */
                         CERROR("can't statfs #%u: %d\n", i, rc);
