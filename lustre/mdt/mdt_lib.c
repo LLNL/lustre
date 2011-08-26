@@ -589,19 +589,17 @@ int mdt_fix_reply(struct mdt_thread_info *info)
 
         /* MDT_MD buffer may be bigger than packed value, let's shrink all
          * buffers before growing it */
-        if (info->mti_big_lmm != NULL) {
+        if (info->mti_big_lmm_used) {
                 LASSERT(req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER));
                 md_packed = req_capsule_get_size(pill, &RMF_MDT_MD, RCL_SERVER);
                 LASSERT(md_packed > 0);
                 /* buffer must be allocated separately */
-                LASSERT(info->mti_big_lmm !=
+                LASSERT(info->mti_attr.ma_lmm !=
                         req_capsule_server_get(pill, &RMF_MDT_MD));
                 req_capsule_shrink(pill, &RMF_MDT_MD, 0, RCL_SERVER);
                 /* free big lmm if md_size is not needed */
-                if (md_size == 0) {
-                        OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
-                        info->mti_big_lmm = NULL;
-                }
+                if (md_size == 0)
+                        info->mti_big_lmm_used = 0;
         } else if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER)) {
                 req_capsule_shrink(pill, &RMF_MDT_MD, md_size, RCL_SERVER);
         }
@@ -626,12 +624,12 @@ int mdt_fix_reply(struct mdt_thread_info *info)
          */
 
         /* Grow MD buffer if needed finally */
-        if (info->mti_big_lmm != NULL) {
+        if (info->mti_big_lmm_used) {
                 void *lmm;
 
                 LASSERT(md_size > md_packed);
-                CWARN("Enlarge reply buffer, need extra %d bytes\n",
-                      md_size - md_packed);
+                CDEBUG(D_INFO, "Enlarge reply buffer, need extra %d bytes\n",
+                       md_size - md_packed);
                 rc = req_capsule_server_grow(pill, &RMF_MDT_MD, md_size);
                 if (rc) {
                         /* we can't answer with proper LOV EA, drop flags,
@@ -644,11 +642,10 @@ int mdt_fix_reply(struct mdt_thread_info *info)
                         /* now we need to pack right LOV EA */
                         lmm = req_capsule_server_get(pill, &RMF_MDT_MD);
                         LASSERT(req_capsule_get_size(pill, &RMF_MDT_MD, RCL_SERVER) ==
-                                info->mti_big_lmmsize);
-                        memcpy(lmm, info->mti_big_lmm, info->mti_big_lmmsize);
+                                info->mti_attr.ma_lmm_size);
+                        memcpy(lmm, info->mti_attr.ma_lmm, info->mti_attr.ma_lmm_size);
                 }
-                OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
-                info->mti_big_lmm = NULL;
+                info->mti_big_lmm_used = 0;
         }
         RETURN(rc);
 }

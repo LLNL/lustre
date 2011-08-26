@@ -495,29 +495,42 @@ static int mdt_big_lmm_get(const struct lu_env *env, struct mdt_object *o,
         info = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
         LASSERT(info != NULL);
         LASSERT(ma->ma_lmm_size > 0);
-        LASSERT(info->mti_big_lmm == NULL);
-
+        LASSERT(info->mti_big_lmm_used == 0);
         rc = mo_xattr_get(env, mdt_object_child(o), &LU_BUF_NULL,
                           XATTR_NAME_LOV);
         if (rc < 0)
                 RETURN(rc);
 
-        info->mti_big_lmmsize = rc;
-        OBD_ALLOC_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
-        if (info->mti_big_lmm == NULL)
-                RETURN(-ENOMEM);
+        /* big_lmm may need to be grown */
+        if (info->mti_big_lmmsize < rc) {
+                int size = size_roundup_power2(rc);
+
+                if (info->mti_big_lmmsize > 0) {
+                        /* free old buffer */
+                        LASSERT(info->mti_big_lmm);
+                        OBD_FREE_LARGE(info->mti_big_lmm,
+                                       info->mti_big_lmmsize);
+                        info->mti_big_lmm = NULL;
+                        info->mti_big_lmmsize = 0;
+                }
+
+                OBD_ALLOC_LARGE(info->mti_big_lmm, size);
+                if (info->mti_big_lmm == NULL)
+                        RETURN(-ENOMEM);
+                info->mti_big_lmmsize = size;
+        }
+        LASSERT(info->mti_big_lmmsize >= rc);
 
         info->mti_buf.lb_buf = info->mti_big_lmm;
         info->mti_buf.lb_len = info->mti_big_lmmsize;
         rc = mo_xattr_get(env, mdt_object_child(o), &info->mti_buf,
                           XATTR_NAME_LOV);
-        if (rc < 0) {
-                OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
-                info->mti_big_lmm = NULL;
+        if (rc < 0)
                 RETURN(rc);
-        }
 
+        info->mti_big_lmm_used = 1;
         ma->ma_valid |= MA_LOV;
+        ma->ma_lmm = info->mti_big_lmm;
         ma->ma_lmm_size = rc;
 
         /* update mdt_max_mdsize so all clients will be aware about that */
@@ -2831,6 +2844,7 @@ static void mdt_thread_info_init(struct ptlrpc_request *req,
         info->mti_has_trans = 0;
         info->mti_cross_ref = 0;
         info->mti_opdata = 0;
+        info->mti_big_lmm_used = 0;
 
         /* To not check for split by default. */
         info->mti_spec.sp_ck_split = 0;
@@ -5739,7 +5753,20 @@ static struct lu_device *mdt_device_alloc(const struct lu_env *env,
 }
 
 /* context key constructor/destructor: mdt_key_init, mdt_key_fini */
-LU_KEY_INIT_FINI(mdt, struct mdt_thread_info);
+LU_KEY_INIT(mdt, struct mdt_thread_info);
+
+static void mdt_key_fini(const struct lu_context *ctx,
+                         struct lu_context_key *key, void* data)
+{
+        struct mdt_thread_info *info = data;
+
+        if (info->mti_big_lmm) {
+                OBD_FREE_LARGE(info->mti_big_lmm, info->mti_big_lmmsize);
+                info->mti_big_lmm = NULL;
+                info->mti_big_lmmsize = 0;
+        }
+        OBD_FREE_PTR(info);
+}
 
 /* context key: mdt_thread_key */
 LU_CONTEXT_KEY_DEFINE(mdt, LCT_MD_THREAD);
