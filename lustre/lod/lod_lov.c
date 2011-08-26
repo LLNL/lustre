@@ -400,10 +400,30 @@ out:
         return(rc);
 }
 
+static int lod_ea_store_resize(struct lod_thread_info *info, int size)
+{
+        int round = size_roundup_power2(size);
+
+        LASSERT(round <= lov_mds_md_size(LOV_MAX_STRIPE_COUNT, LOV_MAGIC_V3));
+        if (info->lti_ea_store) {
+                LASSERT(info->lti_ea_store_size);
+                LASSERT(info->lti_ea_store_size < round);
+                CWARN("EA store size %d is not enough, need %d\n",
+                      info->lti_ea_store_size, round);
+                OBD_FREE_LARGE(info->lti_ea_store, info->lti_ea_store_size);
+                info->lti_ea_store = NULL;
+                info->lti_ea_store_size = 0;
+        }
+
+        OBD_ALLOC_LARGE(info->lti_ea_store, round);
+        if (info->lti_ea_store == NULL)
+                RETURN(-ENOMEM);
+        info->lti_ea_store_size = round;
+        RETURN(0);
+}
+
 /*
- * allocates a buffer
- * generate LOV EA for given striped object into the buffer
- *
+ * generate and write LOV EA for given striped object
  */
 int lod_generate_and_set_lovea(const struct lu_env *env,
                                struct lod_object *mo, struct thandle *th)
@@ -414,20 +434,21 @@ int lod_generate_and_set_lovea(const struct lu_env *env,
         struct lov_mds_md_v1   *lmm;
         struct lov_ost_data_v1 *objs;
         __u32                   magic;
-        int                     i, rc;
+        int                     i, rc, lmm_size;
         ENTRY;
 
         LASSERT(mo);
         LASSERT(mo->mbo_stripenr > 0);
 
         magic = mo->mbo_pool ? LOV_MAGIC_V3 : LOV_MAGIC_V1;
-        info->lti_buf.lb_len = lov_mds_md_size(mo->mbo_stripenr, magic);
+        lmm_size = lov_mds_md_size(mo->mbo_stripenr, magic);
+        if (info->lti_ea_store_size < lmm_size) {
+                rc = lod_ea_store_resize(info, lmm_size);
+                if (rc)
+                        RETURN(rc);
+        }
 
-        /* XXX: use thread info to save on allocation? */
-        OBD_ALLOC(lmm, info->lti_buf.lb_len);
-        if (lmm == NULL)
-                RETURN(-ENOMEM);
-        info->lti_buf.lb_buf = lmm;
+        lmm = info->lti_ea_store;
 
         lmm->lmm_magic = cpu_to_le32(magic);
         lmm->lmm_pattern = cpu_to_le32(LOV_PATTERN_RAID0);
@@ -460,10 +481,10 @@ int lod_generate_and_set_lovea(const struct lu_env *env,
                 objs[i].l_ost_idx    = cpu_to_le32(fid_idif_ost_idx(fid));
         }
 
+        info->lti_buf.lb_buf = lmm;
+        info->lti_buf.lb_len = lmm_size;
         rc = dt_xattr_set(env, next, &info->lti_buf, XATTR_NAME_LOV, 0, th,
                           BYPASS_CAPA);
-
-        OBD_FREE(lmm, info->lti_buf.lb_len);
 
         RETURN(rc);
 }
@@ -492,8 +513,6 @@ repeat:
                 RETURN(0);
 
         if (rc == -ERANGE) {
-                int size;
-
                 /* EA doesn't fit, reallocate new buffer */
                 rc = dt_xattr_get(env, next, &LU_BUF_NULL, XATTR_NAME_LOV,
                                   BYPASS_CAPA);
@@ -503,21 +522,9 @@ repeat:
                         RETURN(rc);
 
                 LASSERT(rc > 0);
-                size = size_roundup_power2(rc);
-                LASSERT(size <= lov_mds_md_size(LOV_MAX_STRIPE_COUNT, LOV_MAGIC_V3));
-                if (info->lti_ea_store) {
-                        LASSERT(info->lti_ea_store_size);
-                        CWARN("EA store size %d is not enough, need %d\n",
-                              info->lti_ea_store_size, size);
-                        OBD_FREE_LARGE(info->lti_ea_store, info->lti_ea_store_size);
-                        info->lti_ea_store = NULL;
-                        info->lti_ea_store_size = 0;
-                }
-
-                OBD_ALLOC_LARGE(info->lti_ea_store, size);
-                if (info->lti_ea_store == NULL)
-                        RETURN(-ENOMEM);
-                info->lti_ea_store_size = size;
+                rc = lod_ea_store_resize(info, rc);
+                if (rc)
+                        RETURN(rc);
                 goto repeat;
         }
 
