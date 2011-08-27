@@ -318,7 +318,7 @@ static int lod_wr_qos_maxage(struct file *file, const char *buffer,
         lod_getref(lod);
         if (lod->lod_osts_size > 0)
                 cfs_foreach_bit(lod->lod_ost_bitmap, i) {
-                        next = &lod->lod_osts[i]->ltd_ost->dd_lu_dev;
+                        next = &OST_TGT(lod,i)->ltd_ost->dd_lu_dev;
                         rc = next->ld_ops->ldo_process_config(NULL, next, lcfg);
                         if (rc)
                                 CERROR("can't set maxage on #%d: %d\n", i, rc);
@@ -343,7 +343,7 @@ static void *lod_osts_seq_start(struct seq_file *p, loff_t *pos)
         *pos = cfs_find_next_bit(lod->lod_ost_bitmap->data,
                                  lod->lod_ost_bitmap->size, *pos);
         if (*pos < lod->lod_ost_bitmap->size)
-                return lod->lod_osts[*pos];
+                return OST_TGT(lod,*pos);
         else
                 return NULL;
 }
@@ -368,7 +368,7 @@ static void *lod_osts_seq_next(struct seq_file *p, void *v, loff_t *pos)
         *pos = cfs_find_next_bit(lod->lod_ost_bitmap->data,
                                  lod->lod_ost_bitmap->size, *pos + 1);
         if (*pos < lod->lod_ost_bitmap->size)
-                return lod->lod_osts[*pos];
+                return OST_TGT(lod,*pos);
         else
                 return NULL;
 }
@@ -386,7 +386,7 @@ static int lod_osts_seq_show(struct seq_file *p, void *v)
         lod = lu2lod_dev(obd->obd_lu_dev);
 
         idx = ost_desc->ltd_index;
-        next = lod->lod_osts[idx]->ltd_ost;
+        next = OST_TGT(lod,idx)->ltd_ost;
         if (next == NULL)
                 return -EINVAL;
 
