@@ -78,10 +78,10 @@ static int lod_process_config(const struct lu_env *env,
                                struct lu_device *dev,
                                struct lustre_cfg *lcfg)
 {
-        struct lod_device *lod = lu2lod_dev(dev);
-        struct lu_device  *next = &lod->lod_child->dd_lu_dev;
-        char              *arg1;
-        int                rc, i;
+        struct lod_device   *lod = lu2lod_dev(dev);
+        struct lu_device    *next = &lod->lod_child->dd_lu_dev;
+        char                *arg1;
+        int                  rc, i;
         ENTRY;
 
         switch(lcfg->lcfg_command) {
@@ -125,10 +125,11 @@ static int lod_process_config(const struct lu_env *env,
                         lod_getref(lod);
                         if (lod->lod_osts_size > 0)
                                 cfs_foreach_bit(lod->lod_ost_bitmap, i) {
-                                        LASSERT(lod->lod_osts[i] &&
-                                                lod->lod_osts[i]->ltd_ost);
+                                        struct lod_ost_desc *ost;
+                                        ost = OST_TGT(lod, i);
+                                        LASSERT(ost && ost->ltd_ost);
                                         next =
-                                          &lod->lod_osts[i]->ltd_ost->dd_lu_dev;
+                                          &ost->ltd_ost->dd_lu_dev;
                                         rc =
                                            next->ld_ops->ldo_process_config(env,
                                                                             next,
@@ -162,9 +163,10 @@ out:
 static int lod_recovery_complete(const struct lu_env *env,
                                  struct lu_device *dev)
 {
-        struct lod_device *lod = lu2lod_dev(dev);
-        struct lu_device  *next = &lod->lod_child->dd_lu_dev;
-        int                i, rc;
+        struct lod_device   *lod = lu2lod_dev(dev);
+        struct lu_device    *next = &lod->lod_child->dd_lu_dev;
+        struct lod_ost_desc *ost;
+        int                  i, rc;
         ENTRY;
 
         LASSERT(lod->lod_recovery_completed == 0);
@@ -175,8 +177,9 @@ static int lod_recovery_complete(const struct lu_env *env,
         lod_getref(lod);
         if (lod->lod_osts_size > 0)
                 cfs_foreach_bit(lod->lod_ost_bitmap, i) {
-                        LASSERT(lod->lod_osts[i] && lod->lod_osts[i]->ltd_ost);
-                        next = &lod->lod_osts[i]->ltd_ost->dd_lu_dev;
+                        ost = OST_TGT(lod, i);
+                        LASSERT(ost && ost->ltd_ost);
+                        next = &ost->ltd_ost->dd_lu_dev;
                         rc = next->ld_ops->ldo_recovery_complete(env, next);
                         if (rc)
                                 CERROR("can't complete recovery on #%d: %d\n",
@@ -252,15 +255,17 @@ static void lod_conf_get(const struct lu_env *env,
 
 static int lod_sync(const struct lu_env *env, struct dt_device *dev)
 {
-        struct lod_device *d = dt2lod_dev(dev);
-        int                rc = 0, i;
+        struct lod_device   *d = dt2lod_dev(dev);
+        struct lod_ost_desc *ost;
+        int                  rc = 0, i;
         ENTRY;
 
         lod_getref(d);
         if (d->lod_osts_size > 0)
                 cfs_foreach_bit(d->lod_ost_bitmap, i) {
-                        LASSERT(d->lod_osts[i] && d->lod_osts[i]->ltd_ost);
-                        rc = dt_sync(env, d->lod_osts[i]->ltd_ost);
+                        ost = OST_TGT(d, i);
+                        LASSERT(ost && ost->ltd_ost);
+                        rc = dt_sync(env, ost->ltd_ost);
                         if (rc) {
                                 CERROR("can't sync %u: %d\n", i, rc);
                                 break;
@@ -648,17 +653,18 @@ static struct lu_device_type lod_device_type = {
 static int lod_obd_health_check(const struct lu_env *env,
                                 struct obd_device *obd)
 {
-        struct lod_device *d = lu2lod_dev(obd->obd_lu_dev);
-        int                i, rc = 1;
+        struct lod_device   *d = lu2lod_dev(obd->obd_lu_dev);
+        struct lod_ost_desc *ost;
+        int                  i, rc = 1;
         ENTRY;
 
         LASSERT(d);
         lod_getref(d);
         if (d->lod_osts_size > 0)
                 cfs_foreach_bit(d->lod_ost_bitmap, i) {
-                        LASSERT(d->lod_osts[i] && d->lod_osts[i]->ltd_ost);
-                        rc = obd_health_check(env,
-                                             d->lod_osts[i]->ltd_exp->exp_obd);
+                        ost = OST_TGT(d, i);
+                        LASSERT(ost && ost->ltd_ost);
+                        rc = obd_health_check(env, ost->ltd_exp->exp_obd);
                         /* one healthy device is enough */
                         if (rc == 0)
                                 break;

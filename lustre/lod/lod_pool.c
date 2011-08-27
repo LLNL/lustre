@@ -49,7 +49,7 @@
 #include "lod_internal.h"
 
 #define pool_tgt(_p, _i) \
-    lu2lod_dev(_p->pool_lobd->obd_lu_dev)->lod_osts[_p->pool_obds.op_array[_i]]
+  OST_TGT(lu2lod_dev((_p)->pool_lobd->obd_lu_dev),(_p)->pool_obds.op_array[_i])
 
 static void lod_pool_getref(struct pool_desc *pool)
 {
@@ -555,7 +555,7 @@ int lod_pool_add(struct obd_device *obd, char *poolname, char *ostname)
         if (lod->lod_osts_size > 0)
                 cfs_foreach_bit(lod->lod_ost_bitmap, lod_idx) {
                         if (obd_uuid_equals(&ost_uuid,
-                                            &lod->lod_osts[lod_idx]->ltd_uuid)){
+                                            &OST_TGT(lod,lod_idx)->ltd_uuid)){
                                 rc = 0;
                                 break;
                         }
@@ -600,7 +600,7 @@ int lod_pool_remove(struct obd_device *obd, char *poolname, char *ostname)
         if (lod->lod_osts_size > 0)
                 cfs_foreach_bit(lod->lod_ost_bitmap, lod_idx) {
                         if (obd_uuid_equals(&ost_uuid,
-                                            &lod->lod_osts[lod_idx]->ltd_uuid)){
+                                            &OST_TGT(lod,lod_idx)->ltd_uuid)){
                                 rc = 0;
                                 break;
                         }
