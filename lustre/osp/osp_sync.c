@@ -183,8 +183,8 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
         LASSERT(th->th_dev == d->opd_storage);
 
         switch (type) {
-                case MDS_UNLINK_REC:
-                        osi->u.hdr.lrh_len = sizeof(struct llog_unlink_rec);
+                case MDS_UNLINK64_REC:
+                        osi->u.hdr.lrh_len = sizeof(struct llog_unlink64_rec);
                         break;
 
                 case MDS_SETATTR64_REC:
@@ -209,7 +209,7 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 }
 
 static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
-                            struct ost_id *ostid, llog_op_type type,
+                            const struct lu_fid *fid, llog_op_type type,
                             int count, struct thandle *th)
 {
         struct osp_thread_info *osi = osp_env_info(env);
@@ -223,21 +223,20 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
         LASSERT(th->th_dev == d->opd_storage);
 
         switch (type) {
-                case MDS_UNLINK_REC:
+                case MDS_UNLINK64_REC:
                         osi->u.hdr.lrh_len = sizeof(osi->u.unlink);
-                        osi->u.hdr.lrh_type = MDS_UNLINK_REC;
-                        osi->u.unlink.lur_oid  = ostid->oi_id;
-                        osi->u.unlink.lur_oseq = ostid->oi_seq;
+                        osi->u.hdr.lrh_type = MDS_UNLINK64_REC;
+                        osi->u.unlink.lur_fid  = *fid;
                         osi->u.unlink.lur_count = count;
                         break;
-
                 case MDS_SETATTR64_REC:
+                        rc = fid_ostid_pack(fid, &osi->osi_oi);
+                        LASSERT(rc == 0);
                         osi->u.hdr.lrh_len = sizeof(osi->u.setattr);
                         osi->u.hdr.lrh_type = MDS_SETATTR64_REC;
-                        osi->u.setattr.lsr_oid  = ostid->oi_id;
-                        osi->u.setattr.lsr_oseq = ostid->oi_seq;
+                        osi->u.setattr.lsr_oid  = osi->osi_oi.oi_id;
+                        osi->u.setattr.lsr_oseq = osi->osi_oi.oi_seq;
                         break;
-
                 default:
                         LBUG();
         }
@@ -276,20 +275,14 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
 int osp_sync_add(const struct lu_env *env, struct osp_object *o,
                  llog_op_type type, struct thandle *th)
 {
-        struct osp_thread_info *osi = osp_env_info(env);
-        int rc;
-
-        rc = fid_ostid_pack(lu_object_fid(&o->opo_obj.do_lu), &osi->osi_oi);
-        LASSERT(rc == 0);
-
         return osp_sync_add_rec(env, lu2osp_dev(o->opo_obj.do_lu.lo_dev),
-                                &osi->osi_oi, type, 1, th);
+                                lu_object_fid(&o->opo_obj.do_lu), type, 1, th);
 }
 
 int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
-                 struct ost_id *ostid, int lost, struct thandle *th)
+                 struct lu_fid *fid, int lost, struct thandle *th)
 {
-        return osp_sync_add_rec(env, d, ostid, MDS_UNLINK_REC, lost, th);
+        return osp_sync_add_rec(env, d, fid, MDS_UNLINK64_REC, lost, th);
 }
 
 /*
@@ -491,7 +484,7 @@ static int osp_sync_new_setattr_job(struct osp_device *d,
                                     struct llog_handle *llh,
                                     struct llog_rec_hdr *h)
 {
-        struct llog_setattr64_rec *rec = (struct llog_setattr64_rec *) h;
+        struct llog_setattr64_rec *rec = (struct llog_setattr64_rec *)h;
         struct ptlrpc_request     *req;
         struct ost_body           *body;
         int                        rc;
@@ -516,14 +509,15 @@ static int osp_sync_new_setattr_job(struct osp_device *d,
         RETURN(rc);
 }
 
+/* Old records may be in old format, so we handle that too */
 static int osp_sync_new_unlink_job(struct osp_device *d,
                                    struct llog_handle *llh,
                                    struct llog_rec_hdr *h)
 {
-        struct llog_unlink_rec *rec = (struct llog_unlink_rec *) h;
-        struct ptlrpc_request  *req;
-        struct ost_body        *body;
-        int                     rc;
+        struct llog_unlink_rec *rec = (struct llog_unlink_rec *)h;
+        struct ptlrpc_request    *req;
+        struct ost_body          *body;
+        int                       rc;
 
         LASSERT(h->lrh_type == MDS_UNLINK_REC);
 
@@ -535,6 +529,33 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         LASSERT(body);
         body->oa.o_id  = rec->lur_oid;
         body->oa.o_seq = rec->lur_oseq;
+        body->oa.o_misc = rec->lur_count;
+        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_FL_COUNT;
+
+        rc = osp_sync_send_new_rpc(d, req);
+
+        RETURN(rc);
+}
+
+static int osp_sync_new_unlink64_job(struct osp_device *d,
+                                   struct llog_handle *llh,
+                                   struct llog_rec_hdr *h)
+{
+        struct llog_unlink64_rec *rec = (struct llog_unlink64_rec *)h;
+        struct ptlrpc_request    *req;
+        struct ost_body          *body;
+        int                       rc;
+
+        LASSERT(h->lrh_type == MDS_UNLINK64_REC);
+
+        req = osp_sync_new_job(d, llh, h, OST_DESTROY, &RQF_OST_DESTROY);
+        if (IS_ERR(req))
+                RETURN(PTR_ERR(req));
+
+        body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
+        LASSERT(body);
+        rc = fid_ostid_pack(&rec->lur_fid, &body->oa.o_oi);
+        LASSERT(rc == 0);
         body->oa.o_misc = rec->lur_count;
         body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_FL_COUNT;
 
@@ -556,7 +577,7 @@ static int osp_sync_process_record(const struct lu_env *env,
         cookie.lgc_index = rec->lrh_index;
 
         if (unlikely(rec->lrh_type == LLOG_GEN_REC)) {
-                struct llog_gen_rec *gen = (struct llog_gen_rec *) rec;
+                struct llog_gen_rec *gen = (struct llog_gen_rec *)rec;
                 /* we're waiting for the record generated by this instance */
                 LASSERT(d->opd_syn_prev_done == 0);
                 if (!memcmp(&d->opd_syn_generation, &gen->lgr_gen,
@@ -585,14 +606,16 @@ static int osp_sync_process_record(const struct lu_env *env,
         cfs_spin_unlock(&d->opd_syn_lock);
 
         switch (rec->lrh_type) {
+                /* case MDS_UNLINK_REC is kept for compatibility */
                 case MDS_UNLINK_REC:
                         rc = osp_sync_new_unlink_job(d, llh, rec);
                         break;
-
+                case MDS_UNLINK64_REC:
+                        rc = osp_sync_new_unlink64_job(d, llh, rec);
+                        break;
                 case MDS_SETATTR64_REC:
                         rc = osp_sync_new_setattr_job(d, llh, rec);
                         break;
-
                 default:
                         CERROR("unknown record type: %x\n", rec->lrh_type);
                         rc = -EINVAL;

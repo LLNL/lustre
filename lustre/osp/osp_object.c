@@ -158,7 +158,7 @@ static int osp_declare_object_create(const struct lu_env *env,
          * There can be gaps in precreated ids and record to unlink llog
          * XXX: can we distinguish cases when it is not needed?
          */
-        rc = osp_sync_declare_add(env, o, MDS_UNLINK_REC, th);
+        rc = osp_sync_declare_add(env, o, MDS_UNLINK64_REC, th);
 
         if (unlikely(!fid_is_zero(fid))) {
                 /* replace case: caller knows fid */
@@ -247,7 +247,9 @@ static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
                                d->opd_gap_start, count);
                         /* XXX: CMD support */
                         osi->osi_oi.oi_seq = FID_SEQ_OST_MDT0;
-                        osp_sync_gap(env, d, &osi->osi_oi, count, th);
+                        fid_ostid_unpack(&osi->osi_fid, &osi->osi_oi,
+                                         d->opd_index);
+                        osp_sync_gap(env, d, &osi->osi_fid, count, th);
                 } else {
                         cfs_spin_unlock(&d->opd_pre_lock);
                 }
@@ -270,7 +272,7 @@ static int osp_declare_object_destroy(const struct lu_env *env,
         /*
          * track objects to be destroyed via llog
          */
-        rc = osp_sync_declare_add(env, o, MDS_UNLINK_REC, th);
+        rc = osp_sync_declare_add(env, o, MDS_UNLINK64_REC, th);
 
         RETURN(rc);
 }
@@ -286,7 +288,7 @@ static int osp_object_destroy(const struct lu_env *env,
          * once transaction is committed put proper command on
          * the queue going to our OST
          */
-        rc = osp_sync_add(env, o, MDS_UNLINK_REC, th);
+        rc = osp_sync_add(env, o, MDS_UNLINK64_REC, th);
 
         /* XXX: we need a change in OSD API to track committness */
 
