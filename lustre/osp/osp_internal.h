@@ -170,8 +170,7 @@ struct osp_thread_info {
         loff_t               osi_off;
         union {
                 struct llog_rec_hdr       hdr;
-                 /* XXX: replace with llog_unlink64_rec */
-                struct llog_unlink_rec    unlink;
+                struct llog_unlink64_rec  unlink;
                 struct llog_setattr64_rec setattr;
                 struct llog_gen_rec       gen;
         } u;
@@ -303,7 +302,7 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 int osp_sync_add(const struct lu_env *env, struct osp_object *d,
                  llog_op_type type, struct thandle *th);
 int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
-                 struct ost_id *ostid, int lost, struct thandle *th);
+                 struct lu_fid *fid, int lost, struct thandle *th);
 int osp_sync_fini(struct osp_device *d);
 void __osp_sync_check_for_work(struct osp_device *d);
 
