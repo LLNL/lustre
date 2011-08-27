@@ -63,6 +63,16 @@ struct lod_ost_desc {
                            ltd_reap:1;  /* should this target be deleted */
 };
 
+#define OST_PTRS                256     /* number of pointers at 1st level */
+#define OST_PTRS_PER_BLOCK      256     /* number of pointers at 2nd level */
+
+struct lod_ost_desc_idx {
+        struct lod_ost_desc *ldi_ost[OST_PTRS_PER_BLOCK];
+};
+
+#define OST_TGT(dev,index)      \
+((dev)->lod_ost_idx[(index)/OST_PTRS_PER_BLOCK]->ldi_ost[(index)%OST_PTRS_PER_BLOCK])
+
 struct lod_device {
         struct dt_device      lod_dt_dev;
         struct obd_export    *lod_child_exp;
@@ -79,7 +89,8 @@ struct lod_device {
         cfs_spinlock_t        lod_desc_lock;
 
         /* list of known OSTs */
-        struct lod_ost_desc **lod_osts;
+        struct lod_ost_desc_idx *lod_ost_idx[OST_PTRS];
+
         /* Size of the lod_osts array, granted to be a power of 2 */
         __u32                 lod_osts_size;
         /* number of registered OSTs */

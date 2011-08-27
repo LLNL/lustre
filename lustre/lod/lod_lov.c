@@ -83,8 +83,8 @@ void lod_putref(struct lod_device *lod)
                        lod->lod_death_row);
 
                 cfs_foreach_bit(lod->lod_ost_bitmap, idx) {
-                        LASSERT(lod->lod_osts[idx]);
-                        ost_desc = lod->lod_osts[idx];
+                        ost_desc = OST_TGT(lod, idx);
+                        LASSERT(ost_desc);
 
                         if (!ost_desc->ltd_reap)
                                 continue;
@@ -92,7 +92,7 @@ void lod_putref(struct lod_device *lod)
                         cfs_list_add(&ost_desc->ltd_kill, &kill);
 
                         lod_ost_pool_remove(&lod->lod_pool_info, idx);
-                        lod->lod_osts[idx] = NULL;
+                        OST_TGT(lod, idx) = NULL;
                         lod->lod_ostnr--;
                         cfs_bitmap_clear(lod->lod_ost_bitmap, idx);
                         if (ost_desc->ltd_active)
@@ -125,11 +125,9 @@ void lod_putref(struct lod_device *lod)
         }
 }
 
-static int lod_array_resize(struct lod_device *lod, __u32 newsize)
+static int lod_bitmap_resize(struct lod_device *lod, __u32 newsize)
 {
-        struct lod_ost_desc **new_array, **old_array = NULL;
         cfs_bitmap_t         *new_bitmap, *old_bitmap = NULL;
-        __u32                 oldsize = 0;
         int                   rc = 0;
         ENTRY;
 
@@ -141,41 +139,26 @@ static int lod_array_resize(struct lod_device *lod, __u32 newsize)
                 /* someone else has already resize the array */
                 GOTO(out, rc = 0);
 
-        /* allocate new - larger - ost array */
-        OBD_ALLOC_LARGE(new_array, sizeof(*new_array) * newsize);
-        if (!new_array)
-                GOTO(out, rc = -ENOMEM);
-
         /* allocate new bitmap */
         new_bitmap = CFS_ALLOCATE_BITMAP(newsize);
-        if (!new_bitmap) {
-                OBD_FREE_LARGE(new_array, sizeof(*new_array) * newsize);
+        if (!new_bitmap)
                 GOTO(out, rc = -ENOMEM);
-        }
 
         if (lod->lod_osts_size > 0) {
                 LASSERT(lod->lod_osts_size < newsize);
-                /* a previous array existed, we need to copy data from
-                 * both the OST array and the bitmap */
-                memcpy(new_array, lod->lod_osts,
-                       sizeof(*new_array) * lod->lod_osts_size);
+                /* the bitmap already exists, we need
+                 * to copy data from old one */
                 cfs_bitmap_copy(new_bitmap, lod->lod_ost_bitmap);
                 old_bitmap = lod->lod_ost_bitmap;
-                old_array  = lod->lod_osts;
-                oldsize    = lod->lod_osts_size;
         }
 
-        lod->lod_osts       = new_array;
         lod->lod_osts_size  = newsize;
         lod->lod_ost_bitmap = new_bitmap;
 
-        if (old_array)
-                OBD_FREE_LARGE(old_array, sizeof(*old_array) * oldsize);
         if (old_bitmap)
                 CFS_FREE_BITMAP(old_bitmap);
 
-        CDEBUG(D_CONFIG, "ost array: %p size: %d\n", lod->lod_osts,
-               lod->lod_osts_size);
+        CDEBUG(D_CONFIG, "ost size: %d\n", lod->lod_osts_size);
 
         EXIT;
 out:
@@ -263,11 +246,11 @@ int lod_add_device(const struct lu_env *env, struct lod_device *lod,
                 while (newsize < index + 1)
                         newsize = newsize << 1;
 
-                /* release read ref since lod_array_resize() grabs a write ref
-                 * for the array relocation */
+                /* release read ref since lod_bitmap_resize() grabs
+                 * a write ref for the array relocation */
                 lod_putref(lod);
 
-                rc = lod_array_resize(lod, newsize);
+                rc = lod_bitmap_resize(lod, newsize);
                 if (rc)
                         GOTO(out_desc, rc);
 
@@ -279,6 +262,15 @@ int lod_add_device(const struct lu_env *env, struct lod_device *lod,
                 CERROR("%s: device %d is registered already\n", obd->obd_name,
                        index);
                 GOTO(out_mutex, rc = -EEXIST);
+        }
+
+        if (lod->lod_ost_idx[index / OST_PTRS_PER_BLOCK] == NULL) {
+                OBD_ALLOC_PTR(lod->lod_ost_idx[index / OST_PTRS_PER_BLOCK]);
+                if (lod->lod_ost_idx[index / OST_PTRS_PER_BLOCK] == NULL) {
+                        CERROR("can't allocate index to add %s\n",
+                               obd->obd_name);
+                        GOTO(out_mutex, rc = -ENOMEM);
+                }
         }
 
         rc = lod_ost_pool_add(&lod->lod_pool_info, index, lod->lod_osts_size);
@@ -299,7 +291,7 @@ int lod_add_device(const struct lu_env *env, struct lod_device *lod,
                 lod->lod_desc.ld_tgt_count = index + 1;
         if (active)
                 lod->lod_desc.ld_active_tgt_count++;
-        lod->lod_osts[index] = ost_desc;
+        OST_TGT(lod, index) = ost_desc;
         cfs_bitmap_set(lod->lod_ost_bitmap, index);
         lod->lod_ostnr++;
         cfs_mutex_unlock(&lod->lod_mutex);
@@ -328,9 +320,9 @@ out_free:
  */
 static void __lod_del_device(struct lod_device *lod, unsigned idx)
 {
-        LASSERT(lod->lod_osts[idx]);
-        if (lod->lod_osts[idx]->ltd_reap == 0) {
-                lod->lod_osts[idx]->ltd_reap = 1;
+        LASSERT(OST_TGT(lod,idx));
+        if (OST_TGT(lod,idx)->ltd_reap == 0) {
+                OST_TGT(lod,idx)->ltd_reap = 1;
                 lod->lod_death_row++;
         }
 }
@@ -376,17 +368,16 @@ int lod_del_device(const struct lu_env *env, struct lod_device *lod,
         cfs_mutex_lock(&lod->lod_mutex);
         /* check that the index is allocated in the bitmap */
         if (!cfs_bitmap_check(lod->lod_ost_bitmap, idx) ||
-            !lod->lod_osts[idx]) {
-                CERROR("%s: device %d is not set up\n", obd->obd_name,
-                       idx);
+            !OST_TGT(lod,idx)) {
+                CERROR("%s: device %d is not set up\n", obd->obd_name, idx);
                 GOTO(out, rc = -EINVAL);
         }
 
         /* check that the UUID matches */
-        if (!obd_uuid_equals(&uuid, &lod->lod_osts[idx]->ltd_uuid)) {
+        if (!obd_uuid_equals(&uuid, &OST_TGT(lod,idx)->ltd_uuid)) {
                 CERROR("%s: LOD target UUID %s at index %d does not match %s"
                        "\n", obd->obd_name,
-                       obd_uuid2str(&lod->lod_osts[idx]->ltd_uuid),
+                       obd_uuid2str(&OST_TGT(lod,idx)->ltd_uuid),
                        idx, osp);
                 GOTO(out, rc = -EINVAL);
         }
@@ -571,9 +562,9 @@ int lod_initialize_objects(const struct lu_env *env, struct lod_object *mo,
 
                 lod_getref(md);
                 LASSERT(cfs_bitmap_check(md->lod_ost_bitmap, idx));
-                LASSERT(md->lod_osts[idx]);
-                LASSERTF(md->lod_osts[idx]->ltd_ost, "idx %d\n", idx);
-                nd = &md->lod_osts[idx]->ltd_ost->dd_lu_dev;
+                LASSERT(OST_TGT(md,idx));
+                LASSERTF(OST_TGT(md,idx)->ltd_ost, "idx %d\n", idx);
+                nd = &OST_TGT(md,idx)->ltd_ost->dd_lu_dev;
                 lod_putref(md);
 
                 o = lu_object_find_at(env, nd, &info->lti_fid, NULL);
@@ -863,7 +854,6 @@ int lod_lov_init(struct lod_device *lod, struct lustre_cfg *lcfg)
         /* the OST array and bitmap are allocated/grown dynamically as OSTs are
          * added to the LOD, see lod_add_device() */
         lod->lod_ost_bitmap = NULL;
-        lod->lod_osts       = NULL;
         lod->lod_osts_size  = 0;
         lod->lod_ostnr      = 0;
 
@@ -931,8 +921,10 @@ int lod_lov_fini(struct lod_device *lod)
                 cfs_mutex_unlock(&lod->lod_mutex);
                 lod_putref(lod);
                 CFS_FREE_BITMAP(lod->lod_ost_bitmap);
-                OBD_FREE_LARGE(lod->lod_osts,
-                               sizeof(*lod->lod_osts) * lod->lod_osts_size);
+                for (idx = 0; idx < OST_PTRS; idx++) {
+                        if (lod->lod_ost_idx[idx])
+                                OBD_FREE_PTR(lod->lod_ost_idx[idx]);
+                }
                 lod->lod_osts_size = 0;
         }
 

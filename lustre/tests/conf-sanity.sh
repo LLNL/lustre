@@ -40,7 +40,8 @@ fi
 # 56  - ORI-23
 # 57  - tunefs.lustre doesn't work anymore?
 # 58  - ORI-246
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 33a 38 49 50g 55 56 57 58"
+#ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 33a 38 49 50g 55 56 57 58"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 38 49 50g 57 58"
 
 SRCDIR=`dirname $0`
 PATH=$PWD/$SRCDIR:$SRCDIR:$SRCDIR/../utils:$PATH
@@ -2693,7 +2694,7 @@ test_55() {
 run_test 55 "check lov_objid size"
 
 test_56() {
-	add mds1 $MDS_MKFS_OPTS --mkfsoptions='\"-J size=16\"' --reformat $(mdsdevname 1)
+	add mds1 $MDS_MKFS_OPTS --mkfsoptions='\"-J size=16\"' --reformat $(mdsdevname 1) --index 0
 	add ost1 $OST_MKFS_OPTS --index 1000 --reformat $(ostdevname 1)
 	add ost2 $OST_MKFS_OPTS --index 10000 --reformat $(ostdevname 2)
 
