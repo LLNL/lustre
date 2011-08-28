@@ -287,10 +287,10 @@ int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
 
 /*
  * it's quite obvious we can't maintain all the structures in the memory:
- * while OST is down, MDS can be processing thousands and thosands unlinks
+ * while OST is down, MDS can be processing thousands and thousands of unlinks
  * filling persistent llogs and in-core respresentation
  *
- * this don't scale at all. so we need basically the following:
+ * this doesn't scale at all. so we need basically the following:
  * a) destroy/setattr append llog records
  * b) once llog has grown to X records, we process first Y committed records
  * 
@@ -310,22 +310,11 @@ int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
 static void osp_sync_request_commit_cb(struct ptlrpc_request *req)
 {
         struct osp_device *d = req->rq_cb_data;
-        struct obd_import *imp = req->rq_import;
 
         CDEBUG(D_HA, "commit req %p, transno %u\n", req, (unsigned) req->rq_transno);
 
         if (unlikely(req->rq_transno == 0))
                 return;
-
-        /* import is being shutted down, this is not real commit */
-        if (req->rq_import_generation < imp->imp_generation) {
-                LASSERT(d->opd_syn_rpc_in_progress > 0);
-                cfs_spin_lock(&d->opd_syn_lock);
-                d->opd_syn_rpc_in_progress--;
-                cfs_spin_unlock(&d->opd_syn_lock);
-
-                return;
-        }
 
         /* XXX: what if request isn't committed for very long? */
         LASSERT(d);
@@ -384,9 +373,14 @@ static int osp_sync_interpret(const struct lu_env *env,
                          req->rq_transno, rc, req->rq_import_generation,
                          imp->imp_generation);
                 LASSERT(d->opd_syn_rpc_in_progress > 0);
-                cfs_spin_lock(&d->opd_syn_lock);
-                d->opd_syn_rpc_in_progress--;
-                cfs_spin_unlock(&d->opd_syn_lock);
+                if (req->rq_transno == 0) {
+                        /* this is the last time we see the request
+                         * if transno is not zero, then commit cb
+                         * will be called at some point */
+                        cfs_spin_lock(&d->opd_syn_lock);
+                        d->opd_syn_rpc_in_progress--;
+                        cfs_spin_unlock(&d->opd_syn_lock);
+                }
 
                 cfs_waitq_signal(&d->opd_syn_waitq);
         } else if (unlikely(d->opd_pre_status == -ENOSPC)) {
@@ -645,6 +639,7 @@ static int osp_sync_process_record(const struct lu_env *env,
 static void osp_sync_process_committed(const struct lu_env *env, struct osp_device *d)
 {
         struct obd_device     *obd = d->opd_obd;
+        struct obd_import     *imp = obd->u.cli.cl_import;
         struct ost_body       *body;
         struct ptlrpc_request *req, *tmp;
         struct llog_ctxt      *ctxt;
@@ -691,9 +686,17 @@ static void osp_sync_process_committed(const struct lu_env *env, struct osp_devi
                 body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
                 LASSERT(body);
 
-                rc = llog_cat_cancel_records(env, llh, 1, &body->oa.o_lcookie);
-                if (rc)
-                        CERROR("can't cancel record: %d\n", rc);
+                /* import can be closing, thus all commit cb's are
+                 * called we can check committness directly */
+                if (req->rq_transno <= imp->imp_peer_committed_transno) {
+                        rc = llog_cat_cancel_records(env, llh, 1,
+                                                     &body->oa.o_lcookie);
+                        if (rc)
+                                CERROR("%s: can't cancel record: %d\n",
+                                       obd->obd_name, rc);
+                } else {
+                        DEBUG_REQ(D_HA, req, "not committed");
+                }
 
                 ptlrpc_req_finished(req);
                 done++;
