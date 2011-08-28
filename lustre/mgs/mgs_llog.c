@@ -2023,7 +2023,7 @@ static int mgs_write_log_osp_to_lod(const struct lu_env *env,
         struct llog_handle *llh = NULL;
         char *nodeuuid, *ospname, *ospuuid, *loduuid, *svname;
         char *dskname;
-        char index[5];
+        char index[7];
         int i, rc;
 
         ENTRY;
