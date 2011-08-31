@@ -561,6 +561,7 @@ static int lod_cache_parent_striping(const struct lu_env *env,
 
         if (rc < sizeof(struct lov_user_md)) {
                 /* don't lookup for non-existing or invalid striping */
+                lp->mbo_def_striping_set = 0;
                 lp->mbo_striping_cached = 1;
                 lp->mbo_def_stripe_size = 0;
                 lp->mbo_def_stripenr = 0;
@@ -584,6 +585,7 @@ static int lod_cache_parent_striping(const struct lu_env *env,
         lp->mbo_def_stripe_size = v1->lmm_stripe_size;
         lp->mbo_def_stripe_offset = v1->lmm_stripe_offset;
         lp->mbo_striping_cached = 1;
+        lp->mbo_def_striping_set = 1;
 
         if (v1->lmm_magic == LOV_USER_MAGIC_V3) {
                 /* XXX: sanity check here */
@@ -677,7 +679,7 @@ static void lod_ah_init(const struct lu_env *env,
 
                 lc->mbo_def_stripe_offset = (__u16) -1;
 
-                if (lp->mbo_def_stripenr || lp->mbo_pool) {
+                if (lp->mbo_def_striping_set) {
                         if (lp->mbo_pool)
                                 lod_object_set_pool(lc, lp->mbo_pool);
                         lc->mbo_stripenr = lp->mbo_def_stripenr;

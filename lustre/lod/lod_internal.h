@@ -137,7 +137,8 @@ struct lod_object {
         int                mbo_stripes_allocated;
         /* default striping for directory represented by this object
          * is cached in stripenr/stripe_size */
-        int                mbo_striping_cached;
+        int                mbo_striping_cached:1;
+        int                mbo_def_striping_set:1;
         __u32              mbo_def_stripenr;
         __u32              mbo_def_stripe_size;
         __u16              mbo_def_stripe_offset;
