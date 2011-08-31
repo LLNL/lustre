@@ -385,6 +385,8 @@ static int osc_rd_contention_seconds(char *page, char **start, off_t off,
         struct obd_device *obd = data;
         struct osc_device *od  = obd2osc_dev(obd);
 
+        if (od == NULL)
+                return -ENODEV;
         return snprintf(page, count, "%u\n", od->od_contention_time);
 }
 
@@ -394,6 +396,8 @@ static int osc_wr_contention_seconds(struct file *file, const char *buffer,
         struct obd_device *obd = data;
         struct osc_device *od  = obd2osc_dev(obd);
 
+        if (od == NULL)
+                return -ENODEV;
         return lprocfs_write_helper(buffer, count, &od->od_contention_time) ?:
                 count;
 }
@@ -404,6 +408,8 @@ static int osc_rd_lockless_truncate(char *page, char **start, off_t off,
         struct obd_device *obd = data;
         struct osc_device *od  = obd2osc_dev(obd);
 
+        if (od == NULL)
+                return -ENODEV;
         return snprintf(page, count, "%u\n", od->od_lockless_truncate);
 }
 
@@ -413,6 +419,8 @@ static int osc_wr_lockless_truncate(struct file *file, const char *buffer,
         struct obd_device *obd = data;
         struct osc_device *od  = obd2osc_dev(obd);
 
+        if (od == NULL)
+                return -ENODEV;
         return lprocfs_write_helper(buffer, count, &od->od_lockless_truncate) ?:
                 count;
 }
