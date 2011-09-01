@@ -33,96 +33,90 @@
  * Lustre is a trademark of Sun Microsystems, Inc.
  */
 
-#if HAVE_CONFIG_H
-#  include "config.h"
-#endif /* HAVE_CONFIG_H */
-
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
 #include <config.h>
-#include <lustre_disk.h>
-#include <lustre_ver.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+
+#include <libcfs/libcfs.h>
+#include <lustre_disk.h>
+#include <lustre_param.h>
+#include <lustre_ver.h>
+
 #include "mount_utils.h"
-
-extern char *progname;
-extern int verbose;
-
-#define vprint(fmt, arg...) if (verbose > 0) printf(fmt, ##arg)
-#define verrprint(fmt, arg...) if (verbose >= 0) fprintf(stderr, fmt, ##arg)
 
 void fatal(void)
 {
-        verbose = 0;
-        fprintf(stderr, "\n%s FATAL: ", progname);
+	verbose = 0;
+	fprintf(stderr, "\n%s FATAL: ", progname);
 }
 
 int run_command_err(char *cmd, int cmdsz, char *error_msg)
 {
-        char log[] = "/tmp/run_command_logXXXXXX";
-        int fd = -1, rc;
+	char	log[] = "/tmp/run_command_logXXXXXX";
+	int	fd = -1, rc;
 
-        if ((cmdsz - strlen(cmd)) < 6) {
-                fatal();
-                fprintf(stderr, "Command buffer overflow: %.*s...\n",
-                        cmdsz, cmd);
-                return ENOMEM;
-        }
+	if ((cmdsz - strlen(cmd)) < 6) {
+		fatal();
+		fprintf(stderr, "Command buffer overflow: %.*s...\n",
+			cmdsz, cmd);
+		return ENOMEM;
+	}
 
-        if (verbose > 1)
-                printf("cmd: %s\n", cmd);
+	if (verbose > 1)
+		printf("cmd: %s\n", cmd);
 
-        if ((fd = mkstemp(log)) >= 0) {
-                close(fd);
-                strcat(cmd, " >");
-                strcat(cmd, log);
-        }
-        strcat(cmd, " 2>&1");
+	if ((fd = mkstemp(log)) >= 0) {
+		close(fd);
+		strcat(cmd, " >");
+		strcat(cmd, log);
+	}
+	strcat(cmd, " 2>&1");
 
-        /* Can't use popen because we need the rv of the command */
-        rc = system(cmd);
-        if (rc && (fd >= 0)) {
-                char buf[256];
+	/* Can't use popen because we need the rv of the command */
+	rc = system(cmd);
+	if (rc && (fd >= 0)) {
+		char buf[256];
+		FILE *fp;
 
-                if (error_msg != NULL) {
-                        if (snprintf(buf, sizeof(buf), "grep -q \"%s\" %s",
-                                     error_msg, log) >= sizeof(buf)) {
-                                fatal();
-                                buf[sizeof(buf) - 1] = '\0';
-                                fprintf(stderr, "grep command buf overflow: "
-                                        "'%s'\n", buf);
-                                return ENOMEM;
-                        }
-                        if (system(buf) == 0) {
-                                /* The command had the expected error */
-                                rc = -2;
-                                goto out;
-                        }
-                }
+		if (error_msg != NULL) {
+			if (snprintf(buf, sizeof(buf), "grep -q \"%s\" %s",
+				     error_msg, log) >= sizeof(buf)) {
+				fatal();
+				buf[sizeof(buf) - 1] = '\0';
+				fprintf(stderr, "grep command buf overflow: "
+					"'%s'\n", buf);
+				return ENOMEM;
+			}
+			if (system(buf) == 0) {
+				/* The command had the expected error */
+				rc = -2;
+				goto out;
+			}
+		}
 
-                FILE *fp;
-                fp = fopen(log, "r");
-                if (fp) {
-                        if (verbose <= 1)
-                                printf("cmd: %s\n", cmd);
+		fp = fopen(log, "r");
+		if (fp) {
+			if (verbose <= 1)
+				printf("cmd: %s\n", cmd);
 
-                        while (fgets(buf, sizeof(buf), fp) != NULL)
-                                printf("   %s", buf);
+			while (fgets(buf, sizeof(buf), fp) != NULL)
+				printf("   %s", buf);
 
-                        fclose(fp);
-                }
-        }
+			fclose(fp);
+		}
+	}
 out:
-        if (fd >= 0)
-                remove(log);
-        return rc;
+	if (fd >= 0)
+		remove(log);
+	return rc;
 }
 
 int run_command(char *cmd, int cmdsz)
 {
-        return run_command_err(cmd, cmdsz, NULL);
+	return run_command_err(cmd, cmdsz, NULL);
 }
 
 int add_param(char *buf, char *key, char *val)
@@ -182,6 +176,53 @@ char *strscpy(char *dst, char *src, int buflen)
 	return strscat(dst, src, buflen);
 }
 
+/* Convert symbolic hostnames to ipaddrs, since we can't do this lookup in the
+ * kernel. */
+#define MAXNIDSTR 1024
+char *convert_hostnames(char *s1)
+{
+	char		*converted, *s2 = 0, *c, *end, sep;
+	int		 left = MAXNIDSTR;
+	lnet_nid_t	 nid;
+
+	converted = malloc(left);
+	if (converted == NULL)
+		return NULL;
+
+	end = s1 + strlen(s1);
+	c = converted;
+	while ((left > 0) && (s1 < end)) {
+		s2 = strpbrk(s1, ",:");
+		if (!s2)
+			s2 = end;
+		sep = *s2;
+		*s2 = '\0';
+		nid = libcfs_str2nid(s1);
+
+		if (nid == LNET_NID_ANY) {
+			fprintf(stderr, "%s: Can't parse NID '%s'\n",
+				progname, s1);
+			free(converted);
+			return NULL;
+		}
+		if (strncmp(libcfs_nid2str(nid), "127.0.0.1",
+			    strlen("127.0.0.1")) == 0) {
+			fprintf(stderr, "%s: The NID '%s' resolves to the "
+				"loopback address '%s'.  Lustre requires a "
+				"non-loopback address.\n",
+				progname, s1, libcfs_nid2str(nid));
+			free(converted);
+			return NULL;
+		}
+
+		c += snprintf(c, left, "%s%c", libcfs_nid2str(nid), sep);
+		left = converted + MAXNIDSTR - c;
+		s1 = s2 + 1;
+	}
+	return converted;
+}
+
+#undef getmntent
 int check_mtab_entry(char *spec1, char *spec2, char *mtpt, char *type)
 {
 	FILE *fp;
@@ -236,7 +277,8 @@ int update_mtab_entry(char *spec, char *mtpt, char *type, char *opts,
 	return rc;
 }
 
-/* Search for opt in mntlist, returning true if found.
+/*
+ * Search for opt in mntlist, returning true if found.
  */
 static int in_mntlist(char *opt, char *mntlist)
 {
@@ -256,7 +298,8 @@ static int in_mntlist(char *opt, char *mntlist)
 	return (item != NULL);
 }
 
-/* Issue a message on stderr for every item in wanted_mountopts that is not
+/*
+ * Issue a message on stderr for every item in wanted_mountopts that is not
  * present in mountopts.  The justwarn boolean toggles between error and
  * warning message.  Return an error count.
  */
@@ -304,6 +347,149 @@ void trim_mountfsoptions(char *s)
 	p = s + strlen(s) - 1;
 	while (p >= s && *p == ',')
 		*p-- = '\0';
+}
+
+
+/* return canonicalized absolute pathname, even if the target file does not
+ * exist, unlike realpath */
+static char *absolute_path(char *devname)
+{
+	char	 buf[PATH_MAX + 1];
+	char	*path;
+	char	*ptr;
+
+	path = malloc(PATH_MAX + 1);
+	if (path == NULL)
+		return NULL;
+
+	if (devname[0] != '/') {
+		if (getcwd(buf, sizeof(buf) - 1) == NULL)
+			return NULL;
+		strcat(buf, "/");
+		strcat(buf, devname);
+	} else {
+		strcpy(buf, devname);
+	}
+	/* truncate filename before calling realpath */
+	ptr = strrchr(buf, '/');
+	if (ptr == NULL) {
+		free(path);
+		return NULL;
+	}
+	*ptr = '\0';
+	if (path != realpath(buf, path)) {
+		free(path);
+		return NULL;
+	}
+	/* add the filename back */
+	strcat(path, "/");
+	strcat(path, ptr + 1);
+	return path;
+}
+
+/* Determine if a device is a block device (as opposed to a file) */
+int is_block(char *devname)
+{
+	struct stat	 st;
+	int		 ret = 0;
+	char		*devpath;
+
+	devpath = absolute_path(devname);
+	if (devpath == NULL) {
+		fprintf(stderr, "%s: failed to resolve path to %s\n",
+			progname, devname);
+		return -1;
+	}
+
+	ret = access(devname, F_OK);
+	if (ret != 0) {
+		if (strncmp(devpath, "/dev/", 5) == 0) {
+			/* nobody sane wants to create a loopback file under
+			 * /dev. Let's just report the device doesn't exist */
+			fprintf(stderr, "%s: %s apparently does not exist\n",
+				progname, devpath);
+			ret = -1;
+			goto out;
+		}
+		ret = 0;
+		goto out;
+	}
+	ret = stat(devname, &st);
+	if (ret != 0) {
+		fprintf(stderr, "%s: cannot stat %s\n", progname, devname);
+		goto out;
+	}
+	ret = S_ISBLK(st.st_mode);
+out:
+	free(devpath);
+	return ret;
+}
+
+__u64 get_device_size(char* device)
+{
+	int ret, fd;
+	__u64 size = 0;
+
+	fd = open(device, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "%s: cannot open %s: %s\n",
+			progname, device, strerror(errno));
+		return 0;
+	}
+
+#ifdef BLKGETSIZE64
+	/* size in bytes. bz5831 */
+	ret = ioctl(fd, BLKGETSIZE64, (void*)&size);
+#else
+	{
+		__u32 lsize = 0;
+		/* size in blocks */
+		ret = ioctl(fd, BLKGETSIZE, (void*)&lsize);
+		size = (__u64)lsize * 512;
+	}
+#endif
+	close(fd);
+	if (ret < 0) {
+		fprintf(stderr, "%s: size ioctl failed: %s\n",
+			progname, strerror(errno));
+		return 0;
+	}
+
+	vprint("device size = "LPU64"MB\n", size >> 20);
+	/* return value in KB */
+	return size >> 10;
+}
+
+int file_create(char *path, int size)
+{
+	int ret;
+	int fd;
+
+	ret = access(path, F_OK);
+	if (ret == 0) {
+		ret = unlink(path);
+		if (ret != 0)
+			return errno;
+	}
+
+	fd = creat(path, S_IRUSR|S_IWUSR);
+	if (fd < 0) {
+		fatal();
+		fprintf(stderr, "%s: Unable to create backing store: %s\n",
+			progname, strerror(errno));
+		return errno;
+	}
+
+	ret = ftruncate(fd, size * 1024);
+	close(fd);
+	if (ret != 0) {
+		fatal();
+		fprintf(stderr, "%s: Unable to truncate backing store: %s\n",
+			progname, strerror(errno));
+		return errno;
+	}
+
+	return 0;
 }
 
 /* Setup a file in the first unused loop_device */
@@ -401,6 +587,40 @@ int loop_format(struct mkfs_opts *mop)
 	return 0;
 }
 
+void osd_print_ldd(char *str, struct lustre_disk_data *ldd)
+{
+	printf("\n   %s:\n", str);
+	printf("Target:     %s\n", ldd->ldd_svname);
+	if (ldd->ldd_flags & LDD_F_NEED_INDEX)
+		printf("Index:      unassigned\n");
+	else
+		printf("Index:      %d\n", ldd->ldd_svindex);
+	if (ldd->ldd_uuid[0])
+		printf("UUID:       %s\n", (char *)ldd->ldd_uuid);
+	printf("Lustre FS:  %s\n", ldd->ldd_fsname);
+	printf("Mount type: %s\n", MT_STR(ldd));
+	printf("Flags:      %#x\n", ldd->ldd_flags);
+	printf("              (%s%s%s%s%s%s%s%s%s%s)\n",
+	       IS_MDT(ldd) ? "MDT ":"",
+	       IS_OST(ldd) ? "OST ":"",
+	       IS_MGS(ldd) ? "MGS ":"",
+	       /* should never happen */
+	       ldd->ldd_flags & LDD_F_NEED_INDEX ? "needs_index ":"",
+	       ldd->ldd_flags & LDD_F_VIRGIN     ? "first_time ":"",
+	       ldd->ldd_flags & LDD_F_UPDATE     ? "update ":"",
+	       ldd->ldd_flags & LDD_F_WRITECONF  ? "writeconf ":"",
+	       ldd->ldd_flags & LDD_F_IAM_DIR  ? "IAM_dir_format ":"",
+	       ldd->ldd_flags & LDD_F_NO_PRIMNODE? "no_primnode ":"",
+	       /* should never happen */
+	       ldd->ldd_flags & LDD_F_UPGRADE14  ? "upgrade1.4 ":"");
+	printf("Persistent mount opts: %s\n", ldd->ldd_mount_opts);
+	/* No longer passed */
+	printf("Parameters:%s\n", ldd->ldd_params);
+	if (ldd->ldd_userdata[0])
+		printf("Comment: %s\n", ldd->ldd_userdata);
+	printf("\n");
+}
+
 /* Write the server config files */
 int osd_write_ldd(struct mkfs_opts *mop)
 {
@@ -408,10 +628,12 @@ int osd_write_ldd(struct mkfs_opts *mop)
 	int ret;
 
 	switch (ldd->ldd_mount_type) {
+#ifdef HAVE_LDISKFS_OSD
 	case LDD_MT_LDISKFS:
 	case LDD_MT_LDISKFS2:
 		ret = ldiskfs_write_ldd(mop);
 		break;
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	case LDD_MT_ZFS:
 		ret = zfs_write_ldd(mop);
@@ -434,10 +656,12 @@ int osd_read_ldd(char *dev, struct lustre_disk_data *ldd)
 	int ret;
 
 	switch (ldd->ldd_mount_type) {
+#ifdef HAVE_LDISKFS_OSD
 	case LDD_MT_LDISKFS:
 	case LDD_MT_LDISKFS2:
 		ret = ldiskfs_read_ldd(dev, ldd);
 		break;
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	case LDD_MT_ZFS:
 		ret = zfs_read_ldd(dev, ldd);
@@ -459,10 +683,12 @@ int osd_is_lustre(char *dev, unsigned *mount_type)
 {
 	vprint("checking for existing Lustre data: ");
 
+#ifdef HAVE_LDISKFS_OSD
 	if (ldiskfs_is_lustre(dev, mount_type)) {
 		vprint("found\n");
 		return 1;
 	}
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	if (zfs_is_lustre(dev, mount_type)) {
 		vprint("found\n");
@@ -481,10 +707,12 @@ int osd_make_lustre(struct mkfs_opts *mop)
 	int ret;
 
 	switch (ldd->ldd_mount_type) {
+#ifdef HAVE_LDISKFS_OSD
 	case LDD_MT_LDISKFS:
 	case LDD_MT_LDISKFS2:
 		ret = ldiskfs_make_lustre(mop);
 		break;
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	case LDD_MT_ZFS:
 		ret = zfs_make_lustre(mop);
@@ -509,12 +737,14 @@ int osd_prepare_lustre(struct mkfs_opts *mop,
 	int ret;
 
 	switch (ldd->ldd_mount_type) {
+#ifdef HAVE_LDISKFS_OSD
 	case LDD_MT_LDISKFS:
 	case LDD_MT_LDISKFS2:
 		ret = ldiskfs_prepare_lustre(mop,
 					     default_mountopts, default_len,
 					     always_mountopts, always_len);
 		break;
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	case LDD_MT_ZFS:
 		ret = zfs_prepare_lustre(mop,
@@ -535,23 +765,21 @@ int osd_prepare_lustre(struct mkfs_opts *mop,
 
 int osd_tune_lustre(char *dev, struct mount_opts *mop)
 {
-	struct lustre_disk_data *ldd = &mop->mo_ldd;
-	int ret;
+	struct lustre_disk_data	*ldd = &mop->mo_ldd;
+	int			 ret;
 
 	switch (ldd->ldd_mount_type) {
+#ifdef HAVE_LDISKFS_OSD
+	case LDD_MT_EXT3:
 	case LDD_MT_LDISKFS:
 	case LDD_MT_LDISKFS2:
 		ret = ldiskfs_tune_lustre(dev, mop);
 		break;
-#ifdef HAVE_ZFS_OSD
-	case LDD_MT_ZFS:
-		ret = zfs_tune_lustre(dev, mop);
-		break;
-#endif /* HAVE_ZFS_OSD */
+#endif /* HAVE_LDISKFS_OSD */
 	default:
 		fatal();
 		fprintf(stderr, "unknown fs type %d '%s'\n",
-				ldd->ldd_mount_type, MT_STR(ldd));
+			ldd->ldd_mount_type, MT_STR(ldd));
 		ret = EINVAL;
 		break;
 	}
@@ -563,9 +791,11 @@ int osd_init(void)
 {
 	int ret = 0;
 
+#ifdef HAVE_LDISKFS_OSD
 	ret = ldiskfs_init();
 	if (ret)
 		return ret;
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	ret = zfs_init();
 	/* we want to be able to set up a ldiskfs-based filesystem w/o
@@ -579,123 +809,10 @@ int osd_init(void)
 
 void osd_fini(void)
 {
+#ifdef HAVE_LDISKFS_OSD
 	ldiskfs_fini();
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	zfs_fini();
 #endif /* HAVE_ZFS_OSD */
 }
-
-__u64 get_device_size(char* device)
-{
-	int ret, fd;
-	__u64 size = 0;
-
-	fd = open(device, O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "%s: cannot open %s: %s\n",
-			progname, device, strerror(errno));
-		return 0;
-	}
-
-#ifdef BLKGETSIZE64
-	/* size in bytes. bz5831 */
-	ret = ioctl(fd, BLKGETSIZE64, (void*)&size);
-#else
-	{
-		__u32 lsize = 0;
-		/* size in blocks */
-		ret = ioctl(fd, BLKGETSIZE, (void*)&lsize);
-		size = (__u64)lsize * 512;
-	}
-#endif
-	close(fd);
-	if (ret < 0) {
-		fprintf(stderr, "%s: size ioctl failed: %s\n",
-			progname, strerror(errno));
-		return 0;
-	}
-
-	vprint("device size = "LPU64"MB\n", size >> 20);
-	/* return value in KB */
-	return size >> 10;
-}
-
-int file_create(char *path, int size)
-{
-	int ret;
-	int fd;
-
-	ret = access(path, F_OK);
-	if (ret == 0) {
-		ret = unlink(path);
-		if (ret != 0)
-			return errno;
-	}
-
-	fd = creat(path, S_IRUSR|S_IWUSR);
-	if (fd < 0) {
-		fatal();
-		fprintf(stderr, "%s: Unable to create backing store: %s\n",
-			progname, strerror(errno));
-		return errno;
-	}
-
-	ret = ftruncate(fd, size * 1024);
-	close(fd);
-	if (ret != 0) {
-		fatal();
-		fprintf(stderr, "%s: Unable to truncate backing store: %s\n",
-			progname, strerror(errno));
-		return errno;
-	}
-
-	return 0;
-}
-
-/* Convert symbolic hostnames to ipaddrs, since we can't do this lookup in the
- * kernel. */
-#define MAXNIDSTR 1024
-char *convert_hostnames(char *s1)
-{
-        char *converted, *s2 = 0, *c, *end, sep;
-        int left = MAXNIDSTR;
-        lnet_nid_t nid;
-
-        converted = malloc(left);
-        if (converted == NULL) {
-                return NULL;
-        }
-
-        end = s1 + strlen(s1);
-        c = converted;
-        while ((left > 0) && (s1 < end)) {
-                s2 = strpbrk(s1, ",:");
-                if (!s2)
-                        s2 = end;
-                sep = *s2;
-                *s2 = '\0';
-                nid = libcfs_str2nid(s1);
-
-                if (nid == LNET_NID_ANY) {
-                        fprintf(stderr, "%s: Can't parse NID '%s'\n", progname, s1);
-                        free(converted);
-                        return NULL;
-                }
-                if (strncmp(libcfs_nid2str(nid), "127.0.0.1",
-                            strlen("127.0.0.1")) == 0) {
-                        fprintf(stderr, "%s: The NID '%s' resolves to the "
-                                "loopback address '%s'.  Lustre requires a "
-                                "non-loopback address.\n",
-                                progname, s1, libcfs_nid2str(nid));
-                        free(converted);
-                        return NULL;
-                }
-
-                c += snprintf(c, left, "%s%c", libcfs_nid2str(nid), sep);
-                left = converted + MAXNIDSTR - c;
-                s1 = s2 + 1;
-        }
-        return converted;
-}
-
-

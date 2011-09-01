@@ -42,27 +42,24 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
+#include <stdarg.h>
 #include <string.h>
-#include "obdctl.h"
-#include <lustre_ver.h>
-#include <ctype.h>
-#include <limits.h>
-#include "mount_utils.h"
-#include <lustre_param.h>
+#include <getopt.h>
+#include <unistd.h>
+#include <sys/mount.h>
 
-#define MAXOPT 4096
+#include "mount_utils.h"
+
 #define MAX_RETRIES 99
 #define MAXOPT 4096
 
-int          verbose = 0;
-char         *progname = NULL;
+char *progname = NULL;
+int   verbose = 0;
 
-void usage(FILE *out)
+static void usage(FILE *out)
 {
         fprintf(out, "%s v"LUSTRE_VERSION_STRING"\n", progname);
         fprintf(out, "\nThis mount helper should only be invoked via the "
@@ -176,7 +173,8 @@ static void append_option(char *options, const char *one)
         strcat(options, one);
 }
 
-static void append_mgsnid(char *options, const char *val)
+static void append_mgsnid(struct mount_opts *mop, char *options,
+                          const char *val)
 {
         char *resolved;
 
@@ -188,12 +186,13 @@ static void append_mgsnid(char *options, const char *val)
         } else {
                 strcat(options, val);
         }
-        have_mgsnid++;
+        mop->mo_have_mgsnid++;
 }
 
 /* Replace options with subset of Lustre-specific options, and
    fill in mount flags */
-int parse_options(struct mount_opts *mop, char *orig_options, int *flagp)
+static int parse_options(struct mount_opts *mop, char *orig_options,
+			 int *flagp)
 {
         char *options, *opt, *nextopt, *arg, *val;
 
@@ -280,9 +279,9 @@ static int parse_ldd(char *source, struct mount_opts *mop, char *options)
 
 	rc = osd_is_lustre(source, &ldd->ldd_mount_type);
 	if (rc == 0) {
-		fprintf(stderr, "%s: %s has not been formatted with mkfs.lustre"
-			" or the backend filesystem type is not supported by "
-			"this tool\n", progname, source);
+		fprintf(stderr, "%s: %s has not been formatted with "
+			"mkfs.lustre or the backend filesystem type is not "
+			"supported by this tool\n", progname, source);
 		return ENODEV;
 	}
 
@@ -363,6 +362,11 @@ static int parse_ldd(char *source, struct mount_opts *mop, char *options)
 static void set_defaults(struct mount_opts *mop)
 {
 	memset(mop, 0, sizeof(*mop));
+	mop->mo_ldd.ldd_magic = LDD_MAGIC;
+	mop->mo_ldd.ldd_config_ver = 1;
+	mop->mo_ldd.ldd_flags = 0;
+	strcpy(mop->mo_ldd.ldd_fsname, "lustre");
+	mop->mo_ldd.ldd_mount_type = LDD_MT_LDISKFS;
 	mop->mo_usource = NULL;
 	mop->mo_source = NULL;
 	mop->mo_nomtab = 0;
@@ -503,84 +507,90 @@ int main(int argc, char *const argv[])
 
 	rc = parse_opts(argc, argv, &mop);
 	if (rc)
-		return rc;
+		goto out_fini;
 
-        if (verbose) {
-                for (i = 0; i < argc; i++)
-                        printf("arg[%d] = %s\n", i, argv[i]);
+	if (verbose) {
+		for (i = 0; i < argc; i++)
+			printf("arg[%d] = %s\n", i, argv[i]);
 		printf("source = %s (%s), target = %s\n", mop.mo_usource,
 		       mop.mo_source, mop.mo_target);
 		printf("options = %s\n", mop.mo_orig_options);
-        }
+	}
 
 	options = malloc(MAXOPT);
-        if (options == NULL) {
-                fprintf(stderr, "can't allocate memory for options\n");
-                return (ENOMEM);
-        }
+	if (options == NULL) {
+		fprintf(stderr, "can't allocate memory for options\n");
+		rc = ENOMEM;
+		goto out_parse;
+	}
+
 	strcpy(options, mop.mo_orig_options);
 	rc = parse_options(&mop, options, &flags);
-        if (rc) {
-                fprintf(stderr, "%s: can't parse options: %s\n",
-                        progname, options);
-                return(EINVAL);
+	if (rc) {
+		fprintf(stderr, "%s: can't parse options: %s\n",
+			progname, options);
+		rc = EINVAL;
+		goto out;
         }
 
 	if (!mop.mo_force) {
 		rc = check_mtab_entry(mop.mo_usource, mop.mo_source,
 				      mop.mo_target, "lustre");
-                if (rc && !(flags & MS_REMOUNT)) {
-                        fprintf(stderr, "%s: according to %s %s is "
+		if (rc && !(flags & MS_REMOUNT)) {
+			fprintf(stderr, "%s: according to %s %s is "
 				"already mounted on %s\n", progname, MOUNTED,
 				mop.mo_usource, mop.mo_target);
-                        return(EEXIST);
-                }
-                if (!rc && (flags & MS_REMOUNT)) {
-                        fprintf(stderr, "%s: according to %s %s is "
+			rc = EEXIST;
+			goto out;
+		}
+		if (!rc && (flags & MS_REMOUNT)) {
+			fprintf(stderr, "%s: according to %s %s is "
 				"not already mounted on %s\n", progname, MOUNTED,
 				mop.mo_usource, mop.mo_target);
-                        return(ENOENT);
-                }
-        }
-        if (flags & MS_REMOUNT)
+			rc = ENOENT;
+			goto out;
+		}
+	}
+
+	if (flags & MS_REMOUNT)
 		mop.mo_nomtab++;
 
 	rc = access(mop.mo_target, F_OK);
-        if (rc) {
-                rc = errno;
+	if (rc) {
+		rc = errno;
 		fprintf(stderr, "%s: %s inaccessible: %s\n", progname,
 			mop.mo_target, strerror(errno));
-                return rc;
-        }
-
-	if (!strstr(mop.mo_usource, ":/")) {
-		rc = parse_ldd(mop.mo_source, &mop, options);
-		if (rc)
-			return rc;
+		goto out;
 	}
 
-        /* In Linux 2.4, the target device doesn't get passed to any of our
-           functions.  So we'll stick it on the end of the options. */
+	if (!devname_is_client(mop.mo_usource)) {
+		rc = parse_ldd(mop.mo_source, &mop, options);
+		if (rc)
+			goto out;
+	}
+
+	/* In Linux 2.4, the target device doesn't get passed to any of our
+	 * functions.  So we'll stick it on the end of the options. */
 	append_option(options, "device=");
 	strcat(options, mop.mo_source);
 
-        if (verbose)
-                printf("mounting device %s at %s, flags=%#x options=%s\n",
+	if (verbose)
+		printf("mounting device %s at %s, flags=%#x options=%s\n",
 		       mop.mo_source, mop.mo_target, flags, options);
 
-	if (!strstr(mop.mo_usource, ":/") &&
+	if (!devname_is_client(mop.mo_usource) &&
 	    osd_tune_lustre(mop.mo_source, &mop)) {
 		if (verbose)
 			fprintf(stderr, "%s: unable to set tunables for %s"
-					" (may cause reduced IO performance)\n",
-					argv[0], mop.mo_source);
+				" (may cause reduced IO performance)\n",
+				argv[0], mop.mo_source);
 	}
 
 	if (!mop.mo_fake) {
-                /* flags and target get to lustre_get_sb, but not
-                   lustre_fill_super.  Lustre ignores the flags, but mount
-                   does not. */
-                for (i = 0, rc = -EAGAIN; i <= mop.mo_retry && rc != 0; i++) {
+		/* flags and target get to lustre_get_sb, but not
+		 * lustre_fill_super.  Lustre ignores the flags, but mount
+		 * does not. */
+		for (i = 0, rc = -EAGAIN; i <= mop.mo_retry && rc != 0; i++) {
 			rc = mount(mop.mo_source, mop.mo_target, "lustre",
 				   flags, (void *)options);
 			if (rc == 0)
@@ -598,33 +608,27 @@ int main(int argc, char *const argv[])
 		}
 	}
 
-        if (rc == 0) {
-                if (!nomtab)
-                        rc = update_mtab_entry(usource, target, "lustre",
-                                               orig_options, 0,0,0);
-                if (ldd.ldd_flags & LDD_F_VIRGIN) {
-                        char cmd[100] = "";
+	if (rc == 0) {
+		if (!mop.mo_nomtab)
+			rc = update_mtab_entry(mop.mo_usource, mop.mo_target,
+					       "lustre", mop.mo_orig_options,
+					       0,0,0);
+		/* change label from <fsname>:<index> to <fsname>-<index>
+		 * to indicate the device has been registered. */
+		if (mop.mo_ldd.ldd_flags & LDD_F_VIRGIN)
+			(void) osd_label_lustre(&mop);
+	} else {
+		char *cli;
 
-                        snprintf(cmd, sizeof(cmd), E2LABEL" %s %s",
-                                        source, ldd.ldd_svname);
-                        if (verbose)
-                                printf("setting label to '%s'\n",
-                                       ldd.ldd_svname);
-
-                        rc = run_command(cmd, sizeof(cmd));
-                }
-        } else {
-                char *cli;
-
-                rc = errno;
+		rc = errno;
 
 		cli = strrchr(mop.mo_usource, ':');
-                if (cli && (strlen(cli) > 2))
-                        cli += 2;
-                else
-                        cli = NULL;
+		if (cli && (strlen(cli) > 2))
+			cli += 2;
+		else
+			cli = NULL;
 
-                fprintf(stderr, "%s: mount %s at %s failed: %s\n", progname,
+		fprintf(stderr, "%s: mount %s at %s failed: %s\n", progname,
 			mop.mo_usource, mop.mo_target, strerror(errno));
                 if (errno == ENODEV)
                         fprintf(stderr, "Are the lustre modules loaded?\n"
@@ -671,11 +675,11 @@ int main(int argc, char *const argv[])
 		}
 	}
 
+out:
 	free(options);
-	/* mo_usource should be freed, but we can rely on the kernel */
+out_parse:
 	free(mop.mo_source);
-
-	osd_fini();
-
+out_fini:
+        osd_fini();
         return rc;
 }

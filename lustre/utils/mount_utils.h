@@ -39,10 +39,10 @@
 
 #include <lustre_disk.h>
 #include <lustre_param.h>
+#include <lustre_ver.h>
 
 extern char *progname;
 extern int verbose;
-extern int failover;
 
 #define vprint(fmt, arg...) if (verbose > 0) printf(fmt, ##arg)
 #define verrprint(fmt, arg...) if (verbose >= 0) fprintf(stderr, fmt, ##arg)
@@ -121,6 +121,12 @@ struct mount_opts {
 
 char *convert_hostnames(char *s1);
 
+/* loopback helper functions */
+__u64 get_device_size(char *device);
+int loop_setup(struct mkfs_opts *mop);
+int loop_cleanup(struct mkfs_opts *mop);
+int loop_format(struct mkfs_opts *mop);
+
 /* mkfs/mount helper functions */
 void fatal(void);
 int run_command_err(char *cmd, int cmdsz, char *error_msg);
@@ -134,14 +140,6 @@ int update_mtab_entry(char *spec, char *mtpt, char *type, char *opts,
 		      int flags, int freq, int pass);
 int check_mountfsoptions(char *mountopts, char *wanted_mountopts, int justwarn);
 void trim_mountfsoptions(char *s);
-__u64 get_device_size(char* device);
-
-int is_block(char *devname);
-void disp_old_e2fsprogs_msg(const char *feature, int make_backfs);
-int make_lustre_backfs(struct mkfs_opts *mop);
-int write_local_files(struct mkfs_opts *mop);
-int read_local_files(struct mkfs_opts *mop);
-int is_lustre_target(struct mkfs_opts *mop);
 
 /* loopback helper functions */
 int file_create(char *path, int size);
@@ -150,6 +148,7 @@ int loop_setup(struct mkfs_opts *mop);
 int loop_cleanup(struct mkfs_opts *mop);
 
 /* generic target support */
+void osd_print_ldd(char *str, struct lustre_disk_data *ldd);
 int osd_write_ldd(struct mkfs_opts *mop);
 int osd_read_ldd(char *dev, struct lustre_disk_data *ldd);
 int osd_is_lustre(char *dev, unsigned *mount_type);
@@ -161,6 +160,7 @@ int osd_tune_lustre(char *dev, struct mount_opts *mop);
 int osd_init(void);
 void osd_fini(void);
 
+#ifdef HAVE_LDISKFS_OSD
 int ldiskfs_write_ldd(struct mkfs_opts *mop);
 int ldiskfs_read_ldd(char *dev, struct lustre_disk_data *ldd);
 int ldiskfs_is_lustre(char *dev, unsigned *mount_type);
@@ -171,7 +171,7 @@ int ldiskfs_prepare_lustre(struct mkfs_opts *mop,
 int ldiskfs_tune_lustre(char *dev, struct mount_opts *mop);
 int ldiskfs_init(void);
 void ldiskfs_fini(void);
-
+#endif
 #ifdef HAVE_ZFS_OSD
 int zfs_write_ldd(struct mkfs_opts *mop);
 int zfs_read_ldd(char *ds,  struct lustre_disk_data *ldd);
@@ -184,5 +184,4 @@ int zfs_tune_lustre(char *dev, struct mount_opts *mop);
 int zfs_init(void);
 void zfs_fini(void);
 #endif
-
 #endif
