@@ -90,20 +90,7 @@ static int mdd_connect_to_next(const struct lu_env *env, struct mdd_device *m,
                 GOTO(out, rc = -ENOTCONN);
         }
 
-        /* XXX: which flags we need on MDS? */
-#if 0
-        data->ocd_connect_flags = OBD_CONNECT_VERSION   | OBD_CONNECT_INDEX   |
-                                  OBD_CONNECT_REQPORTAL | OBD_CONNECT_QUOTA64 |
-                                  OBD_CONNECT_OSS_CAPA  | OBD_CONNECT_FID     |
-                                  OBD_CONNECT_BRW_SIZE  | OBD_CONNECT_CKSUM   |
-                                  OBD_CONNECT_CHANGE_QS | OBD_CONNECT_AT      |
-                                  OBD_CONNECT_MDS | OBD_CONNECT_SKIP_ORPHAN   |
-                                  OBD_CONNECT_SOM;
-#ifdef HAVE_LRU_RESIZE_SUPPORT
-        data->ocd_connect_flags |= OBD_CONNECT_LRU_RESIZE;
-#endif
-        data->ocd_group = mdt_to_obd_objgrp(mds->mds_id);
-#endif
+        data->ocd_connect_flags = OBD_CONNECT_VERSION;
         data->ocd_version = LUSTRE_VERSION_CODE;
 
         rc = obd_connect(NULL, &m->mdd_child_exp, obd, &obd->obd_uuid, data, NULL);
