@@ -655,6 +655,11 @@ int osd_write_ldd(struct mkfs_opts *mop)
                 ret = ldiskfs_write_ldd(mop);
                 break;
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        case LDD_MT_ZFS:
+                ret = zfs_write_ldd(mop);
+                break;
+#endif /* HAVE_ZFS_OSD */
         default:
                 fatal();
                 fprintf(stderr, "unknown fs type %d '%s'\n",
@@ -679,6 +684,11 @@ int osd_read_ldd(char *dev, struct lustre_disk_data *ldd)
                 ret = ldiskfs_read_ldd(dev, ldd);
                 break;
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        case LDD_MT_ZFS:
+                ret = zfs_read_ldd(dev, ldd);
+                break;
+#endif /* HAVE_ZFS_OSD */
         default:
                 fatal();
                 fprintf(stderr, "unknown fs type %d '%s'\n",
@@ -702,6 +712,12 @@ int osd_is_lustre(char *dev, unsigned *mount_type)
         }
 #endif /* HAVE_LDISKFS_OSD */
 
+#ifdef HAVE_ZFS_OSD
+        if (zfs_is_lustre(dev, mount_type)) {
+                vprint("found\n");
+                return 1;
+        }
+#endif /* HAVE_ZFS_OSD */
 
         vprint("not found\n");
         return 0;
@@ -721,6 +737,11 @@ int osd_make_lustre(struct mkfs_opts *mop)
                 ret = ldiskfs_make_lustre(mop);
                 break;
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        case LDD_MT_ZFS:
+                ret = zfs_make_lustre(mop);
+                break;
+#endif /* HAVE_ZFS_OSD */
         default:
                 fatal();
                 fprintf(stderr, "unknown fs type %d '%s'\n",
@@ -749,6 +770,13 @@ int osd_prepare_lustre(struct mkfs_opts *mop,
                                              always_mountopts, always_len);
                 break;
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        case LDD_MT_ZFS:
+                ret = zfs_prepare_lustre(mop,
+                                         default_mountopts, default_len,
+                                         always_mountopts, always_len);
+                break;
+#endif /* HAVE_ZFS_OSD */
         default:
                 fatal();
                 fprintf(stderr, "unknown fs type %d '%s'\n",
@@ -773,6 +801,11 @@ int osd_tune_lustre(char *dev, struct mount_opts *mop)
                 ret = ldiskfs_tune_lustre(dev, mop);
                 break;
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        case LDD_MT_ZFS:
+                ret = zfs_tune_lustre(dev, mop);
+                break;
+#endif /* HAVE_ZFS_OSD */
         default:
                 fatal();
                 fprintf(stderr, "unknown fs type %d '%s'\n",
@@ -793,6 +826,15 @@ int osd_init(void)
         if (ret)
                 return ret;
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        ret = zfs_init();
+        if (ret) {
+# ifdef HAVE_LDISKFS_OSD
+                ldiskfs_fini();
+# endif /* HAVE_LDISKFS_OSD */
+                return ret;
+        }
+#endif /* HAVE_ZFS_OSD */
 
         return ret;
 }
@@ -802,4 +844,7 @@ void osd_fini(void)
 #ifdef HAVE_LDISKFS_OSD
         ldiskfs_fini();
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        zfs_fini();
+#endif /* HAVE_ZFS_OSD */
 }
