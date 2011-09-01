@@ -109,6 +109,12 @@ mount_lustre_SOURCES += mount_utils_ldiskfs.c
 mount_lustre_LDADD += libiam.a
 mount_lustre_DEPENDENCIES += libiam.a
 endif
+if ZFS_ENABLED
+mount_lustre_SOURCES += mount_utils_zfs.c
+mount_lustre_CPPFLAGS += -DHAVE_IOCTL_IN_UNISTD_H
+mount_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
+mount_lustre_LDFLAGS = -lzfs -pthread
+endif
 
 # mkfs.lustre
 mkfs_lustre_SOURCES = mkfs_lustre.c mount_utils.c mount_utils.h
@@ -120,6 +126,12 @@ mkfs_lustre_SOURCES += mount_utils_ldiskfs.c
 mkfs_lustre_LDADD += libiam.a
 mkfs_lustre_DEPENDENCIES += libiam.a
 endif
+if ZFS_ENABLED
+mkfs_lustre_SOURCES += mount_utils_zfs.c
+mkfs_lustre_CPPFLAGS += -DHAVE_IOCTL_IN_UNISTD_H
+mkfs_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
+mkfs_lustre_LDFLAGS = -lzfs -pthread
+endif
 
 # tunefs.lustre
 tunefs_lustre_SOURCES = tunefs_lustre.c mount_utils.c mount_utils.h
@@ -130,6 +142,12 @@ if LDISKFS_ENABLED
 tunefs_lustre_SOURCES += mount_utils_ldiskfs.c
 tunefs_lustre_LDADD += libiam.a
 tunefs_lustre_DEPENDENCIES += libiam.a
+endif
+if ZFS_ENABLED
+tunefs_lustre_SOURCES += mount_utils_zfs.c
+tunefs_lustre_CPPFLAGS += -DHAVE_IOCTL_IN_UNISTD_H
+tunefs_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
+tunefs_lustre_LDFLAGS = -lzfs -pthread
 endif
 
 l_getidentity_SOURCES = l_getidentity.c
