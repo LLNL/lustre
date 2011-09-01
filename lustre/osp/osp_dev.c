@@ -574,17 +574,21 @@ static int osp_obd_connect(const struct lu_env *env, struct obd_export **exp,
         imp = osp->opd_obd->u.cli.cl_import;
         imp->imp_dlm_handle = conn;
 
-        /* XXX: which flags we need on OST? */
         ocd = &imp->imp_connect_data;
+        ocd->ocd_connect_flags = OBD_CONNECT_AT |
+                                 OBD_CONNECT_FULL20 |
+                                 OBD_CONNECT_INDEX |
+#ifdef HAVE_LRU_RESIZE_SUPPORT
+                                 OBD_CONNECT_LRU_RESIZE |
+#endif
+                                 OBD_CONNECT_MDS |
+                                 OBD_CONNECT_OSS_CAPA |
+                                 OBD_CONNECT_REQPORTAL |
+                                 OBD_CONNECT_SKIP_ORPHAN |
+                                 OBD_CONNECT_VERSION;
         ocd->ocd_version = LUSTRE_VERSION_CODE;
-        ocd->ocd_connect_flags = OBD_CONNECT_VERSION
-                                 | OBD_CONNECT_AT
-                                 | OBD_CONNECT_MDS
-                                 | OBD_CONNECT_SKIP_ORPHAN;
-        if (data->ocd_connect_flags & OBD_CONNECT_INDEX) {
-                ocd->ocd_connect_flags |= OBD_CONNECT_INDEX;
-                ocd->ocd_index = data->ocd_index;
-        }
+        LASSERT(data->ocd_connect_flags & OBD_CONNECT_INDEX);
+        ocd->ocd_index = data->ocd_index;
         imp->imp_connect_flags_orig = ocd->ocd_connect_flags;
 
         rc = ptlrpc_connect_import(imp);
