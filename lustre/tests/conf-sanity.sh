@@ -902,7 +902,7 @@ test_24a() {
 
 	# test 8-char fsname as well
 	local FSNAME2=test1234
-	add fs2mds $MDS_MKFS_OPTS --fsname=${FSNAME2} --nomgs --mgsnode=$MGSNID --reformat --index=0 $fs2mdsdev || exit 10
+	add fs2mds $MDS_MKFS_OPTS --fsname=${FSNAME2} --mgsnode=$MGSNID --reformat --index=0 $fs2mdsdev || exit 10
 
 	add fs2ost $OST_MKFS_OPTS --fsname=${FSNAME2} --reformat --index=0 $fs2ostdev || exit 10
 
