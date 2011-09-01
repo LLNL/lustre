@@ -776,6 +776,11 @@ int osd_tune_lustre(char *dev, struct mount_opts *mop)
 		ret = ldiskfs_tune_lustre(dev, mop);
 		break;
 #endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+        case LDD_MT_ZFS:
+                ret = zfs_tune_lustre(dev, mop);
+                break;
+#endif /* HAVE_ZFS_OSD */
 	default:
 		fatal();
 		fprintf(stderr, "unknown fs type %d '%s'\n",
@@ -798,12 +803,16 @@ int osd_init(void)
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
 	ret = zfs_init();
+	if (ret) {
+# ifdef HAVE_LDISKFS_OSD
 	/* we want to be able to set up a ldiskfs-based filesystem w/o
 	 * the ZFS modules installed, see ORI-425 */
-	if (ret)
 		ret = 0;
+# else
+		return ret;
+# endif /* HAVE_LDISKFS_OSD */
+        }
 #endif /* HAVE_ZFS_OSD */
-
 	return ret;
 }
 

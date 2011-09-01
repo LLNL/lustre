@@ -114,6 +114,11 @@ mount_lustre_SOURCES += mount_utils_zfs.c
 mount_lustre_CPPFLAGS = -DHAVE_IOCTL_IN_UNISTD_H
 mount_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
 mount_lustre_LDFLAGS = -pthread -rdynamic -ldl
+=======
+mount_lustre_CPPFLAGS += -DHAVE_IOCTL_IN_UNISTD_H
+mount_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
+mount_lustre_LDFLAGS = -lzfs -pthread
+>>>>>>> ORI-294 osd-zfs zfs support for mkfs/tunefs/mount
 endif
 
 # mkfs.lustre

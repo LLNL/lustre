@@ -399,6 +399,16 @@ int zfs_is_lustre(char *ds, unsigned *mount_type)
 	return 0;
 }
 
+static char *zfs_refquota_opts(struct mkfs_opts *mop, char *str, int len)
+{
+	memset(str, 0, len);
+
+	if (mop->mo_device_sz > 0)
+		snprintf(str, len, " -o refquota="LPU64"K", mop->mo_device_sz);
+
+	return str;
+}
+
 static char *zfs_mkfs_opts(struct mkfs_opts *mop, char *str, int len)
 {
 	memset(str, 0, len);
