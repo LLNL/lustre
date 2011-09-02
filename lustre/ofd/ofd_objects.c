@@ -204,7 +204,7 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
                              &info->fti_off, th);
 
 trans_stop:
-        ofd_trans_stop(env, ofd, fo, th);
+        ofd_trans_stop(env, ofd, fo, th, rc);
 out_unlock:
         ofd_write_unlock(env, fo);
         ofd_object_put(env, fo);
@@ -252,7 +252,7 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         rc = dt_attr_set(env, ofd_object_child(fo), la, th,
                         ofd_object_capa(env, fo));
 stop:
-        ofd_trans_stop(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
+        ofd_trans_stop(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th, rc);
 unlock:
         ofd_write_unlock(env, fo);
         RETURN(rc);
@@ -310,7 +310,7 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
         rc = dt_attr_set(env, dob, la, th, ofd_object_capa(env, fo));
 
 stop:
-        ofd_trans_stop(env, ofd, fo, th);
+        ofd_trans_stop(env, ofd, fo, th, rc);
 unlock:
         ofd_write_unlock(env, fo);
         RETURN(rc);
@@ -346,7 +346,7 @@ int ofd_object_destroy(const struct lu_env *env, struct ofd_object *fo,
         dt_ref_del(env, ofd_object_child(fo), th);
         dt_destroy(env, ofd_object_child(fo), th);
 stop:
-        ofd_trans_stop(env, ofd, NULL, th);
+        ofd_trans_stop(env, ofd, NULL, th, rc);
 unlock:
         ofd_write_unlock(env, fo);
         RETURN(rc);

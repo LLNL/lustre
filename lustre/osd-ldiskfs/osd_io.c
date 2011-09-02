@@ -692,7 +692,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
         struct inode *inode = osd_dt_obj(dt)->oo_inode;
         struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
         loff_t isize;
-        int rc, i;
+        int rc = 0, i;
 
         LASSERT(inode);
 
@@ -706,9 +706,13 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                          *(ge_offset existing block */
                         lnb[i].lnb_rc = 0;
                 }
+
                 if (lnb[i].lnb_rc) { /* ENOSPC, network RPC error, etc. */
                         CDEBUG(D_INODE, "Skipping [%d] == %d\n", i,
                                lnb[i].lnb_rc);
+                        LASSERT(lnb[i].lnb_page);
+                        generic_error_remove_page(inode->i_mapping,
+                                                  lnb[i].lnb_page);
                         continue;
                 }
 
@@ -732,11 +736,16 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 
         if (OBD_FAIL_CHECK(OBD_FAIL_OST_MAPBLK_ENOSPC)) {
                 rc = -ENOSPC;
-        } else {
+        } else if (iobuf->dr_npages > 0) {
                 rc = osd->od_fsops->fs_map_inode_pages(inode, iobuf->dr_pages,
-                                               iobuf->dr_npages, iobuf->dr_blocks,
-                                               NULL, 1, NULL);
+                                                       iobuf->dr_npages,
+                                                       iobuf->dr_blocks, NULL,
+                                                       1, NULL);
+        } else {
+                /* no pages to write, no transno is needed */
+                thandle->th_local = 1;
         }
+
         if (likely(rc == 0)) {
                 if (isize > i_size_read(inode)) {
                         i_size_write(inode, isize);

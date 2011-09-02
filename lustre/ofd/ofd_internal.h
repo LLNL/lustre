@@ -409,7 +409,7 @@ struct thandle *ofd_trans_create(const struct lu_env *env,
 int ofd_trans_start(const struct lu_env *env,
                        struct ofd_device *ofd, struct thandle *th);
 void ofd_trans_stop(const struct lu_env *env, struct ofd_device *ofd,
-                       struct ofd_object *fo, struct thandle *th);
+                       struct ofd_object *fo, struct thandle *th, int rc);
 int ofd_client_free(struct lu_env *env, struct obd_export *exp);
 int ofd_client_new(const struct lu_env *env, struct ofd_device *ofd,
                       struct obd_export *exp);
