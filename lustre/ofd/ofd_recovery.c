@@ -93,12 +93,12 @@ int ofd_trans_start(const struct lu_env *env,
 void ofd_trans_stop(const struct lu_env *env,
                        struct ofd_device *ofd,
                        struct ofd_object *obj,
-                       struct thandle *th)
+                       struct thandle *th, int rc)
 {
         /* version change is required for this object */
         if (obj)
                 ofd_info(env)->fti_obj = obj;
-
+        th->th_result = rc;
         dt_trans_stop(env, ofd->ofd_osd, th);
 }
 
@@ -173,7 +173,7 @@ static void ofd_version_set(struct ofd_thread_info *info)
 
 /* Update last_rcvd records with latests transaction data */
 int ofd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
-                       void *cookie)
+                    void *cookie)
 {
         struct ofd_device *ofd = cookie;
         struct ofd_thread_info *info;
@@ -195,7 +195,7 @@ int ofd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
                 }
                 /* we need another transno to be assigned */
                 info->fti_transno = 0;
-        } else {
+        } else if (txn->th_result == 0) {
                 info->fti_has_trans = 1;
         }
 
