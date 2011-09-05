@@ -429,6 +429,7 @@ static int lod_xattr_set_lov_on_dir(const struct lu_env *env,
          */
         LASSERT(l->mbo_stripe == NULL);
         l->mbo_striping_cached = 0;
+        l->mbo_def_striping_set = 0;
         lod_object_set_pool(l, NULL);
         l->mbo_def_stripe_size = 0;
         l->mbo_def_stripenr = 0;
@@ -653,6 +654,7 @@ static void lod_ah_init(const struct lu_env *env,
                         lc->mbo_def_stripe_size = lp->mbo_def_stripe_size;
                         lc->mbo_def_stripe_offset = lp->mbo_def_stripe_offset;
                         lc->mbo_striping_cached = 1;
+                        lc->mbo_def_striping_set = 1;
                         CDEBUG(D_OTHER, "inherite striping defaults\n");
                 }
                 return;
