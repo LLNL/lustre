@@ -408,9 +408,9 @@ lstcon_sesrpc_readent(int transop, srpc_msg_t *msg,
 }
 
 static int
-lstcon_group_nodes_add(lstcon_group_t *grp, int count,
-                       lnet_process_id_t *ids_up,
-                       cfs_list_t *result_up)
+lstcon_group_nodes_add(lstcon_group_t *grp,
+                       int count, lnet_process_id_t *ids_up,
+                       unsigned *verp, cfs_list_t *result_up)
 {
         lstcon_rpc_trans_t      *trans;
         lstcon_ndlink_t         *ndl;
@@ -463,6 +463,8 @@ lstcon_group_nodes_add(lstcon_group_t *grp, int count,
 
         rc = lstcon_rpc_trans_interpreter(trans, result_up,
                                           lstcon_sesrpc_readent);
+        *verp = trans->tas_version;
+
         /* destroy all RPGs */
         lstcon_rpc_trans_destroy(trans);
 
@@ -552,8 +554,8 @@ lstcon_group_add(char *name)
 }
 
 int
-lstcon_nodes_add(char *name, int count,
-                 lnet_process_id_t *ids_up, cfs_list_t *result_up)
+lstcon_nodes_add(char *name, int count, lnet_process_id_t *ids_up,
+                 unsigned *verp, cfs_list_t *result_up)
 {
         lstcon_group_t         *grp;
         int                     rc;
@@ -575,7 +577,7 @@ lstcon_nodes_add(char *name, int count,
                 return -EBUSY;
         }
 
-        rc = lstcon_group_nodes_add(grp, count, ids_up, result_up);
+        rc = lstcon_group_nodes_add(grp, count, ids_up, verp, result_up);
 
         lstcon_group_put(grp);
 
@@ -1267,7 +1269,7 @@ lstcon_test_add(char *name, int type, int loop, int concur,
                 CDEBUG(D_NET, "Can't change running batch %s\n", name);
                 return rc;
         }
-        
+
         rc = lstcon_group_find(src_name, &src_grp);
         if (rc != 0) {
                 CDEBUG(D_NET, "Can't find group %s\n", src_name);
@@ -1682,8 +1684,8 @@ lstcon_new_session_id(lst_sid_t *sid)
 extern srpc_service_t lstcon_acceptor_service;
 
 int
-lstcon_session_new(char *name, int key,
-                   int timeout,int force, lst_sid_t *sid_up)
+lstcon_session_new(char *name, int key, unsigned version,
+                   int timeout, int force, lst_sid_t *sid_up)
 {
         int     rc = 0;
         int     i;
@@ -1703,9 +1705,24 @@ lstcon_session_new(char *name, int key,
                         return rc;
         }
 
-        for (i = 0; i < LST_GLOBAL_HASHSIZE; i++) {
-                LASSERT (cfs_list_empty(&console_session.ses_ndl_hash[i]));
+        if (version > LST_PROTO_VERSION) {
+                CERROR("Unknown session version %u\n", version);
+                return -EINVAL;
         }
+
+        for (i = 0; i < LST_GLOBAL_HASHSIZE; i++)
+                LASSERT (cfs_list_empty(&console_session.ses_ndl_hash[i]));
+
+        lstcon_new_session_id(&console_session.ses_id);
+
+        console_session.ses_key     = key;
+        console_session.ses_state   = LST_SESSION_ACTIVE;
+        console_session.ses_force   = !!force;
+        console_session.ses_version = version;
+        console_session.ses_version_updated = 0;
+        console_session.ses_timeout = (timeout <= 0) ?
+                                      LST_CONSOLE_TIMEOUT: timeout;
+        strcpy(console_session.ses_name, name);
 
         rc = lstcon_batch_add(LST_DEFAULT_BATCH);
         if (rc != 0)
@@ -1721,15 +1738,6 @@ lstcon_session_new(char *name, int key,
                 return rc;
         }
 
-        lstcon_new_session_id(&console_session.ses_id);
-
-        console_session.ses_key     = key;
-        console_session.ses_state   = LST_SESSION_ACTIVE;
-        console_session.ses_force   = !!force;
-        console_session.ses_timeout = (timeout <= 0)? LST_CONSOLE_TIMEOUT:
-                                                      timeout;
-        strcpy(console_session.ses_name, name);
-
         if (cfs_copy_to_user(sid_up, &console_session.ses_id,
                              sizeof(lst_sid_t)) == 0)
                 return rc;
@@ -1740,7 +1748,7 @@ lstcon_session_new(char *name, int key,
 }
 
 int
-lstcon_session_info(lst_sid_t *sid_up, int *key_up,
+lstcon_session_info(lst_sid_t *sid_up, int *key_up, unsigned *version_up,
                     lstcon_ndlist_ent_t *ndinfo_up, char *name_up, int len)
 {
         lstcon_ndlist_ent_t *entp;
@@ -1762,7 +1770,10 @@ lstcon_session_info(lst_sid_t *sid_up, int *key_up,
 
         if (cfs_copy_to_user(sid_up, &console_session.ses_id,
                              sizeof(lst_sid_t)) ||
-            cfs_copy_to_user(key_up, &console_session.ses_key, sizeof(int)) ||
+            cfs_copy_to_user(key_up, &console_session.ses_key,
+                             sizeof(*key_up)) ||
+            cfs_copy_to_user(version_up, &console_session.ses_version,
+                             sizeof(*version_up)) ||
             cfs_copy_to_user(ndinfo_up, entp, sizeof(*entp)) ||
             cfs_copy_to_user(name_up, console_session.ses_name, len))
                 rc = -EFAULT;
@@ -1806,6 +1817,7 @@ lstcon_session_end()
         console_session.ses_state = LST_SESSION_NONE;
         console_session.ses_key   = 0;
         console_session.ses_force = 0;
+        console_session.ses_version_updated = 0;
 
         /* destroy all batches */
         while (!cfs_list_empty(&console_session.ses_bat_list)) {
@@ -1833,6 +1845,37 @@ lstcon_session_end()
         return rc;
 }
 
+int
+lstcon_session_version_check(unsigned version)
+{
+        int rc = 0;
+
+        if (version > LST_PROTO_VERSION) {
+                CERROR("Can't set unknown version %u for console\n", version);
+                return EPROTO;
+        }
+
+        cfs_spin_lock(&console_session.ses_rpc_lock);
+
+        if (!console_session.ses_version_updated) {
+                console_session.ses_version_updated = 1;
+                console_session.ses_version = version;
+        }
+
+        if (console_session.ses_version != version)
+                rc = EPROTO;
+
+        cfs_spin_unlock(&console_session.ses_rpc_lock);
+
+        if (rc != 0) {
+                CERROR("remote version %u can't match with "
+                       "session version %u of console\n",
+                       version, console_session.ses_version);
+        }
+
+        return rc;
+}
+
 static int
 lstcon_acceptor_handle (srpc_server_rpc_t *rpc)
 {
@@ -1852,6 +1895,11 @@ lstcon_acceptor_handle (srpc_server_rpc_t *rpc)
 
         if (console_session.ses_id.ses_nid == LNET_NID_ANY) {
                 jrep->join_status = ESRCH;
+                goto out;
+        }
+
+        if (lstcon_session_version_check(req->msg_session_ver) != 0) {
+                jrep->join_status = EPROTO;
                 goto out;
         }
 
@@ -1902,6 +1950,7 @@ lstcon_acceptor_handle (srpc_server_rpc_t *rpc)
         jrep->join_status  = 0;
 
 out:
+        rep->msg_session_ver = console_session.ses_version;
         if (grp != NULL)
                 lstcon_group_put(grp);
 
@@ -1934,12 +1983,14 @@ lstcon_console_init(void)
 
         memset(&console_session, 0, sizeof(lstcon_session_t));
 
-        console_session.ses_id      = LST_INVALID_SID;
-        console_session.ses_state   = LST_SESSION_NONE;
-        console_session.ses_timeout = 0;
-        console_session.ses_force   = 0;
-        console_session.ses_expired = 0;
-        console_session.ses_laststamp = cfs_time_current_sec();   
+        console_session.ses_id              = LST_INVALID_SID;
+        console_session.ses_state           = LST_SESSION_NONE;
+        console_session.ses_timeout         = 0;
+        console_session.ses_force           = 0;
+        console_session.ses_expired         = 0;
+        console_session.ses_version_updated = 0;
+        console_session.ses_version         = LST_PROTO_VERSION;
+        console_session.ses_laststamp       = cfs_time_current_sec();
 
         cfs_init_mutex(&console_session.ses_mutex);
 
