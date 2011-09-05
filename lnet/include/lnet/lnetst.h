@@ -43,6 +43,10 @@
 #include <lnet/lnet.h>
 #include <lnet/lib-types.h>
 
+#define LST_PROTO_VERSION_0     0
+#define LST_PROTO_VERSION_1     1
+#define LST_PROTO_VERSION       LST_PROTO_VERSION_1
+
 #define LST_NAME_SIZE           32              /* max name buffer length */
 
 #define LSTIO_DEBUG             0xC00           /* debug */
@@ -233,6 +237,8 @@ typedef struct {
         int                     lstio_ses_key;          /* IN: local key */
         int                     lstio_ses_timeout;      /* IN: session timeout */
         int                     lstio_ses_force;        /* IN: force create ? */
+        /** IN: session version */
+        unsigned                lstio_ses_version;
         lst_sid_t              *lstio_ses_idp;          /* OUT: session id */
         int                     lstio_ses_nmlen;        /* IN: name length */
         char                   *lstio_ses_namep;        /* IN: session name */
@@ -242,6 +248,8 @@ typedef struct {
 typedef struct {
         lst_sid_t              *lstio_ses_idp;          /* OUT: session id */
         int                    *lstio_ses_keyp;         /* OUT: local key */
+        /** OUT: session version */
+        unsigned               *lstio_ses_verp;
         lstcon_ndlist_ent_t    *lstio_ses_ndinfo;       /* OUT: */
         int                     lstio_ses_nmlen;        /* IN: name length */
         char                   *lstio_ses_namep;        /* OUT: session name */
@@ -303,6 +311,8 @@ typedef struct {
         int                     lstio_grp_nmlen;        /* IN: name length */
         char                   *lstio_grp_namep;        /* IN: group name */
         int                     lstio_grp_count;        /* IN: # of nodes */
+        /** OUT: session version */
+        unsigned               *lstio_grp_verp;
         lnet_process_id_t      *lstio_grp_idsp;         /* IN: nodes */
         cfs_list_t             *lstio_grp_resultp;      /* OUT: list head of result buffer */
 } lstio_group_nodes_args_t;
