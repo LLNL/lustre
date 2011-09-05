@@ -48,8 +48,8 @@
 #include "conrpc.h"
 #include "console.h"
 
-void lstcon_rpc_stat_reply(int, srpc_msg_t *,
-                           lstcon_node_t *, lstcon_trans_stat_t *);
+void lstcon_rpc_stat_reply(lstcon_rpc_trans_t *, srpc_msg_t *,
+			   lstcon_node_t *, lstcon_trans_stat_t *);
 
 static void
 lstcon_rpc_done(srpc_client_rpc_t *rpc)
@@ -90,13 +90,12 @@ lstcon_rpc_done(srpc_client_rpc_t *rpc)
 }
 
 int
-lstcon_rpc_init(lstcon_node_t *nd, int service,
-                int npg, int cached, lstcon_rpc_t *crpc)
+lstcon_rpc_init(lstcon_node_t *nd, int service, unsigned version,
+		int bulk_npg, int bulk_len, int embedded, lstcon_rpc_t *crpc)
 {
-
-        crpc->crp_rpc = sfw_create_rpc(nd->nd_id, service, 
-                                       npg, npg * CFS_PAGE_SIZE,
-                                       lstcon_rpc_done, (void *)crpc);
+	crpc->crp_rpc = sfw_create_rpc(nd->nd_id, service,
+				       version, bulk_npg, bulk_len,
+				       lstcon_rpc_done, (void *)crpc);
         if (crpc->crp_rpc == NULL)
                 return -ENOMEM;
 
@@ -107,7 +106,7 @@ lstcon_rpc_init(lstcon_node_t *nd, int service,
         crpc->crp_unpacked = 0;
         crpc->crp_status   = 0;
         crpc->crp_stamp    = 0;
-        crpc->crp_static   = !cached;
+	crpc->crp_embedded = embedded;
         CFS_INIT_LIST_HEAD(&crpc->crp_link);
 
         cfs_atomic_inc(&console_session.ses_rpc_counter);
@@ -116,8 +115,8 @@ lstcon_rpc_init(lstcon_node_t *nd, int service,
 }
 
 int
-lstcon_rpc_prep(lstcon_node_t *nd, int service,
-                int npg, lstcon_rpc_t **crpcpp)
+lstcon_rpc_prep(lstcon_node_t *nd, int service, unsigned version,
+		int bulk_npg, int bulk_len, lstcon_rpc_t **crpcpp)
 {
         lstcon_rpc_t  *crpc = NULL;
         int            rc;
@@ -138,7 +137,8 @@ lstcon_rpc_prep(lstcon_node_t *nd, int service,
                         return -ENOMEM;
         }
 
-        rc = lstcon_rpc_init(nd, service, npg, 1, crpc);
+	rc = lstcon_rpc_init(nd, service, version,
+			     bulk_npg, bulk_len, 0, crpc);
         if (rc == 0) {
                 *crpcpp = crpc;
                 return 0;
@@ -166,10 +166,10 @@ lstcon_rpc_put(lstcon_rpc_t *crpc)
 
         srpc_client_rpc_decref(crpc->crp_rpc);
 
-        if (crpc->crp_static) {
-                /* Static RPC, not allocated */
-                memset(crpc, 0, sizeof(*crpc));
-                crpc->crp_static = 1;
+	if (crpc->crp_embedded) {
+		/* embedded RPC, don't recycle it */
+		memset(crpc, 0, sizeof(*crpc));
+		crpc->crp_embedded = 1;
 
         } else {
                 cfs_spin_lock(&console_session.ses_rpc_lock);
@@ -256,10 +256,10 @@ lstcon_rpc_trans_prep(cfs_list_t *translist,
         LIBCFS_ALLOC(trans, sizeof(*trans));
         if (trans == NULL)
                 return -ENOMEM;
-        
+
         trans->tas_opc = transop;
 
-        if (translist == NULL)       
+	if (translist == NULL)
                 CFS_INIT_LIST_HEAD(&trans->tas_olink);
         else
                 cfs_list_add_tail(&trans->tas_olink, translist);
@@ -269,6 +269,12 @@ lstcon_rpc_trans_prep(cfs_list_t *translist,
         CFS_INIT_LIST_HEAD(&trans->tas_rpcs_list);
         cfs_atomic_set(&trans->tas_remaining, 0);
         cfs_waitq_init(&trans->tas_waitq);
+
+	cfs_spin_lock(&console_session.ses_rpc_lock);
+
+	trans->tas_version = console_session.ses_version;
+
+	cfs_spin_unlock(&console_session.ses_rpc_lock);
 
         *transpp = trans;
 
@@ -406,7 +412,7 @@ lstcon_rpc_get_reply(lstcon_rpc_t *crpc, srpc_msg_t **msgpp)
                 sfw_unpack_message(*msgpp);
                 crpc->crp_unpacked = 1;
         }
-       
+
         if (cfs_time_after(nd->nd_stamp, crpc->crp_stamp))
                 return 0;
 
@@ -451,8 +457,12 @@ lstcon_rpc_trans_stat(lstcon_rpc_trans_t *trans, lstcon_trans_stat_t *stat)
 
                 lstcon_rpc_stat_success(stat, 1);
 
-                lstcon_rpc_stat_reply(trans->tas_opc, rep,
-                                      crpc->crp_node, stat);
+		lstcon_rpc_stat_reply(trans, rep, crpc->crp_node, stat);
+	}
+
+	if (trans->tas_opc == LST_TRANS_SESNEW && stat->trs_fwk_errno == 0) {
+		stat->trs_fwk_errno =
+		      lstcon_session_version_check(trans->tas_version);
         }
 
         CDEBUG(D_NET, "transaction %s : success %d, failure %d, total %d, "
@@ -597,7 +607,8 @@ lstcon_rpc_trans_destroy(lstcon_rpc_trans_t *trans)
 }
 
 int
-lstcon_sesrpc_prep(lstcon_node_t *nd, int transop, lstcon_rpc_t **crpc)
+lstcon_sesrpc_prep(lstcon_node_t *nd, int transop,
+		   unsigned version, lstcon_rpc_t **crpc)
 {
         srpc_mksn_reqst_t *msrq;
         srpc_rmsn_reqst_t *rsrq;
@@ -605,7 +616,8 @@ lstcon_sesrpc_prep(lstcon_node_t *nd, int transop, lstcon_rpc_t **crpc)
 
         switch (transop) {
         case LST_TRANS_SESNEW:
-                rc = lstcon_rpc_prep(nd, SRPC_SERVICE_MAKE_SESSION, 0, crpc);
+		rc = lstcon_rpc_prep(nd, SRPC_SERVICE_MAKE_SESSION,
+				     version, 0, 0, crpc);
                 if (rc != 0)
                         return rc;
 
@@ -617,7 +629,8 @@ lstcon_sesrpc_prep(lstcon_node_t *nd, int transop, lstcon_rpc_t **crpc)
                 break;
 
         case LST_TRANS_SESEND:
-                rc = lstcon_rpc_prep(nd, SRPC_SERVICE_REMOVE_SESSION, 0, crpc);
+		rc = lstcon_rpc_prep(nd, SRPC_SERVICE_REMOVE_SESSION,
+				     version, 0, 0, crpc);
                 if (rc != 0)
                         return rc;
 
@@ -633,12 +646,12 @@ lstcon_sesrpc_prep(lstcon_node_t *nd, int transop, lstcon_rpc_t **crpc)
 }
 
 int
-lstcon_dbgrpc_prep(lstcon_node_t *nd, lstcon_rpc_t **crpc)
+lstcon_dbgrpc_prep(lstcon_node_t *nd, unsigned version, lstcon_rpc_t **crpc)
 {
-        srpc_debug_reqst_t *drq;
-        int                 rc;
+	srpc_debug_reqst_t *drq;
+	int		    rc;
 
-        rc = lstcon_rpc_prep(nd, SRPC_SERVICE_DEBUG, 0, crpc);
+	rc = lstcon_rpc_prep(nd, SRPC_SERVICE_DEBUG, version, 0, 0, crpc);
         if (rc != 0)
                 return rc;
 
@@ -646,19 +659,19 @@ lstcon_dbgrpc_prep(lstcon_node_t *nd, lstcon_rpc_t **crpc)
 
         drq->dbg_sid   = console_session.ses_id;
         drq->dbg_flags = 0;
-        
+
         return rc;
 }
 
 int
-lstcon_batrpc_prep(lstcon_node_t *nd, int transop,
-                   lstcon_tsb_hdr_t *tsb, lstcon_rpc_t **crpc)
+lstcon_batrpc_prep(lstcon_node_t *nd, int transop, unsigned version,
+		   lstcon_tsb_hdr_t *tsb, lstcon_rpc_t **crpc)
 {
-        lstcon_batch_t     *batch;
-        srpc_batch_reqst_t *brq;
-        int                 rc;
+	lstcon_batch_t	   *batch;
+	srpc_batch_reqst_t *brq;
+	int		    rc;
 
-        rc = lstcon_rpc_prep(nd, SRPC_SERVICE_BATCH, 0, crpc);
+	rc = lstcon_rpc_prep(nd, SRPC_SERVICE_BATCH, version, 0, 0, crpc);
         if (rc != 0)
                 return rc;
 
@@ -679,17 +692,17 @@ lstcon_batrpc_prep(lstcon_node_t *nd, int transop,
 
         batch = (lstcon_batch_t *)tsb;
         brq->bar_arg = batch->bat_arg;
-        
+
         return 0;
 }
 
 int
-lstcon_statrpc_prep(lstcon_node_t *nd, lstcon_rpc_t **crpc)
+lstcon_statrpc_prep(lstcon_node_t *nd, unsigned version, lstcon_rpc_t **crpc)
 {
-        srpc_stat_reqst_t *srq;
-        int                rc;
+	srpc_stat_reqst_t *srq;
+	int		   rc;
 
-        rc = lstcon_rpc_prep(nd, SRPC_SERVICE_QUERY_STAT, 0, crpc);
+	rc = lstcon_rpc_prep(nd, SRPC_SERVICE_QUERY_STAT, version, 0, 0, crpc);
         if (rc != 0)
                 return rc;
 
@@ -776,7 +789,7 @@ int
 lstcon_pingrpc_prep(lst_test_ping_param_t *param, srpc_test_reqst_t *req)
 {
         test_ping_req_t *prq = &req->tsr_u.ping;
-        
+
         prq->png_size   = param->png_size;
         prq->png_flags  = param->png_flags;
         /* TODO dest */
@@ -784,9 +797,9 @@ lstcon_pingrpc_prep(lst_test_ping_param_t *param, srpc_test_reqst_t *req)
 }
 
 int
-lstcon_bulkrpc_prep(lst_test_bulk_param_t *param, srpc_test_reqst_t *req)
+lstcon_bulkrpc_v0_prep(lst_test_bulk_param_t *param, srpc_test_reqst_t *req)
 {
-        test_bulk_req_t *brq = &req->tsr_u.bulk;
+	test_bulk_req_t *brq = &req->tsr_u.bulk_v0;
 
         brq->blk_opc    = param->blk_opc;
         brq->blk_npg    = (param->blk_size + CFS_PAGE_SIZE - 1) / CFS_PAGE_SIZE;
@@ -796,7 +809,20 @@ lstcon_bulkrpc_prep(lst_test_bulk_param_t *param, srpc_test_reqst_t *req)
 }
 
 int
-lstcon_testrpc_prep(lstcon_node_t *nd, int transop,
+lstcon_bulkrpc_v1_prep(lst_test_bulk_param_t *param, srpc_test_reqst_t *req)
+{
+	test_bulk_req_v1_t *brq = &req->tsr_u.bulk_v1;
+
+	brq->blk_opc	= param->blk_opc;
+	brq->blk_flags	= param->blk_flags;
+	brq->blk_len	= param->blk_size;
+	brq->blk_offset	= 0; /* reserved */
+
+	return 0;
+}
+
+int
+lstcon_testrpc_prep(lstcon_node_t *nd, int transop, unsigned version,
                     lstcon_test_t *test, lstcon_rpc_t **crpc)
 {
         lstcon_group_t    *sgrp = test->tes_src_grp;
@@ -804,14 +830,19 @@ lstcon_testrpc_prep(lstcon_node_t *nd, int transop,
         srpc_test_reqst_t *trq;
         srpc_bulk_t       *bulk;
         int                i;
-        int                n  = 0;
-        int                rc = 0;
+	int		   npg = 0;
+	int		   nob = 0;
+	int		   rc  = 0;
 
-        if (transop == LST_TRANS_TSBCLIADD)
-                n = sfw_id_pages(test->tes_span);
+	if (transop == LST_TRANS_TSBCLIADD) {
+		npg = sfw_id_pages(test->tes_span);
+		nob = version == LST_PROTO_VERSION_0 ?
+		      npg * CFS_PAGE_SIZE :
+		      sizeof(lnet_process_id_packed_t) * test->tes_span;
+	}
 
-        rc = lstcon_rpc_prep(nd, SRPC_SERVICE_TEST, n, crpc);
-        if (rc != 0) 
+	rc = lstcon_rpc_prep(nd, SRPC_SERVICE_TEST, version, npg, nob, crpc);
+	if (rc != 0)
                 return rc;
 
         trq  = &(*crpc)->crp_rpc->crpc_reqstmsg.msg_body.tes_reqst;
@@ -827,16 +858,23 @@ lstcon_testrpc_prep(lstcon_node_t *nd, int transop,
         } else {
                 bulk = &(*crpc)->crp_rpc->crpc_bulk;
 
-                for (i = 0; i < n; i++) {
-                        bulk->bk_iovs[i].kiov_offset = 0;
-                        bulk->bk_iovs[i].kiov_len    = CFS_PAGE_SIZE;
-                        bulk->bk_iovs[i].kiov_page   = cfs_alloc_page(CFS_ALLOC_STD);
+		for (i = 0; i < npg; i++) {
+			int	len;
 
-                        if (bulk->bk_iovs[i].kiov_page != NULL) 
-                                continue;
+			LASSERT(nob > 0);
 
-                        lstcon_rpc_put(*crpc);
-                        return -ENOMEM;
+			len = version == LST_PROTO_VERSION_0 ?
+			      CFS_PAGE_SIZE : min(nob, (int)CFS_PAGE_SIZE);
+			nob -= len;
+
+			bulk->bk_iovs[i].kiov_offset = 0;
+			bulk->bk_iovs[i].kiov_len    = len;
+			bulk->bk_iovs[i].kiov_page   = cfs_alloc_page(CFS_ALLOC_STD);
+
+			if (bulk->bk_iovs[i].kiov_page == NULL) {
+				lstcon_rpc_put(*crpc);
+				return -ENOMEM;
+			}
                 }
 
                 bulk->bk_sink = 0;
@@ -844,8 +882,10 @@ lstcon_testrpc_prep(lstcon_node_t *nd, int transop,
                 LASSERT (transop == LST_TRANS_TSBCLIADD);
 
                 rc = lstcon_dstnodes_prep(test->tes_dst_grp,
-                                          test->tes_cliidx++, test->tes_dist,
-                                          test->tes_span, n, &bulk->bk_iovs[0]);
+					  test->tes_cliidx++,
+					  test->tes_dist,
+					  test->tes_span,
+					  npg, &bulk->bk_iovs[0]);
                 if (rc != 0) {
                         lstcon_rpc_put(*crpc);
                         return rc;
@@ -864,11 +904,22 @@ lstcon_testrpc_prep(lstcon_node_t *nd, int transop,
         switch (test->tes_type) {
         case LST_TEST_PING:
                 trq->tsr_service = SRPC_SERVICE_PING;
-                rc = lstcon_pingrpc_prep((lst_test_ping_param_t *)&test->tes_param[0], trq);
-                break;
-        case LST_TEST_BULK:
-                trq->tsr_service = SRPC_SERVICE_BRW;
-                rc = lstcon_bulkrpc_prep((lst_test_bulk_param_t *)&test->tes_param[0], trq);
+		rc = lstcon_pingrpc_prep((lst_test_ping_param_t *)
+					 &test->tes_param[0], trq);
+		break;
+
+	case LST_TEST_BULK:
+		trq->tsr_service = SRPC_SERVICE_BRW;
+		if (version == LST_PROTO_VERSION_0) {
+			rc = lstcon_bulkrpc_v0_prep((lst_test_bulk_param_t *)
+						    &test->tes_param[0], trq);
+		} else if (version == LST_PROTO_VERSION) {
+			rc = lstcon_bulkrpc_v1_prep((lst_test_bulk_param_t *)
+						    &test->tes_param[0], trq);
+		} else {
+			rc = -EPROTO;
+		}
+
                 break;
         default:
                 LBUG();
@@ -878,11 +929,53 @@ lstcon_testrpc_prep(lstcon_node_t *nd, int transop,
         return rc;
 }
 
+int
+lstcon_sesnew_stat_reply(lstcon_rpc_trans_t *trans,
+			 lstcon_node_t *nd, srpc_msg_t *reply)
+{
+	srpc_mksn_reply_t *mksn_rep = &reply->msg_body.mksn_reply;
+	int		   status   = mksn_rep->mksn_status;
+
+	if (status == 0 && reply->msg_session_ver > LST_PROTO_VERSION) {
+		mksn_rep->mksn_status = EPROTO;
+		status = EPROTO;
+	}
+
+	if (status == EPROTO) {
+		CNETERR("session protocol error from %s: %u\n",
+			libcfs_nid2str(nd->nd_id.nid),
+			reply->msg_session_ver);
+	}
+
+	if (status != 0)
+		return status;
+
+	if (!trans->tas_version_updated) {
+		trans->tas_version_updated = 1;
+		trans->tas_version = reply->msg_session_ver;
+	}
+
+	if (reply->msg_session_ver != trans->tas_version) {
+		CNETERR("framework version %u from %s can't "
+			"match with other nodes in transaction %u\n",
+			 reply->msg_session_ver,
+			 libcfs_nid2str(nd->nd_id.nid),
+			 trans->tas_version);
+		status = mksn_rep->mksn_status = EPROTO;
+	}
+
+	if (status == 0) {
+		/* session timeout on remote node */
+		nd->nd_timeout = mksn_rep->mksn_timeout;
+	}
+
+	return status;
+}
+
 void
-lstcon_rpc_stat_reply(int transop, srpc_msg_t *msg,
+lstcon_rpc_stat_reply(lstcon_rpc_trans_t *trans, srpc_msg_t *msg,
                       lstcon_node_t *nd, lstcon_trans_stat_t *stat)
 {
-        srpc_mksn_reply_t  *mksn_rep;
         srpc_rmsn_reply_t  *rmsn_rep;
         srpc_debug_reply_t *dbg_rep;
         srpc_batch_reply_t *bat_rep;
@@ -890,22 +983,15 @@ lstcon_rpc_stat_reply(int transop, srpc_msg_t *msg,
         srpc_stat_reply_t  *stat_rep;
         int                 rc = 0;
 
-        switch (transop) {
-        case LST_TRANS_SESNEW:
-                mksn_rep = &msg->msg_body.mksn_reply;
-
-                if (mksn_rep->mksn_status == 0) {
+	switch (trans->tas_opc) {
+	case LST_TRANS_SESNEW:
+		rc = lstcon_sesnew_stat_reply(trans, nd, msg);
+		if (rc == 0) {
                         lstcon_sesop_stat_success(stat, 1);
-                        /* session timeout on remote node */
-                        nd->nd_timeout = mksn_rep->mksn_timeout;
                         return;
                 }
 
-                LASSERT (mksn_rep->mksn_status == EBUSY ||
-                         mksn_rep->mksn_status == EINVAL);
-
                 lstcon_sesop_stat_failure(stat, 1);
-                rc = mksn_rep->mksn_status;
                 break;
 
         case LST_TRANS_SESEND:
@@ -916,9 +1002,6 @@ lstcon_rpc_stat_reply(int transop, srpc_msg_t *msg,
                         lstcon_sesop_stat_success(stat, 1);
                         return;
                 }
-
-                LASSERT (rmsn_rep->rmsn_status == EBUSY ||
-                         rmsn_rep->rmsn_status == EINVAL);
 
                 lstcon_sesop_stat_failure(stat, 1);
                 rc = rmsn_rep->rmsn_status;
@@ -931,9 +1014,7 @@ lstcon_rpc_stat_reply(int transop, srpc_msg_t *msg,
                 if (dbg_rep->dbg_status == ESRCH) {
                         lstcon_sesqry_stat_unknown(stat, 1);
                         return;
-                } 
-
-                LASSERT (dbg_rep->dbg_status == 0);
+		}
 
                 if (lstcon_session_match(dbg_rep->dbg_sid))
                         lstcon_sesqry_stat_active(stat, 1);
@@ -951,7 +1032,7 @@ lstcon_rpc_stat_reply(int transop, srpc_msg_t *msg,
                 }
 
                 if (bat_rep->bar_status == EPERM && 
-                    transop == LST_TRANS_TSBSTOP) {
+		    trans->tas_opc == LST_TRANS_TSBSTOP) {
                         lstcon_tsbop_stat_success(stat, 1);
                         return;
                 }
@@ -1021,6 +1102,7 @@ lstcon_rpc_trans_ndlist(cfs_list_t *ndlist,
         lstcon_ndlink_t    *ndl;
         lstcon_node_t      *nd;
         lstcon_rpc_t       *rpc;
+	unsigned	    ver;
         int                 rc;
 
         /* Creating session RPG for list of nodes */
@@ -1031,6 +1113,7 @@ lstcon_rpc_trans_ndlist(cfs_list_t *ndlist,
                 return rc;
         }
 
+	ver = trans->tas_version;
         cfs_list_for_each_entry_typed(ndl, ndlist, lstcon_ndlink_t, ndl_link) {
                 rc = condition == NULL ? 1 :
                      condition(transop, ndl->ndl_node, arg);
@@ -1049,26 +1132,26 @@ lstcon_rpc_trans_ndlist(cfs_list_t *ndlist,
                 switch (transop) {
                 case LST_TRANS_SESNEW:
                 case LST_TRANS_SESEND:
-                        rc = lstcon_sesrpc_prep(nd, transop, &rpc);
-                        break;
-                case LST_TRANS_SESQRY:
-                case LST_TRANS_SESPING:
-                        rc = lstcon_dbgrpc_prep(nd, &rpc);
-                        break;
-                case LST_TRANS_TSBCLIADD:
-                case LST_TRANS_TSBSRVADD:
-                        rc = lstcon_testrpc_prep(nd, transop,
-                                                 (lstcon_test_t *)arg, &rpc);
-                        break;
-                case LST_TRANS_TSBRUN:
-                case LST_TRANS_TSBSTOP:
-                case LST_TRANS_TSBCLIQRY:
-                case LST_TRANS_TSBSRVQRY:
-                        rc = lstcon_batrpc_prep(nd, transop,
-                                                (lstcon_tsb_hdr_t *)arg, &rpc);
-                        break;
-                case LST_TRANS_STATQRY:
-                        rc = lstcon_statrpc_prep(nd, &rpc);
+			rc = lstcon_sesrpc_prep(nd, transop, ver, &rpc);
+			break;
+		case LST_TRANS_SESQRY:
+		case LST_TRANS_SESPING:
+			rc = lstcon_dbgrpc_prep(nd, ver, &rpc);
+			break;
+		case LST_TRANS_TSBCLIADD:
+		case LST_TRANS_TSBSRVADD:
+			rc = lstcon_testrpc_prep(nd, transop, ver,
+						 (lstcon_test_t *)arg, &rpc);
+			break;
+		case LST_TRANS_TSBRUN:
+		case LST_TRANS_TSBSTOP:
+		case LST_TRANS_TSBCLIQRY:
+		case LST_TRANS_TSBSRVQRY:
+			rc = lstcon_batrpc_prep(nd, transop, ver,
+						(lstcon_tsb_hdr_t *)arg, &rpc);
+			break;
+		case LST_TRANS_STATQRY:
+			rc = lstcon_statrpc_prep(nd, ver, &rpc);
                         break;
                 default:
                         rc = -EINVAL;
@@ -1080,7 +1163,7 @@ lstcon_rpc_trans_ndlist(cfs_list_t *ndlist,
                                lstcon_rpc_trans_name(transop), rc);
                         break;
                 }
-                                
+
                 lstcon_rpc_trans_addreq(trans, rpc);
         }
 
@@ -1136,7 +1219,8 @@ lstcon_rpc_pinger(void *arg)
                         if (nd->nd_state != LST_NODE_ACTIVE)
                                 continue;
 
-                        rc = lstcon_sesrpc_prep(nd, LST_TRANS_SESEND, &crpc);
+			rc = lstcon_sesrpc_prep(nd, LST_TRANS_SESEND,
+						trans->tas_version, &crpc);
                         if (rc != 0) {
                                 CERROR("Out of memory\n");
                                 break;
@@ -1169,7 +1253,7 @@ lstcon_rpc_pinger(void *arg)
                         lstcon_rpc_get_reply(crpc, &rep);
 
                         cfs_list_del_init(&crpc->crp_link);
-                
+
                         lstcon_rpc_put(crpc);
                 }
 
@@ -1181,7 +1265,8 @@ lstcon_rpc_pinger(void *arg)
                 if (intv < (time_t)nd->nd_timeout / 2)
                         continue;
 
-                rc = lstcon_rpc_init(nd, SRPC_SERVICE_DEBUG, 0, 0, crpc);
+		rc = lstcon_rpc_init(nd, SRPC_SERVICE_DEBUG,
+				     trans->tas_version, 0, 0, 1, crpc);
                 if (rc != 0) {
                         CERROR("Out of memory\n");
                         break;

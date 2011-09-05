@@ -71,7 +71,8 @@ typedef struct lstcon_rpc {
         int                      crp_posted:1;   /* rpc is posted */
         int                      crp_finished:1; /* rpc is finished */
         int                      crp_unpacked:1; /* reply is unpacked */
-        int                      crp_static:1;   /* not from RPC buffer */
+        /** RPC is embedded in other structure and can't free it */
+        int                      crp_embedded:1;
         int                      crp_status;     /* console rpc errors */
         cfs_time_t               crp_stamp;      /* replied time stamp */
 } lstcon_rpc_t;
@@ -80,6 +81,10 @@ typedef struct lstcon_rpc_trans {
         cfs_list_t            tas_olink;     /* link chain on owner list */
         cfs_list_t            tas_link;      /* link chain on global list */
         int                   tas_opc;       /* operation code of transaction */
+        /* version is uptodate */
+        unsigned              tas_version_updated:1;
+        /* framework version */
+        unsigned              tas_version:31;
         cfs_waitq_t           tas_waitq;     /* wait queue head */
         cfs_atomic_t          tas_remaining; /* # of un-scheduled rpcs */
         cfs_list_t            tas_rpcs_list; /* queued requests */
@@ -104,14 +109,16 @@ typedef struct lstcon_rpc_trans {
 typedef int (* lstcon_rpc_cond_func_t)(int, struct lstcon_node *, void *);
 typedef int (* lstcon_rpc_readent_func_t)(int, srpc_msg_t *, lstcon_rpc_ent_t *);
 
-int  lstcon_sesrpc_prep(struct lstcon_node *nd, 
-                        int transop, lstcon_rpc_t **crpc);
-int  lstcon_dbgrpc_prep(struct lstcon_node *nd, lstcon_rpc_t **crpc);
-int  lstcon_batrpc_prep(struct lstcon_node *nd, int transop,
+int  lstcon_sesrpc_prep(struct lstcon_node *nd, int transop,
+                        unsigned version, lstcon_rpc_t **crpc);
+int  lstcon_dbgrpc_prep(struct lstcon_node *nd,
+                        unsigned version, lstcon_rpc_t **crpc);
+int  lstcon_batrpc_prep(struct lstcon_node *nd, int transop, unsigned version,
                         struct lstcon_tsb_hdr *tsb, lstcon_rpc_t **crpc);
-int  lstcon_testrpc_prep(struct lstcon_node *nd, int transop,
+int  lstcon_testrpc_prep(struct lstcon_node *nd, int transop, unsigned version,
                          struct lstcon_test *test, lstcon_rpc_t **crpc);
-int  lstcon_statrpc_prep(struct lstcon_node *nd, lstcon_rpc_t **crpc);
+int  lstcon_statrpc_prep(struct lstcon_node *nd, unsigned version,
+                         lstcon_rpc_t **crpc);
 void lstcon_rpc_put(lstcon_rpc_t *crpc);
 int  lstcon_rpc_trans_prep(cfs_list_t *translist,
                            int transop, lstcon_rpc_trans_t **transpp);
