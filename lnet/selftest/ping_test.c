@@ -52,7 +52,10 @@ static lst_ping_data_t  lst_ping_data;
 static int
 ping_client_init(sfw_test_instance_t *tsi)
 {
-        LASSERT (tsi->tsi_is_client);
+	sfw_session_t *sn = tsi->tsi_batch->bat_session;
+
+	LASSERT (tsi->tsi_is_client);
+	LASSERT (sn != NULL && sn->sn_version <= LST_PROTO_VERSION);
 
         cfs_spin_lock_init(&lst_ping_data.pnd_lock);
         lst_ping_data.pnd_counter = 0;
@@ -80,11 +83,16 @@ static int
 ping_client_prep_rpc(sfw_test_unit_t *tsu,
                      lnet_process_id_t dest, srpc_client_rpc_t **rpc)
 {
-        srpc_ping_reqst_t *req;
-        struct timeval     tv;
-        int                rc;
+	srpc_ping_reqst_t   *req;
+	sfw_test_instance_t *tsi = tsu->tsu_instance;
+	sfw_session_t       *sn  = tsi->tsi_batch->bat_session;
+	struct timeval       tv;
+	int		     rc;
 
-        rc = sfw_create_test_rpc(tsu, dest, 0, 0, rpc);
+	LASSERT(sn != NULL);
+	LASSERT(sn->sn_version <= LST_PROTO_VERSION);
+
+	rc = sfw_create_test_rpc(tsu, dest, sn->sn_version, 0, 0, rpc);
         if (rc != 0)
                 return rc;
 
@@ -121,14 +129,14 @@ ping_client_done_rpc (sfw_test_unit_t *tsu, srpc_client_rpc_t *rpc)
                         libcfs_id2str(rpc->crpc_dest),
                         reqst->pnr_seq, rpc->crpc_status);
                 return;
-        } 
+	}
 
         if (rpc->crpc_replymsg.msg_magic != SRPC_MSG_MAGIC) {
                 __swab32s(&reply->pnr_seq);
                 __swab32s(&reply->pnr_magic);
                 __swab32s(&reply->pnr_status);
         }
-        
+
         if (reply->pnr_magic != LST_PING_TEST_MAGIC) {
                 rpc->crpc_status = -EBADMSG;
                 cfs_atomic_inc(&sn->sn_ping_errors);
@@ -136,8 +144,8 @@ ping_client_done_rpc (sfw_test_unit_t *tsu, srpc_client_rpc_t *rpc)
                         reply->pnr_magic, libcfs_id2str(rpc->crpc_dest),
                         LST_PING_TEST_MAGIC);
                 return;
-        } 
-        
+	}
+
         if (reply->pnr_seq != reqst->pnr_seq) {
                 rpc->crpc_status = -EBADMSG;
                 cfs_atomic_inc(&sn->sn_ping_errors);
@@ -159,6 +167,7 @@ ping_server_handle (srpc_server_rpc_t *rpc)
 {
         srpc_service_t    *sv  = rpc->srpc_service;
         srpc_msg_t        *reqstmsg = &rpc->srpc_reqstbuf->buf_msg;
+	srpc_msg_t	  *replymsg = &rpc->srpc_replymsg;
         srpc_ping_reqst_t *req = &reqstmsg->msg_body.ping_reqst;
         srpc_ping_reply_t *rep = &rpc->srpc_replymsg.msg_body.ping_reply;
 
@@ -167,7 +176,6 @@ ping_server_handle (srpc_server_rpc_t *rpc)
         if (reqstmsg->msg_magic != SRPC_MSG_MAGIC) {
                 LASSERT (reqstmsg->msg_magic == __swab32(SRPC_MSG_MAGIC));
 
-                __swab32s(&reqstmsg->msg_type);
                 __swab32s(&req->pnr_seq);
                 __swab32s(&req->pnr_magic);
                 __swab64s(&req->pnr_time_sec);
@@ -183,6 +191,14 @@ ping_server_handle (srpc_server_rpc_t *rpc)
 
         rep->pnr_seq   = req->pnr_seq;
         rep->pnr_magic = LST_PING_TEST_MAGIC;
+
+	if (reqstmsg->msg_session_ver > LST_PROTO_VERSION) {
+		replymsg->msg_session_ver = LST_PROTO_VERSION;
+		rep->pnr_status = EPROTO;
+		return 0;
+	}
+
+	replymsg->msg_session_ver = reqstmsg->msg_session_ver;
 
         CDEBUG (D_NET, "Get ping %d from %s\n",
                 req->pnr_seq, libcfs_id2str(rpc->srpc_peer));
