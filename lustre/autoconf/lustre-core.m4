@@ -2083,19 +2083,19 @@ LB_LINUX_TRY_COMPILE([
 # LC_EXT4_SINGLEDATA_TRANS_BLOCKS_SB
 #
 AC_DEFUN([LC_EXT4_SINGLEDATA_TRANS_BLOCKS_SB],
-[AC_MSG_CHECKING([if EXT4_SINGLEDATA_TRANS_BLOCKS takes the sb as argument])
+[AC_MSG_CHECKING([if LDISKFS_SINGLEDATA_TRANS_BLOCKS takes the sb as argument])
 tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-I$LINUX/fs"
+EXTRA_KCFLAGS="-I$LDISKFS_DIR"
 LB_LINUX_TRY_COMPILE([
-        #include <ext4/ext4.h>
-        #include <ext4/ext4_jbd2.h>
+        #include <ldiskfs/ldiskfs.h>
+        #include <ldiskfs/ldiskfs_jbd2.h>
 ],[
         struct super_block sb;
-        EXT4_SINGLEDATA_TRANS_BLOCKS(&sb);
+        LDISKFS_SINGLEDATA_TRANS_BLOCKS(&sb);
 ],[
         AC_MSG_RESULT(yes)
         AC_DEFINE(LDISKFS_SINGLEDATA_TRANS_BLOCKS_HAS_SB, 1,
-                  [EXT4_SINGLEDATA_TRANS_BLOCKS takes sb as argument])
+                  [LDISKFS_SINGLEDATA_TRANS_BLOCKS takes sb as argument])
 ],[
         AC_MSG_RESULT(no)
 ])
