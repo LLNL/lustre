@@ -1190,16 +1190,16 @@ EXTRA_KCFLAGS="$tmp_flags"
 # LC_EXT_INSERT_EXTENT_WITH_5ARGS
 #
 AC_DEFUN([LC_EXT_INSERT_EXTENT_WITH_5ARGS],
-[AC_MSG_CHECKING([ext4_ext_insert_extent needs 5 arguments])
+[AC_MSG_CHECKING([ldiskfs_ext_insert_extent needs 5 arguments])
 tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-I$LINUX/fs"
+EXTRA_KCFLAGS="-I$LDISKFS_DIR"
 LB_LINUX_TRY_COMPILE([
-        #include <ext4/ext4_extents.h>
+        #include <ldiskfs/ldiskfs_extents.h>
 ],[
-        ext4_ext_insert_extent(NULL, NULL, NULL, NULL, 0);
+        ldiskfs_ext_insert_extent(NULL, NULL, NULL, NULL, 0);
 ],[
         AC_DEFINE([EXT_INSERT_EXTENT_WITH_5ARGS], 1,
-                  [ext4_ext_insert_exent needs 5 arguments])
+                  [ldiskfs_ext_insert_exent needs 5 arguments])
         AC_MSG_RESULT([yes])
 ],[
         AC_MSG_RESULT([no])
