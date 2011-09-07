@@ -7458,6 +7458,7 @@ test_133c() {
 	$SETSTRIPE -c 1 -i 0 ${testdir}/${tfile}
 	sync
 	cancel_lru_locks osc
+	wait_delete_completed
 
 	# clear stats.
 	do_facet $SINGLEMDS $LCTL set_param mdt.*.md_stats=clear
