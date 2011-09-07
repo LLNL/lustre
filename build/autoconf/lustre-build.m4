@@ -341,10 +341,6 @@ AM_CONDITIONAL(LDISKFS_ENABLED, test x$with_ldiskfs != xno)
 AM_CONDITIONAL(LDISKFS_IN_KERNEL, test x$with_ldiskfs = xinkernel)
 AM_CONDITIONAL(LDISKFS_DEVEL, test x$with_ldiskfs = xdevel)
 
-if test x$enable_ext4 = xyes ; then
-	AC_DEFINE(HAVE_EXT4_LDISKFS, 1, [build ext4 based ldiskfs])
-fi
-
 # We have to configure even if we don't build here for make dist to work
 AC_CONFIG_SUBDIRS(ldiskfs)
 ])
@@ -385,6 +381,11 @@ fi
 if test x$enable_ext4 = xyes; then
 	 ac_configure_args="$ac_configure_args --enable-ext4"
 fi
+
+if test x$enable_ext4 = xyes ; then
+	AC_DEFINE(HAVE_EXT4_LDISKFS, 1, [build ext4 based ldiskfs])
+fi
+
 AC_MSG_CHECKING([whether to build ldiskfs based on ext4])
 AC_MSG_RESULT([$enable_ext4])
 ])
@@ -978,6 +979,7 @@ m4_ifdef([LC_CONFIG_SPLIT], [LC_CONFIG_SPLIT])
 LN_CONFIG_CDEBUG
 LC_QUOTA
 
+LB_PATH_LDISKFS
 LB_CONFIG_MODULES
 LN_CONFIG_USERSPACE
 LB_HAVE_EXT4_ENABLED
@@ -985,7 +987,6 @@ LB_HAVE_EXT4_ENABLED
 LB_PATH_DMU
 LB_PATH_LIBSYSIO
 LB_PATH_SNMP
-LB_PATH_LDISKFS
 LB_PATH_LUSTREIOKIT
 
 LB_DEFINE_E2FSPROGS_NAMES
