@@ -1200,8 +1200,9 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
         int                       rc;
         ENTRY;
 
-        CDEBUG(D_MOUNT, "Attempting to start %s, lsifl=%x, mountfl=%lx\n",
-               lsi->lsi_svname, lsi->lsi_flags, mflags);
+        CDEBUG(D_MOUNT,
+               "Attempting to start %s, type=%s, lsifl=%x, mountfl=%lx\n",
+               lsi->lsi_svname, lsi->lsi_osd_type, lsi->lsi_flags, mflags);
 
         sprintf(lsi->lsi_osd_obdname, "%s-dsk", lsi->lsi_svname);
         strcpy(lsi->lsi_osd_uuid, lsi->lsi_osd_obdname);
@@ -1211,7 +1212,7 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
         obd = class_name2obd(lsi->lsi_osd_obdname);
         if (obd == NULL) {
                 rc = lustre_start_simple(lsi->lsi_osd_obdname,
-                                         LUSTRE_OSD_LDISKFS_NAME,
+                                         lsi->lsi_osd_type,
                                          lsi->lsi_osd_uuid, lmd->lmd_dev,
                                          flagstr, 0, lsi->lsi_svname);
                 if (rc)
@@ -1707,11 +1708,6 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
                 } else if (strncmp(s1, "mgs", 3) == 0) {
                         /* We are an MGS */
                         lmd->lmd_flags |= LMD_FLG_MGS;
-                        clear++;
-                } else if (strncmp(s1, "svname=", 7) == 0) {
-                        rc = lmd_parse_string(&lmd->lmd_profile, s1 + 7);
-                        if (rc)
-                                goto invalid;
                         clear++;
 		} else if (strncmp(s1, "svname=", 7) == 0) {
 			rc = lmd_parse_string(&lmd->lmd_profile, s1 + 7);
