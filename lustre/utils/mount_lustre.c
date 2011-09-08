@@ -327,6 +327,10 @@ static int parse_ldd(char *source, struct mount_opts *mop, char *options)
                 ldd->ldd_flags |= LDD_F_VIRGIN;
         }
 
+        /* backend osd type */
+        append_option(options, "osd=");
+        strcat(options, mt_type(ldd->ldd_mount_type));
+
         append_option(options, ldd->ldd_mount_opts);
 
         if (!mop->mo_have_mgsnid) {

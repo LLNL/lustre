@@ -125,6 +125,19 @@ static inline char *mt_str(enum ldd_mount_type mt)
         return mount_type_string[mt];
 }
 
+static inline char *mt_type(enum ldd_mount_type mt)
+{
+        static char *mount_type_string[] = {
+                "osd-ldiskfs",
+                "osd-ldiskfs",
+                "osd-smfs",
+                "osd-reiserfs",
+                "osd-ldiskfs",
+                "osd-zfs",
+        };
+        return mount_type_string[mt];
+}
+
 #define IS_MDT(data)    ((data)->lsi_flags & LDD_F_SV_TYPE_MDT)
 #define IS_OST(data)    ((data)->lsi_flags & LDD_F_SV_TYPE_OST)
 #define IS_MGS(data)    ((data)->lsi_flags & LDD_F_SV_TYPE_MGS)
@@ -176,6 +189,7 @@ struct lustre_mount_data {
                                          _device_ mount options) */
         __u32     *lmd_exclude;       /* array of OSTs to ignore */
         char      *lmd_mgs;           /* MGS nid */
+        char      *lmd_osd_type;      /* OSD type */
 };
 
 #define LMD_FLG_SERVER       0x0001  /* Mounting a server */
@@ -436,7 +450,7 @@ struct lustre_sb_info {
         char                      lsi_osd_obdname[64];
         char                      lsi_osd_uuid[64];
         struct obd_export        *lsi_osd_exp;
-        char                     *lsi_osd_type;
+        char                      lsi_osd_type[16];
         struct backing_dev_info   lsi_bdi;     /* each client mountpoint needs own backing_dev_info */
 };
 
