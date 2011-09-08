@@ -1073,6 +1073,9 @@ static int lustre_free_lsi(struct lustre_sb_info *lsi)
                 if (lsi->lsi_lmd->lmd_profile != NULL)
                         OBD_FREE(lsi->lsi_lmd->lmd_profile,
                                  strlen(lsi->lsi_lmd->lmd_profile) + 1);
+                if (lsi->lsi_lmd->lmd_osd_type != NULL)
+                        OBD_FREE(lsi->lsi_lmd->lmd_osd_type,
+                                 strlen(lsi->lsi_lmd->lmd_osd_type) + 1);
                 if (lsi->lsi_lmd->lmd_mgssec != NULL)
                         OBD_FREE(lsi->lsi_lmd->lmd_mgssec,
                                  strlen(lsi->lsi_lmd->lmd_mgssec) + 1);
@@ -1124,14 +1127,12 @@ static int lustre_put_lsi(struct lustre_sb_info *lsi)
 
 static int lsi_prepare(struct lustre_sb_info *lsi)
 {
-        struct lustre_mount_data *lmd;
         __u32                     index;
         int                       rc;
         ENTRY;
 
         LASSERT(lsi);
-        lmd = lsi->lsi_lmd;
-        LASSERT(lmd);
+        LASSERT(lsi->lsi_lmd);
 
         /* The server name is given as a mount line option */
         if (lsi->lsi_lmd->lmd_profile == NULL) {
@@ -1143,6 +1144,17 @@ static int lsi_prepare(struct lustre_sb_info *lsi)
                 RETURN(-ENAMETOOLONG);
 
         strcpy(lsi->lsi_svname, lsi->lsi_lmd->lmd_profile);
+
+        /* Determine osd type */
+        if (lsi->lsi_lmd->lmd_osd_type != NULL) {
+                if (strlen(lsi->lsi_lmd->lmd_osd_type) >=
+                    sizeof(lsi->lsi_osd_type))
+                        RETURN (-ENAMETOOLONG);
+
+                strcpy(lsi->lsi_osd_type, lsi->lsi_lmd->lmd_osd_type);
+        } else {
+                strcpy(lsi->lsi_osd_type, LUSTRE_OSD_LDISKFS_NAME);
+        }
 
         /* Determine server type */
         rc = server_name2index(lsi->lsi_svname, &index, NULL);
@@ -1182,8 +1194,9 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
         int                       rc;
         ENTRY;
 
-        CDEBUG(D_MOUNT, "Attempting to start %s, lsifl=%x, mountfl=%lx\n",
-               lsi->lsi_svname, lsi->lsi_flags, mflags);
+        CDEBUG(D_MOUNT,
+               "Attempting to start %s, type=%s, lsifl=%x, mountfl=%lx\n",
+               lsi->lsi_svname, lsi->lsi_osd_type, lsi->lsi_flags, mflags);
 
         sprintf(lsi->lsi_osd_obdname, "%s-dsk", lsi->lsi_svname);
         strcpy(lsi->lsi_osd_uuid, lsi->lsi_osd_obdname);
@@ -1193,7 +1206,7 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
         obd = class_name2obd(lsi->lsi_osd_obdname);
         if (obd == NULL) {
                 rc = lustre_start_simple(lsi->lsi_osd_obdname,
-                                         LUSTRE_OSD_LDISKFS_NAME,
+                                         lsi->lsi_osd_type,
                                          lsi->lsi_osd_uuid, lmd->lmd_dev,
                                          flagstr, 0, lsi->lsi_svname);
                 if (rc)
@@ -1701,6 +1714,10 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
                         if (rc)
                                 goto invalid;
                         clear++;
+                } else if (strncmp(s1, "osd=", 4) == 0) {
+                        rc = lmd_parse_string(&lmd->lmd_osd_type, s1 + 4);
+                        if (rc)
+                                goto invalid;
                 }
                 /* Linux 2.4 doesn't pass the device, so we stuck it at the
                    end of the options. */
