@@ -74,7 +74,7 @@
 #endif
 
 
-/* LUSTRE_OSD_NAME */
+/* LUSTRE_OSD_LDISKFS_NAME */
 #include <obd.h>
 /* class_register_type(), class_unregister_type(), class_get_type() */
 #include <obd_class.h>
