@@ -87,7 +87,7 @@ get_version() {
     local fid
 
     fid=$(do_node $client $LFS path2fid $file)
-    do_facet $SINGLEMDS $LCTL --device ${!var} getobjversion $fid
+    do_facet $SINGLEMDS $LCTL --device ${!var} getobjversion \\\"$fid\\\"
 }
 
 #save COS setting
