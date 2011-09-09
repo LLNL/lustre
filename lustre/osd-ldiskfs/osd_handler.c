@@ -820,7 +820,8 @@ static int osd_object_print(const struct lu_env *env, void *cookie,
                 d = o->oo_dir->od_container.ic_descr;
         else
                 d = NULL;
-        return (*p)(env, cookie, LUSTRE_OSD_NAME"-object@%p(i:%p:%lu/%u)[%s]",
+        return (*p)(env, cookie,
+                    LUSTRE_OSD_LDISKFS_NAME"-object@%p(i:%p:%lu/%u)[%s]",
                     o, o->oo_inode,
                     o->oo_inode ? o->oo_inode->i_ino : 0UL,
                     o->oo_inode ? o->oo_inode->i_generation : 0,
@@ -953,7 +954,7 @@ static void osd_conf_get(const struct lu_env *env,
  */
 static int osd_sync(const struct lu_env *env, struct dt_device *d)
 {
-        CDEBUG(D_HA, "syncing OSD %s\n", LUSTRE_OSD_NAME);
+        CDEBUG(D_HA, "syncing OSD %s\n", LUSTRE_OSD_LDISKFS_NAME);
         return ldiskfs_force_commit(osd_sb(osd_dt_dev(d)));
 }
 
@@ -975,7 +976,7 @@ static int osd_commit_async(const struct lu_env *env,
         struct super_block *s = osd_sb(osd_dt_dev(d));
         ENTRY;
 
-        CDEBUG(D_HA, "async commit OSD %s\n", LUSTRE_OSD_NAME);
+        CDEBUG(D_HA, "async commit OSD %s\n", LUSTRE_OSD_LDISKFS_NAME);
         RETURN(s->s_op->sync_fs(s, 0));
 }
 
@@ -989,7 +990,8 @@ static int osd_ro(const struct lu_env *env, struct dt_device *d)
         int rc;
         ENTRY;
 
-        CERROR("*** setting device %s read-only ***\n", LUSTRE_OSD_NAME);
+        CERROR("*** setting device %s read-only ***\n",
+               LUSTRE_OSD_LDISKFS_NAME);
 
         rc = __lvfs_set_rdonly(sb->s_bdev, LDISKFS_SB(sb)->journal_bdev);
         RETURN(rc);
@@ -4466,7 +4468,7 @@ static const struct lu_device_type_operations osd_device_type_ops = {
 
 static struct lu_device_type osd_device_type = {
         .ldt_tags     = LU_DEVICE_DT,
-        .ldt_name     = LUSTRE_OSD_NAME,
+        .ldt_name     = LUSTRE_OSD_LDISKFS_NAME,
         .ldt_ops      = &osd_device_type_ops,
         .ldt_ctx_tags = LCT_LOCAL
 };
@@ -4487,16 +4489,16 @@ static int __init osd_mod_init(void)
         osd_oi_mod_init();
         lprocfs_osd_init_vars(&lvars);
         return class_register_type(&osd_obd_device_ops, NULL, lvars.module_vars,
-                                   LUSTRE_OSD_NAME, &osd_device_type);
+                                   LUSTRE_OSD_LDISKFS_NAME, &osd_device_type);
 }
 
 static void __exit osd_mod_exit(void)
 {
-        class_unregister_type(LUSTRE_OSD_NAME);
+        class_unregister_type(LUSTRE_OSD_LDISKFS_NAME);
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
-MODULE_DESCRIPTION("Lustre Object Storage Device ("LUSTRE_OSD_NAME")");
+MODULE_DESCRIPTION("Lustre Object Storage Device ("LUSTRE_OSD_LDISKFS_NAME")");
 MODULE_LICENSE("GPL");
 
 cfs_module(osd, "0.1.0", osd_mod_init, osd_mod_exit);

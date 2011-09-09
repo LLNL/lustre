@@ -1192,7 +1192,8 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
 
         obd = class_name2obd(lsi->lsi_osd_obdname);
         if (obd == NULL) {
-                rc = lustre_start_simple(lsi->lsi_osd_obdname, LUSTRE_OSD_NAME,
+                rc = lustre_start_simple(lsi->lsi_osd_obdname,
+                                         LUSTRE_OSD_LDISKFS_NAME,
                                          lsi->lsi_osd_uuid, lmd->lmd_dev,
                                          flagstr, 0, lsi->lsi_svname);
                 if (rc)
