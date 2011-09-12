@@ -601,6 +601,8 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
                 CERROR("cannot open %s: rc = %d\n", CAPA_KEYS, rc);
                 GOTO(disconnect_exports, rc);
         }
+
+        lu_quota_init(env, mdt->mdt_bottom, &mdt->mdt_lu_quota);
         RETURN(0);
 
 put_ck_object:
@@ -620,6 +622,7 @@ void mdt_fs_cleanup(const struct lu_env *env, struct mdt_device *mdt)
         if (mdt->mdt_ck_obj)
                 lu_object_put(env, &mdt->mdt_ck_obj->do_lu);
         mdt->mdt_ck_obj = NULL;
+        lu_quota_fini(env, mdt->mdt_bottom, &mdt->mdt_lu_quota);
         EXIT;
 }
 

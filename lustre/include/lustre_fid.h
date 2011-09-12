@@ -108,9 +108,8 @@ enum local_oid {
         /** \see osd_mod_init */
         OSD_REM_OBJ_DIR_OID     = 12UL,
         OSD_FS_ROOT_OID         = 13UL,
-        /** \see mds_quota_setup(TODO) */
-        QUOTA_SLAVE_UID_OID     = 15UL,
-        QUOTA_SLAVE_GID_OID     = 16UL,
+        ACCT_USER_OID           = 15UL,
+        ACCT_GROUP_OID          = 16UL,
         OFD_LAST_RECV_OID       = 19UL,
         OFD_GROUP0_LAST_OID     = 20UL,
         OFD_GROUP4K_LAST_OID    = 20UL+4096,
@@ -125,6 +124,13 @@ static inline void lu_local_obj_fid(struct lu_fid *fid, __u32 oid)
         fid->f_seq = FID_SEQ_LOCAL_FILE;
         fid->f_oid = oid;
         fid->f_ver = 0;
+}
+
+static inline int fid_is_acct(const struct lu_fid *fid)
+{
+        return unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE &&
+                        (fid_oid(fid) == ACCT_USER_OID ||
+                         fid_oid(fid) == ACCT_GROUP_OID));
 }
 
 enum lu_mgr_type {

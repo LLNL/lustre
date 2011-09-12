@@ -289,6 +289,8 @@ int ofd_fs_setup(const struct lu_env *env, struct ofd_device *ofd,
         if (rc)
                 GOTO(out_lg, rc);
 
+        lu_quota_init(env, ofd->ofd_osd, &ofd->ofd_lu_quota);
+
         RETURN(0);
 out_lg:
         lu_object_put(env, &ofd->ofd_last_group_file->do_lu);
@@ -333,6 +335,7 @@ void ofd_fs_cleanup(const struct lu_env *env, struct ofd_device *ofd)
                 ofd->ofd_health_check_file = NULL;
         }
 
+        lu_quota_fini(env, ofd->ofd_osd, &ofd->ofd_lu_quota);
         ofd_free_capa_keys(ofd);
         cleanup_capa_hash(ofd->ofd_capa_hash);
 

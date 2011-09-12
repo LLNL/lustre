@@ -74,6 +74,7 @@
 #include <lustre_idmap.h>
 #include <lustre_eacl.h>
 #include <lustre_fsfilt.h>
+#include <lu_quota.h>
 
 /* check if request's xid is equal to last one or not*/
 static inline int req_xid_is_last(struct ptlrpc_request *req)
@@ -179,6 +180,9 @@ struct mdt_device {
         cfs_proc_dir_entry_t      *mdt_proc_entry;
         struct lprocfs_stats      *mdt_stats;
         int                        mdt_sec_level;
+
+        /* space accounting and quota related data */
+        struct lu_quota            mdt_lu_quota;
 };
 
 #define MDT_SERVICE_WATCHDOG_FACTOR     (2)
