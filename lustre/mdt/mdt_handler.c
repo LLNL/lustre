@@ -4493,6 +4493,7 @@ static void mdt_fini(const struct lu_env *env, struct mdt_device *m)
         obd_exports_barrier(obd);
         obd_zombie_barrier();
 
+        lu_quota_fini(env, m->mdt_bottom, &m->mdt_lu_quota);
         mdt_procfs_fini(m);
 
         //next->md_ops->mdo_quota.mqo_cleanup(env, next);
@@ -4794,6 +4795,9 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
                 GOTO(err_recovery, rc);
         }
 
+        lu_quota_init(env, m->mdt_bottom, &m->mdt_lu_quota,
+                      obd->obd_proc_entry);
+
         rc = mdt_start_ptlrpc_service(m);
         if (rc)
                 GOTO(err_procfs, rc);
@@ -4823,6 +4827,7 @@ err_stop_service:
         ping_evictor_stop();
         mdt_stop_ptlrpc_service(m);
 err_procfs:
+        lu_quota_fini(env, m->mdt_bottom, &m->mdt_lu_quota);
         mdt_procfs_fini(m);
 err_recovery:
         upcall_cache_cleanup(m->mdt_identity_cache);

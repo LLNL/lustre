@@ -78,6 +78,8 @@
 
 /* llo_* api support */
 #include <md_object.h>
+/* dt_acct_features */
+#include <lu_quota.h>
 
 #ifdef HAVE_LDISKFS_PDO
 int ldiskfs_pdo = 1;
@@ -2628,6 +2630,10 @@ static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
                 else
                         result = -ENOTDIR;
                 ea_dir = 1;
+        } else if (feat == &dt_acct_features) {
+                LASSERT(!osd_has_index(obj));
+                //dt->do_index_ops = &osd_index_acct_ops;
+                result = 0;
         } else if (!osd_has_index(obj)) {
                 struct osd_directory *dir;
 

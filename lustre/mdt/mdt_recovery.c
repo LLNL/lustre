@@ -589,6 +589,7 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
                 CERROR("cannot open %s: rc = %d\n", CAPA_KEYS, rc);
                 GOTO(disconnect_exports, rc);
         }
+
         RETURN(0);
 
 put_ck_object:
