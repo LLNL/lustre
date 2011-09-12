@@ -10,6 +10,7 @@
 #include <obd_cksum.h>
 #include <lustre_fid.h>
 #include <obd_ost.h>
+#include <lu_quota.h>
 
 #define OFD_GROUPS_FILE "groups"
 
@@ -177,6 +178,9 @@ struct ofd_device {
         unsigned int             ofd_fl_oss_capa;
         cfs_list_t               ofd_capa_keys;
         cfs_hlist_head_t        *ofd_capa_hash;
+
+        /* space accounting and quota related data */
+        struct lu_quota          ofd_lu_quota;
 };
 
 #define ofd_last_rcvd    ofd_lut.lut_last_rcvd
