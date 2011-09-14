@@ -1938,8 +1938,7 @@ static int mdt_sync(struct mdt_thread_info *info)
         RETURN(rc);
 }
 
-#ifdef HAVE_QUOTA_SUPPORT
-static int mdt_quotacheck_handle(struct mdt_thread_info *info)
+static int mdt_quotacheck(struct mdt_thread_info *info)
 {
 	struct obd_quotactl	*oqctl;
 	int			 rc;
@@ -1956,15 +1955,12 @@ static int mdt_quotacheck_handle(struct mdt_thread_info *info)
 	RETURN(-EOPNOTSUPP);
 }
 
-static int mdt_quotactl_handle(struct mdt_thread_info *info)
+static int mdt_quotactl(struct mdt_thread_info *info)
 {
+        struct obd_export   *exp  = info->mti_exp;
+        struct req_capsule  *pill = info->mti_pill;
         struct obd_quotactl *oqctl, *repoqc;
-        struct req_capsule *pill = info->mti_pill;
-        struct obd_export *exp = info->mti_exp;
-        struct md_quota *mq = md_quota(info->mti_env);
-        struct md_device *next = info->mti_mdt->mdt_child;
-        const struct md_quota_operations *mqo = &next->md_ops->mdo_quota;
-        int id, rc;
+        int                  id, rc;
         ENTRY;
 
         oqctl = req_capsule_client_get(pill, &RMF_OBD_QUOTACTL);
@@ -1972,15 +1968,16 @@ static int mdt_quotactl_handle(struct mdt_thread_info *info)
                 RETURN(-EPROTO);
 
         id = oqctl->qc_id;
+
+        /* map uid/gid for remote client */
         if (exp_connect_rmtclient(exp)) {
-                struct ptlrpc_request *req = mdt_info_req(info);
-                struct mdt_export_data *med = mdt_req2med(req);
-                struct lustre_idmap_table *idmap = med->med_idmap;
+                struct lustre_idmap_table *idmap;
+
+                idmap = mdt_req2med(mdt_info_req(info))->med_idmap;
 
                 if (unlikely(oqctl->qc_cmd != Q_GETQUOTA &&
                              oqctl->qc_cmd != Q_GETINFO))
                         RETURN(-EPERM);
-
 
                 if (oqctl->qc_type == USRQUOTA)
                         id = lustre_idmap_lookup_uid(NULL, idmap, 0,
@@ -2015,8 +2012,6 @@ static int mdt_quotactl_handle(struct mdt_thread_info *info)
         *repoqc = *oqctl;
         RETURN(rc);
 }
-#endif
-
 
 /*
  * OBD PING and other handlers.
@@ -6089,10 +6084,8 @@ DEF_MDT_HNDL_F(HABEO_CORPUS,              DONE_WRITING, mdt_done_writing),
 DEF_MDT_HNDL_F(0           |HABEO_REFERO, PIN,          mdt_pin),
 DEF_MDT_HNDL_0(0,                         SYNC,         mdt_sync),
 DEF_MDT_HNDL_F(HABEO_CORPUS|HABEO_REFERO, IS_SUBDIR,    mdt_is_subdir),
-#ifdef HAVE_QUOTA_SUPPORT
-DEF_MDT_HNDL_F(0,                         QUOTACHECK,   mdt_quotacheck_handle),
-DEF_MDT_HNDL_F(0,                         QUOTACTL,     mdt_quotactl_handle)
-#endif
+DEF_MDT_HNDL_F(0,                         QUOTACHECK,   mdt_quotacheck),
+DEF_MDT_HNDL_F(0,                         QUOTACTL,     mdt_quotactl)
 };
 
 #define DEF_OBD_HNDL(flags, name, fn)                   \
