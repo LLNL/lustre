@@ -738,8 +738,8 @@ struct dt_object *dt_find_or_create(const struct lu_env *env,
 struct dt_object *dt_locate(const struct lu_env *env,
                             struct dt_device *dev,
                             const struct lu_fid *fid);
-int dt_lookup(const struct lu_env *env, struct dt_object *dir,
-              const char *name, struct lu_fid *fid);
+int dt_lookup_dir(const struct lu_env *env, struct dt_object *dir,
+                  const char *name, struct lu_fid *fid);
 
 static inline int dt_object_sync(const struct lu_env *env,
                                  struct dt_object *o)
@@ -1236,10 +1236,10 @@ static inline int dt_declare_delete(const struct lu_env *env,
 }
 
 static inline int dt_delete(const struct lu_env *env,
-                                    struct dt_object *dt,
-                                    const struct dt_key *key,
-                                    struct thandle *th,
-                                    struct lustre_capa *capa)
+                            struct dt_object *dt,
+                            const struct dt_key *key,
+                            struct thandle *th,
+                            struct lustre_capa *capa)
 {
         LASSERT(dt);
         LASSERT(dt->do_index_ops);
@@ -1256,4 +1256,23 @@ static inline int dt_commit_async(const struct lu_env *env,
         return dev->dd_ops->dt_commit_async(env, dev);
 }
 
+static inline int dt_lookup(const struct lu_env *env,
+                            struct dt_object *dt,
+                            struct dt_rec *rec,
+                            const struct dt_key *key,
+                            struct lustre_capa *capa)
+{
+        int ret;
+
+        LASSERT(dt);
+        LASSERT(dt->do_index_ops);
+        LASSERT(dt->do_index_ops->dio_lookup);
+
+        ret = dt->do_index_ops->dio_lookup(env, dt, rec, key, capa);
+        if (ret > 0)
+                ret = 0;
+        else if (ret == 0)
+                ret = -ENOENT;
+        return ret;
+}
 #endif /* __LUSTRE_DT_OBJECT_H */

@@ -239,7 +239,6 @@ struct mdd_thread_info {
         char                      mti_xattr_buf[LUSTRE_POSIX_ACL_MAX_SIZE];
         struct dt_allocation_hint mti_hint;
         struct dt_object_format   mti_dof;
-        struct obd_quotactl       mti_oqctl;
         struct mdd_thandle        mti_thandle;
         /** used in to set fid into common ea */
         struct lustre_mdt_attrs   mti_mdt_attrs;
@@ -403,41 +402,6 @@ int mdd_readpage(const struct lu_env *env, struct md_object *obj,
                  const struct lu_rdpg *rdpg);
 void mdd_object_make_hint(const struct lu_env *env, struct mdd_object *parent,
                           struct mdd_object *child, struct lu_attr *attr);
-
-/* mdd_quota.c*/
-int mdd_quota_setup(const struct lu_env *env, struct md_device *m,
-                    void *data);
-int mdd_quota_cleanup(const struct lu_env *env, struct md_device *m);
-
-#ifdef HAVE_QUOTA_SUPPORT
-int mdd_quota_notify(const struct lu_env *env, struct md_device *m);
-int mdd_quota_setup(const struct lu_env *env, struct md_device *m,
-                    void *data);
-int mdd_quota_cleanup(const struct lu_env *env, struct md_device *m);
-int mdd_quota_recovery(const struct lu_env *env, struct md_device *m);
-int mdd_quota_check(const struct lu_env *env, struct md_device *m,
-                    __u32 type);
-int mdd_quota_on(const struct lu_env *env, struct md_device *m,
-                 __u32 type);
-int mdd_quota_off(const struct lu_env *env, struct md_device *m,
-                  __u32 type);
-int mdd_quota_setinfo(const struct lu_env *env, struct md_device *m,
-                      __u32 type, __u32 id, struct obd_dqinfo *dqinfo);
-int mdd_quota_getinfo(const struct lu_env *env, const struct md_device *m,
-                      __u32 type, __u32 id, struct obd_dqinfo *dqinfo);
-int mdd_quota_setquota(const struct lu_env *env, struct md_device *m,
-                       __u32 type, __u32 id, struct obd_dqblk *dqblk);
-int mdd_quota_getquota(const struct lu_env *env, const struct md_device *m,
-                       __u32 type, __u32 id, struct obd_dqblk *dqblk);
-int mdd_quota_getoinfo(const struct lu_env *env, const struct md_device *m,
-                       __u32 type, __u32 id, struct obd_dqinfo *dqinfo);
-int mdd_quota_getoquota(const struct lu_env *env, const struct md_device *m,
-                        __u32 type, __u32 id, struct obd_dqblk *dqblk);
-int mdd_quota_invalidate(const struct lu_env *env, struct md_device *m,
-                         __u32 type);
-int mdd_quota_finvalidate(const struct lu_env *env, struct md_device *m,
-                          __u32 type);
-#endif
 
 /* mdd_trans.c */
 void mdd_txn_param_build(const struct lu_env *env, struct mdd_device *mdd,

@@ -1121,7 +1121,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
         } else if (name) {
                 LASSERT(ctxt->loc_dir);
                 dt_read_lock(env, ctxt->loc_dir, 0);
-                rc = dt_lookup(env, ctxt->loc_dir, name, &lgi->lgi_fid);
+                rc = dt_lookup_dir(env, ctxt->loc_dir, name, &lgi->lgi_fid);
                 dt_read_unlock(env, ctxt->loc_dir);
                 if (rc == -ENOENT && flags & LLOG_OPEN_NEW) {
                         /* generate fid for new llog */

@@ -328,6 +328,12 @@ static inline void *__container_of(void *ptr, unsigned long shift)
 #define container_of0(ptr, type, member) \
         ((type *)__container_of((void *)(ptr), offsetof(type, member)))
 
+#ifdef swap
+#define cfs_swap(x,y) swap(x,y)
+#else
+#define cfs_swap(x,y) do { typeof(x) z = x; x = y; y = z; } while (0)
+#endif
+
 #define _LIBCFS_H
 
 #endif /* _LIBCFS_H */

@@ -213,25 +213,15 @@ EXPORT_SYMBOL(dt_mode_to_dft);
  * lookup fid for object named \a name in directory \a dir.
  */
 
-int dt_lookup(const struct lu_env *env, struct dt_object *dir,
-              const char *name, struct lu_fid *fid)
+int dt_lookup_dir(const struct lu_env *env, struct dt_object *dir,
+                  const char *name, struct lu_fid *fid)
 {
-        struct dt_rec       *rec = (struct dt_rec *)fid;
-        const struct dt_key *key = (const struct dt_key *)name;
-        int result;
-
-        if (dt_try_as_dir(env, dir)) {
-                result = dir->do_index_ops->dio_lookup(env, dir, rec, key,
-                                                       BYPASS_CAPA);
-                if (result > 0)
-                        result = 0;
-                else if (result == 0)
-                        result = -ENOENT;
-        } else
-                result = -ENOTDIR;
-        return result;
+        if (dt_try_as_dir(env, dir))
+                return dt_lookup(env, dir, (struct dt_rec *)fid,
+                                 (const struct dt_key *)name, BYPASS_CAPA);
+        return -ENOTDIR;
 }
-EXPORT_SYMBOL(dt_lookup);
+EXPORT_SYMBOL(dt_lookup_dir);
 /**
  * get object for given \a fid.
  */
@@ -264,7 +254,7 @@ static int dt_find_entry(const struct lu_env *env, const char *entry, void *data
         struct dt_object     *obj = dfh->dfh_o;
         int                   result;
 
-        result = dt_lookup(env, obj, entry, fid);
+        result = dt_lookup_dir(env, obj, entry, fid);
         lu_object_put(env, &obj->do_lu);
         if (result == 0) {
                 obj = dt_locate(env, dt, fid);
@@ -348,7 +338,7 @@ static struct dt_object *dt_reg_open(const struct lu_env *env,
         struct dt_object *o;
         int result;
 
-        result = dt_lookup(env, p, name, fid);
+        result = dt_lookup_dir(env, p, name, fid);
         if (result == 0){
                 o = dt_locate(env, dt, fid);
         }

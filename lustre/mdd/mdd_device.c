@@ -1619,25 +1619,6 @@ const struct md_device_operations mdd_ops = {
         .mdo_llog_ctxt_get  = mdd_llog_ctxt_get,
 #endif
         .mdo_iocontrol      = mdd_iocontrol,
-#ifdef HAVE_QUOTA_SUPPORT
-        .mdo_quota          = {
-                .mqo_notify      = mdd_quota_notify,
-                .mqo_setup       = mdd_quota_setup,
-                .mqo_cleanup     = mdd_quota_cleanup,
-                .mqo_recovery    = mdd_quota_recovery,
-                .mqo_check       = mdd_quota_check,
-                .mqo_on          = mdd_quota_on,
-                .mqo_off         = mdd_quota_off,
-                .mqo_setinfo     = mdd_quota_setinfo,
-                .mqo_getinfo     = mdd_quota_getinfo,
-                .mqo_setquota    = mdd_quota_setquota,
-                .mqo_getquota    = mdd_quota_getquota,
-                .mqo_getoinfo    = mdd_quota_getoinfo,
-                .mqo_getoquota   = mdd_quota_getoquota,
-                .mqo_invalidate  = mdd_quota_invalidate,
-                .mqo_finvalidate = mdd_quota_finvalidate
-        }
-#endif
 };
 
 static struct lu_device_type_operations mdd_device_type_ops = {
