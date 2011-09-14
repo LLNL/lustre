@@ -128,3 +128,87 @@ void lu_quota_fini(const struct lu_env *env, struct dt_device *dev,
         }
 }
 EXPORT_SYMBOL(lu_quota_fini);
+
+/*
+ * Handle quotactl request. This function converts a quotactl request into
+ * quota/accounting object operations.
+ *
+ * \param env - is the environment passed by the caller
+ * \param lu_quota - is the lu_quota structure storing references to the
+ *                   accounting/quota objects to be used to handle the quotactl
+ *                   operation.
+ * \param oqctl - is the quotactl request
+ */
+int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
+                struct obd_quotactl *oqctl)
+{
+        int rc = 0;
+        ENTRY;
+
+        switch (oqctl->qc_cmd) {
+        case LUSTRE_Q_INVALIDATE:
+        case LUSTRE_Q_FINVALIDATE:
+                /* deprecated, not used any more */
+                RETURN(-ENOTSUPP);
+
+        case Q_QUOTAON:
+        case Q_QUOTAOFF:
+                /* TODO should just enable/disable enforcement */
+        case Q_GETINFO:
+        case Q_GETOINFO:
+                /* TODO should fill obd_quotactl::obd_dqinfo with grace time
+                 * info */
+        case Q_SETINFO:
+                /* TODO change grace time */
+        case Q_SETQUOTA:
+                /* TODO handle new quota limit set by admin */
+        case Q_INITQUOTA:
+                /* TODO init slave limit */
+
+                CERROR("quotactl operation %d not implemented yet\n",
+                       oqctl->qc_cmd);
+                RETURN(-ENOTSUPP);
+                break;
+
+        case Q_GETQUOTA:
+                /* TODO return global quota limit
+                 * XXX always return no limit for now, for testing purpose */
+                memset(&oqctl->qc_dqblk, 0, sizeof(struct obd_dqblk));
+                oqctl->qc_dqblk.dqb_valid = QIF_LIMITS;
+                break;
+
+        case Q_GETOQUOTA: {
+                struct acct_rec  rec;
+                __u64            key;
+                struct dt_object *obj;
+
+                if (oqctl->qc_type == USRQUOTA)
+                        obj = lu_quota->acct_user_obj;
+                else if (oqctl->qc_type == GRPQUOTA)
+                        obj = lu_quota->acct_group_obj;
+                else
+                        RETURN(-EINVAL);
+
+                if (!obj || !obj->do_index_ops)
+                        RETURN(-ENOTSUPP);
+
+                /* qc_id is a 32-bit field while a key has 64 bits */
+                key = oqctl->qc_id;
+                rc = dt_lookup(env, obj, (struct dt_rec*)&rec,
+                               (struct dt_key*)&key, BYPASS_CAPA);
+                if (rc < 0)
+                        RETURN(rc);
+
+                memset(&oqctl->qc_dqblk, 0, sizeof(struct obd_dqblk));
+                oqctl->qc_dqblk.dqb_curspace  = rec.bspace;
+                oqctl->qc_dqblk.dqb_curinodes = rec.ispace;
+                oqctl->qc_dqblk.dqb_valid = QIF_USAGE;
+                break;
+        }
+        default:
+                CERROR("Unsupported quotactl command: %d\n", oqctl->qc_cmd);
+                RETURN(-EFAULT);
+        }
+        RETURN(rc);
+}
+EXPORT_SYMBOL(lu_quotactl);
