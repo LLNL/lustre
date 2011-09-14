@@ -329,6 +329,12 @@ static inline void *__container_of(void *ptr, unsigned long shift)
 
 #define SET_BUT_UNUSED(a) do { } while(sizeof(a) - sizeof(a))
 
+#ifdef swap
+#define cfs_swap(x,y) swap(x,y)
+#else
+#define cfs_swap(x,y) do { typeof(x) z = x; x = y; y = z; } while (0)
+#endif
+
 #define _LIBCFS_H
 
 #endif /* _LIBCFS_H */
