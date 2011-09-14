@@ -54,4 +54,6 @@ void lu_quota_init(const struct lu_env *env, struct dt_device *dev,
                    struct lu_quota *lu_quota);
 void lu_quota_fini(const struct lu_env *env, struct dt_device *dev,
                    struct lu_quota *lu_quota);
+int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
+                struct obd_quotactl *oqctl);
 #endif /* _LUSTRE_LU_QUOTA_H */

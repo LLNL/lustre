@@ -233,15 +233,15 @@ EXPORT_SYMBOL(dt_mode_to_dft);
  * lookup fid for object named \a name in directory \a dir.
  */
 
-int dt_lookup(const struct lu_env *env, struct dt_object *dir,
-              const char *name, struct lu_fid *fid)
+int dt_lookup_dir(const struct lu_env *env, struct dt_object *dir,
+                  const char *name, struct lu_fid *fid)
 {
         if (dt_try_as_dir(env, dir))
                 return dt_lookup(env, dir, (struct dt_rec *)fid,
                                  (const struct dt_key *)name, BYPASS_CAPA);
         return -ENOTDIR;
 }
-EXPORT_SYMBOL(dt_lookup);
+EXPORT_SYMBOL(dt_lookup_dir);
 
 /**
  * get object for given \a fid.
