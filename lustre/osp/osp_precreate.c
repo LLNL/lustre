@@ -353,14 +353,12 @@ static int osp_get_ost_lastid(struct osp_device *d)
         }
 
         last_id = req_capsule_server_get(&req->rq_pill, &RMF_OBD_ID);
-        LASSERTF(*last_id >= d->opd_pre_last_created - 1,
-                 "last_id from OST is "LPU64", local last id is "LPU64"\n",
-                 *last_id + 1, d->opd_pre_last_created);
 
         cfs_spin_lock(&d->opd_pre_lock);
         if (le64_to_cpu(d->opd_last_used_id) > *last_id) {
-                d->opd_pre_grow_count = OST_MIN_PRECREATE - *last_id +
-                                        le64_to_cpu(d->opd_last_used_id);
+                d->opd_pre_grow_count = OST_MIN_PRECREATE +
+                                        (le64_to_cpu(d->opd_last_used_id -
+                                         *last_id));
                 d->opd_pre_last_created = le64_to_cpu(d->opd_last_used_id) + 1;
         } else {
                 d->opd_pre_grow_count = OST_MIN_PRECREATE;
@@ -371,8 +369,8 @@ static int osp_get_ost_lastid(struct osp_device *d)
         cfs_spin_unlock(&d->opd_pre_lock);
 
         CDEBUG(D_INFO,
-               "Got last_id "LPU64" from OST, last_used is "LPU64"\n",
-               *last_id, le64_to_cpu(d->opd_last_used_id));
+               "Got last_id "LPU64" from OST, last_used is "LPU64", next "LPU64"\n",
+               *last_id, le64_to_cpu(d->opd_last_used_id), d->opd_pre_next);
 out_req:
         ptlrpc_req_finished(req);
         RETURN(rc);

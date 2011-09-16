@@ -961,7 +961,7 @@ static int ofd_orphans_destroy(const struct lu_env *env,
 }
 
 int ofd_create(struct obd_export *exp, struct obdo *oa,
-                  struct lov_stripe_md **ea, struct obd_trans_info *oti)
+               struct lov_stripe_md **ea, struct obd_trans_info *oti)
 {
         struct ofd_device *ofd = ofd_exp(exp);
         struct lu_env *env = oti->oti_env;

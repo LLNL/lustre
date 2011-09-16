@@ -244,6 +244,67 @@ test_7() {
 }
 run_test 7 "Fail OST before obd_destroy"
 
+check_for_process () {
+	local clients=$1
+	shift
+	local prog=$@
+
+	killall_process $clients "$prog" -0
+}
+
+killall_process () {
+	local clients=${1:-$(hostname)}
+	local name=$2
+	local signal=$3
+	local rc=0
+
+	do_nodes $clients "killall $signal $name"
+}
+
+test_8() {
+	local clients=${CLIENTS:-$HOSTNAME}
+
+	zconf_mount_clients $clients $MOUNT
+	
+	local duration=300
+	[ "$SLOW" = "no" ] && duration=120
+	# set duration to 900 because it takes some time to boot node
+	[ "$FAILURE_MODE" = HARD ] && duration=900
+
+	local cmd="rundbench 1 -t $duration"
+	local pid=""
+	do_nodesv $clients "set -x; MISSING_DBENCH_OK=$MISSING_DBENCH_OK \
+		PATH=:$PATH:$LUSTRE/utils:$LUSTRE/tests/:$DBENCH_LIB \
+		DBENCH_LIB=$DBENCH_LIB TESTSUITE=$TESTSUITE TESTNAME=$TESTNAME \
+		LCTL=$LCTL $cmd" &
+	pid=$!
+	log "Started rundbench load pid=$pid ..."
+
+	# give rundbench a chance to start, bug 24118
+	sleep 2
+	local elapsed=0
+	local num_failovers=0
+	local start_ts=$(date +%s)
+	while [ $elapsed -lt $duration ]; do
+		if ! check_for_process $clients rundbench; then
+			error_noexit "rundbench not found on some of $clients!"
+			killall_process $clients dbench
+			break
+		fi
+		sleep 5
+		replay_barrier ost1
+		sleep 2 # give clients a time to do operations
+		# Increment the number of failovers
+		num_failovers=$((num_failovers+1))
+		log "$TESTNAME fail ost1 $num_failovers times"
+		fail ost1
+		elapsed=$(($(date +%s) - start_ts))
+	done
+
+	wait $pid || error "rundbench load on $clients failed!"
+}
+run_test 8 "ost recovery; $CLIENTCOUNT clients"
+
 complete $(basename $0) $SECONDS
 check_and_cleanup_lustre
 exit_status
