@@ -113,14 +113,14 @@ void ofd_object_put(const struct lu_env *env, struct ofd_object *fo)
 }
 
 int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
-                            obd_id id, obd_seq group)
+                         obd_id id, obd_seq group)
 {
         struct ofd_thread_info *info = ofd_info(env);
-        struct ofd_object    *fo;
-        struct dt_object        *next;
-        struct thandle          *th;
-        obd_id                   tmp;
-        int                      rc;
+        struct ofd_object      *fo;
+        struct dt_object       *next;
+        struct thandle         *th;
+        obd_id                  tmp;
+        int                     rc;
         ENTRY;
 
         /* Don't create objects beyond the valid range for this SEQ */
@@ -165,10 +165,9 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
 
         ofd_write_lock(env, fo);
         if (ofd_object_exists(fo)) {
-                /* underlying filesystem is broken - object must not exist */
-                CERROR("object %u/"LPD64" exists: "DFID"\n",
+                /* object may exist being re-created by write replay */
+                CDEBUG(D_INODE, "object %u/"LPD64" exists: "DFID"\n",
                        (unsigned) group, id, PFID(&info->fti_fid));
-                GOTO(out_unlock, rc = -EEXIST);
         }
 
         th = ofd_trans_create(env, ofd);
