@@ -104,46 +104,33 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
         LASSERT(env != NULL);
         LASSERT(objcount == 1);
 
-        fo = ofd_object_find(env, ofd, fid);
+        if (unlikely(exp->exp_obd->obd_recovering)) {
+                struct ofd_thread_info *info = ofd_info(env);
+
+                /* taken from ofd_precreate_object */
+                memset(&info->fti_attr, 0, sizeof(info->fti_attr));
+                info->fti_attr.la_valid = LA_TYPE | LA_MODE;
+                info->fti_attr.la_mode = S_IFREG | S_ISUID | S_ISGID | 0666;
+                info->fti_attr.la_valid |= LA_ATIME | LA_MTIME | LA_CTIME;
+                info->fti_attr.la_atime = INT_MIN + 24 * 3600;
+                info->fti_attr.la_mtime = INT_MIN + 24 * 3600;
+                info->fti_attr.la_ctime = INT_MIN + 24 * 3600;
+
+                fo = ofd_object_find_or_create(env, ofd, fid, &info->fti_attr);
+        } else {
+                fo = ofd_object_find(env, ofd, fid);
+        }
+
         if (IS_ERR(fo))
                 RETURN(PTR_ERR(fo));
         LASSERT(fo != NULL);
 
-        if (!ofd_object_exists(fo)) {
-                if (exp->exp_obd->obd_recovering) {
-                        struct obdo *noa = oa;
-
-                        if (oa == NULL) {
-                                OBDO_ALLOC(noa);
-                                if (noa == NULL)
-                                        GOTO(out2, rc = -ENOMEM);
-                                noa->o_id = obj->ioo_id;
-                                noa->o_valid = OBD_MD_FLID;
-                        }
-
-                        if (ofd_create(exp, noa, NULL, oti) == 0) {
-                                ofd_object_put(env, fo);
-                                fo = ofd_object_find(env, ofd, fid);
-                        }
-                        if (oa == NULL)
-                                OBDO_FREE(noa);
-                }
-
-                if (IS_ERR(fo) || !ofd_object_exists(fo)) {
-                        CERROR("%s: BRW to missing obj "LPU64"/"LPU64":rc %d\n",
-                               exp->exp_obd->obd_name,
-                               obj->ioo_id, obj->ioo_seq,
-                               IS_ERR(fo) ? (int)PTR_ERR(fo) : -ENOENT);
-                        if (IS_ERR(fo))
-                                RETURN(PTR_ERR(fo));
-                        GOTO(out2, rc = -ENOENT);
-                }
-        }
-
         ofd_read_lock(env, fo);
         if (!ofd_object_exists(fo)) {
+                CERROR("%s: BRW to missing obj "LPU64"/"LPU64"\n",
+                       exp->exp_obd->obd_name, obj->ioo_id, obj->ioo_seq);
                 ofd_read_unlock(env, fo);
-                GOTO(out2, rc = -ENOENT);
+                GOTO(out, rc = -ENOENT);
         }
 
         /* Always sync if syncjournal parameter is set */
@@ -183,7 +170,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                 ofd_read_unlock(env, fo);
         }
 
-out2:
+out:
         ofd_object_put(env, fo);
         RETURN(rc);
 }
