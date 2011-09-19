@@ -111,47 +111,14 @@ static const struct dt_index_operations       osd_index_ea_ops;
 /*
  * Helpers.
  */
-static int lu_device_is_osd(const struct lu_device *d)
+int lu_device_is_osd(const struct lu_device *d)
 {
         return ergo(d != NULL && d->ld_ops != NULL, d->ld_ops == &osd_lu_ops);
-}
-
-static struct osd_device *osd_dt_dev(const struct dt_device *d)
-{
-        LASSERT(lu_device_is_osd(&d->dd_lu_dev));
-        return container_of0(d, struct osd_device, od_dt_dev);
-}
-
-static struct osd_device *osd_dev(const struct lu_device *d)
-{
-        LASSERT(lu_device_is_osd(d));
-        return osd_dt_dev(container_of0(d, struct dt_device, dd_lu_dev));
-}
-
-static struct osd_device *osd_obj2dev(const struct osd_object *o)
-{
-        return osd_dev(o->oo_dt.do_lu.lo_dev);
 }
 
 static int osd_object_is_root(const struct osd_object *obj)
 {
         return osd_sb(osd_obj2dev(obj))->s_root->d_inode == obj->oo_inode;
-}
-
-static struct osd_object *osd_obj(const struct lu_object *o)
-{
-        LASSERT(lu_device_is_osd(o->lo_dev));
-        return container_of0(o, struct osd_object, oo_dt.do_lu);
-}
-
-static struct osd_object *osd_dt_obj(const struct dt_object *d)
-{
-        return osd_obj(&d->do_lu);
-}
-
-static struct lu_device *osd2lu_dev(struct osd_device *osd)
-{
-        return &osd->od_dt_dev.dd_lu_dev;
 }
 
 static journal_t *osd_journal(const struct osd_device *dev)
@@ -2749,7 +2716,7 @@ static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
                 ea_dir = 1;
         } else if (feat == &dt_acct_features) {
                 LASSERT(!osd_has_index(obj));
-                //dt->do_index_ops = &osd_index_acct_ops;
+                dt->do_index_ops = &osd_acct_index_ops;
                 result = 0;
         } else if (!osd_has_index(obj)) {
                 struct osd_directory *dir;

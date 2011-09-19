@@ -449,9 +449,8 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
                 id->oii_ino = inode->i_ino;
                 id->oii_gen = inode->i_generation;
         } else {
-                if (fid_is_acct(fid))
-                        /* accounting not supported by ldiskfs-osd yet */
-                        return -ENOENT;
+                if (unlikely(fid_is_acct(fid)))
+                        return osd_acct_obj_lookup(info, osd, fid, id);
 
                 if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE) &&
                     (fid_oid(fid) < OSD_GENERATED_OID)) {

@@ -62,31 +62,6 @@
 
 #include "osd_internal.h"
 
-static struct osd_object *osd_obj(const struct lu_object *o)
-{
-        return container_of0(o, struct osd_object, oo_dt.do_lu);
-}
-
-static struct osd_object *osd_dt_obj(const struct dt_object *d)
-{
-        return osd_obj(&d->do_lu);
-}
-
-static struct osd_device *osd_dt_dev(const struct dt_device *d)
-{
-        return container_of0(d, struct osd_device, od_dt_dev);
-}
-
-static struct osd_device *osd_dev(const struct lu_device *d)
-{
-        return osd_dt_dev(container_of0(d, struct dt_device, dd_lu_dev));
-}
-
-static struct osd_device *osd_obj2dev(const struct osd_object *o)
-{
-        return osd_dev(o->oo_dt.do_lu.lo_dev);
-}
-
 int osd_object_auth(const struct lu_env *env, struct dt_object *dt,
                     struct lustre_capa *capa, __u64 opc);
 
