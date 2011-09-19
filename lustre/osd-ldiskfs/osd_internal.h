@@ -75,9 +75,6 @@
 #include <lustre_fsfilt.h>
 
 #include <dt_object.h>
-#ifdef HAVE_QUOTA_SUPPORT
-#include <osd_quota.h>
-#endif
 #include "osd_oi.h"
 #include "osd_iam.h"
 
@@ -424,6 +421,12 @@ struct osd_thread_info {
 #define OSD_FID_REC_SZ 32
         char                   oti_ldp[OSD_FID_REC_SZ];
         char                   oti_ldp2[OSD_FID_REC_SZ];
+
+        /* used by quota code */
+        union {
+                struct if_dqblk  oti_dqblk;
+                struct if_dqinfo oti_dqinfo;
+        };
 };
 
 extern struct lu_context_key osd_key;
@@ -431,6 +434,44 @@ extern struct lu_context_key osd_key;
 static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
 {
         return lu_context_key_get(&env->le_ctx, &osd_key);
+}
+
+/*
+ * Helpers.
+ */
+int lu_device_is_osd(const struct lu_device *d);
+
+static inline struct osd_device *osd_dt_dev(const struct dt_device *d)
+{
+        LASSERT(lu_device_is_osd(&d->dd_lu_dev));
+        return container_of0(d, struct osd_device, od_dt_dev);
+}
+
+static inline struct osd_device *osd_dev(const struct lu_device *d)
+{
+        LASSERT(lu_device_is_osd(d));
+        return osd_dt_dev(container_of0(d, struct dt_device, dd_lu_dev));
+}
+
+static inline struct osd_device *osd_obj2dev(const struct osd_object *o)
+{
+        return osd_dev(o->oo_dt.do_lu.lo_dev);
+}
+
+static inline struct osd_object *osd_obj(const struct lu_object *o)
+{
+        LASSERT(lu_device_is_osd(o->lo_dev));
+        return container_of0(o, struct osd_object, oo_dt.do_lu);
+}
+
+static inline struct osd_object *osd_dt_obj(const struct dt_object *d)
+{
+        return osd_obj(&d->do_lu);
+}
+
+static inline struct lu_device *osd2lu_dev(struct osd_device *osd)
+{
+        return &osd->od_dt_dev.dd_lu_dev;
 }
 
 #ifndef HAVE_PAGE_CONSTANT
@@ -561,6 +602,13 @@ static inline void osd_ipd_put(const struct lu_env *env,
 }
 
 void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf);
+
+/**
+ * Quota/Accounting handling
+ */
+extern const struct dt_index_operations osd_acct_index_ops;
+int osd_acct_obj_lookup(struct osd_thread_info *info, struct osd_device *osd,
+                        const struct lu_fid *fid, struct osd_inode_id *id);
 
 #endif /* __KERNEL__ */
 

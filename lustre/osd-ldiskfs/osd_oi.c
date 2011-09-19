@@ -341,9 +341,8 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
                 if (fid_is_oi_fid(fid))
                         return -ENOENT;
 
-                if (fid_is_acct(fid))
-                        /* accounting not supported by ldiskfs-osd yet */
-                        return -ENOENT;
+                if (unlikely(fid_is_acct(fid)))
+                        return osd_acct_obj_lookup(info, osd, fid, id);
 
                 if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE)) {
                         rc = osd_compat_spec_lookup(info, osd, fid, id);
