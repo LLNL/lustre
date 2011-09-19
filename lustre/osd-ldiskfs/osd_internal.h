@@ -511,6 +511,12 @@ struct osd_thread_info {
 #define OSD_FID_REC_SZ 32
         char                   oti_ldp[OSD_FID_REC_SZ];
         char                   oti_ldp2[OSD_FID_REC_SZ];
+
+        /* used by quota code */
+        union {
+                struct if_dqblk  oti_dqblk;
+                struct if_dqinfo oti_dqinfo;
+        };
 };
 
 extern int ldiskfs_pdo;
@@ -766,6 +772,13 @@ int osd_fid_unpack(struct lu_fid *fid, const struct osd_fid_pack *pack)
         }
         return result;
 }
+
+/**
+ * Quota/Accounting handling
+ */
+extern const struct dt_index_operations osd_acct_index_ops;
+int osd_acct_obj_lookup(struct osd_thread_info *info, struct osd_device *osd,
+                        const struct lu_fid *fid, struct osd_inode_id *id);
 
 #endif /* __KERNEL__ */
 

@@ -134,9 +134,9 @@ static inline void lu_local_obj_fid(struct lu_fid *fid, __u32 oid)
 
 static inline int fid_is_acct(const struct lu_fid *fid)
 {
-        return unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE &&
-                        (fid_oid(fid) == ACCT_USER_OID ||
-                         fid_oid(fid) == ACCT_GROUP_OID));
+        return fid_seq(fid) == FID_SEQ_LOCAL_FILE &&
+               (fid_oid(fid) == ACCT_USER_OID ||
+                fid_oid(fid) == ACCT_GROUP_OID);
 }
 
 enum lu_mgr_type {
