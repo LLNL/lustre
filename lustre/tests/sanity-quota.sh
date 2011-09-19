@@ -2271,7 +2271,7 @@ test_34() {
         BLK_CNT=1024
         mkdir -p $DIR/$tdir
         chmod 0777 $DIR/$tdir
-        
+
         trap cleanup_quota_test EXIT
 
         # make sure the system is clean
