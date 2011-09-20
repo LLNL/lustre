@@ -1168,18 +1168,26 @@ AC_DEFUN([LC_EXPORT_INVALIDATE_MAPPING_PAGES],
 # LC_EXT4_DISCARD_PREALLOCATIONS
 #
 AC_DEFUN([LC_EXT4_DISCARD_PREALLOCATIONS],
-[AC_MSG_CHECKING([if ext4_discard_preallocatoins defined])
+[AC_MSG_CHECKING([if ext4_discard_preallocations defined])
 tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-I$LINUX/fs"
+EXTRA_KCFLAGS="-I$LINUX/fs -I$LDISKFS_DIR"
 LB_LINUX_TRY_COMPILE([
+        #ifdef LDISKFS_DEVEL
+        #include <ldiskfs/ldiskfs.h>
+        #else
         #include <ext4/ext4.h>
+        #endif
 ],[
         struct inode i __attribute__ ((unused));
+        #ifdef LDISKFS_DEVEL
+        ldiskfs_discard_preallocations(&i);
+        #else
         ext4_discard_preallocations(&i);
+        #endif
 ],[
         AC_MSG_RESULT(yes)
         AC_DEFINE(LDISKFS_DISCARD_PREALLOCATIONS, 1,
-                  [ext4_discard_preacllocations defined])
+                  [ext4_discard_preallocations defined])
 ],[
         AC_MSG_RESULT(no)
 ])
