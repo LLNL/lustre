@@ -1426,11 +1426,7 @@ static int qslave_recovery_main(void *arg)
 
                 LASSERT(dqopt->files[type] != NULL);
                 CFS_INIT_LIST_HEAD(&id_list);
-#ifndef KERNEL_SUPPORTS_QUOTA_READ
-                rc = fsfilt_qids(obd, dqopt->files[type], NULL, type, &id_list);
-#else
                 rc = fsfilt_qids(obd, NULL, dqopt->files[type], type, &id_list);
-#endif
                 UNLOCK_DQONOFF_MUTEX(dqopt);
                 if (rc)
                         CERROR("Get ids from quota file failed. (rc:%d)\n", rc);
@@ -1535,13 +1531,8 @@ void build_lqs(struct obd_device *obd)
                 if (sb_dqopt(qctxt->lqc_sb)->files[i] == NULL)
                         continue;
 
-#ifndef KERNEL_SUPPORTS_QUOTA_READ
-                rc = fsfilt_qids(obd, sb_dqopt(qctxt->lqc_sb)->files[i], NULL,
-                                 i, &id_list);
-#else
                 rc = fsfilt_qids(obd, NULL, sb_dqopt(qctxt->lqc_sb)->files[i],
                                  i, &id_list);
-#endif
                 if (rc) {
                         CERROR("%s: failed to get %s qids!\n", obd->obd_name,
                                i ? "group" : "user");
