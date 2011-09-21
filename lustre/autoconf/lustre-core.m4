@@ -208,10 +208,11 @@ fi
 ])
 
 #
-# Quota support. The kernel must support CONFIG_QUOTA.
+# Quota support. The kernel must support CONFIG_QUOTA as well as
+# quota_read operation
 #
 AC_DEFUN([LC_QUOTA_CONFIG],
-[LB_LINUX_CONFIG_IM([QUOTA],[AC_DEFINE(HAVE_QUOTA_SUPPORT, 1, [support quota])],[
+[LB_LINUX_CONFIG_IM([QUOTA],[],[
 	AC_MSG_ERROR([Lustre quota requires that CONFIG_QUOTA is enabled in your kernel.])
 ])
 ])
@@ -1401,47 +1402,6 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
-#
-# LC_QUOTA64
-#
-# Check if kernel has been patched for 64-bit quota limits support.
-# The upstream version of this patch in RHEL6 2.6.32 kernels introduces
-# the constant QFMT_VFS_V1 in include/linux/quota.h, so we can check for
-# that in the absence of quotaio_v1.h in the kernel headers.
-#
-AC_DEFUN([LC_QUOTA64],[
-        AC_MSG_CHECKING([if kernel has 64-bit quota limits support])
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-I$LINUX/fs"
-        LB_LINUX_TRY_COMPILE([
-                #include <linux/kernel.h>
-                #include <linux/fs.h>
-                #ifdef HAVE_QUOTAIO_H
-                # include <linux/quotaio_v2.h>
-                int versions[] = V2_INITQVERSIONS_R1;
-                struct v2_disk_dqblk_r1 dqblk_r1;
-                #elif defined(HAVE_FS_QUOTA_QUOTAIO_H)
-                # include <quota/quotaio_v2.h>
-                struct v2r1_disk_dqblk dqblk_r1;
-                #elif defined(HAVE_FS_QUOTAIO_H)
-                # include <quotaio_v2.h>
-                struct v2r1_disk_dqblk dqblk_r1;
-                #else
-                #include <linux/quota.h>
-                int ver = QFMT_VFS_V1;
-                #endif
-        ],[],[
-                AC_DEFINE(HAVE_QUOTA64, 1, [have quota64])
-                AC_MSG_RESULT([yes])
-        ],[
-                LB_CHECK_FILE([$LINUX/include/linux/lustre_version.h],[
-                        AC_MSG_ERROR([You have got no 64-bit kernel quota support.])
-                ],[])
-                AC_MSG_RESULT([no])
-        ])
-EXTRA_KCFLAGS=$tmp_flags
-])
-
 # 2.6.32 set_cpus_allowed is no more defined if CONFIG_CPUMASK_OFFSTACK=yes
 AC_DEFUN([LC_SET_CPUS_ALLOWED],
          [AC_MSG_CHECKING([if kernel defines set_cpus_allowed])
@@ -1979,8 +1939,8 @@ AC_DEFUN([LC_PROG_LINUX],
              AC_DEFINE(HAVE_SERVER_SUPPORT, 1, [support server])
              LC_FUNC_DEV_SET_RDONLY
              LC_STACK_SIZE
-             LC_QUOTA64
              LC_QUOTA_CONFIG
+             LC_QUOTA_READ
          fi
 ])
 
@@ -2170,22 +2130,8 @@ LC_CONFIG_PINGER
 LC_CONFIG_LIBLUSTRE_RECOVERY
 ])
 
-#
-# LC_CONFIG_QUOTA
-#
-# whether to enable quota support global control
-#
-AC_DEFUN([LC_CONFIG_QUOTA],
-[AC_ARG_ENABLE([quota],
-	AC_HELP_STRING([--enable-quota],
-			[enable quota support]),
-	[],[enable_quota='no'])
-])
-
 AC_DEFUN([LC_QUOTA],
-[#check global
-LC_CONFIG_QUOTA
-#check for utils
+[#check for utils
 AC_CHECK_HEADER(sys/quota.h,
                 [AC_DEFINE(HAVE_SYS_QUOTA_H, 1, [Define to 1 if you have <sys/quota.h>.])],
                 [AC_MSG_ERROR([don't find <sys/quota.h> in your system])])
