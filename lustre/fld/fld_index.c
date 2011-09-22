@@ -76,7 +76,7 @@ static const struct lu_seq_range IGIF_FLD_RANGE = {
 };
 
 const struct dt_index_features fld_index_features = {
-        .dif_flags       = DT_IND_UPDATE,
+        .dif_flags       = DT_IND_UPDATE | DT_IND_RANGE,
         .dif_keysize_min = sizeof(seqno_t),
         .dif_keysize_max = sizeof(seqno_t),
         .dif_recsize_min = sizeof(struct lu_seq_range),
@@ -218,7 +218,6 @@ int fld_index_lookup(struct lu_server_fld *fld,
         rc = dt_obj->do_index_ops->dio_lookup(env, dt_obj,
                                               (struct dt_rec*) fld_rec,
                                               key, BYPASS_CAPA);
-
         if (rc >= 0) {
                 range_be_to_cpu(fld_rec, fld_rec);
                 *range = *fld_rec;
@@ -261,6 +260,62 @@ out:
         RETURN(rc);
 }
 
+static int fld_stub_lookup(const struct lu_env *env, struct dt_object *dt,
+                           struct dt_rec *rec, const struct dt_key *key,
+                           struct lustre_capa *capa)
+{
+        struct lu_seq_range *range = (void*)rec;
+
+        /* Stub for underlying FS which can't */
+        range->lsr_start = 0;
+        range->lsr_end = ~0;
+        range->lsr_index = 0;
+        range->lsr_flags = LU_SEQ_RANGE_MDT;
+
+        range_cpu_to_be(range, range);
+        return 0;
+}
+
+static int fld_declare_stub_insert(const struct lu_env *env,
+                                   struct dt_object *dt,
+                                   const struct dt_rec *rec,
+                                   const struct dt_key *key,
+                                   struct thandle *th)
+{
+        return 0;
+}
+
+static int fld_stub_insert(const struct lu_env *env, struct dt_object *dt,
+                           const struct dt_rec *rec, const struct dt_key *key,
+                           struct thandle *th, struct lustre_capa *capa,
+                           int ignore_quota)
+{
+        return 0;
+}
+
+static int fld_declare_stub_delete(const struct lu_env *env,
+                                   struct dt_object *dt,
+                                   const struct dt_key *key,
+                                   struct thandle *th)
+{
+        return 0;
+}
+
+static int fld_stub_delete(const struct lu_env *env, struct dt_object *dt,
+                           const struct dt_key *key, struct thandle *th,
+                           struct lustre_capa *capa)
+{
+        return 0;
+}
+
+static struct dt_index_operations fld_stub_ops = {
+        .dio_lookup         = fld_stub_lookup,
+        .dio_declare_insert = fld_declare_stub_insert,
+        .dio_insert         = fld_stub_insert,
+        .dio_declare_delete = fld_declare_stub_delete,
+        .dio_delete         = fld_stub_delete,
+};
+
 int fld_index_init(struct lu_server_fld *fld,
                    const struct lu_env *env,
                    struct dt_device *dt)
@@ -293,11 +348,22 @@ int fld_index_init(struct lu_server_fld *fld,
                                 lu_object_put(env, &dt_obj->do_lu);
                                 fld->lsf_obj = NULL;
                         }
-                } else
-                        CERROR("%s: File \"%s\" is not an index!\n",
-                               fld->lsf_name, fld_index_name);
-
-
+                } else if (rc == -ERANGE) {
+                        CWARN("%s: File \"%s\" doesn't support range lookup, "
+                              "using stub. DNE and FIDs on OST will not work "
+                              "with this backend\n",
+                              fld->lsf_name, fld_index_name);
+                        LASSERT(dt_obj->do_index_ops == NULL);
+                        /* replace osd lookup with stub which returns
+                         * always full range */
+                        dt_obj->do_index_ops = &fld_stub_ops;
+                        rc = 0;
+                } else {
+                        CERROR("%s: File \"%s\" is not index, rc %d!\n",
+                               fld->lsf_name, fld_index_name, rc);
+                        lu_object_put(env, &fld->lsf_obj->do_lu);
+                        fld->lsf_obj = NULL;
+                }
         } else {
                 CERROR("%s: Can't find \"%s\" obj %d\n",
                        fld->lsf_name, fld_index_name, (int)PTR_ERR(dt_obj));

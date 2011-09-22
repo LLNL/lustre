@@ -1762,6 +1762,9 @@ static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
          * XXX: implement support for fixed-size keys sorted with natural
          *      numerical way (not using internal hash value)
          */
+        if (feat->dif_flags & DT_IND_RANGE)
+                RETURN(-ERANGE);
+
         if (udmu_object_is_zap(obj->oo_db))
                 dt->do_index_ops = &osd_index_ops;
 
