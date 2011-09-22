@@ -589,17 +589,11 @@ int main(int argc, char *const argv[])
                         rc = update_mtab_entry(mop.mo_usource, mop.mo_target,
                                                "lustre", mop.mo_orig_options,
                                                0,0,0);
-                if (mop.mo_ldd.ldd_flags & LDD_F_VIRGIN) {
-                        char cmd[100] = "";
 
-                        snprintf(cmd, sizeof(cmd), E2LABEL" %s %s",
-                                 mop.mo_source, mop.mo_ldd.ldd_svname);
-                        if (verbose)
-                                printf("setting label to '%s'\n",
-                                       mop.mo_ldd.ldd_svname);
-
-                        rc = run_command(cmd, sizeof(cmd));
-                }
+                /* change label from <fsname>:<index> to <fsname>-<index>
+                 * to indicate the device has been registered. */
+                if (mop.mo_ldd.ldd_flags & LDD_F_VIRGIN)
+                        (void) osd_label_lustre(&mop);
         } else {
                 char *cli;
 
