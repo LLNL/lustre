@@ -291,6 +291,8 @@ static int osd_fid_lookup(const struct lu_env *env,
                                fid->f_seq, (unsigned long) fid->f_oid);
                         oid = fid->f_oid;
                 }
+        } else if (unlikely(fid_is_acct(fid))) {
+                RETURN(-ENOENT);
         } else {
                 osd_fid2str(buf, fid);
 
