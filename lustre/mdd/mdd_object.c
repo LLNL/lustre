@@ -1771,7 +1771,8 @@ static int mdd_dir_page_build(const struct lu_env *env, struct mdd_device *mdd,
                 recsize = lu_dirent_calc_size(len, attr);
 
                 if (nob >= recsize) {
-                        result = iops->rec(env, it, (struct dt_rec *)ent, attr);
+                        result = iops->rec(env, it, (struct dt_rec *)ent,
+                                           attr);
                         if (result == -ESTALE)
                                 goto next;
                         if (result != 0)
