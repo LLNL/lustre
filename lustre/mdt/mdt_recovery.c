@@ -602,7 +602,8 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
                 GOTO(disconnect_exports, rc);
         }
 
-        lu_quota_init(env, mdt->mdt_bottom, &mdt->mdt_lu_quota);
+        lu_quota_init(env, mdt->mdt_bottom, &mdt->mdt_lu_quota,
+                      obd->obd_proc_entry);
         RETURN(0);
 
 put_ck_object:

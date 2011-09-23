@@ -3556,7 +3556,7 @@ static inline void osd_it_pack_dirent(struct lu_dirent *ent,
  */
 static int osd_it_iam_rec(const struct lu_env *env,
                           const struct dt_it *di,
-                          struct lu_dirent *lde,
+                          struct dt_rec *dtrec,
                           __u32 attr)
 {
         struct osd_it_iam *it        = (struct osd_it_iam *)di;
@@ -3566,6 +3566,7 @@ static int osd_it_iam_rec(const struct lu_env *env,
         char *name;
         int namelen;
         __u64 hash;
+        struct lu_dirent *lde = (struct lu_dirent *)dtrec;
         int rc;
 
         name = (char *)iam_it_key_get(&it->oi_it);
@@ -3899,12 +3900,13 @@ static int osd_it_ea_key_size(const struct lu_env *env, const struct dt_it *di)
  */
 static inline int osd_it_ea_rec(const struct lu_env *env,
                                 const struct dt_it *di,
-                                struct lu_dirent *lde,
+                                struct dt_rec *rec,
                                 __u32 attr)
 {
         struct osd_it_ea        *it     = (struct osd_it_ea *)di;
         struct osd_object       *obj    = it->oie_obj;
         struct lu_fid           *fid    = &it->oie_dirent->oied_fid;
+        struct lu_dirent        *lde    = (struct lu_dirent *)rec;
         int    rc = 0;
 
         ENTRY;

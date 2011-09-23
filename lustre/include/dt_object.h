@@ -588,7 +588,7 @@ struct dt_index_operations {
                                       const struct dt_it *di);
                 int            (*rec)(const struct lu_env *env,
                                       const struct dt_it *di,
-                                      struct lu_dirent *lde,
+                                      struct dt_rec *rec,
                                       __u32 attr);
                 __u64        (*store)(const struct lu_env *env,
                                       const struct dt_it *di);

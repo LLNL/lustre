@@ -27,10 +27,14 @@
  * Use is subject to license terms.
  *
  * Author: Johann Lombardi <johann@whamcloud.com>
+ * Author: Niu    Yawei    <niu@whamcloud.com>
  */
 
 #include <lu_quota.h>
 #include <obd.h>
+
+void lprocfs_quota_init(struct lu_quota *quota,
+                        cfs_proc_dir_entry_t* obd_proc_entry);
 
 /* index features supported by the accounting objects */
 const struct dt_index_features dt_acct_features = {
@@ -94,7 +98,8 @@ EXPORT_SYMBOL(acct_init);
  * \param lu_quota - is the lu_quota structure to initialize
  */
 void lu_quota_init(const struct lu_env *env, struct dt_device *dev,
-                   struct lu_quota *lu_quota)
+                   struct lu_quota *lu_quota,
+                   cfs_proc_dir_entry_t *proc_entry)
 {
          /* initialize accounting objects */
         lu_quota->acct_user_obj  = acct_init(env, dev, ACCT_USER_OID);
@@ -105,6 +110,8 @@ void lu_quota_init(const struct lu_env *env, struct dt_device *dev,
                              dev->dd_lu_dev.ld_obd->obd_name,
                              lu_quota->acct_user_obj ? "group" :
                              (lu_quota->acct_group_obj ? "user":"user & group"));
+
+        lprocfs_quota_init(lu_quota, proc_entry);
 }
 EXPORT_SYMBOL(lu_quota_init);
 
@@ -218,3 +225,175 @@ int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
         RETURN(rc);
 }
 EXPORT_SYMBOL(lu_quotactl);
+
+#ifdef LPROCFS
+/*
+ * quota procfs operations
+ */
+
+/* global shared environment */
+struct lu_env   quota_procfs_env;
+cfs_semaphore_t quota_procfs_sem;  /* protect the quota_procfs_env */
+
+static void *lprocfs_quota_seq_start(struct seq_file *p, loff_t *pos)
+{
+        struct dt_object       *obj = p->private;
+        const struct dt_it_ops *iops;
+        struct dt_it           *it;
+        loff_t                  offset = *pos;
+        int                     rc;
+
+        cfs_down(&quota_procfs_sem); /* released in lprocfs_quota_seq_stop() */
+        rc = lu_env_init(&quota_procfs_env, LCT_MD_THREAD);
+        if (rc) {
+                CERROR("Error %d initializing env\n", rc);
+                return NULL;
+        }
+
+        if (obj == NULL)
+                /* accounting not enabled */
+                return NULL;
+
+        iops = &obj->do_index_ops->dio_it;
+        it = iops->init(&quota_procfs_env, obj, 0, BYPASS_CAPA);
+        if (IS_ERR(it)) {
+                CERROR("Error %lu initialize it\n", PTR_ERR(it));
+                return NULL;
+        }
+
+        rc = iops->load(&quota_procfs_env, it, 0);
+        if (rc < 0) /* Error or no entry */
+                goto not_found;
+
+        while (offset--) {
+                rc = iops->next(&quota_procfs_env, it);
+                if (rc != 0) /* Error or reach the end */
+                        goto not_found;
+        }
+        return it;
+
+not_found:
+        iops->put(&quota_procfs_env, it);
+        iops->fini(&quota_procfs_env, it);
+        return NULL;
+}
+
+static void lprocfs_quota_seq_stop(struct seq_file *p, void *v)
+{
+        if (quota_procfs_env.le_ctx.lc_state == LCS_ENTERED)
+                lu_env_fini(&quota_procfs_env);
+        cfs_up(&quota_procfs_sem);
+}
+
+static void *lprocfs_quota_seq_next(struct seq_file *p, void *v, loff_t *pos)
+{
+        struct dt_object       *obj = p->private;
+        const struct dt_it_ops *iops;
+        struct dt_it           *it;
+        int                     rc;
+
+        ++*pos;
+        iops = &obj->do_index_ops->dio_it;
+        it = (struct dt_it *)v;
+
+        rc = iops->next(&quota_procfs_env, it);
+        if (rc == 0)
+                return it;
+
+        if (rc < 0)
+                CERROR("Error %d next\n", rc);
+        /* Reach the end or error */
+        iops->put(&quota_procfs_env, it);
+        iops->fini(&quota_procfs_env, it);
+        return NULL;
+}
+
+static int lprocfs_quota_seq_show(struct seq_file *p, void *v)
+{
+        struct dt_object       *obj = p->private;
+        const struct dt_it_ops *iops;
+        struct dt_it           *it;
+        struct acct_rec         rec;
+        int                     rc;
+
+        iops = &obj->do_index_ops->dio_it;
+        it = (struct dt_it *)v;
+
+        /* 'root' is always the first entry */
+        if (*((__u64 *)iops->key(&quota_procfs_env, it)) == 0)
+                seq_printf(p, "%10s\t%20s\t%20s\n", "id", "inodes", "bytes");
+
+        rc = iops->rec(&quota_procfs_env, it, (struct dt_rec *)&rec, 0);
+        if (rc) {
+                CERROR("Error %d rec\n", rc);
+                return rc;
+        }
+
+        seq_printf(p, "%10llu\t%20llu\t%20llu\n",
+                   *((__u64 *)iops->key(&quota_procfs_env, it)),
+                   rec.ispace, rec.bspace);
+        return 0;
+}
+
+struct seq_operations lprocfs_quota_seq_sops = {
+        start: lprocfs_quota_seq_start,
+        stop:  lprocfs_quota_seq_stop,
+        next:  lprocfs_quota_seq_next,
+        show:  lprocfs_quota_seq_show,
+};
+
+static int lprocfs_quota_seq_open(struct inode *inode, struct file *file)
+{
+        struct proc_dir_entry *dp = PDE(inode);
+        struct seq_file       *seq;
+        int                    rc;
+
+        if (LPROCFS_ENTRY_AND_CHECK(dp))
+                return -ENOENT;
+
+        rc = seq_open(file, &lprocfs_quota_seq_sops);
+        if (rc) {
+                LPROCFS_EXIT();
+                return rc;
+        }
+        seq = file->private_data;
+        seq->private = dp->data;
+        return 0;
+}
+
+struct file_operations lprocfs_quota_seq_fops = {
+        .owner   = THIS_MODULE,
+        .open    = lprocfs_quota_seq_open,
+        .read    = seq_read,
+        .llseek  = seq_lseek,
+        .release = lprocfs_seq_release,
+};
+
+void lprocfs_quota_init(struct lu_quota *quota,
+                        cfs_proc_dir_entry_t* obd_proc_entry)
+{
+        int rc = 0;
+        ENTRY;
+
+        LASSERT(obd_proc_entry != NULL);
+
+        cfs_sema_init(&quota_procfs_sem, 1);
+
+        rc = lprocfs_seq_create(obd_proc_entry, "quota_acct_user",
+                                0444, &lprocfs_quota_seq_fops,
+                                quota->acct_user_obj);
+        if (rc)
+                CWARN("Error adding the quota_acct_user file %d\n", rc);
+
+        rc = lprocfs_seq_create(obd_proc_entry, "quota_acct_group",
+                                0444, &lprocfs_quota_seq_fops,
+                                quota->acct_group_obj);
+        if (rc)
+                CWARN("Error adding the quota_acct_group file %d\n", rc);
+        EXIT;
+}
+#else
+static void lprocfs_quota_init(struct lu_quota *quota,
+                               cfs_proc_dir_entry_t *obd_proc_entry)
+{ return; }
+#endif /* LPROCFS */

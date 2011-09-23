@@ -51,7 +51,7 @@ struct acct_rec { /* 32 bytes */
 extern const struct dt_index_features dt_acct_features;
 
 void lu_quota_init(const struct lu_env *env, struct dt_device *dev,
-                   struct lu_quota *lu_quota);
+                   struct lu_quota *lu_quota, cfs_proc_dir_entry_t *proc_entry);
 void lu_quota_fini(const struct lu_env *env, struct dt_device *dev,
                    struct lu_quota *lu_quota);
 int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,

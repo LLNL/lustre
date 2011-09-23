@@ -77,6 +77,7 @@
 #include <dt_object.h>
 #include "osd_oi.h"
 #include "osd_iam.h"
+#include "osd_quota_fmt.h"
 
 struct inode;
 
@@ -319,6 +320,20 @@ struct osd_it_iam {
         struct iam_iterator    oi_it;
 };
 
+/**
+ * Iterator's in-memory data structure for quota file.
+ */
+struct osd_it_quota {
+        struct osd_object    *oiq_obj;
+        /** tree blocks path to where the entry is stored */
+        uint                  oiq_blk[LUSTRE_DQTREEDEPTH];
+        /** on-disk offset for current key where quota record can be found */
+        loff_t                oiq_offset;
+        /** identifier for current quota record */
+        __u64                 oiq_id;
+};
+
+
 #define MAX_BLOCKS_PER_PAGE (CFS_PAGE_SIZE / 512)
 
 struct osd_iobuf {
@@ -383,6 +398,7 @@ struct osd_thread_info {
                 struct osd_it_iam      oti_it;
                 /** ldiskfs iterator data structure, see osd_it_ea_{init, fini} */
                 struct osd_it_ea       oti_it_ea;
+                struct osd_it_quota    oti_it_quota;
         };
 
         /** pre-allocated buffer used by oti_it_ea, size OSD_IT_EA_BUFSIZE */
@@ -543,6 +559,18 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
 struct inode *osd_iget(struct osd_thread_info *info, struct osd_device *dev,
                        const struct osd_inode_id *id);
 
+/* osd_quota_fmt.c */
+int walk_tree_dqentry(const struct lu_env *env, struct osd_object *obj,
+                      int type, uint blk, int depth, uint index,
+                      struct osd_it_quota *it);
+int walk_block_dqentry(const struct lu_env *env, struct osd_object *obj,
+                       int type, uint blk, uint index,
+                       struct osd_it_quota *it);
+loff_t find_tree_dqentry(const struct lu_env *env,
+                         struct osd_object *obj, int type,
+                         qid_t dqid, uint blk, int depth,
+                         struct osd_it_quota *it);
+
 /*
  * Invariants, assertions.
  */
@@ -612,7 +640,4 @@ int osd_acct_obj_lookup(struct osd_thread_info *info, struct osd_device *osd,
 
 #endif /* __KERNEL__ */
 
-#ifdef LPROCFS
-void osd_quota_procfs_init(struct osd_device *osd);
-#endif
 #endif /* _OSD_INTERNAL_H */

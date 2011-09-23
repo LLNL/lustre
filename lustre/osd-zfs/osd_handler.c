@@ -1483,11 +1483,12 @@ static int osd_zap_it_key_size(const struct lu_env *env, const struct dt_it *di)
 }
 
 static int osd_zap_it_rec(const struct lu_env *env, const struct dt_it *di,
-                          struct lu_dirent *lde, __u32 attr)
+                          struct dt_rec *dtrec, __u32 attr)
 {
         struct osd_zap_it   *it = (struct osd_zap_it *)di;
         struct osd_fid_pack  pack;
         int                  bytes_read, rc, namelen;
+        struct lu_dirent    *lde = (struct lu_dirent *)dtrec;
         ENTRY;
 
         it->ozi_reset = 0;
