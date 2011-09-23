@@ -289,7 +289,8 @@ int ofd_fs_setup(const struct lu_env *env, struct ofd_device *ofd,
         if (rc)
                 GOTO(out_lg, rc);
 
-        lu_quota_init(env, ofd->ofd_osd, &ofd->ofd_lu_quota);
+        lu_quota_init(env, ofd->ofd_osd, &ofd->ofd_lu_quota,
+                      obd->obd_proc_entry);
 
         RETURN(0);
 out_lg:
