@@ -630,9 +630,6 @@ static int osd_object_destroy(const struct lu_env *env,
         }
 
 out:
-        udmu_object_put_dmu_buf(obj->oo_db, osd_object_tag);
-        obj->oo_db = NULL;
-
         /* not needed in the cache anymore */
         set_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags);
 
