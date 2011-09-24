@@ -838,7 +838,7 @@ static int osd_ldiskfs_read(struct inode *inode, void *buf, int size,
 {
         struct buffer_head *bh;
         unsigned long block;
-        int osize = size;
+        int osize;
         int blocksize;
         int csize;
         int boffs;
@@ -861,7 +861,7 @@ static int osd_ldiskfs_read(struct inode *inode, void *buf, int size,
         }
 
         blocksize = 1 << inode->i_blkbits;
-
+        osize = size;
         while (size > 0) {
                 block = *offs >> inode->i_blkbits;
                 boffs = *offs & (blocksize - 1);
