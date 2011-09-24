@@ -547,23 +547,6 @@ out:
         RETURN(rc);
 }
 
-static int llog_osd_read_blob(const struct lu_env *env, struct dt_object *o,
-                              void *buf, int size, loff_t *off)
-{
-        struct llog_thread_info *lgi = llog_info(env);
-        int rc;
-
-        LASSERT(env);
-        LASSERT(o);
-        LASSERT(buf);
-
-        lgi->lgi_buf.lb_buf = buf;
-        lgi->lgi_buf.lb_len = size;
-        rc = dt_record_read(env, o, &lgi->lgi_buf, off);
-
-        RETURN(rc);
-}
-
 static int llog_osd_read_header(struct llog_handle *handle)
 {
         struct dt_object        *o;
@@ -597,8 +580,10 @@ static int llog_osd_read_header(struct llog_handle *handle)
         }
 
         lgi->lgi_off = 0;
-        rc = llog_osd_read_blob(&env, o, handle->lgh_hdr,
-                                LLOG_CHUNK_SIZE, &lgi->lgi_off);
+        lgi->lgi_buf.lb_buf = handle->lgh_hdr;
+        lgi->lgi_buf.lb_len = LLOG_CHUNK_SIZE;
+
+        rc = dt_record_read(&env, o, &lgi->lgi_buf, &lgi->lgi_off);
         if (rc) {
                 CERROR("error reading log header from "DFID"\n",
                        PFID(lu_object_fid(&o->do_lu)));
@@ -774,7 +759,6 @@ static int llog_osd_write_rec(const struct lu_env *env,
         LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
         lgi->lgi_off = lgi->lgi_attr.la_size;
         left = LLOG_CHUNK_SIZE - (lgi->lgi_off & (LLOG_CHUNK_SIZE - 1));
-
         /* NOTE: padding is a record, but no bit is set */
         if (left != 0 && left != reclen &&
             left < (reclen + LLOG_MIN_REC_SIZE)) {
@@ -846,16 +830,6 @@ static int llog_osd_write_rec(const struct lu_env *env,
         RETURN(rc);
 }
 
-int llog_osd_record_read(const struct lu_env *env, struct dt_object *dt,
-                         void *buf, int len, loff_t *pos)
-{
-        struct llog_thread_info *lgi = llog_info(env);
-
-        lgi->lgi_buf.lb_buf = buf;
-        lgi->lgi_buf.lb_len = len;
-        return dt_record_read(env, dt, &lgi->lgi_buf, pos);
-}
-
 /* We can skip reading at least as many log blocks as the number of
 * minimum sized log records we are skipping.  If it turns out
 * that we are not far enough along the log (because the
@@ -910,26 +884,20 @@ static int llog_osd_next_block(const struct lu_env *env,
         while (*cur_offset < lgi->lgi_attr.la_size) {
                 struct llog_rec_hdr *rec, *last_rec;
                 struct llog_rec_tail *tail;
-                loff_t ppos, toread;
 
                 llog_skip_over(cur_offset, *cur_idx, next_idx);
 
-                ppos = *cur_offset;
                 /* read up to next LLOG_CHUNK_SIZE block */
-                toread = LLOG_CHUNK_SIZE - (ppos & (LLOG_CHUNK_SIZE - 1));
-                rc = llog_osd_record_read(env, o, buf, toread, &ppos);
-                if (rc) {
-                        CERROR("Cant read llog block at log id "LPU64
-                               "/%u offset "LPU64"\n",
-                               loghandle->lgh_id.lgl_oid,
-                               loghandle->lgh_id.lgl_ogen,
-                               *cur_offset);
+                lgi->lgi_buf.lb_len = LLOG_CHUNK_SIZE -
+                                      (*cur_offset & (LLOG_CHUNK_SIZE - 1));
+                lgi->lgi_buf.lb_buf = buf;
+                rc = dt_read(env, o, &lgi->lgi_buf, cur_offset);
+                if (rc < 0) {
+                        CERROR("Can't read llog block from log "DFID
+                               " offset "LPU64"\n",
+                               PFID(lu_object_fid(&o->do_lu)), *cur_offset);
                         GOTO(out, rc);
                 }
-
-                /* put number of bytes read into rc to make code simpler */
-                rc = ppos - *cur_offset;
-                *cur_offset = ppos;
 
                 if (rc < len) {
                         /* signal the end of the valid buffer to llog_process */
@@ -1022,21 +990,15 @@ static int llog_osd_prev_block(const struct lu_env *env,
                 struct llog_rec_hdr *rec, *last_rec;
                 struct llog_rec_tail *tail;
 
-                lgi->lgi_off = cur_offset;
-
-                rc = llog_osd_record_read(env, o, buf, len, &lgi->lgi_off);
-                if (rc) {
-                        CERROR("Cant read llog block at log id "LPU64
-                               "/%u offset "LPU64"\n",
-                               loghandle->lgh_id.lgl_oid,
-                               loghandle->lgh_id.lgl_ogen,
-                               cur_offset);
+                lgi->lgi_buf.lb_len = len;
+                lgi->lgi_buf.lb_buf = buf;
+                rc = dt_read(env, o, &lgi->lgi_buf, &cur_offset);
+                if (rc < 0) {
+                        CERROR("Can't read llog block from log "DFID
+                               " offset "LPU64"\n",
+                               PFID(lu_object_fid(&o->do_lu)), cur_offset);
                         GOTO(out, rc);
                 }
-
-                /* put number of bytes read into rc to make code simpler */
-                rc = lgi->lgi_off - cur_offset;
-                cur_offset = lgi->lgi_off;
 
                 if (rc == 0) /* end of file, nothing to do */
                         GOTO(out, rc);
