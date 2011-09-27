@@ -164,23 +164,26 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
         info->fti_off = 0;
 
         ofd_write_lock(env, fo);
-        if (ofd_object_exists(fo)) {
-                /* object may exist being re-created by write replay */
-                CDEBUG(D_INODE, "object %u/"LPD64" exists: "DFID"\n",
-                       (unsigned) group, id, PFID(&info->fti_fid));
-        }
-
         th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(out_unlock, rc = PTR_ERR(th));
 
-        rc = dt_declare_create(env, next, &info->fti_attr, NULL,
-                               &info->fti_dof, th);
+        rc = dt_declare_record_write(env, ofd->ofd_lastid_obj[group],
+                                     sizeof(tmp), info->fti_off, th);
         if (rc)
                 GOTO(trans_stop, rc);
 
-        rc = dt_declare_record_write(env, ofd->ofd_lastid_obj[group],
-                                     sizeof(tmp), info->fti_off, th);
+        if (unlikely(ofd_object_exists(fo))) {
+                /* object may exist being re-created by write replay */
+                CDEBUG(D_INODE, "object %u/"LPD64" exists: "DFID"\n",
+                       (unsigned) group, id, PFID(&info->fti_fid));
+                rc = dt_trans_start_local(env, ofd->ofd_osd, th);
+                if (rc)
+                        GOTO(trans_stop, rc);
+                GOTO(last_id_write, rc);
+        }
+        rc = dt_declare_create(env, next, &info->fti_attr, NULL,
+                               &info->fti_dof, th);
         if (rc)
                 GOTO(trans_stop, rc);
 
@@ -196,12 +199,12 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
                 GOTO(trans_stop, rc);
         LASSERT(ofd_object_exists(fo));
 
+last_id_write:
         ofd_last_id_set(ofd, id, group);
 
         tmp = cpu_to_le64(ofd_last_id(ofd, group));
         rc = dt_record_write(env, ofd->ofd_lastid_obj[group], &info->fti_buf,
                              &info->fti_off, th);
-
 trans_stop:
         ofd_trans_stop(env, ofd, fo, th, rc);
 out_unlock:
