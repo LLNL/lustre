@@ -2,78 +2,7 @@ Index: linux-2.6.18-238.12.1/fs/ext4/extents.c
 ===================================================================
 --- linux-2.6.18-238.12.1.orig/fs/ext4/extents.c	2011-06-09 14:00:13.000000000 +0400
 +++ linux-2.6.18-238.12.1/fs/ext4/extents.c	2011-09-06 15:07:02.000000000 +0400
-@@ -1854,7 +1855,7 @@
- {
- 	struct ext4_ext_path *path = NULL;
- 	struct ext4_ext_cache cbex;
--	struct ext4_extent *ex;
-+	struct ext4_extent ex;
- 	ext4_lblk_t next, start = 0, end = 0;
- 	ext4_lblk_t last = block + num;
- 	int depth, exists, err = 0;
-@@ -1867,8 +1868,8 @@
- 		/* find extent for this block */
- 		down_read(&EXT4_I(inode)->i_data_sem);
- 		path = ext4_ext_find_extent(inode, block, path);
--		up_read(&EXT4_I(inode)->i_data_sem);
- 		if (IS_ERR(path)) {
-+			up_read(&EXT4_I(inode)->i_data_sem);
- 			err = PTR_ERR(path);
- 			path = NULL;
- 			break;
-@@ -1876,46 +1877,57 @@
- 
- 		depth = ext_depth(inode);
- 		if (unlikely(path[depth].p_hdr == NULL)) {
-+			up_read(&EXT4_I(inode)->i_data_sem);
- 			EXT4_ERROR_INODE(inode, "path[%d].p_hdr == NULL", depth);
- 			err = -EIO;
- 			break;
- 		}
--		ex = path[depth].p_ext;
-+		if (path[depth].p_ext != NULL)
-+			ex = *path[depth].p_ext;
- 		next = ext4_ext_next_allocated_block(path);
-+		up_read(&EXT4_I(inode)->i_data_sem);
- 
- 		exists = 0;
--		if (!ex) {
-+		if (path[depth].p_ext == NULL) {
- 			/* there is no extent yet, so try to allocate
- 			 * all requested space */
- 			start = block;
- 			end = block + num;
--		} else if (le32_to_cpu(ex->ee_block) > block) {
-+		} else if (le32_to_cpu(ex.ee_block) > block) {
- 			/* need to allocate space before found extent */
- 			start = block;
--			end = le32_to_cpu(ex->ee_block);
-+			end = le32_to_cpu(ex.ee_block);
- 			if (block + num < end)
- 				end = block + num;
--		} else if (block >= le32_to_cpu(ex->ee_block)
--					+ ext4_ext_get_actual_len(ex)) {
-+		} else if (block >= le32_to_cpu(ex.ee_block)
-+					+ ext4_ext_get_actual_len(&ex)) {
- 			/* need to allocate space after found extent */
- 			start = block;
- 			end = block + num;
- 			if (end >= next)
- 				end = next;
--		} else if (block >= le32_to_cpu(ex->ee_block)) {
-+		} else if (block >= le32_to_cpu(ex.ee_block)) {
- 			/*
- 			 * some part of requested space is covered
- 			 * by found extent
- 			 */
- 			start = block;
--			end = le32_to_cpu(ex->ee_block)
--				+ ext4_ext_get_actual_len(ex);
-+			end = le32_to_cpu(ex.ee_block)
-+				+ ext4_ext_get_actual_len(&ex);
- 			if (block + num < end)
- 				end = block + num;
- 			exists = 1;
+@@ -1916,6 +1916,14 @@
  		} else {
  			BUG();
  		}
@@ -82,31 +11,9 @@ Index: linux-2.6.18-238.12.1/fs/ext4/extents.c
 +				(unsigned long) start, (unsigned long) end,
 +				(unsigned long) num, (unsigned long) next);
 +			printk("*** ex: block %lu, len %u\n",
-+				(unsigned long) le32_to_cpu(ex.ee_block),
-+				(unsigned short) le16_to_cpu(ex.ee_len));
++				(unsigned long) le32_to_cpu(ex->ee_block),
++				(unsigned short) le16_to_cpu(ex->ee_len));
 +		}
  		BUG_ON(end <= start);
  
  		if (!exists) {
-@@ -1924,9 +1936,9 @@
- 			cbex.ec_start = 0;
- 			cbex.ec_type = EXT4_EXT_CACHE_GAP;
- 		} else {
--			cbex.ec_block = le32_to_cpu(ex->ee_block);
--			cbex.ec_len = ext4_ext_get_actual_len(ex);
--			cbex.ec_start = ext_pblock(ex);
-+			cbex.ec_block = le32_to_cpu(ex.ee_block);
-+			cbex.ec_len = ext4_ext_get_actual_len(&ex);
-+			cbex.ec_start = ext_pblock(&ex);
- 			cbex.ec_type = EXT4_EXT_CACHE_EXTENT;
- 		}
- 
-@@ -1935,7 +1947,7 @@
- 			err = -EIO;
- 			break;
- 		}
--		err = func(inode, path, &cbex, ex, cbdata);
-+		err = func(inode, path, &cbex, &ex, cbdata);
- 		ext4_ext_drop_refs(path);
- 
- 		if (err < 0)
