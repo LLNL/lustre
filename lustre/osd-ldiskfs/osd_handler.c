@@ -2597,8 +2597,8 @@ static int osd_iam_container_init(const struct lu_env *env,
 static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
                          const struct dt_index_features *feat)
 {
-        int result;
-        int ea_dir = 0;
+        int                result;
+        int                skip_iam = 0;
         struct osd_object *obj = osd_dt_obj(dt);
         struct osd_device *osd = osd_obj2dev(obj);
 
@@ -2614,11 +2614,12 @@ static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
                         result = 0;
                 else
                         result = -ENOTDIR;
-                ea_dir = 1;
+                skip_iam = 1;
         } else if (feat == &dt_acct_features) {
                 LASSERT(!osd_has_index(obj));
                 dt->do_index_ops = &osd_acct_index_ops;
                 result = 0;
+                skip_iam = 1;
         } else if (!osd_has_index(obj)) {
                 struct osd_directory *dir;
 
@@ -2652,7 +2653,7 @@ static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
         } else
                 result = 0;
 
-        if (result == 0 && ea_dir == 0) {
+        if (result == 0 && skip_iam == 0) {
                 if (!osd_iam_index_probe(env, obj, feat))
                         result = -ENOTDIR;
         }
