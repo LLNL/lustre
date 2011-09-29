@@ -1400,6 +1400,27 @@ static int osd_inode_setattr(const struct lu_env *env,
         }
 #endif
 
+        if ((bits & LA_UID && attr->la_uid != inode->i_uid) ||
+            (bits & LA_GID && attr->la_gid != inode->i_gid)) {
+                struct iattr iattr;
+                int          rc;
+
+                iattr.ia_valid = 0;
+                if (bits & LA_UID)
+                        iattr.ia_valid |= ATTR_UID;
+                if (bits & LA_GID)
+                        iattr.ia_valid |= ATTR_GID;
+                iattr.ia_uid = attr->la_uid;
+                iattr.ia_gid = attr->la_gid;
+                rc = ll_vfs_dq_transfer(inode, &iattr);
+                if (rc) {
+                        CERROR("quota transfer failed with %d on %s, is quota "
+                               "enforcement enabled on the ldiskfs filesystem?",
+                               rc, inode->i_sb->s_id);
+                        return rc;
+                }
+        }
+
         if (bits & LA_ATIME)
                 inode->i_atime  = *osd_inode_time(env, inode, attr->la_atime);
         if (bits & LA_CTIME)
@@ -1793,9 +1814,6 @@ static void osd_attr_init(struct osd_thread_info *info, struct osd_object *obj,
         int             result;
 
         attr->la_valid &= ~(LA_TYPE | LA_MODE);
-#ifdef HAVE_QUOTA_SUPPORT
-        attr->la_valid &= ~(LA_UID | LA_GID);
-#endif
         if (dof->dof_type != DFT_NODE)
                 attr->la_valid &= ~LA_RDEV;
         if ((valid & LA_ATIME) && (attr->la_atime == LTIME_S(inode->i_atime)))
@@ -1810,10 +1828,9 @@ static void osd_attr_init(struct osd_thread_info *info, struct osd_object *obj,
                 /*
                  * The osd_inode_setattr() should always succeed here.  The
                  * only error that could be returned is EDQUOT when we are
-                 * trying to change the UID or GID of the inode and
-                 * HAVE_QUOTA_SUPPORT is defined.  That is not the case here,
-                 * however, since the inode was created in osd_mkfile() with
-                 * the desired UID and GID already.
+                 * trying to change the UID or GID of the inode. However, this
+                 * should not happen since quota enforcement is no longer
+                 * enabled on ldiskfs (lquota takes care of it).
                  */
                 LASSERTF(result == 0, "%d", result);
                 inode->i_sb->s_op->dirty_inode(inode);
