@@ -53,8 +53,6 @@ extern "C" {
 
 #include <lustre/lustre_user.h>
 
-#define DMU_RESERVED_MAX (64ULL << 20)
-
 #ifndef DMU_AT_TYPE
 #define DMU_AT_TYPE    0x0001
 #define DMU_AT_MODE    0x0002
@@ -93,6 +91,15 @@ typedef struct udmu_objset {
 #endif
 
 #define ZFS_DIRENT_MAKE(type, obj) (((uint64_t)type << 60) | obj)
+
+/* Statfs space reservation for grant, fragmentation, and unlink space. */
+#define OSD_STATFS_RESERVED_BLKS  (1ULL << (22 - SPA_MAXBLOCKSHIFT)) /* 4MB */
+#define OSD_STATFS_RESERVED_SHIFT (10)         /* reserve 0.1% of all space */
+
+/* Statfs {minimum, safe estimate, and maximum} dnodes per block */
+#define OSD_DNODE_MIN_BLKSHIFT (SPA_MAXBLOCKSHIFT - DNODE_SHIFT) /* 17-9 =8 */
+#define OSD_DNODE_EST_BLKSHIFT (SPA_MAXBLOCKSHIFT - 12)          /* 17-12=5 */
+#define OSD_DNODE_EST_COUNT    1024
 
 void udmu_init(void);
 void udmu_fini(void);
