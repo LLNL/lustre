@@ -773,11 +773,6 @@ static inline int lquota_pending_commit(quota_interface_t *interface,
 #endif
 
 #ifndef __KERNEL__
-extern quota_interface_t osc_quota_interface;
-extern quota_interface_t lov_quota_interface;
-extern quota_interface_t mdc_quota_interface;
-extern quota_interface_t lmv_quota_interface;
-
 #ifndef MAXQUOTAS
 #define MAXQUOTAS 2
 #endif

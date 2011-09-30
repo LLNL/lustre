@@ -283,8 +283,6 @@ int filter_quota_adjust_qunit(struct obd_export *exp,
         }
         RETURN(rc);
 }
-#endif /* __KERNEL__ */
-#endif
 
 int client_quota_adjust_qunit(struct obd_export *exp,
                               struct quota_adjust_qunit *oqaq,
@@ -375,3 +373,5 @@ int lov_quota_adjust_qunit(struct obd_export *exp,
         obd_putref(obd);
         RETURN(rc);
 }
+#endif /* __KERNEL__ */
+#endif

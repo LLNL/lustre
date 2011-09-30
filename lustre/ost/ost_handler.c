@@ -1373,7 +1373,6 @@ static int ost_get_info(struct obd_export *exp, struct ptlrpc_request *req)
         RETURN(rc);
 }
 
-#ifdef HAVE_QUOTA_SUPPORT
 static int ost_handle_quotactl(struct ptlrpc_request *req)
 {
         struct obd_quotactl *oqctl, *repoqc;
@@ -1414,6 +1413,7 @@ static int ost_handle_quotacheck(struct ptlrpc_request *req)
         RETURN(0);
 }
 
+#ifdef HAVE_QUOTA_SUPPORT
 static int ost_handle_quota_adjust_qunit(struct ptlrpc_request *req)
 {
         struct quota_adjust_qunit *oqaq, *repoqa;
@@ -1733,9 +1733,9 @@ int ost_msg_check_version(struct lustre_msg *msg)
         case OST_SYNC:
         case OST_SET_INFO:
         case OST_GET_INFO:
-#ifdef HAVE_QUOTA_SUPPORT
         case OST_QUOTACHECK:
         case OST_QUOTACTL:
+#ifdef HAVE_QUOTA_SUPPORT
         case OST_QUOTA_ADJUST_QUNIT:
 #endif
                 rc = lustre_msg_check_version(msg, LUSTRE_OST_VERSION);
@@ -2257,7 +2257,6 @@ int ost_handle(struct ptlrpc_request *req)
                 req_capsule_set(&req->rq_pill, &RQF_OST_GET_INFO_GENERIC);
                 rc = ost_get_info(req->rq_export, req);
                 break;
-#ifdef HAVE_QUOTA_SUPPORT
         case OST_QUOTACHECK:
                 CDEBUG(D_INODE, "quotacheck\n");
                 req_capsule_set(&req->rq_pill, &RQF_OST_QUOTACHECK);
@@ -2272,6 +2271,7 @@ int ost_handle(struct ptlrpc_request *req)
                         RETURN(0);
                 rc = ost_handle_quotactl(req);
                 break;
+#ifdef HAVE_QUOTA_SUPPORT
         case OST_QUOTA_ADJUST_QUNIT:
                 CDEBUG(D_INODE, "quota_adjust_qunit\n");
                 req_capsule_set(&req->rq_pill, &RQF_OST_QUOTA_ADJUST_QUNIT);
