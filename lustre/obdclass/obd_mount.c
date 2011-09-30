@@ -1593,12 +1593,17 @@ invalid:
 
 /*************** Common Entrypoints called by OS specific vfs code ***********/
 
-int lustre_server_statfs(struct lustre_sb_info *lsi, cfs_kstatfs_t *buf)
+int lustre_server_statfs(struct lustre_sb_info *lsi, cfs_kstatfs_t *sfs)
 {
-        /*
-         * XXX Call osd_statfs here to fill statfs buf.
-         */
-        RETURN(0);
+        struct obd_statfs osfs;
+        int rc;
+        ENTRY;
+
+        rc = dt_statfs(NULL, lsi->lsi_dt_dev, &osfs);
+        if (rc == 0)
+                statfs_unpack(sfs, &osfs);
+
+        RETURN(rc);
 }
 
 /** Called only for 'umount -f'
