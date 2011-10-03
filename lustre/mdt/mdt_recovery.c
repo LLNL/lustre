@@ -461,6 +461,7 @@ static int mdt_txn_start_cb(const struct lu_env *env,
         struct mdt_thread_info *mti;
         loff_t off;
         int rc;
+        ENTRY;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
 

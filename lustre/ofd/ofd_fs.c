@@ -64,7 +64,7 @@ int ofd_record_write(const struct lu_env *env, struct ofd_device *ofd,
                 if (rc == 0)
                         rc = dt_record_write(env, dt, buf, off, th);
         }
-        ofd_trans_stop(env, ofd, NULL, th, rc);
+        dt_trans_stop(env, ofd->ofd_osd, th);
 
         RETURN(rc);
 }
