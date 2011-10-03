@@ -400,7 +400,7 @@ void flip_into_page_cache(struct inode *inode, struct page *new_page);
 /* ofd_io_*.c */
 struct ofd_iobuf;
 struct ofd_iobuf *ofd_alloc_iobuf(struct filter_obd *, int rw,
-                                        int num_pages);
+                                  int num_pages);
 void ofd_free_iobuf(struct ofd_iobuf *iobuf);
 int ofd_iobuf_add_page(struct obd_device *obd, struct ofd_iobuf *iobuf,
                        struct inode *inode, struct page *page);
@@ -413,14 +413,13 @@ int ofd_direct_io(int rw, struct dentry *dchild, struct ofd_iobuf *iobuf,
 int ofd_clear_truncated_page(struct inode *inode);
 
 /* ofd_recovery.c */
-struct thandle *ofd_trans_create0(const struct lu_env *env,
-                                  struct ofd_device *ofd);
 struct thandle *ofd_trans_create(const struct lu_env *env,
-                                 struct ofd_device *ofd);
+                                 struct ofd_device *ofd,
+                                 struct ofd_object *fo);
 int ofd_trans_start(const struct lu_env *env,
                     struct ofd_device *ofd, struct thandle *th);
 void ofd_trans_stop(const struct lu_env *env, struct ofd_device *ofd,
-                    struct ofd_object *fo, struct thandle *th, int rc);
+                    struct thandle *th, int rc);
 int ofd_client_free(struct lu_env *env, struct obd_export *exp);
 int ofd_client_new(const struct lu_env *env, struct ofd_device *ofd,
                    struct obd_export *exp);
@@ -439,12 +438,10 @@ int ofd_last_id_read(const struct lu_env *env, struct ofd_device *ofd,
                      obd_seq seq);
 int ofd_groups_init(const struct lu_env *env, struct ofd_device *ofd);
 int ofd_last_rcvd_header_write(const struct lu_env *env,
-                               struct ofd_device *ofd,
-                               struct thandle *th);
-int ofd_last_rcvd_write(const struct lu_env *env,
-                        struct ofd_device *ofd,
-                        struct lsd_client_data *lcd,
-                        loff_t *off, struct thandle *th);
+                               struct ofd_device *ofd, struct thandle *th);
+int ofd_last_rcvd_write(const struct lu_env *env, struct ofd_device *ofd,
+                        struct lsd_client_data *lcd, loff_t *off,
+                        struct thandle *th);
 int ofd_server_data_init(const struct lu_env *env,
                          struct ofd_device *ofd);
 int ofd_group_load(const struct lu_env *env, struct ofd_device *ofd, int);
@@ -456,11 +453,10 @@ int ofd_record_write(const struct lu_env *env, struct ofd_device *ofd,
 struct ofd_object *ofd_object_find(const struct lu_env *env,
                                    struct ofd_device *ofd,
                                    const struct lu_fid *fid);
-struct
-ofd_object *ofd_object_find_or_create(const struct lu_env *env,
-                                      struct ofd_device *ofd,
-                                      const struct lu_fid *fid,
-                                      struct lu_attr *attr);
+struct ofd_object *ofd_object_find_or_create(const struct lu_env *env,
+                                             struct ofd_device *ofd,
+                                             const struct lu_fid *fid,
+                                             struct lu_attr *attr);
 int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
                          obd_id id, obd_seq seq);
 

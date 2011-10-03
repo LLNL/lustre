@@ -45,7 +45,8 @@
 #include "ofd_internal.h"
 
 struct thandle *ofd_trans_create(const struct lu_env *env,
-                                    struct ofd_device *ofd)
+                                 struct ofd_device *ofd,
+                                 struct ofd_object *obj)
 {
         struct ofd_thread_info *info = ofd_info(env);
         struct thandle *th;
@@ -80,6 +81,13 @@ struct thandle *ofd_trans_create(const struct lu_env *env,
                                      sizeof(ofd->ofd_fsd), 0, th);
         if (rc)
                 RETURN(ERR_PTR(rc));
+        /* version change is required for this object */
+        if (obj) {
+                ofd_info(env)->fti_obj = obj;
+                rc = dt_declare_version_set(env, ofd_object_child(obj), th);
+                if (rc)
+                        RETURN(ERR_PTR(rc));
+        }
         return th;
 }
 
@@ -92,12 +100,8 @@ int ofd_trans_start(const struct lu_env *env,
 
 void ofd_trans_stop(const struct lu_env *env,
                        struct ofd_device *ofd,
-                       struct ofd_object *obj,
                        struct thandle *th, int rc)
 {
-        /* version change is required for this object */
-        if (obj)
-                ofd_info(env)->fti_obj = obj;
         th->th_result = rc;
         dt_trans_stop(env, ofd->ofd_osd, th);
 }
@@ -160,17 +164,6 @@ static int ofd_last_rcvd_update(struct ofd_thread_info *info,
         RETURN(err);
 }
 
-/* Set new object versions */
-static void ofd_version_set(struct ofd_thread_info *info)
-{
-        if (info->fti_obj != NULL) {
-                dt_version_set(info->fti_env,
-                               ofd_object_child(info->fti_obj),
-                               info->fti_transno);
-                info->fti_obj = NULL;
-        }
-}
-
 /* Update last_rcvd records with latests transaction data */
 int ofd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
                     void *cookie)
@@ -216,8 +209,11 @@ int ofd_txn_stop_cb(const struct lu_env *env, struct thandle *txn,
         cfs_spin_unlock(&ofd->ofd_transno_lock);
 
         /** VBR: set new versions */
-        if (txn->th_result == 0)
-                ofd_version_set(info);
+        if (txn->th_result == 0 && info->fti_obj != NULL) {
+                dt_version_set(env, ofd_object_child(info->fti_obj),
+                               info->fti_transno, txn);
+                info->fti_obj = NULL;
+        }
 
         /* filling reply data */
         CDEBUG(D_INODE, "transno = %llu, last_committed = %llu\n",
