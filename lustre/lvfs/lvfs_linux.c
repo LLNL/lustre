@@ -284,14 +284,9 @@ put_old:
 EXPORT_SYMBOL(lustre_rename);
 
 #ifdef LUSTRE_KERNEL_VERSION
-#ifndef HAVE_CLEAR_RDONLY_ON_PUT
-#error rdonly patchset must be updated [cfs bz11248]
-#endif
-void dev_set_rdonly(lvfs_sbdev_type dev);
-int dev_check_rdonly(lvfs_sbdev_type dev);
-
-void __lvfs_set_rdonly(lvfs_sbdev_type dev, lvfs_sbdev_type jdev)
+int __lvfs_set_rdonly(lvfs_sbdev_type dev, lvfs_sbdev_type jdev)
 {
+#ifdef HAVE_DEV_SET_RDONLY
         if (jdev && (jdev != dev)) {
                 CDEBUG(D_IOCTL | D_HA, "set journal dev %lx rdonly\n",
                        (long)jdev);
@@ -299,14 +294,24 @@ void __lvfs_set_rdonly(lvfs_sbdev_type dev, lvfs_sbdev_type jdev)
         }
         CDEBUG(D_IOCTL | D_HA, "set dev %lx rdonly\n", (long)dev);
         dev_set_rdonly(dev);
+
+        return 0;
+#else
+        CERROR("DEV %lx CANNOT BE SET READONLY\n", (long)dev);
+
+        return -EOPNOTSUPP;
+#endif
 }
+EXPORT_SYMBOL(__lvfs_set_rdonly);
 
 int lvfs_check_rdonly(lvfs_sbdev_type dev)
 {
+#ifdef HAVE_DEV_SET_RDONLY
         return dev_check_rdonly(dev);
+#else
+        return 0;
+#endif
 }
-
-EXPORT_SYMBOL(__lvfs_set_rdonly);
 EXPORT_SYMBOL(lvfs_check_rdonly);
 
 #endif /* LUSTRE_KERNEL_VERSION */
