@@ -1179,7 +1179,8 @@ int ofd_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
                 break;
         case OBD_IOC_SET_READONLY:
                 rc = dt_sync(&env, ofd->ofd_osd);
-                dt_ro(&env, ofd->ofd_osd);
+                if (rc == 0)
+                        rc = dt_ro(&env, ofd->ofd_osd);
                 break;
         default:
                 CERROR("Not supported cmd = %d for device %s\n",

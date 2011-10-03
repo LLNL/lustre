@@ -825,7 +825,7 @@ static int osd_commit_async(const struct lu_env *env, struct dt_device *dev)
 /*
  * Concurrency: shouldn't matter.
  */
-static void osd_ro(const struct lu_env *env, struct dt_device *d)
+static int osd_ro(const struct lu_env *env, struct dt_device *d)
 {
         struct osd_device  *osd = osd_dt_dev(d);
         ENTRY;
@@ -834,7 +834,7 @@ static void osd_ro(const struct lu_env *env, struct dt_device *d)
         osd->od_rdonly = 1;
         udmu_freeze(&osd->od_objset);
 
-        EXIT;
+        RETURN(0);
 }
 
 /*
