@@ -2337,10 +2337,8 @@ static int osd_object_version_get(const struct lu_env *env,
 /*
  * Concurrency: @dt is read locked.
  */
-static int osd_xattr_get(const struct lu_env *env,
-                         struct dt_object *dt,
-                         struct lu_buf *buf,
-                         const char *name,
+static int osd_xattr_get(const struct lu_env *env, struct dt_object *dt,
+                         struct lu_buf *buf, const char *name,
                          struct lustre_capa *capa)
 {
         struct osd_object      *obj    = osd_dt_obj(dt);

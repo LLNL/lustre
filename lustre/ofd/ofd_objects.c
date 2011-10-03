@@ -161,7 +161,7 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
         info->fti_off = 0;
 
         ofd_write_lock(env, fo);
-        th = ofd_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd, fo);
         if (IS_ERR(th))
                 GOTO(out_unlock, rc = PTR_ERR(th));
 
@@ -203,7 +203,7 @@ last_id_write:
         rc = dt_record_write(env, ofd->ofd_lastid_obj[group], &info->fti_buf,
                              &info->fti_off, th);
 trans_stop:
-        ofd_trans_stop(env, ofd, fo, th, rc);
+        ofd_trans_stop(env, ofd, th, rc);
 out_unlock:
         ofd_write_unlock(env, fo);
         ofd_object_put(env, fo);
@@ -236,7 +236,7 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(unlock, rc);
 
-        th = ofd_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd, la->la_valid & LA_SIZE ? fo : NULL);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
@@ -251,7 +251,7 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         rc = dt_attr_set(env, ofd_object_child(fo), la, th,
                         ofd_object_capa(env, fo));
 stop:
-        ofd_trans_stop(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th, rc);
+        ofd_trans_stop(env, ofd, th, rc);
 unlock:
         ofd_write_unlock(env, fo);
         RETURN(rc);
@@ -285,7 +285,7 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(unlock, rc);
 
-        th = ofd_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd, fo);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
@@ -309,7 +309,7 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
         rc = dt_attr_set(env, dob, la, th, ofd_object_capa(env, fo));
 
 stop:
-        ofd_trans_stop(env, ofd, fo, th, rc);
+        ofd_trans_stop(env, ofd, th, rc);
 unlock:
         ofd_write_unlock(env, fo);
         RETURN(rc);
@@ -327,7 +327,7 @@ int ofd_object_destroy(const struct lu_env *env, struct ofd_object *fo,
         if (!ofd_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
-        th = ofd_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd, NULL);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
@@ -345,7 +345,7 @@ int ofd_object_destroy(const struct lu_env *env, struct ofd_object *fo,
         dt_ref_del(env, ofd_object_child(fo), th);
         dt_destroy(env, ofd_object_child(fo), th);
 stop:
-        ofd_trans_stop(env, ofd, NULL, th, rc);
+        ofd_trans_stop(env, ofd, th, rc);
 unlock:
         ofd_write_unlock(env, fo);
         RETURN(rc);
