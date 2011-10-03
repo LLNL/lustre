@@ -291,7 +291,7 @@ static int lod_sync(const struct lu_env *env, struct dt_device *dev)
         RETURN(rc);
 }
 
-static void lod_ro(const struct lu_env *env, struct dt_device *dev)
+static int lod_ro(const struct lu_env *env, struct dt_device *dev)
 {
         struct lod_device *d = dt2lod_dev(dev);
         LASSERT(d->lod_child);
