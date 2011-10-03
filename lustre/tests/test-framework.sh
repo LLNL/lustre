@@ -114,37 +114,14 @@ init_test_env() {
     export TEST_FAILED=false
     export FAIL_ON_SKIP_ENV=${FAIL_ON_SKIP_ENV:-false}
 
-    export MKE2FS=${MKE2FS:-mkfs.ldiskfs}
-    if ! which "$MKE2FS"; then
-        export MKE2FS=${MKE2FS:-mke2fs}
-    fi
-
-    export DEBUGFS=${DEBUGFS:-debugfs.ldiskfs}
-    if ! which "$DEBUGFS"; then
-         export DEBUGFS=${DEBUGFS:-debugfs}
-    fi
-
-    export TUNE2FS=${TUNE2FS:-tunefs.ldiskfs}
-    if ! which "$TUNE2FS"; then
-         export TUNE2FS=${TUNE2FS:-tune2fs}
-    fi
-
-    export E2LABEL=${E2LABEL:-label.ldiskfs}
-    if ! which "$E2LABEL"; then
-         export E2LABEL=${E2LABEL:-e2label}
-    fi
-
-    export DUMPE2FS=${DUMPE2FS:-dumpfs.ldiskfs}
-    if ! which "$DUMPE2FS"; then
-        export DUMPE2FS=${DUMPE2FS:-dumpe2fs}
-    fi
-
-    export E2FSCK=${E2FSCK:-fsck.ldiskfs}
-    if ! which "$E2FSCK"; then
-        export E2FSCK=${E2FSCK:-e2fsck}
-    fi
-
+    export MKE2FS=${MKE2FS:-mke2fs}
+    export DEBUGFS=${DEBUGFS:-debugfs}
+    export TUNE2FS=${TUNE2FS:-tune2fs}
+    export E2LABEL=${E2LABEL:-e2label}
+    export DUMPE2FS=${DUMPE2FS:-dumpe2fs}
+    export E2FSCK=${E2FSCK:-e2fsck}
     export LFSCK_BIN=${LFSCK_BIN:-lfsck}
+
     export LFSCK_ALWAYS=${LFSCK_ALWAYS:-"no"} # check fs after each test suite
     export FSCK_MAX_ERR=4   # File system errors left uncorrected
 
