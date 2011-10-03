@@ -599,19 +599,6 @@ static int dot_lustre_mdd_object_sync(const struct lu_env *env,
         return -ENOSYS;
 }
 
-static dt_obj_version_t dot_lustre_mdd_version_get(const struct lu_env *env,
-                                                   struct md_object *obj)
-{
-        return 0;
-}
-
-static void dot_lustre_mdd_version_set(const struct lu_env *env,
-                                       struct md_object *obj,
-                                       dt_obj_version_t version)
-{
-        return;
-}
-
 static int dot_lustre_mdd_path(const struct lu_env *env, struct md_object *obj,
                            char *path, int pathlen, __u64 *recno, int *linkno)
 {
@@ -648,8 +635,6 @@ static struct md_object_operations mdd_dot_lustre_obj_ops = {
         .moo_close         = dot_lustre_mdd_close,
         .moo_capa_get      = mdd_capa_get,
         .moo_object_sync   = dot_lustre_mdd_object_sync,
-        .moo_version_get   = dot_lustre_mdd_version_get,
-        .moo_version_set   = dot_lustre_mdd_version_set,
         .moo_path          = dot_lustre_mdd_path,
         .moo_file_lock     = dot_file_lock,
         .moo_file_unlock   = dot_file_unlock,

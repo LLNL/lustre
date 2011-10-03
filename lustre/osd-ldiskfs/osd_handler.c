@@ -2280,18 +2280,39 @@ static void osd_object_ref_del(const struct lu_env *env,
 }
 
 /*
+ * Get the 64-bit version for an inode.
+ */
+static int osd_object_version_get(const struct lu_env *env,
+                                  struct dt_object *dt, dt_obj_version_t *ver)
+{
+        struct inode *inode = osd_dt_obj(dt)->oo_inode;
+
+        CDEBUG(D_INODE, "Get version "LPX64" for inode %lu\n",
+               LDISKFS_I(inode)->i_fs_version, inode->i_ino);
+        *ver = LDISKFS_I(inode)->i_fs_version;
+        return 0;
+}
+
+/*
  * Concurrency: @dt is read locked.
  */
-static int osd_xattr_get(const struct lu_env *env,
-                         struct dt_object *dt,
-                         struct lu_buf *buf,
-                         const char *name,
+static int osd_xattr_get(const struct lu_env *env, struct dt_object *dt,
+                         struct lu_buf *buf, const char *name,
                          struct lustre_capa *capa)
 {
         struct osd_object      *obj    = osd_dt_obj(dt);
         struct inode           *inode  = obj->oo_inode;
         struct osd_thread_info *info   = osd_oti_get(env);
         struct dentry          *dentry = &info->oti_obj_dentry;
+
+        /* version get is not real XATTR but uses xattr API */
+        if (strcmp(name, XATTR_NAME_VERSION) == 0) {
+                /* for version we are just using xattr API but change inode
+                 * field instead */
+                LASSERT(buf->lb_len == sizeof(dt_obj_version_t));
+                osd_object_version_get(env, dt, buf->lb_buf);
+                return sizeof(dt_obj_version_t);
+        }
 
         LASSERT(dt_object_exists(dt));
         LASSERT(inode->i_op != NULL && inode->i_op->getxattr != NULL);
@@ -2313,6 +2334,11 @@ static int osd_declare_xattr_set(const struct lu_env *env, struct dt_object *dt,
 
         LASSERT(handle != NULL);
 
+        if (strcmp(name, XATTR_NAME_VERSION) == 0) {
+                /* no credits for version */
+                return 0;
+        }
+
         oh = container_of0(handle, struct osd_thandle, ot_super);
         LASSERT(oh->ot_handle == NULL);
 
@@ -2323,6 +2349,23 @@ static int osd_declare_xattr_set(const struct lu_env *env, struct dt_object *dt,
 }
 
 /*
+ * Set the 64-bit version.for object
+ */
+static void osd_object_version_set(const struct lu_env *env, struct dt_object *dt,
+                                   dt_obj_version_t *new_version)
+{
+        struct inode *inode = osd_dt_obj(dt)->oo_inode;
+
+        CDEBUG(D_INODE, "Set version "LPX64" (old "LPX64") for inode %lu\n",
+               *new_version, LDISKFS_I(inode)->i_fs_version, inode->i_ino);
+
+        LDISKFS_I(inode)->i_fs_version = *new_version;
+        /** Version is set after all inode operations are finished,
+         *  so we should mark it dirty here */
+        inode->i_sb->s_op->dirty_inode(inode);
+}
+
+/*
  * Concurrency: @dt is write locked.
  */
 static int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
@@ -2330,6 +2373,15 @@ static int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
                          struct thandle *handle, struct lustre_capa *capa)
 {
         LASSERT(handle != NULL);
+
+        /* version set is not real XATTR */
+        if (strcmp(name, XATTR_NAME_VERSION) == 0) {
+                /* for version we are just using xattr API but change inode
+                 * field instead */
+                LASSERT(buf->lb_len == sizeof(dt_obj_version_t));
+                osd_object_version_set(env, dt, buf->lb_buf);
+                return sizeof(dt_obj_version_t);
+        }
 
         if (osd_object_auth(env, dt, capa, CAPA_OPC_META_WRITE))
                 return -EACCES;
@@ -2526,35 +2578,6 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt)
 }
 
 /*
- * Get the 64-bit version for an inode.
- */
-static dt_obj_version_t osd_object_version_get(const struct lu_env *env,
-                                               struct dt_object *dt)
-{
-        struct inode *inode = osd_dt_obj(dt)->oo_inode;
-
-        CDEBUG(D_INFO, "Get version "LPX64" for inode %lu\n",
-               LDISKFS_I(inode)->i_fs_version, inode->i_ino);
-        return LDISKFS_I(inode)->i_fs_version;
-}
-
-/*
- * Set the 64-bit version and return the old version.
- */
-static void osd_object_version_set(const struct lu_env *env, struct dt_object *dt,
-                                   dt_obj_version_t new_version)
-{
-        struct inode *inode = osd_dt_obj(dt)->oo_inode;
-
-        CDEBUG(D_INFO, "Set version "LPX64" (old "LPX64") for inode %lu\n",
-               new_version, LDISKFS_I(inode)->i_fs_version, inode->i_ino);
-        LDISKFS_I(inode)->i_fs_version = new_version;
-        /** Version is set after all inode operations are finished,
-         *  so we should mark it dirty here */
-        inode->i_sb->s_op->dirty_inode(inode);
-}
-
-/*
  * Index operations.
  */
 
@@ -2708,8 +2731,6 @@ static const struct dt_object_operations osd_obj_ops = {
         .do_xattr_list        = osd_xattr_list,
         .do_capa_get          = osd_capa_get,
         .do_object_sync       = osd_object_sync,
-        .do_version_get       = osd_object_version_get,
-        .do_version_set       = osd_object_version_set,
 };
 
 /**
@@ -2745,8 +2766,6 @@ static const struct dt_object_operations osd_obj_ea_ops = {
         .do_xattr_list        = osd_xattr_list,
         .do_capa_get          = osd_capa_get,
         .do_object_sync       = osd_object_sync,
-        .do_version_get  = osd_object_version_get,
-        .do_version_set  = osd_object_version_set,
 };
 
 

@@ -446,10 +446,6 @@ struct dt_object_operations {
                                         struct lustre_capa *old,
                                         __u64 opc);
         int (*do_object_sync)(const struct lu_env *, struct dt_object *);
-        dt_obj_version_t (*do_version_get)(const struct lu_env *env,
-                                           struct dt_object *dt);
-        void (*do_version_set)(const struct lu_env *env, struct dt_object *dt,
-                               dt_obj_version_t new_version);
 };
 
 /**
@@ -755,23 +751,11 @@ static inline int dt_object_sync(const struct lu_env *env,
         return o->do_ops->do_object_sync(env, o);
 }
 
-static inline dt_obj_version_t dt_version_get(const struct lu_env *env,
-                                              struct dt_object *o)
-{
-        LASSERT(o);
-        LASSERT(o->do_ops);
-        LASSERT(o->do_ops->do_version_get);
-        return o->do_ops->do_version_get(env, o);
-}
-
-static inline void dt_version_set(const struct lu_env *env,
-                                  struct dt_object *o, dt_obj_version_t v)
-{
-        LASSERT(o);
-        LASSERT(o->do_ops);
-        LASSERT(o->do_ops->do_version_set);
-        return o->do_ops->do_version_set(env, o, v);
-}
+int dt_declare_version_set(const struct lu_env *env, struct dt_object *o,
+                           struct thandle *th);
+void dt_version_set(const struct lu_env *env, struct dt_object *o,
+                    dt_obj_version_t version, struct thandle *th);
+dt_obj_version_t dt_version_get(const struct lu_env *env, struct dt_object *o);
 
 int dt_read(const struct lu_env *env, struct dt_object *dt,
             struct lu_buf *buf, loff_t *pos);

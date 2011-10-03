@@ -5495,7 +5495,7 @@ static int mdt_ioc_version_get(struct mdt_thread_info *mti, void *karg)
                  */
                 CERROR("nonlocal object "DFID"\n", PFID(fid));
         } else {
-                version = mo_version_get(mti->mti_env, mdt_object_child(obj));
+                version = dt_version_get(mti->mti_env, mdt_obj2dt(obj));
                *(__u64 *)data->ioc_inlbuf2 = version;
                 rc = 0;
         }

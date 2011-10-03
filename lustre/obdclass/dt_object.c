@@ -499,5 +499,56 @@ int dt_record_write(const struct lu_env *env, struct dt_object *dt,
 }
 EXPORT_SYMBOL(dt_record_write);
 
+int dt_declare_version_set(const struct lu_env *env, struct dt_object *o,
+                           struct thandle *th)
+{
+        struct lu_buf vbuf;
+        char *xname = XATTR_NAME_VERSION;
+
+        LASSERT(o);
+        vbuf.lb_buf = NULL;
+        vbuf.lb_len = sizeof(dt_obj_version_t);
+        return dt_declare_xattr_set(env, o, &vbuf, xname, 0, th);
+
+}
+EXPORT_SYMBOL(dt_declare_version_set);
+
+void dt_version_set(const struct lu_env *env, struct dt_object *o,
+                    dt_obj_version_t version, struct thandle *th)
+{
+        struct lu_buf vbuf;
+        char *xname = XATTR_NAME_VERSION;
+        int rc;
+
+        LASSERT(o);
+        vbuf.lb_buf = &version;
+        vbuf.lb_len = sizeof(version);
+
+        rc = dt_xattr_set(env, o, &vbuf, xname, 0, th, BYPASS_CAPA);
+        if (rc != 0)
+                CDEBUG(D_INODE, "Can't set version, rc %d\n", rc);
+        return;
+}
+EXPORT_SYMBOL(dt_version_set);
+
+dt_obj_version_t dt_version_get(const struct lu_env *env, struct dt_object *o)
+{
+        struct lu_buf vbuf;
+        char *xname = XATTR_NAME_VERSION;
+        dt_obj_version_t version;
+        int rc;
+
+        LASSERT(o);
+        vbuf.lb_buf = &version;
+        vbuf.lb_len = sizeof(version);
+        rc = dt_xattr_get(env, o, &vbuf, xname, BYPASS_CAPA);
+        if (rc != sizeof(version)) {
+                CDEBUG(D_INODE, "Can't get version, rc %d\n", rc);
+                version = 0;
+        }
+        return version;
+}
+EXPORT_SYMBOL(dt_version_get);
+
 const struct dt_index_features dt_directory_features;
 EXPORT_SYMBOL(dt_directory_features);

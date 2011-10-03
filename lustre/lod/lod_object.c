@@ -1030,19 +1030,6 @@ static int lod_object_sync(const struct lu_env *env, struct dt_object *dt)
         return dt_object_sync(env, dt_object_child(dt));
 }
 
-static dt_obj_version_t lod_object_version_get(const struct lu_env *env,
-                                               struct dt_object *dt)
-{
-        return dt_version_get(env, dt_object_child(dt));
-}
-
-static void lod_object_version_set(const struct lu_env *env,
-                                   struct dt_object *dt,
-                                   dt_obj_version_t new_version)
-{
-        return dt_version_set(env, dt_object_child(dt), new_version);
-}
-
 struct dt_object_operations lod_obj_ops = {
         .do_read_lock         = lod_object_read_lock,
         .do_write_lock        = lod_object_write_lock,
@@ -1072,8 +1059,6 @@ struct dt_object_operations lod_obj_ops = {
         .do_ref_del           = lod_ref_del,
         .do_capa_get          = lod_capa_get,
         .do_object_sync       = lod_object_sync,
-        .do_version_get       = lod_object_version_get,
-        .do_version_set       = lod_object_version_set,
 };
 
 static ssize_t lod_read(const struct lu_env *env, struct dt_object *dt,

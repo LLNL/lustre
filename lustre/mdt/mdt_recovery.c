@@ -474,6 +474,7 @@ static int mdt_txn_start_cb(const struct lu_env *env,
         struct mdt_thread_info *mti;
         loff_t off;
         int rc;
+        ENTRY;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
 
@@ -482,19 +483,15 @@ static int mdt_txn_start_cb(const struct lu_env *env,
                 mti->mti_exp->exp_target_data.ted_lr_off : 0;
         rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
                                      sizeof(struct lsd_client_data), off, th);
+        if (rc)
+                RETURN(rc);
         rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
                                      sizeof(struct lr_server_data), 0, th);
-        return rc;
-}
-
-/* Set new object versions */
-static void mdt_version_set(struct mdt_thread_info *info)
-{
-        if (info->mti_mos != NULL) {
-                mo_version_set(info->mti_env, mdt_object_child(info->mti_mos),
-                               info->mti_transno);
-                info->mti_mos = NULL;
-        }
+        if (rc)
+                RETURN(rc);
+        if (mti->mti_mos != NULL)
+                rc = dt_declare_version_set(env, mdt_obj2dt(mti->mti_mos), th);
+        RETURN(rc);
 }
 
 /* Update last_rcvd records with latests transaction data */
@@ -538,8 +535,11 @@ static int mdt_txn_stop_cb(const struct lu_env *env,
         LASSERT(req != NULL && req->rq_repmsg != NULL);
 
         /** VBR: set new versions */
-        if (txn->th_result == 0)
-                mdt_version_set(mti);
+        if (txn->th_result == 0 && mti->mti_mos != NULL) {
+                dt_version_set(env, mdt_obj2dt(mti->mti_mos),
+                               mti->mti_transno, txn);
+                mti->mti_mos = NULL;
+        }
 
         /* filling reply data */
         CDEBUG(D_INODE, "transno = "LPU64", last_committed = "LPU64"\n",

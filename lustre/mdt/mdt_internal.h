@@ -660,6 +660,16 @@ static inline struct mdt_device *mdt_dev(struct lu_device *d)
         return container_of0(d, struct mdt_device, mdt_md_dev.md_lu_dev);
 }
 
+static inline struct dt_object *mdt_obj2dt(struct mdt_object *mo)
+{
+        struct lu_object *lo;
+        struct mdt_device *mdt = mdt_dev(mo->mot_obj.mo_lu.lo_dev);
+
+        lo = lu_object_locate(mo->mot_obj.mo_lu.lo_header,
+                              mdt->mdt_bottom->dd_lu_dev.ld_type);
+        return lu2dt(lo);
+}
+
 /* mdt/mdt_identity.c */
 #define MDT_IDENTITY_UPCALL_PATH        "/usr/sbin/l_getidentity"
 

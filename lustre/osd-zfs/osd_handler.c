@@ -2120,24 +2120,6 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt)
         RETURN(0);
 }
 
-static dt_obj_version_t osd_object_version_get(const struct lu_env *env,
-                                               struct dt_object *dt)
-{
-        /* XXX: not implemented yet, important for VBR */
-        return 0;
-}
-
-/*
- * Set the 64-bit version and return the old version.
- */
-static void osd_object_version_set(const struct lu_env *env,
-                                   struct dt_object *dt,
-                                   dt_obj_version_t new_version)
-{
-        /* XXX: not implemented yet, important for VBR */
-        return;
-}
-
 static struct dt_object_operations osd_obj_ops = {
         .do_read_lock         = osd_object_read_lock,
         .do_write_lock        = osd_object_write_lock,
@@ -2167,8 +2149,6 @@ static struct dt_object_operations osd_obj_ops = {
         .do_xattr_list        = osd_xattr_list,
         .do_capa_get          = osd_capa_get,
         .do_object_sync       = osd_object_sync,
-        .do_version_get       = osd_object_version_get,
-        .do_version_set       = osd_object_version_set,
 };
 
 /*

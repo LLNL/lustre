@@ -290,7 +290,7 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
         LASSERT(ln->la_valid & LA_MODE);
 
 retry:
-        th = ofd_trans_create(env, ofd);
+        th = ofd_trans_create(env, ofd, fo);
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
 
@@ -351,7 +351,7 @@ out_stop:
         if (rc == -ENOSPC)
                 th->th_sync = 1;
 
-        ofd_trans_stop(env, ofd, fo, th, rc);
+        ofd_trans_stop(env, ofd, th, rc);
         if (rc == -ENOSPC && retries++ < 3) {
                 CDEBUG(D_INODE, "retry after force commit, retries:%d\n",
                        retries);
