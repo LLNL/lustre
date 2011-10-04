@@ -489,13 +489,9 @@ struct lustre_sb_info {
 #ifdef __KERNEL__
 
 /* obd_mount.c */
-
-#if !defined (__sun__)
 void lustre_register_client_fill_super(int (*cfs)(struct super_block *sb,
                                                   struct vfsmount *mnt));
 void lustre_register_kill_super_cb(void (*cfs)(struct super_block *sb));
-#endif /* !__sun__ */
-
 void lustre_server_umount(struct lustre_sb_info *lsi);
 int lustre_common_umount(struct lustre_sb_info *lsi);
 void lustre_umount_server_force_flag_set(struct lustre_sb_info *lsi);
