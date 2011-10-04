@@ -88,6 +88,9 @@ int osd_acct_obj_lookup(struct osd_thread_info *info, struct osd_device *osd,
  * \param dtkey - is the id the of the user or group for which we would
  *                like to access disk usage.
  * \param capa - is the capability, not used.
+ *
+ * \retval +ve - success : exact match
+ * \retval -ve - failure
  */
 static int osd_acct_index_lookup(const struct lu_env *env,
                                  struct dt_object *dtobj,
@@ -109,7 +112,7 @@ static int osd_acct_index_lookup(const struct lu_env *env,
                 RETURN(rc);
         rec->bspace = dqblk->dqb_curspace;
         rec->ispace = dqblk->dqb_curinodes;
-        RETURN(rc);
+        RETURN(+1);
 }
 
 /**
