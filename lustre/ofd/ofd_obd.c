@@ -1307,6 +1307,7 @@ static int ofd_quotactl(struct obd_device *obd, struct obd_export *exp,
                 RETURN(rc);
 
         rc = lu_quotactl(&env, &ofd->ofd_lu_quota, oqctl);
+        lu_env_fini(&env);
         RETURN(rc);
 }
 
