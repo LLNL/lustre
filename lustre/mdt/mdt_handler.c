@@ -1865,12 +1865,29 @@ static int mdt_sync(struct mdt_thread_info *info)
 
 static int mdt_quotacheck(struct mdt_thread_info *info)
 {
-        RETURN(-ENOTSUPP);
+        struct req_capsule  *pill = info->mti_pill;
+        struct obd_quotactl *oqctl;
+        int                  rc;
+
+        oqctl = req_capsule_client_get(pill, &RMF_OBD_QUOTACTL);
+        if (oqctl == NULL)
+                RETURN(err_serious(-EPROTO));
+
+        rc = req_capsule_server_pack(pill);
+        if (rc)
+                RETURN(err_serious(rc));
+
+        /* remote client has no permission for quotacheck */
+        if (unlikely(exp_connect_rmtclient(info->mti_exp)))
+                RETURN(-EPERM);
+
+        rc = lu_quotactl(info->mti_env, &info->mti_mdt->mdt_lu_quota,
+                         oqctl);
+        RETURN(rc);
 }
 
 static int mdt_quotactl(struct mdt_thread_info *info)
 {
-        struct obd_export   *exp  = info->mti_exp;
         struct req_capsule  *pill = info->mti_pill;
         struct obd_quotactl *oqctl, *repoqc;
         int                  id, rc;
@@ -1878,12 +1895,16 @@ static int mdt_quotactl(struct mdt_thread_info *info)
 
         oqctl = req_capsule_client_get(pill, &RMF_OBD_QUOTACTL);
         if (oqctl == NULL)
-                RETURN(-EPROTO);
+                RETURN(err_serious(-EPROTO));
+
+        rc = req_capsule_server_pack(pill);
+        if (rc)
+                RETURN(err_serious(rc));
 
         id = oqctl->qc_id;
 
         /* map uid/gid for remote client */
-        if (exp_connect_rmtclient(exp)) {
+        if (exp_connect_rmtclient(info->mti_exp)) {
                 struct lustre_idmap_table *idmap;
 
                 idmap = mdt_req2med(mdt_info_req(info))->med_idmap;
@@ -1908,12 +1929,9 @@ static int mdt_quotactl(struct mdt_thread_info *info)
                 }
         }
 
-        rc = req_capsule_server_pack(pill);
-        if (rc)
-                RETURN(rc);
-
         repoqc = req_capsule_server_get(pill, &RMF_OBD_QUOTACTL);
-        LASSERT(repoqc != NULL);
+        if (repoqc == NULL)
+                RETURN(err_serious(-EFAULT));
 
         if (oqctl->qc_id != id)
                 cfs_swap(oqctl->qc_id, id);
