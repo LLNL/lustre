@@ -479,10 +479,8 @@ struct lustre_sb_info {
                                                   own backing_dev_info */
 };
 
-#if !defined(__sun__)
 #define     s2lsi(sb)        ((struct lustre_sb_info *)((sb)->s_fs_info))
 #define     get_profile_name(sb)   (s2lsi(sb)->lsi_lmd->lmd_profile)
-#endif /* !__sun__ */
 
 #endif /* __KERNEL__ */
 
@@ -492,13 +490,9 @@ struct lustre_sb_info {
 #ifdef __KERNEL__
 
 /* obd_mount.c */
-
-#if !defined (__sun__)
 void lustre_register_client_fill_super(int (*cfs)(struct super_block *sb,
                                                   struct vfsmount *mnt));
 void lustre_register_kill_super_cb(void (*cfs)(struct super_block *sb));
-#endif /* !__sun__ */
-
 void lustre_server_umount(struct lustre_sb_info *lsi);
 int lustre_common_umount(struct lustre_sb_info *lsi);
 void lustre_umount_server_force_flag_set(struct lustre_sb_info *lsi);

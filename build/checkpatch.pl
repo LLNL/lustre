@@ -2738,7 +2738,7 @@ sub process {
 			}
 		}
 # check of hardware specific defines
-		if ($line =~ m@^.\s*\#\s*if.*\b(__i386__|__powerpc64__|__sun__|__s390x__)\b@ && $realfile !~ m@include/asm-@) {
+		if ($line =~ m@^.\s*\#\s*if.*\b(__i386__|__powerpc64__|__s390x__)\b@ && $realfile !~ m@include/asm-@) {
 			CHK("architecture specific defines should be avoided\n" .  $herecurr);
 		}
 
