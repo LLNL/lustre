@@ -1954,9 +1954,6 @@ int lustre_mount(void *osvfsp, void *osmnt, void *data, unsigned long mflags)
         }
 
         if (lmd_is_client(lmd)) {
-#if defined(__sun__)
-                LIBCFS_PANIC("lustre_mount: no client mounts on solaris\n");
-#else /* __sun__ */
                 extern int (*client_fill_super)(struct super_block *sb,
                                                 struct vfsmount *mnt);
 
@@ -1980,7 +1977,6 @@ int lustre_mount(void *osvfsp, void *osmnt, void *data, unsigned long mflags)
                         /* c_f_s will call lustre_common_umount() on failure */
 
                 }
-#endif /* __sun__ */
         } else {
                 CDEBUG(D_MOUNT, "Mounting server from %s\n", lmd->lmd_dev);
                 rc = lustre_server_mount(lsi, mflags);

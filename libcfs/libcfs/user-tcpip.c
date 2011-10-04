@@ -52,9 +52,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
-#if defined(__sun__) || defined(__sun)
-#include <sys/sockio.h>
-#endif
 #ifndef __CYGWIN__
 #include <sys/syscall.h>
 #endif
@@ -523,14 +520,8 @@ libcfs_sock_set_nagle(cfs_socket_t *sock, int nagle)
         int rc;
         int option = nagle ? 0 : 1;
 
-#if defined(__sun__) || defined(__sun)
-        rc = setsockopt(sock->s_fd,
-                        IPPROTO_TCP, TCP_NODELAY, &option, sizeof(option));
-#else
         rc = setsockopt(sock->s_fd,
                         SOL_TCP, TCP_NODELAY, &option, sizeof(option));
-#endif
-
         if (rc != 0) {
                 rc = -errno;
                 CERROR ("Cannot set NODELAY socket option\n");
