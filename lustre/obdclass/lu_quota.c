@@ -151,6 +151,14 @@ int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
                 /* deprecated, not used any more */
                 RETURN(-ENOTSUPP);
 
+        case Q_QUOTACHECK:
+                /* deprecated, quotacheck is not needed any more
+                 * always return success
+                 * XXX should be equivalent to Q_QUOTAON once enforcement is
+                 * supported */
+                oqctl->qc_stat = 0;
+                RETURN(0);
+
         case Q_QUOTAON:
         case Q_QUOTAOFF:
                 /* TODO should just enable/disable enforcement */
