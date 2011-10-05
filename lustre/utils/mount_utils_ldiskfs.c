@@ -538,7 +538,23 @@ int ldiskfs_make_lustre(struct mkfs_opts *mop)
         size_t maxbuflen;
         long inode_size = 0;
 
-        if (!(mop->mo_flags & MO_IS_LOOP)) {
+        if (mop->mo_flags & MO_IS_LOOP) {
+                ret = loop_create(mop);
+                if (ret) {
+                        fatal();
+                        fprintf(stderr, "Loop device create for %s failed: "
+                                "%s\n", mop->mo_device, strerror(ret));
+                        return ret;
+                }
+
+                ret = loop_setup(mop);
+                if (ret) {
+                        fatal();
+                        fprintf(stderr, "Loop device setup for %s failed: "
+                                "%s\n", mop->mo_device, strerror(ret));
+                        return ret;
+                }
+        } else {
                 mop->mo_device_sz = get_device_size(mop->mo_device);
 
                 if (mop->mo_device_sz == 0)
