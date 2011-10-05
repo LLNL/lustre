@@ -646,7 +646,7 @@ int main(int argc, char *const argv[])
                 /* May as well try to clean up loop devs */
                 if (strncmp(mop.mo_usource, "/dev/loop", 9) == 0) {
                         sprintf(cmd, "/sbin/losetup -d %s", mop.mo_usource);
-                        rc = run_command(cmd, sizeof(cmd));
+                        (void) run_command(cmd, sizeof(cmd));
                 }
         }
 
