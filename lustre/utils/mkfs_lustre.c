@@ -96,7 +96,8 @@ static void usage(FILE *out)
                 "\t\t--mountfsoptions=<opts> : permanent mount options\n"
                 "\t\t--network=<net>[,<...>] : restrict OST/MDT to network(s)\n"
                 "\t\t--backfstype=<fstype> : backing fs type (zfs, ldiskfs)\n"
-                "\t\t--device-size=#N(KB) : device size for loop devices\n"
+                "\t\t--device-size=#N(KB) : loop device or pool/dataset size\n"
+                "\t\t--vdev-size=#N(KB) : size for file based vdevs\n"
                 "\t\t--mkfsoptions=<opts> : format options\n"
                 "\t\t--reformat: overwrite an existing disk\n"
                 "\t\t--stripe-count-hint=#N : for optimizing MDT inode size\n"
@@ -120,6 +121,7 @@ static void set_defaults(struct mkfs_opts *mop)
         mop->mo_ldd.ldd_svindex = 0;
         mop->mo_stripe_count = 1;
         mop->mo_pool_vdevs = NULL;
+        mop->mo_vdev_sz = 0;
 }
 
 static void badopt(const char *opt, char *type)
@@ -137,6 +139,7 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                 {"stripe-count-hint", 1, 0, 'c'},
                 {"comment", 1, 0, 'u'},
                 {"device-size", 1, 0, 'd'},
+                {"vdev-size", 1, 0, 'e'},
                 {"dryrun", 0, 0, 'n'},
                 {"failnode", 1, 0, 'f'},
                 {"failover", 1, 0, 'f'},
@@ -160,7 +163,7 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                 {"network", 1, 0, 't'},
                 {0, 0, 0, 0}
         };
-        char *optstring = "b:c:C:d:f:Ghi:k:L:m:Mno:Op:Pqrs:t:u:v";
+        char *optstring = "b:c:C:d:e:f:Ghi:k:L:m:Mno:Op:Pqrs:t:u:v";
         int opt;
         int rc, longidx;
         int failnode_set = 0, servicenode_set = 0;
@@ -200,6 +203,9 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                         break;
                 case 'd':
                         mop->mo_device_sz = atol(optarg);
+                        break;
+                case 'e':
+                        mop->mo_vdev_sz = atol(optarg);
                         break;
                 case 'f':
                 case 's': {
@@ -464,29 +470,6 @@ int main(int argc, char *const argv[])
                 fprintf(stderr, "filesystem %s is mounted.\n", mop.mo_device);
                 ret = EEXIST;
                 goto out;
-        }
-
-        /* Create the loopback file */
-        if (mop.mo_flags & MO_IS_LOOP) {
-                ret = access(mop.mo_device, F_OK);
-                if (ret)
-                        ret = errno;
-
-                /* Reformat the loopback file */
-                if (ret || (mop.mo_flags & MO_FORCEFORMAT)) {
-                        ret = loop_format(&mop);
-                        if (ret)
-                                goto out;
-                }
-
-                if (ret == 0)
-                        ret = loop_setup(&mop);
-                if (ret) {
-                        fatal();
-                        fprintf(stderr, "Loop device setup for %s failed: %s\n",
-                                mop.mo_device, strerror(ret));
-                        goto out;
-                }
         }
 
         /* Check whether the disk has already been formatted by mkfs.lustre */
