@@ -278,7 +278,7 @@ AC_DEFUN([LB_PATH_LDISKFS],
 	AC_HELP_STRING([--with-ldiskfs=path],
 			[set path to ldiskfs source (default is included ldiskfs)]),
 	[],[
-		if test x$enable_server = xyes ; then
+		if test x$linux25$enable_server = xyesyes ; then
 			with_ldiskfs=yes
 		else
 			with_ldiskfs=no
