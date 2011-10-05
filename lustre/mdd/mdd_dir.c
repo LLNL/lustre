@@ -1269,9 +1269,7 @@ static int mdd_create(const struct lu_env *env,
                 acl_buf->lb_buf = info->mti_xattr_buf;
                 acl_buf->lb_len = got_def_acl;
 
-                rc = __mdd_acl_init(env, son, acl_buf, &attr->la_mode, handle);
-                if (rc == 0)
-                        attr->la_valid |= LA_MODE;
+                __mdd_acl_init(env, son, acl_buf, &attr->la_mode, handle);
         }
 #endif
 

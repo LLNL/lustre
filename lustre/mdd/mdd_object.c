@@ -1307,13 +1307,18 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
                          const struct lu_buf *buf, const char *name,
                          int fl)
 {
-        struct mdd_object *mdd_obj = md2mdd_obj(obj);
-        struct mdd_device *mdd = mdo2mdd(obj);
+        struct mdd_object  *mdd_obj = md2mdd_obj(obj);
+        struct mdd_device  *mdd = mdo2mdd(obj);
         struct mdd_thandle *handle;
         int  rc;
         ENTRY;
 
         mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
+
+        if (!strcmp(name, XATTR_NAME_ACL_ACCESS)) {
+                rc = mdd_acl_set(env, mdd_obj, buf, fl);
+                GOTO(cleanup, rc);
+        }
 
         rc = mdd_xattr_sanity_check(env, mdd_obj);
         if (rc)
@@ -1322,11 +1327,6 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
         handle = mdd_tx_start(env, mdd);
         if (IS_ERR(handle))
                 GOTO(cleanup, rc = PTR_ERR(handle));
-
-        /* security-replated changes may require sync */
-        if (!strcmp(name, XATTR_NAME_ACL_ACCESS) &&
-            mdd->mdd_sync_permission == 1)
-                handle->mtx_handle->th_sync = 1;
 
         __mdd_xattr_set(env, mdd_obj, buf, name, fl, handle);
 

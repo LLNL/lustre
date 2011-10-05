@@ -107,6 +107,59 @@ void mdd_acl_chmod(const struct lu_env *env, struct mdd_object *o, __u32 mode,
         EXIT;
 }
 
+int mdd_acl_set(const struct lu_env *env, struct mdd_object *obj,
+                const struct lu_buf *buf, int fl)
+{
+        struct mdd_device      *mdd = mdd_obj2mdd_dev(obj);
+        struct lu_attr         *la = &mdd_env_info(env)->mti_la;
+        struct mdd_thandle     *handle;
+        posix_acl_xattr_header *head;
+        posix_acl_xattr_entry  *entry;
+        int                     rc, entry_count;
+        mode_t                  mode;
+        ENTRY;
+
+        rc = mdd_la_get(env, obj, la, BYPASS_CAPA);
+        if (rc)
+                RETURN(rc);
+
+        head = (posix_acl_xattr_header *)(buf->lb_buf);
+        entry = head->a_entries;
+        entry_count = (buf->lb_len - sizeof(head->a_version)) /
+                      sizeof(posix_acl_xattr_entry);
+        if (entry_count <= 0)
+                RETURN(0);
+
+        LASSERT(la->la_valid & LA_MODE);
+        mode = la->la_mode;
+        rc = lustre_posix_acl_equiv_mode(entry, &mode, entry_count);
+        if (rc < 0)
+                RETURN(rc);
+
+        handle = mdd_tx_start(env, mdd);
+        if (IS_ERR(handle))
+                RETURN(PTR_ERR(handle));
+
+        /* rc tells whether ACL can be represented by i_mode only */
+        if (rc > 0)
+                __mdd_xattr_set(env, obj, buf, XATTR_NAME_ACL_ACCESS,fl,handle);
+        else
+                mdd_tx_xattr_del(env, obj, XATTR_NAME_ACL_ACCESS, handle);
+
+        if (mode != la->la_mode) {
+                la->la_mode = mode;
+                la->la_valid = LA_MODE;
+                mdd_tx_attr_set(env, obj, la, handle);
+        }
+
+        /* security-replated changes may require sync */
+        handle->mtx_handle->th_sync = mdd->mdd_sync_permission;
+
+        rc = mdd_tx_end(env, handle);
+
+        RETURN(rc);
+}
+
 /*
  * Hold write_lock for obj.
  */
@@ -116,6 +169,7 @@ int __mdd_acl_init(const struct lu_env *env, struct mdd_object *obj,
         posix_acl_xattr_header  *head;
         posix_acl_xattr_entry   *entry;
         int                      entry_count;
+        __u32                    old = *mode;
         int                      rc;
 
         ENTRY;
@@ -131,12 +185,25 @@ int __mdd_acl_init(const struct lu_env *env, struct mdd_object *obj,
                 mdd_tx_xattr_set(env, obj, buf, XATTR_NAME_ACL_DEFAULT, 0, handle);
 
         rc = lustre_posix_acl_create_masq(entry, mode, entry_count);
-        if (rc <= 0) {
+        if (rc < 0) {
                 mdd_tx_set_error(handle, rc);
                 RETURN(rc);
         }
 
-        mdd_tx_xattr_set(env, obj, buf, XATTR_NAME_ACL_ACCESS, 0, handle);
+        /* part of ACL went into i_mode */
+        if (*mode != old) {
+                struct mdd_thread_info  *info = mdd_env_info(env);
+                struct lu_attr          *pattr = &info->mti_pattr;
+
+                /* mode was initialized within object creation,
+                 * so we need explict ->attr_set() to update it */
+                pattr->la_valid = LA_MODE;
+                pattr->la_mode = *mode;
+                mdd_tx_attr_set(env, obj, pattr, handle);
+        }
+
+        if (rc)
+                mdd_tx_xattr_set(env, obj, buf, XATTR_NAME_ACL_ACCESS, 0, handle);
 
         RETURN(rc);
 }
