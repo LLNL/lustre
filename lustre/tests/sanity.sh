@@ -29,6 +29,17 @@ ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 # 225 - md_echo needs fixes
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 160 225"
 
+# ZFS/DMU exceptions:
+# 56r -- dmu-osd doesn't return correct type in direntry
+# 57a -- (bug 22607) can't determine dnode size in ZFS yet
+# 57b -- (bug 14113) don't have large dnodes yet
+# 130 -- (bug 23099) FIEMAP ioctl not supported yet
+# 155 -- we don't control cache via ZFS OSD yet
+# 156 -- we don't control cache via ZFS OSD yet
+if [ "$FSTYPE" = "zfs" ]; then
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 56r 57 130 155 156"
+fi
+
 case `uname -r` in
 2.6*) FSTYPE=${FSTYPE:-ldiskfs} ;;
 *) error "unsupported kernel" ;;
