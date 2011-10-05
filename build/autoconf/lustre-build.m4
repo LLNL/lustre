@@ -323,11 +323,9 @@ case x$with_ldiskfs in
 		LB_CHECK_FILE([$ldiskfs_src/ldiskfs/ldiskfs.h],[
 			LDISKFS_DIR=$(readlink -f $ldiskfs_src)
 		],[
-                        AC_MSG_ERROR([A complete ldiskfs development package was not found.])
-			ldiskfs_src=
+			AC_MSG_ERROR([A complete ldiskfs development package was not found.])
 		])
 		AC_DEFINE(LDISKFS_DEVEL, 1, Build Lustre using ldiskfs development package)
-		AC_MSG_RESULT([$ldiskfs_src])
 		;;
 	*)
 		AC_MSG_RESULT([$with_ldiskfs])

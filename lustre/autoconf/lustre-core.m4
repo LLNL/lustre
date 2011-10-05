@@ -1168,7 +1168,7 @@ AC_DEFUN([LC_EXPORT_INVALIDATE_MAPPING_PAGES],
 # LC_EXT4_DISCARD_PREALLOCATIONS
 #
 AC_DEFUN([LC_EXT4_DISCARD_PREALLOCATIONS],
-[AC_MSG_CHECKING([if ext4_discard_preallocations defined])
+[AC_MSG_CHECKING([if ldiskfs_discard_preallocations defined])
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-I$LINUX/fs -I$LDISKFS_DIR"
 LB_LINUX_TRY_COMPILE([
@@ -1198,7 +1198,7 @@ EXTRA_KCFLAGS="$tmp_flags"
 # LC_EXT_INSERT_EXTENT_WITH_5ARGS
 #
 AC_DEFUN([LC_EXT_INSERT_EXTENT_WITH_5ARGS],
-[AC_MSG_CHECKING([ldiskfs_ext_insert_extent needs 5 arguments])
+[AC_MSG_CHECKING([if ldiskfs_ext_insert_extent needs 5 arguments])
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-I$LINUX/fs -I$LDISKFS_DIR"
 LB_LINUX_TRY_COMPILE([
