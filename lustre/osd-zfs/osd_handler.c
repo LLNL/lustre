@@ -1897,7 +1897,10 @@ static int osd_xattr_set(const struct lu_env *env,
 
         cfs_down(&obj->oo_guard);
         rc = -udmu_xattr_set(&osd->od_objset, obj->oo_db, buf->lb_buf,
-                             buf->lb_len, name, oh->ot_tx);
+                             buf->lb_len, name,
+                             (fl & LU_XATTR_CREATE ? XATTR_CREATE : 0) |
+                             (fl & LU_XATTR_REPLACE ? XATTR_REPLACE : 0),
+                             oh->ot_tx);
         cfs_up(&obj->oo_guard);
 
         RETURN(rc);
