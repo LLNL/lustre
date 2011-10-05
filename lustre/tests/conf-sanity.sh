@@ -32,15 +32,11 @@ fi
 # 29  - ORI-15
 # 32a - ORI-?? (compatibility with 1.8)
 # 32b - ORI-?? (compatibility with 1.8)
-# 33a - ORI-23
 # 38  - ORI-237
 # 49  - obd_mount doesn't parse options in ldd anymore?
 # 50g - LU-491
-# 55  - ORI-23
-# 56  - ORI-23
 # 57  - tunefs.lustre doesn't work anymore?
 # 58  - ORI-246
-#ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 33a 38 49 50g 55 56 57 58"
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 38 49 50g 57 58"
 
 SRCDIR=`dirname $0`

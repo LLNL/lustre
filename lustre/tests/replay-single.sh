@@ -2301,7 +2301,7 @@ test_90() { # bug 19494
         local uuid=$(ostuuid_from_index $i)
         for file in f$i all; do
             if [[ $dir/$file != $($LFS find --obd $uuid --name $file $dir) ]]; then
-                $LFS getstripe $dir/file
+                $LFS getstripe $dir/$file
                 error wrong stripe: $file, uuid: $uuid
             fi
         done
