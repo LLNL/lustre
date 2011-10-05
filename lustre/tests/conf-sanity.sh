@@ -2794,9 +2794,9 @@ run_test 59 "writeconf mount option"
 test_60() { # LU-471
 	add mds1 $MDS_MKFS_OPTS --index 0 --mkfsoptions='\" -E stride=64 -O ^uninit_bg\"' --reformat $(mdsdevname 1)
 
-	dump=$(do_facet $SINGLEMDS dumpe2fs $(mdsdevname 1))
+	dump=$(do_facet $SINGLEMDS $DUMPE2FS $(mdsdevname 1))
 	rc=${PIPESTATUS[0]}
-	[ $rc -eq 0 ] || error "dumpe2fs $(mdsdevname 1) failed"
+	[ $rc -eq 0 ] || error "$DUMPE2FS $(mdsdevname 1) failed"
 
 	# MDT default has dirdata feature
 	echo $dump | grep dirdata > /dev/null || error "dirdata is not set"
