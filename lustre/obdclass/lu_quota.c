@@ -146,20 +146,19 @@ int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
         ENTRY;
 
         switch (oqctl->qc_cmd) {
+        case Q_QUOTACHECK:
+                /* deprecated since quotacheck is not needed any more */
         case LUSTRE_Q_INVALIDATE:
         case LUSTRE_Q_FINVALIDATE:
                 /* deprecated, not used any more */
-                RETURN(-ENOTSUPP);
-
-        case Q_QUOTACHECK:
-                /* deprecated, quotacheck is not needed any more
-                 * always return success
-                 * XXX should be equivalent to Q_QUOTAON once enforcement is
-                 * supported */
-                oqctl->qc_stat = 0;
-                RETURN(0);
+                RETURN(-EOPNOTSUPP);
+                break;
 
         case Q_QUOTAON:
+                if (!lu_quota->acct_user_obj || !lu_quota->acct_group_obj)
+                        /* space tracking is not enabled, so enforcement cannot
+                         * be turned on */
+                        RETURN(-EINVAL);
         case Q_QUOTAOFF:
                 /* TODO should just enable/disable enforcement */
         case Q_GETINFO:
@@ -172,10 +171,9 @@ int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
                 /* TODO handle new quota limit set by admin */
         case Q_INITQUOTA:
                 /* TODO init slave limit */
-
                 CERROR("quotactl operation %d not implemented yet\n",
                        oqctl->qc_cmd);
-                RETURN(-ENOTSUPP);
+                RETURN(-ENOSYS);
                 break;
 
         case Q_GETQUOTA:
@@ -198,7 +196,7 @@ int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
                         RETURN(-EINVAL);
 
                 if (!obj || !obj->do_index_ops)
-                        RETURN(-ENOTSUPP);
+                        RETURN(-EINVAL);
 
                 /* qc_id is a 32-bit field while a key has 64 bits */
                 key = oqctl->qc_id;
