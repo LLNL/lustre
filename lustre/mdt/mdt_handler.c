@@ -1922,6 +1922,10 @@ static int mdt_quotacheck(struct mdt_thread_info *info)
         if (unlikely(exp_connect_rmtclient(info->mti_exp)))
                 RETURN(-EPERM);
 
+        /* workaround for old clients which don't set cmd to Q_QUOTACHECK */
+        if (oqctl->qc_cmd != Q_QUOTACHECK)
+                oqctl->qc_cmd = Q_QUOTACHECK;
+
         rc = lu_quotactl(info->mti_env, &info->mti_mdt->mdt_lu_quota,
                          oqctl);
         RETURN(rc);

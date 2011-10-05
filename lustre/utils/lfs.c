@@ -1417,8 +1417,15 @@ static int lfs_quotacheck(int argc, char **argv)
         mnt = argv[optind];
 
         rc = llapi_quotacheck(mnt, check_type);
-        if (rc) {
-                fprintf(stderr, "quotacheck failed: %s\n", strerror(-rc));
+        if (rc == -EOPNOTSUPP) {
+                fprintf(stderr, "warning: skipping online quotacheck which is "
+                        "not supported, trying to enable quota enforcement "
+                        "directly\n");
+                rc = 0;
+                goto quotaon;
+        } else if (rc) {
+                fprintf(stderr, "error: quotacheck failed with %s\n",
+                        strerror(-rc));
                 return rc;
         }
 
@@ -1430,16 +1437,25 @@ static int lfs_quotacheck(int argc, char **argv)
                 fprintf(stderr, "quota check failed: %s\n", strerror(-rc));
                 return rc;
         }
-
+quotaon:
         memset(&qctl, 0, sizeof(qctl));
         qctl.qc_cmd = LUSTRE_Q_QUOTAON;
         qctl.qc_type = check_type;
         rc = llapi_quotactl(mnt, &qctl);
-        if (rc && rc != -EALREADY) {
+        if (rc == -EINVAL) {
+                fprintf(stderr, "error: failed to turn quota enforcement on. "
+                        "Please check that all targets have usage tracking "
+                        "enabled.\n");
+                return rc;
+        } else if (rc == -ENOSYS) {
+                fprintf(stderr, "error: failed to turn quota enforcement on. "
+                        "Quota enforcement is not implemented yet\n");
+                return rc;
+        } else if (rc && rc != -EALREADY) {
                 if (*obd_type)
                         fprintf(stderr, "%s %s ", (char *)qctl.obd_type,
                                 obd_uuid2str(&qctl.obd_uuid));
-                fprintf(stderr, "%s turn on quota failed: %s\n",
+                fprintf(stderr, "%s turn on quota enforcement failed: %s\n",
                         argv[0], strerror(-rc));
                 return rc;
         }
@@ -1494,7 +1510,14 @@ static int lfs_quotaon(int argc, char **argv)
                 } else if (rc == -ENOENT) {
                         fprintf(stderr, "error: cannot find quota database, "
                                         "make sure you have run quotacheck\n");
-                } else {
+                } else if (rc == -EINVAL) {
+                        fprintf(stderr, "error: failed to turn quota "
+                                "enforcement on. Please check that all targets "
+                                "have usage tracking enabled.\n");
+                } else if (rc == -ENOSYS) {
+                        fprintf(stderr, "error: quota enforcement not supported "
+                                "yet\n");
+                } else if (rc) {
                         if (*obd_type)
                                 fprintf(stderr, "%s %s ", obd_type,
                                         obd_uuid2str(&qctl.obd_uuid));
@@ -2278,6 +2301,7 @@ ug_output:
         if (rc1 || rc2 || rc3 || inacc)
                 printf("Some errors happened when getting quota info. "
                        "Some devices may be not working or deactivated. "
+                       "Please check that space accounting is enabled on all targets. "
                        "The data in \"[]\" is inaccurate.\n");
 
 out:

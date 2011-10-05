@@ -3128,7 +3128,8 @@ int lmv_quotactl(struct obd_device *unused, struct obd_export *exp,
 
                 err = obd_quotactl(tgt->ltd_exp, oqctl);
                 if (err) {
-                        CERROR("getquota on mdt %d failed. %d\n", i, err);
+                        CDEBUG(D_QUOTA, "getquota on mdt %d failed. %d\n", i,
+                               err);
                         if (!rc)
                                 rc = err;
                 } else {
