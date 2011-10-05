@@ -492,6 +492,25 @@ int file_create(char *path, int size)
 	return 0;
 }
 
+/* Create a file for us with a loop_device */
+int loop_create(struct mkfs_opts *mop)
+{
+        int ret;
+
+        if (mop->mo_flags & MO_FORCEFORMAT)
+                return file_create(mop->mo_device, mop->mo_device_sz);
+
+        ret = access(mop->mo_device, F_OK);
+        if (ret == -1) {
+                if (errno == ENOENT)
+                        return file_create(mop->mo_device, mop->mo_device_sz);
+                else
+                        return errno;
+        }
+
+        return ret;
+}
+
 /* Setup a file in the first unused loop_device */
 int loop_setup(struct mkfs_opts *mop)
 {
@@ -554,37 +573,6 @@ int loop_cleanup(struct mkfs_opts *mop)
 		ret = run_command(cmd, sizeof(cmd));
 	}
 	return ret;
-}
-
-int loop_format(struct mkfs_opts *mop)
-{
-	int fd;
-
-	if (mop->mo_device_sz == 0) {
-		fatal();
-		fprintf(stderr, "loop device requires a --device-size= "
-			"param\n");
-		return EINVAL;
-	}
-
-	fd = creat(mop->mo_device, S_IRUSR|S_IWUSR);
-	if (fd < 0) {
-		fatal();
-		fprintf(stderr, "%s: Unable to create backing store: %s\n",
-			progname, strerror(errno));
-		return errno;
-	}
-
-	if (ftruncate(fd, mop->mo_device_sz * 1024) != 0) {
-		close(fd);
-		fatal();
-		fprintf(stderr, "%s: Unable to truncate backing store: %s\n",
-			progname, strerror(errno));
-		return errno;
-	}
-
-	close(fd);
-	return 0;
 }
 
 void osd_print_ldd(char *str, struct lustre_disk_data *ldd)

@@ -122,10 +122,12 @@ struct mount_opts {
 char *convert_hostnames(char *s1);
 
 /* loopback helper functions */
+int is_block(char *devname);
 __u64 get_device_size(char *device);
+int file_create(char *path, int size);
+int loop_create(struct mkfs_opts *mop);
 int loop_setup(struct mkfs_opts *mop);
 int loop_cleanup(struct mkfs_opts *mop);
-int loop_format(struct mkfs_opts *mop);
 
 /* mkfs/mount helper functions */
 void fatal(void);
@@ -140,12 +142,6 @@ int update_mtab_entry(char *spec, char *mtpt, char *type, char *opts,
 		      int flags, int freq, int pass);
 int check_mountfsoptions(char *mountopts, char *wanted_mountopts, int justwarn);
 void trim_mountfsoptions(char *s);
-
-/* loopback helper functions */
-int file_create(char *path, int size);
-int loop_format(struct mkfs_opts *mop);
-int loop_setup(struct mkfs_opts *mop);
-int loop_cleanup(struct mkfs_opts *mop);
 
 /* generic target support */
 void osd_print_ldd(char *str, struct lustre_disk_data *ldd);

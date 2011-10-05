@@ -471,6 +471,58 @@ static int zfs_create_vdev(struct mkfs_opts *mop, char *vdev)
 	return ret;
 }
 
+static int zfs_create_vdev(struct mkfs_opts *mop, char *vdev)
+{
+        int ret = 0;
+
+        /* Silently ignore reserved vdev names */
+        if ((strncmp(vdev, "disk", 4) == 0) ||
+            (strncmp(vdev, "file", 4) == 0) ||
+            (strncmp(vdev, "mirror", 6) == 0) ||
+            (strncmp(vdev, "raidz", 5) == 0) ||
+            (strncmp(vdev, "spare", 5) == 0) ||
+            (strncmp(vdev, "log", 3) == 0) ||
+            (strncmp(vdev, "cache", 5) == 0))
+                return ret;
+
+        /*
+         * Verify a file exists at the provided absolute path.  If it doesn't
+         * and mo_vdev_sz is set attempt to create a file vdev to be used.
+         * Relative paths will be passed directly to 'zpool create' which
+         * will check multiple multiple locations under /dev/.
+         */
+        if (vdev[0] == '/') {
+                ret = access(vdev, F_OK);
+                if (ret == 0)
+                        return ret;
+
+                ret = errno;
+                if (ret != ENOENT) {
+                        fatal();
+                        fprintf(stderr, "Unable to access required vdev "
+                                "for pool %s (%d)\n", vdev, ret);
+                        return ret;
+                }
+
+                if (mop->mo_vdev_sz == 0) {
+                        fatal();
+                        fprintf(stderr, "Unable to create vdev due to "
+                                "missing --vdev-size=#N(KB) parameter\n");
+                        return EINVAL;
+                }
+
+                ret = file_create(vdev, mop->mo_vdev_sz);
+                if (ret) {
+                        fatal();
+                        fprintf(stderr, "Unable to create vdev %s (%d)\n",
+                                vdev, ret);
+                        return ret;
+                }
+        }
+
+        return ret;
+}
+
 int zfs_make_lustre(struct mkfs_opts *mop)
 {
 	zfs_handle_t *zhp;
