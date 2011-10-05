@@ -899,12 +899,16 @@ test_24a() {
 
 	local fs2mdsdev=${fs2mds_DEV:-${MDSDEV}_2}
 	local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1)_2}
+	local fs2mdsmkfs=$(mkfs_opts mds)
 
-	# test 8-char fsname as well
+	# test 8-char fsname as well, and strip the --mgs option because
+	# multiple mgs servers per host are not supported.
 	local FSNAME2=test1234
-	add fs2mds $MDS_MKFS_OPTS --fsname=${FSNAME2} --mgsnode=$MGSNID --reformat --index=0 $fs2mdsdev || exit 10
+	add fs2mds ${fs2mdsmkfs/--mgs/} --fsname=${FSNAME2} --mgsnode=$MGSNID \
+		--reformat --index=0 $fs2mdsdev || exit 10
 
-	add fs2ost $OST_MKFS_OPTS --fsname=${FSNAME2} --reformat --index=0 $fs2ostdev || exit 10
+	add fs2ost $(mkfs_opts ost) --fsname=${FSNAME2} --mgsnode=$MGSNID \
+		--reformat --index=0 $fs2ostdev || exit 10
 
 	setup
 	start fs2mds $fs2mdsdev $MDS_MOUNT_OPTS && trap cleanup_24a EXIT INT
