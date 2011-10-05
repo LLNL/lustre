@@ -89,6 +89,7 @@ struct mkfs_opts {
         char  mo_loopdev[128];          /* in case a loop dev is needed */
         char  mo_mkfsopts[512];         /* options to the backing-store mkfs */
         __u64 mo_device_sz;             /* in KB */
+        __u64 mo_vdev_sz;               /* in KB */
         int   mo_stripe_count;
         int   mo_flags;
         int   mo_mgs_failnodes;
@@ -137,9 +138,10 @@ void trim_mountfsoptions(char *s);
 /* loopback helper functions */
 int is_block(char *devname);
 __u64 get_device_size(char *device);
+int file_create(char *path, int size);
+int loop_create(struct mkfs_opts *mop);
 int loop_setup(struct mkfs_opts *mop);
 int loop_cleanup(struct mkfs_opts *mop);
-int loop_format(struct mkfs_opts *mop);
 
 /* generic target support */
 void osd_print_ldd(char *str, struct lustre_disk_data *ldd);

@@ -327,6 +327,58 @@ static char *zfs_mkfs_opts(struct mkfs_opts *mop, char *str, int len)
         return str;
 }
 
+static int zfs_create_vdev(struct mkfs_opts *mop, char *vdev)
+{
+        int ret = 0;
+
+        /* Silently ignore reserved vdev names */
+        if ((strncmp(vdev, "disk", 4) == 0) ||
+            (strncmp(vdev, "file", 4) == 0) ||
+            (strncmp(vdev, "mirror", 6) == 0) ||
+            (strncmp(vdev, "raidz", 5) == 0) ||
+            (strncmp(vdev, "spare", 5) == 0) ||
+            (strncmp(vdev, "log", 3) == 0) ||
+            (strncmp(vdev, "cache", 5) == 0))
+                return ret;
+
+        /*
+         * Verify a file exists at the provided absolute path.  If it doesn't
+         * and mo_vdev_sz is set attempt to create a file vdev to be used.
+         * Relative paths will be passed directly to 'zpool create' which
+         * will check multiple multiple locations under /dev/.
+         */
+        if (vdev[0] == '/') {
+                ret = access(vdev, F_OK);
+                if (ret == 0)
+                        return ret;
+
+                ret = errno;
+                if (ret != ENOENT) {
+                        fatal();
+                        fprintf(stderr, "Unable to access required vdev "
+                                "for pool %s (%d)\n", vdev, ret);
+                        return ret;
+                }
+
+                if (mop->mo_vdev_sz == 0) {
+                        fatal();
+                        fprintf(stderr, "Unable to create vdev due to "
+                                "missing --vdev-size=#N(KB) parameter\n");
+                        return EINVAL;
+                }
+
+                ret = file_create(vdev, mop->mo_vdev_sz);
+                if (ret) {
+                        fatal();
+                        fprintf(stderr, "Unable to create vdev %s (%d)\n",
+                                vdev, ret);
+                        return ret;
+                }
+        }
+
+        return ret;
+}
+
 int zfs_make_lustre(struct mkfs_opts *mop)
 {
         zfs_handle_t *zhp;
@@ -356,16 +408,9 @@ int zfs_make_lustre(struct mkfs_opts *mop)
         /* Due to zfs_name_valid() check the '/' must exist */
         strchr(pool, '/')[0] = '\0';
 
-        /* If --reformat was given, destroy previous ZFS dataset */
-        if (mop->mo_flags & MO_FORCEFORMAT) {
-
-                zhp = zfs_open(g_zfs, ds, ZFS_TYPE_FILESYSTEM);
-                if (zhp == NULL) {
-                        fprintf(stderr, "Failed to open zfs dataset %s "
-                                "check to make sure it exists.\n", ds);
-                        ret = EINVAL;
-                        goto out;
-                }
+        /* If --reformat was given attempt to destroy the previous dataset */
+        if ((mop->mo_flags & MO_FORCEFORMAT) &&
+            ((zhp = zfs_open(g_zfs, ds, ZFS_TYPE_FILESYSTEM)) != NULL)) {
 
                 ret = zfs_destroy(zhp, 0);
                 if (ret) {
@@ -396,9 +441,15 @@ int zfs_make_lustre(struct mkfs_opts *mop)
                 snprintf(mkfs_cmd, PATH_MAX,
                          "zpool create -f -O canmount=off %s", pool);
 
+                /* Append the vdev config and create file vdevs as required */
                 while (*mop->mo_pool_vdevs != NULL) {
                         strscat(mkfs_cmd, " ", PATH_MAX);
                         strscat(mkfs_cmd, *mop->mo_pool_vdevs, PATH_MAX);
+
+                        ret = zfs_create_vdev(mop, *mop->mo_pool_vdevs);
+                        if (ret)
+                                goto out;
+
                         mop->mo_pool_vdevs++;
                 }
 

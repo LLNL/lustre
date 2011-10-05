@@ -125,6 +125,23 @@ init_test_env() {
     export LFSCK_ALWAYS=${LFSCK_ALWAYS:-"no"} # check fs after each test suite
     export FSCK_MAX_ERR=4   # File system errors left uncorrected
 
+    export ZFS_SRC=${ZFS_SRC:-$LUSTRE/zfs}
+
+    export ZFS=${ZFS:-zfs}
+    if ! which "$ZFS" > /dev/null 2>&1; then
+        export ZFS=$ZFS_SRC/cmd/zfs/zfs
+    fi
+
+    export ZPOOL=${ZPOOL:-zpool}
+    if ! which "$ZPOOL" > /dev/null 2>&1; then
+        export ZPOOL=$ZFS_SRC/cmd/zpool/zpool
+    fi
+
+    export ZDB=${ZDB:-zdb}
+    if ! which "$ZDB" > /dev/null 2>&1; then
+        export ZDB=$ZFS_SRC/cmd/zdb/zdb
+    fi
+
     # This is used by a small number of tests to share state between the client
     # running the tests, or in some cases between the servers (e.g. lfsck.sh).
     # It needs to be a non-lustre filesystem that is available on all the nodes.
@@ -369,17 +386,20 @@ load_modules_local() {
         grep -q crc16 /proc/kallsyms || { modprobe crc16 2>/dev/null || true; }
         grep -q -w jbd /proc/kallsyms || { modprobe jbd 2>/dev/null || true; }
         grep -q -w jbd2 /proc/kallsyms || { modprobe jbd2 2>/dev/null || true; }
-        [ "$FSTYPE" = "ldiskfs" ] && load_module ../ldiskfs/ldiskfs/ldiskfs
         load_module mgs/mgs
         load_module mdd/mdd
         load_module mdt/mdt
-        load_module lvfs/fsfilt_$FSTYPE
         load_module cmm/cmm
-        load_module osd-ldiskfs/osd_ldiskfs
         load_module ost/ost
         load_module ofd/obdfilter
         load_module lod/lod
         load_module osp/osp
+        [ "$FSTYPE" = "ldiskfs" ] && load_module ../ldiskfs/ldiskfs/ldiskfs
+        [ "$FSTYPE" = "ldiskfs" ] && load_module lvfs/fsfilt_$FSTYPE
+        [ "$FSTYPE" = "ldiskfs" ] && load_module osd-ldiskfs/osd_ldiskfs
+        [ "$FSTYPE" = "zfs" ] && load_module ../spl/module/spl/spl
+        [ "$FSTYPE" = "zfs" ] && load_module ../zfs/module/zfs/zfs
+        [ "$FSTYPE" = "zfs" ] && load_module osd-zfs/osd_zfs
     fi
 
 
@@ -578,7 +598,11 @@ devicelabel() {
     local fstype=$(facet_fstype $facet)
 
     case $fstype in
-        ldiskfs ) label=$(do_facet ${facet} "$E2LABEL ${dev} 2>/dev/null");;
+        ldiskfs )
+             label=$(do_facet ${facet} "$E2LABEL ${dev} 2>/dev/null");;
+        zfs )
+             label=$(do_facet ${facet} \
+             "$ZFS get -H -o value lustre:svname ${dev} 2>/dev/null");;
         * ) error "unknown fstype!";;
     esac
 
@@ -1876,17 +1900,119 @@ add() {
 ostdevname() {
     num=$1
     DEVNAME=OSTDEV$num
-    #if $OSTDEVn isn't defined, default is $OSTDEVBASE + num
-    eval DEVPTR=${!DEVNAME:=${OSTDEVBASE}${num}}
+
+    local fstype=$(facet_fstype $facet)
+
+    case $fstype in
+        ldiskfs )
+            #if $OSTDEVn isn't defined, default is $OSTDEVBASE + num
+            eval DEVPTR=${!DEVNAME:=${OSTDEVBASE}${num}};;
+        zfs )
+            #dataset name is independent of vdev device names
+            eval DEVPTR=${FSNAME}-ost${num}/ost${num};;
+        * )
+            error "unknown fstype!";;
+    esac
+
     echo -n $DEVPTR
+}
+
+ostvdevname() {
+    num=$1
+    DEVNAME=OSTDEV$num
+
+    local fstype=$(facet_fstype $facet)
+
+    case $fstype in
+        ldiskfs )
+            # vdevs are not supported by ldiskfs
+            eval VDEVPTR="";;
+        zfs )
+            #if $OSTDEVn isn't defined, default is $OSTDEVBASE + num
+            eval VDEVPTR=${!DEVNAME:=${OSTDEVBASE}${num}};;
+        * )
+            error "unknown fstype!";;
+    esac
+
+    echo -n $VDEVPTR
 }
 
 mdsdevname() {
     num=$1
     DEVNAME=MDSDEV$num
-    #if $MDSDEVn isn't defined, default is $MDSDEVBASE + num
-    eval DEVPTR=${!DEVNAME:=${MDSDEVBASE}${num}}
+
+    local fstype=$(facet_fstype $facet)
+
+    case $fstype in
+        ldiskfs )
+            #if $MDSDEVn isn't defined, default is $MDSDEVBASE + num
+            eval DEVPTR=${!DEVNAME:=${MDSDEVBASE}${num}};;
+        zfs )
+            #dataset name is independent of vdev device names
+            eval DEVPTR=${FSNAME}-mdt${num}/mdt${num};;
+        * )
+            error "unknown fstype!";;
+    esac
+
     echo -n $DEVPTR
+}
+
+mdsvdevname() {
+    num=$1
+    DEVNAME=MDSDEV$num
+
+    local fstype=$(facet_fstype $facet)
+
+    case $fstype in
+        ldiskfs )
+            # vdevs are not supported by ldiskfs
+            eval VDEVPTR="";;
+        zfs )
+            #if $MDSDEVn isn't defined, default is $MDSDEVBASE + num
+            eval VDEVPTR=${!DEVNAME:=${MDSDEVBASE}${num}};;
+        * )
+            error "unknown fstype!";;
+    esac
+
+    echo -n $VDEVPTR
+}
+
+mgsdevname() {
+    DEVNAME=MGSDEV
+
+    local fstype=$(facet_fstype $facet)
+
+    case $fstype in
+        ldiskfs )
+            #if $MGSDEV isn't defined, default is $MDSDEV1
+            eval DEVPTR=${!DEVNAME:=${MDSDEV1}};;
+        zfs )
+            #dataset name is independent of vdev device names
+            eval DEVPTR=${FSNAME}-mgs/mgs;;
+        * )
+            error "unknown fstype!";;
+    esac
+
+    echo -n $DEVPTR
+}
+
+mgsvdevname() {
+    DEVNAME=MGSDEV
+
+    local fstype=$(facet_fstype $facet)
+
+    case $fstype in
+        ldiskfs )
+            # vdevs are not supported by ldiskfs
+            eval VDEVPTR="";;
+        zfs )
+            #if $MGSDEV isn't defined, default is $MGSDEV1
+            eval VDEVPTR=${!DEVNAME:=${MDSDEV1}};;
+        * )
+            error "unknown fstype!";;
+    esac
+
+    echo -n $VDEVPTR
 }
 
 facet_mntpt () {
@@ -2013,7 +2139,9 @@ formatall() {
         MDS_MKFS_OPTS="$MDS_MKFS_OPTS --iam-dir"
     fi
 
-    [ "$FSTYPE" ] && FSTYPE_OPT="--backfstype $FSTYPE"
+    [ "$MGSFSTYPE" ] && MGSFSTYPE_OPT="--backfstype $MGSFSTYPE"
+    [ "$MDSFSTYPE" ] && MDSFSTYPE_OPT="--backfstype $MDSFSTYPE"
+    [ "$OSTFSTYPE" ] && OSTFSTYPE_OPT="--backfstype $OSTFSTYPE"
 
     stopall
     # We need ldiskfs here, may as well load them all
@@ -2021,16 +2149,26 @@ formatall() {
     [ "$CLIENTONLY" ] && return
     echo Formatting mgs, mds, osts
     if ! combined_mgs_mds ; then
-        add mgs $(mkfs_opts mgs) $FSTYPE_OPT --reformat $MGSDEV || exit 10
+        echo "Format mgs: $(mgsdevname)"
+        if $VERBOSE; then
+            add mgs $(mkfs_opts mgs) $MGSFSTYPE_OPT --reformat \
+                $(mgsdevname) $(mgsvdevname) || exit 10
+        else
+            add mgs $(mkfs_opts mgs) $MGSFSTYPE_OPT --reformat \
+                $(mgsdevname) $(mgsvdevname) > /dev/null || exit 10
+        fi
     fi
 
     for num in `seq $MDSCOUNT`; do
         echo "Format mds$num: $(mdsdevname $num)"
         index=$((num-1))
         if $VERBOSE; then
-            add mds$num $(mkfs_opts mds) $MDSFSTYPE_OPT --index $index --reformat $(mdsdevname $num) || exit 10
+            add mds$num $(mkfs_opts mds) $MDSFSTYPE_OPT --index $index \
+                --reformat $(mdsdevname $num) $(mdsvdevname $num) || exit 10
         else
-            add mds$num $(mkfs_opts mds) $MDSFSTYPE_OPT --index $index --reformat $(mdsdevname $num) > /dev/null || exit 10
+            add mds$num $(mkfs_opts mds) $MDSFSTYPE_OPT --index $index \
+                --reformat $(mdsdevname $num) $(mdsvdevname $num) \
+                > /dev/null || exit 10
         fi
     done
 
@@ -2040,9 +2178,12 @@ formatall() {
         echo "Format ost$num: $(ostdevname $num)"
         index=$((num-1))
         if $VERBOSE; then
-            add ost$num $(mkfs_opts ost${num}) $OSTFSTYPE_OPT --index $index --reformat `ostdevname $num` || exit 10
+            add ost$num $(mkfs_opts ost${num}) $OSTFSTYPE_OPT --index $index \
+                --reformat $(ostdevname $num) $(ostvdevname ${num}) || exit 10
         else
-            add ost$num $(mkfs_opts ost${num}) $OSTFSTYPE_OPT --index $index --reformat `ostdevname $num` > /dev/null || exit 10
+            add ost$num $(mkfs_opts ost${num}) $OSTFSTYPE_OPT --index $index \
+                --reformat $(ostdevname $num) $(ostvdevname ${num}) \
+                > /dev/null || exit 10
         fi
     done
 }
@@ -2103,7 +2244,7 @@ setupall() {
     if [ -z "$CLIENTONLY" ]; then
         echo Setup mgs, mdt, osts
         if ! combined_mgs_mds ; then
-            start mgs $MGSDEV $MGS_MOUNT_OPTS
+            start mgs $(mgsdevname) $MGS_MOUNT_OPTS
         fi
 
         for num in `seq $MDSCOUNT`; do
@@ -2228,7 +2369,7 @@ init_facets_vars () {
         done
     fi
 
-    combined_mgs_mds || init_facet_vars mgs $MGSDEV $MGS_MOUNT_OPTS
+    combined_mgs_mds || init_facet_vars mgs $(mgsdevname) $MGS_MOUNT_OPTS
 
     remote_ost_nodsh && return
 

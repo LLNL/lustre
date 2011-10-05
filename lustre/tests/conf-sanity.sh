@@ -602,6 +602,9 @@ is_blkdev () {
 #
 
 test_17() {
+        # ORI-160, skip until DEBUGFS can be replaced by ZDB
+        [ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
         setup
         check_mount || return 41
         cleanup || return $?
@@ -897,18 +900,22 @@ test_24a() {
 
 	[ -n "$ost1_HOST" ] && fs2ost_HOST=$ost1_HOST
 
-	local fs2mdsdev=${fs2mds_DEV:-${MDSDEV}_2}
-	local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1)_2}
+	local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
+	local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1_2)}
+	local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
+	local fs2ostvdev=${fs2ost_VDEV:-$(ostvdevname 1_2)}
 	local fs2mdsmkfs=$(mkfs_opts mds)
 
 	# test 8-char fsname as well, and strip the --mgs option because
 	# multiple mgs servers per host are not supported.
 	local FSNAME2=test1234
-	add fs2mds ${fs2mdsmkfs/--mgs/} --fsname=${FSNAME2} --mgsnode=$MGSNID \
-		--reformat --index=0 $fs2mdsdev || exit 10
+	add fs2mds ${fs2mdsmkfs/--mgs/} --backfstype $MDSFSTYPE \
+		--fsname=${FSNAME2} --mgsnode=$MGSNID --reformat --index=0 \
+		$fs2mdsdev $fs2mdsvdev || exit 10
 
-	add fs2ost $(mkfs_opts ost) --fsname=${FSNAME2} --mgsnode=$MGSNID \
-		--reformat --index=0 $fs2ostdev || exit 10
+	add fs2ost $(mkfs_opts ost) --backfstype $OSTFSTYPE \
+		--fsname=${FSNAME2} --mgsnode=$MGSNID --reformat --index=0 \
+		$fs2ostdev $fs2ostvdev || exit 10
 
 	setup
 	start fs2mds $fs2mdsdev $MDS_MOUNT_OPTS && trap cleanup_24a EXIT INT
@@ -951,9 +958,11 @@ test_24b() {
 		skip_env "mixed loopback and real device not working" && return
 	fi
 
-	local fs2mdsdev=${fs2mds_DEV:-${MDSDEV}_2}
+	local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
+	local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
 
-	add fs2mds $MDS_MKFS_OPTS --fsname=${FSNAME}2 --mgs --index=0 --reformat $fs2mdsdev || exit 10
+	add fs2mds $(mkfs_opts mds) --backfstype $MDSFSTYPE --fsname=${FSNAME}2 \
+		--mgs --index=0 --reformat $fs2mdsdev $fs2mdsvdev || exit 10
 	setup
 	start fs2mds $fs2mdsdev $MDS_MOUNT_OPTS && return 2
 	cleanup || return 6
@@ -1385,12 +1394,20 @@ test_33a() { # bug 12333, was test_33
                 skip_env "mixed loopback and real device not working" && return
         fi
 
-        combined_mgs_mds || mkfs_opts="$mkfs_opts --nomgs"
+        local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
+        local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1_2)}
+        local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
+        local fs2ostvdev=${fs2ost_VDEV:-$(ostvdevname 1_2)}
+        local fs2mdsmkfs=$(mkfs_opts mds)
 
-        local fs2mdsdev=${fs2mds_DEV:-${MDSDEV}_2}
-        local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1)_2}
-        add fs2mds $MDS_MKFS_OPTS --mkfsoptions='\"-J size=8\"' --fsname=${FSNAME2} --reformat --index=0 $fs2mdsdev || exit 10
-        add fs2ost $OST_MKFS_OPTS --fsname=${FSNAME2} --index=8191 --mgsnode=$MGSNID --reformat $fs2ostdev || exit 10
+        combined_mgs_mds || fs2mdsmkfs=${fs2mdsmkfs/--mgs/}
+
+        add fs2mds ${fs2mdsmkfs} --mkfsoptions='\"-J size=8\"' \
+			 --backfstype $MDSFSTYPE --fsname=${FSNAME2} --reformat \
+			 --index=0 $fs2mdsdev $fs2mdsvdev || exit 10
+        add fs2ost $(mkfs_opts ost) --fsname=${FSNAME2} \
+			 --backfstype $OSTFSTYPE --index=8191 --mgsnode=$MGSNID \
+			 --reformat $fs2ostdev $fs2ostvdev || exit 10
 
         start fs2mds $fs2mdsdev $MDS_MOUNT_OPTS && trap cleanup_24a EXIT INT
         start fs2ost $fs2ostdev $OST_MOUNT_OPTS
@@ -1625,14 +1642,24 @@ test_36() { # 12743
 		skip_env "mixed loopback and real device not working" && return
         fi
 
-        local fs2mdsdev=${fs2mds_DEV:-${MDSDEV}_2}
-        local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1)_2}
-        local fs3ostdev=${fs3ost_DEV:-$(ostdevname 2)_2}
-        add fs2mds $MDS_MKFS_OPTS --fsname=${FSNAME2} --reformat --index=0 $fs2mdsdev || exit 10
-        # XXX after we support non 4K disk blocksize, change following --mkfsoptions with
-        # other argument
-        add fs2ost $OST_MKFS_OPTS --mkfsoptions='-b4096' --fsname=${FSNAME2} --mgsnode=$MGSNID --reformat --index=0 $fs2ostdev || exit 10
-        add fs3ost $OST_MKFS_OPTS --mkfsoptions='-b4096' --fsname=${FSNAME2} --mgsnode=$MGSNID --reformat --index=1 $fs3ostdev || exit 10
+        local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
+        local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1_2)}
+        local fs3ostdev=${fs3ost_DEV:-$(ostdevname 2_2)}
+        local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
+        local fs2ostvdev=${fs2ost_VDEV:-$(ostvdevname 1_2)}
+        local fs3ostvdev=${fs3ost_VDEV:-$(ostvdevname 2_2)}
+
+        add fs2mds $(mkfs_opts mds)  --backfstype $MDSFSTYPE \
+			--fsname=${FSNAME2} --reformat --index=0 \
+			$fs2mdsdev $fs2mdsvdev || exit 10
+        # XXX after we support non 4K disk blocksize, change following
+		# --mkfsoptions with # other argument
+        add fs2ost $(mkfs_opts ost) --mkfsoptions='-b4096' \
+			--backfstype $OSTFSTYPE --fsname=${FSNAME2} --mgsnode=$MGSNID \
+			--reformat --index=0 $fs2ostdev $fs2ostvdev || exit 10
+        add fs3ost $(mkfs_opts ost) --mkfsoptions='-b4096' \
+			 --backfstype $OSTFSTYPE --fsname=${FSNAME2} --mgsnode=$MGSNID \
+			 --reformat --index=1 $fs3ostdev $fs3ostvdev || exit 10
 
         start fs2mds $fs2mdsdev $MDS_MOUNT_OPTS
         start fs2ost $fs2ostdev $OST_MOUNT_OPTS
@@ -1682,6 +1709,8 @@ test_36() { # 12743
 run_test 36 "df report consistency on OSTs with different block size"
 
 test_37() {
+	[ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
 	local mntpt=$(facet_mntpt $SINGLEMDS)
 	local mdsdev=$(mdsdevname ${SINGLEMDS//mds/})
 	local mdsdev_sym="$TMP/sym_mdt.img"
@@ -1713,6 +1742,9 @@ test_37() {
 run_test 37 "verify set tunables works for symlink device"
 
 test_38() { # bug 14222
+	# ORI-160, skip until DEBUGFS can be replaced by ZDB
+	[ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
 	setup
 	# like runtests
 	COUNT=10
@@ -2458,6 +2490,8 @@ diff_files_xattrs()
 }
 
 test_52() {
+	[ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
 	start_mds
 	[ $? -eq 0 ] || { error "Unable to start MDS"; return 1; }
 	start_ost
@@ -2642,6 +2676,8 @@ test_53b() {
 run_test 53b "check MDT thread count params"
 
 test_54a() {
+	[ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
     do_rpc_nodes $(facet_host ost1) run_llverdev $(ostdevname 1) -p
     [ $? -eq 0 ] || error "llverdev failed!"
     reformat_and_config
@@ -2663,12 +2699,18 @@ lov_objid_size()
 }
 
 test_55() {
+	# ORI-160, skip until DEBUGFS can be replaced by ZDB
+	[ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
 	local mdsdev=$(mdsdevname 1)
+	local mdsvdev=$(mdsvdevname 1)
 
 	for i in 1023 2048
 	do
-		add mds1 $MDS_MKFS_OPTS --index 0 --reformat $mdsdev
-		add ost1 $OST_MKFS_OPTS --index $i --reformat $(ostdevname 1)
+		add mds1 $(mkfs_opts mds)  --backfstype $MDSFSTYPE \
+			--index 0 --reformat $mdsdev $mdsvdev || exit 10
+		add ost1 $(mkfs_opts ost)  --backfstype $OSTFSTYPE \
+			--index $i --reformat $(ostdevname 1) $(ostvdevname 1)
 		setup_noconfig
 		sync
 
@@ -2687,9 +2729,13 @@ test_55() {
 run_test 55 "check lov_objid size"
 
 test_56() {
-	add mds1 $MDS_MKFS_OPTS --mkfsoptions='\"-J size=16\"' --reformat $(mdsdevname 1) --index 0
-	add ost1 $OST_MKFS_OPTS --index 1000 --reformat $(ostdevname 1)
-	add ost2 $OST_MKFS_OPTS --index 10000 --reformat $(ostdevname 2)
+	add mds1 $(mkfs_opts mds) --backfstype $MDSFSTYPE \
+		--mkfsoptions='\"-J size=16\"' --reformat \
+		--index 0 $(mdsdevname 1) $(mdsvdevname 1)
+	add ost1 $(mkfs_opts ost) --backfstype $OSTFSTYPE \
+		--index 1000 --reformat $(ostdevname 1) $(ostvdevname 1)
+	add ost2 $(mkfs_opts ost) --backfstype $OSTFSTYPE \
+		--index 10000 --reformat $(ostdevname 2) $(ostvdevname 2)
 
 	start_mds
 	start_ost
@@ -2782,7 +2828,11 @@ test_59() {
 run_test 59 "writeconf mount option"
 
 test_60() { # LU-471
-	add mds1 $MDS_MKFS_OPTS --index 0 --mkfsoptions='\" -E stride=64 -O ^uninit_bg\"' --reformat $(mdsdevname 1)
+	[ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
+	add mds1 $(mkfs_opts mds) --backfstype $MDSFSTYPE --index 0 \
+		--mkfsoptions='\" -E stride=64 -O ^uninit_bg\"' \
+		--reformat $(mdsdevname 1) $(mdsvdevname 1) || exit 10
 
 	dump=$(do_facet $SINGLEMDS $DUMPE2FS $(mdsdevname 1))
 	rc=${PIPESTATUS[0]}
