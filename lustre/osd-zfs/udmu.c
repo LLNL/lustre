@@ -1214,7 +1214,7 @@ void udmu_xattr_declare_set(udmu_objset_t *uos, dmu_buf_t *db,
  * No locking is done here.
  */
 int udmu_xattr_set(udmu_objset_t *uos, dmu_buf_t *db, void *val,
-                   int vallen, const char *name, dmu_tx_t *tx)
+                   int vallen, const char *name, int fl, dmu_tx_t *tx)
 {
         znode_phys_t *zp = db->db_data;
         dmu_buf_t    *xa_zap_db = NULL;
@@ -1233,6 +1233,10 @@ int udmu_xattr_set(udmu_objset_t *uos, dmu_buf_t *db, void *val,
         error = zap_lookup(uos->os, zp->zp_xattr, name, sizeof(uint64_t), 1,
                            &xa_data_obj);
         if (error == 0) {
+                if (fl & XATTR_CREATE) {
+                        error = EEXIST;
+                        goto out;
+                }
                 /*
                  * Entry already exists.
                  * We'll truncate the existing object.
@@ -1249,6 +1253,12 @@ int udmu_xattr_set(udmu_objset_t *uos, dmu_buf_t *db, void *val,
                  * Entry doesn't exist, we need to create a new one and a new
                  * object to store the value.
                  */
+                if (fl & XATTR_REPLACE) {
+                        /* should be ENOATTR according to the
+                         * man, but that is undefined here */
+                        error = ENODATA;
+                        goto out;
+                }
                 udmu_object_create(uos, &xa_data_db, tx, FTAG);
                 xa_data_obj = xa_data_db->db_object;
                 error = zap_add(uos->os, zp->zp_xattr, name, sizeof(uint64_t), 1,
@@ -1328,6 +1338,11 @@ int udmu_xattr_del(udmu_objset_t *uos, dmu_buf_t *db,
 
         error = zap_lookup(uos->os, zp->zp_xattr, name, sizeof(uint64_t), 1,
                            &xa_data_obj);
+        if (error == ENOENT) {
+                error = 0;
+                goto out;
+        }
+
         if (error == 0) {
                 /*
                  * Entry exists.
