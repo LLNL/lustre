@@ -1362,6 +1362,7 @@ out_free:
                 if (!oqctl)
                         RETURN(-ENOMEM);
                 oqctl->qc_type = arg;
+                oqctl->qc_cmd  = Q_QUOTACHECK;
                 rc = obd_quotacheck(sbi->ll_md_exp, oqctl);
                 if (rc < 0) {
                         CDEBUG(D_INFO, "md_quotacheck failed: rc %d\n", rc);

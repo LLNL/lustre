@@ -258,7 +258,7 @@ int osc_quota_exit()
         RETURN(0);
 }
 
-int osc_quotactl(struct obd_device *unused, struct obd_export *exp,
+int osc_quotactl(struct obd_device *obd, struct obd_export *exp,
                  struct obd_quotactl *oqctl)
 {
         struct ptlrpc_request *req;
@@ -280,19 +280,24 @@ int osc_quotactl(struct obd_device *unused, struct obd_export *exp,
         req->rq_no_resend = 1;
 
         rc = ptlrpc_queue_wait(req);
-        if (rc)
-                CERROR("ptlrpc_queue_wait failed, rc: %d\n", rc);
-
-        if (req->rq_repmsg &&
-            (oqc = req_capsule_server_get(&req->rq_pill, &RMF_OBD_QUOTACTL))) {
-                *oqctl = *oqc;
-        } else if (!rc) {
-                CERROR ("Can't unpack obd_quotactl\n");
-                rc = -EPROTO;
+        if (rc) {
+                CDEBUG(D_QUOTA, "%s: quotactl %d failed with %d\n",
+                       obd->obd_name, oqctl->qc_cmd, rc);
+                GOTO(out, rc);
         }
-        ptlrpc_req_finished(req);
 
-        RETURN(rc);
+        oqc = req_capsule_server_get(&req->rq_pill, &RMF_OBD_QUOTACTL);
+        if (!oqc) {
+                CERROR ("%s: can't unpack obd_quotactl for cmd %d\n",
+                        obd->obd_name, oqctl->qc_cmd);
+                GOTO(out, rc = -EPROTO);
+        }
+
+        *oqctl = *oqc;
+        EXIT;
+out:
+        ptlrpc_req_finished(req);
+        return rc;
 }
 
 int osc_quotacheck(struct obd_device *unused, struct obd_export *exp,
