@@ -405,7 +405,7 @@ int mdd_may_delete(const struct lu_env *env,
                         RETURN(-ENOENT);
 
                 if (check_perm) {
-                        rc = mdd_permission_internal_locked(env, pobj, pattr,
+                        rc = mdd_permission_internal_locked(env, pobj, NULL,
                                                     MAY_WRITE | MAY_EXEC,
                                                     MOR_TGT_PARENT);
                         if (rc)
@@ -956,7 +956,7 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
         unsigned int qpids[MAXQUOTAS] = { 0, 0 };
         int quota_opc = 0;
 #endif
-        int is_dir = S_ISDIR(ma->ma_attr.la_mode);
+        int is_dir;
         int rc;
         ENTRY;
 
@@ -1402,6 +1402,10 @@ static int mdd_declare_create(const struct lu_env *env, struct mdd_device *mdd,
                                 GOTO(out, rc);
                 }
 
+                rc = mdo_declare_attr_set(env, c, &info->mti_pattr, handle);
+                if (rc)
+                        GOTO(out, rc);
+
                 rc = mdo_declare_xattr_set(env, c, acl_buf,
                                            XATTR_NAME_ACL_ACCESS, 0, handle);
                 if (rc)
@@ -1629,8 +1633,6 @@ static int mdd_create(const struct lu_env *env, struct md_object *pobj,
                 if (rc) {
                         mdd_write_unlock(env, son);
                         GOTO(cleanup, rc);
-                } else {
-                        attr->la_valid |= LA_MODE;
                 }
         }
 #endif
