@@ -1269,6 +1269,34 @@ out:
 }
 
 /*
+ * Handle quotacheck requests.
+ *
+ * \param obd - is the obd device associated with the ofd
+ * \param exp - is the client's export
+ * \param oqctl - is the obd_quotactl request to be processed
+ */
+static int ofd_quotacheck(struct obd_device *obd, struct obd_export *exp,
+                          struct obd_quotactl *oqctl)
+{
+        struct ofd_device  *ofd = ofd_dev(obd->obd_lu_dev);
+        struct lu_env       env;
+        int                 rc;
+        ENTRY;
+
+        rc = lu_env_init(&env, LCT_DT_THREAD);
+        if (rc)
+                RETURN(rc);
+
+        /* workaround for old clients which don't set cmd to Q_QUOTACHECK */
+        if (oqctl->qc_cmd != Q_QUOTACHECK)
+                oqctl->qc_cmd = Q_QUOTACHECK;
+
+        rc = lu_quotactl(&env, &ofd->ofd_lu_quota, oqctl);
+        lu_env_fini(&env);
+        RETURN(rc);
+}
+
+/*
  * Handle quota control requests to consult current usage/limit, but also
  * to configure quota enforcement
  *
@@ -1316,4 +1344,5 @@ struct obd_ops ofd_obd_ops = {
         .o_ping           = ofd_ping,
         .o_health_check   = ofd_health_check,
         .o_quotactl       = ofd_quotactl,
+        .o_quotacheck     = ofd_quotacheck,
 };
