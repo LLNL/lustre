@@ -142,6 +142,20 @@ void udmu_wait_synced(udmu_objset_t *uos, dmu_tx_t *tx)
                         tx ? tx->tx_txg : 0ULL);
 }
 
+void udmu_force_commit(udmu_objset_t *uos)
+{
+        tx_state_t *tx = &dmu_objset_pool(uos->os)->dp_tx;
+        uint64_t txg;
+
+        mutex_enter(&tx->tx_sync_lock);
+        txg = tx->tx_open_txg + 1;
+        if (tx->tx_quiesce_txg_waiting < txg) {
+                tx->tx_quiesce_txg_waiting = txg;
+                cv_broadcast(&tx->tx_quiesce_more_cv);
+        }
+        mutex_exit(&tx->tx_sync_lock);
+}
+
 void udmu_objset_close(udmu_objset_t *uos)
 {
         ASSERT(uos->os != NULL);
