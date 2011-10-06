@@ -723,7 +723,8 @@ static int osd_sync(const struct lu_env *env, struct dt_device *d)
 
 static int osd_commit_async(const struct lu_env *env, struct dt_device *dev)
 {
-        CERROR("not implemented yet!\n");
+        struct osd_device  *osd = osd_dt_dev(dev);
+        udmu_force_commit(&osd->od_objset);
         return 0;
 }
 
