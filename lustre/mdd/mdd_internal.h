@@ -215,7 +215,10 @@ struct mdd_tx_arg {
         } u;
 };
 
-#define MDD_TX_MAX_OPS          16
+/*
+ * rename can produce upto 18 updates, see ORI-365 for exact list
+ */
+#define MDD_TX_MAX_OPS          18
 
 struct mdd_thandle {
         struct thandle    *mtx_handle;
