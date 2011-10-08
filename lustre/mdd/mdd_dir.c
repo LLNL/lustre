@@ -305,7 +305,8 @@ int mdd_may_create(const struct lu_env *env, struct mdd_object *pobj,
                 RETURN(-ENOENT);
 
         if (check_perm)
-                rc = mdd_permission_internal(env, pobj, NULL,MAY_WRITE|MAY_EXEC);
+                rc = mdd_permission_internal(env, pobj, NULL,
+                                             MAY_WRITE | MAY_EXEC);
 
         if (!rc && check_nlink)
                 rc = __mdd_may_link(env, pobj);
@@ -376,10 +377,9 @@ static inline int mdd_is_sticky(const struct lu_env *env,
  * pobj maybe NULL
  * the object is supposed to be locked
  */
-int mdd_may_delete(const struct lu_env *env,
-                   struct mdd_object *pobj, struct lu_attr *pattr,
+int mdd_may_delete(const struct lu_env *env, struct mdd_object *pobj,
                    struct mdd_object *cobj, struct lu_attr *cattr,
-                   int check_perm, int check_empty)
+                   struct lu_attr *src_attr, int check_perm, int check_empty)
 {
         int rc = 0;
         ENTRY;
@@ -399,7 +399,7 @@ int mdd_may_delete(const struct lu_env *env,
                         RETURN(-ENOENT);
 
                 if (check_perm) {
-                        rc = mdd_permission_internal(env, pobj, pattr,
+                        rc = mdd_permission_internal(env, pobj, NULL,
                                                      MAY_WRITE | MAY_EXEC);
                         if (rc)
                                 RETURN(rc);
@@ -419,16 +419,19 @@ int mdd_may_delete(const struct lu_env *env,
             (cattr->la_flags & (LUSTRE_APPEND_FL | LUSTRE_IMMUTABLE_FL)))
                 RETURN(-EPERM);
 
-        if (S_ISDIR(cattr->la_mode)) {
-                struct mdd_device *mdd = mdo2mdd(&cobj->mod_obj);
+        /* additional check the rename case */
+        if (src_attr) {
+                if (S_ISDIR(src_attr->la_mode)) {
+                        struct mdd_device *mdd = mdo2mdd(&cobj->mod_obj);
 
-                if (!S_ISDIR(mdd_object_type(cobj)))
-                        RETURN(-ENOTDIR);
+                        if (!S_ISDIR(cattr->la_mode))
+                                RETURN(-ENOTDIR);
 
-                if (lu_fid_eq(mdo2fid(cobj), &mdd->mdd_root_fid))
-                        RETURN(-EBUSY);
-        } else if (S_ISDIR(mdd_object_type(cobj)))
-                RETURN(-EISDIR);
+                        if (lu_fid_eq(mdo2fid(cobj), &mdd->mdd_root_fid))
+                                RETURN(-EBUSY);
+                } else if (S_ISDIR(cattr->la_mode))
+                        RETURN(-EISDIR);
+        }
 
         if (S_ISDIR(cattr->la_mode) && check_empty)
                 rc = mdd_dir_is_empty(env, cobj);
@@ -744,7 +747,7 @@ int mdd_unlink_sanity_check(const struct lu_env *env, struct mdd_object *pobj,
         int rc;
         ENTRY;
 
-        rc = mdd_may_delete(env, pobj, NULL, cobj, cattr, 1, 1);
+        rc = mdd_may_delete(env, pobj, cobj, cattr, NULL, 1, 1);
 
         RETURN(rc);
 }
@@ -1371,7 +1374,8 @@ static int mdd_rename_sanity_check(const struct lu_env *env,
                                    struct mdd_object *tgt_pobj,
                                    struct mdd_object *sobj,
                                    struct mdd_object *tobj,
-                                   struct lu_attr *so_attr)
+                                   struct lu_attr *so_attr,
+                                   struct lu_attr *tg_attr)
 {
         int rc = 0;
         ENTRY;
@@ -1381,7 +1385,7 @@ static int mdd_rename_sanity_check(const struct lu_env *env,
          * before mdd_rename and enable MDS_PERM_BYPASS. */
         LASSERT(sobj);
 
-        rc = mdd_may_delete(env, src_pobj, NULL, sobj, so_attr, 1, 0);
+        rc = mdd_may_delete(env, src_pobj, sobj, so_attr, NULL, 1, 0);
         if (rc)
                 RETURN(rc);
 
@@ -1394,7 +1398,7 @@ static int mdd_rename_sanity_check(const struct lu_env *env,
                 rc = mdd_may_create(env, tgt_pobj, NULL,
                                     (src_pobj != tgt_pobj), 0);
         else
-                rc = mdd_may_delete(env, tgt_pobj, NULL, tobj, so_attr,
+                rc = mdd_may_delete(env, tgt_pobj, tobj, tg_attr, so_attr,
                                     (src_pobj != tgt_pobj), 1);
 
         if (!rc && !tobj && (src_pobj != tgt_pobj) &&
@@ -1415,6 +1419,7 @@ static int mdd_rename(const struct lu_env *env,
         const char *tname = ltname->ln_name;
         struct lu_attr    *la = &mdd_env_info(env)->mti_la_for_fix;
         struct lu_attr    *so_attr = &mdd_env_info(env)->mti_cattr;
+        struct lu_attr    *tg_attr = &mdd_env_info(env)->mti_pattr;
         struct mdd_object *mdd_spobj = md2mdd_obj(src_pobj); /* source parent */
         struct mdd_object *mdd_tpobj = md2mdd_obj(tgt_pobj);
         struct mdd_device *mdd = mdo2mdd(src_pobj);
@@ -1516,9 +1521,15 @@ static int mdd_rename(const struct lu_env *env,
         rc = mdd_la_get(env, mdd_sobj, so_attr, mdd_object_capa(env,mdd_sobj));
         if (rc)
                 GOTO(unlock, rc);
+        if (mdd_tobj) {
+                rc = mdd_la_get(env, mdd_tobj, tg_attr,
+                                mdd_object_capa(env, mdd_tobj));
+                if (rc)
+                        GOTO(unlock, rc);
+        }
 
-        rc = mdd_rename_sanity_check(env, mdd_spobj, mdd_tpobj,
-                                     mdd_sobj, mdd_tobj, so_attr);
+        rc = mdd_rename_sanity_check(env, mdd_spobj, mdd_tpobj, mdd_sobj,
+                                     mdd_tobj, so_attr, tg_attr);
         if (rc)
                 GOTO(unlock, rc);
         is_dir = S_ISDIR(so_attr->la_mode);
@@ -1561,12 +1572,12 @@ static int mdd_rename(const struct lu_env *env,
                 __mdd_ref_del(env, mdd_tobj, handle, 0);
 
                 /* Remove dot reference. */
-                if (is_dir)
+                if (S_ISDIR(tg_attr->la_mode))
                         __mdd_ref_del(env, mdd_tobj, handle, 1);
 
                 mdd_attr_check_set_internal(env, mdd_tobj, la, handle, 0);
 
-                mdd_finish_unlink(env, mdd_tobj, so_attr, handle);
+                mdd_finish_unlink(env, mdd_tobj, tg_attr, handle);
 
 #ifdef HAVE_QUOTA_SUPPORT
                 if (mds->mds_quota && ma->ma_valid & MA_INODE &&

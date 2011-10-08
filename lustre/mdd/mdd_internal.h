@@ -328,8 +328,8 @@ int mdd_may_create(const struct lu_env *env, struct mdd_object *pobj,
 int mdd_may_unlink(const struct lu_env *env, struct mdd_object *pobj,
                    const struct lu_attr *attr);
 int mdd_may_delete(const struct lu_env *env, struct mdd_object *pobj,
-                   struct lu_attr *pattr, struct mdd_object *cobj,
-                   struct lu_attr *cattr, int check_perm, int check_empty);
+                   struct mdd_object *cobj, struct lu_attr *cattr,
+                   struct lu_attr *src_attr, int check_perm, int check_empty);
 int mdd_unlink_sanity_check(const struct lu_env *env, struct mdd_object *pobj,
                             struct mdd_object *cobj, struct lu_attr *attr);
 int mdd_declare_finish_unlink(const struct lu_env *env,
