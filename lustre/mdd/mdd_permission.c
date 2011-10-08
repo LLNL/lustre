@@ -393,8 +393,8 @@ int mdd_permission(const struct lu_env *env,
         if (!rc && (check_rename_src || check_rename_tar)) {
                 LASSERT(pobj);
                 mdd_pobj = md2mdd_obj(pobj);
-                rc = mdd_may_delete(env, mdd_pobj, NULL, mdd_cobj,
-                                    la, 1, check_rename_tar);
+                rc = mdd_may_delete(env, mdd_pobj, mdd_cobj, la, NULL, 1,
+                                    check_rename_tar);
         }
 
         if (!rc && (check_vtx_part || check_vtx_full)) {
