@@ -718,7 +718,7 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
                 if (!(flags & MDS_PERM_BYPASS))
                         /* This is only for set ctime when rename's source is
                          * on remote MDS. */
-                        rc = mdd_may_delete(env, NULL, NULL, obj, tmp_la, 1, 0);
+                        rc = mdd_may_delete(env, NULL, obj, tmp_la, NULL, 1, 0);
                 if (rc == 0 && la->la_ctime <= tmp_la->la_ctime)
                         la->la_valid &= ~LA_CTIME;
                 RETURN(rc);
