@@ -274,6 +274,23 @@ static int add_mgsnids(struct mount_opts *mop, char *options,
         return 0;
 }
 
+/* Append specified @param from @ldd_params to @options */
+static void add_ldd_param(char *options, char *ldd_params, const char *param)
+{
+        char *space;
+
+        if ((ldd_params = strstr(ldd_params, param)) != NULL) {
+                space = strchr(ldd_params, ' ');
+                if (space != NULL)
+                        *space = '\0';
+
+                append_option(options, ldd_params);
+
+                if (space != NULL)
+                        *space = ' ';
+        }
+}
+
 /* Glean any data we can from the disk */
 static int parse_ldd(char *source, struct mount_opts *mop, char *options)
 {
@@ -333,6 +350,9 @@ static int parse_ldd(char *source, struct mount_opts *mop, char *options)
         strcat(options, mt_type(ldd->ldd_mount_type));
 
         append_option(options, ldd->ldd_mount_opts);
+
+        add_ldd_param(options, ldd->ldd_params,
+                      PARAM_MDT PARAM_IDENTITY_UPCALL);
 
         if (!mop->mo_have_mgsnid) {
                 /* Only use disk data if mount -o mgsnode=nid wasn't

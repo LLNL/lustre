@@ -4476,6 +4476,27 @@ static void fsoptions_to_mdt_flags(struct mdt_device *m, char *options)
         }
 }
 
+static void fsoptions_to_upcall_path(char *identity_upcall, size_t size,
+                                     char *options)
+{
+        char *equal, *comma;
+
+        if ((options = strstr(options,
+                              PARAM_MDT PARAM_IDENTITY_UPCALL)) != NULL) {
+                equal = strchr(options, '=');
+                comma = strchr(options, ',');
+                if (comma != NULL)
+                        *comma = '\0';
+
+                strncpy(identity_upcall, equal + 1, size);
+
+                if (comma != NULL)
+                        *comma = ',';
+        } else {
+                strncpy(identity_upcall, MDT_IDENTITY_UPCALL_PATH, size);
+        }
+}
+
 static int mdt_connect_to_next(const struct lu_env *env, struct mdt_device *m,
                                const char *nextdev)
 {
@@ -4527,7 +4548,7 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         struct lustre_sb_info     *lsi;
         struct lu_site            *s;
         struct md_site            *mite;
-        const char                *identity_upcall = "NONE";
+        char                      *identity_upcall;
         //struct md_device          *next = NULL;
         int                        rc;
         int                        node_id;
@@ -4677,13 +4698,22 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         /* set obd_namespace for compatibility with old code */
         obd->obd_namespace = m->mdt_namespace;
 
+        OBD_ALLOC(identity_upcall, PATH_MAX);
+        if (identity_upcall == NULL)
+                GOTO(err_free_ns, rc = -ENOMEM);
+
         /* XXX: to support suppgid for ACL, we enable identity_upcall
          * by default, otherwise, maybe got unexpected -EACCESS. */
         if (m->mdt_opts.mo_acl)
-                identity_upcall = MDT_IDENTITY_UPCALL_PATH;
+                fsoptions_to_upcall_path(identity_upcall, PATH_MAX,
+                                         lsi->lsi_lmd->lmd_opts);
+        else
+                strncpy(identity_upcall, "NONE", PATH_MAX);
 
         m->mdt_identity_cache = upcall_cache_init(obd->obd_name, identity_upcall,
                                                   &mdt_identity_upcall_cache_ops);
+        OBD_FREE(identity_upcall, PATH_MAX);
+
         if (IS_ERR(m->mdt_identity_cache)) {
                 rc = PTR_ERR(m->mdt_identity_cache);
                 m->mdt_identity_cache = NULL;
