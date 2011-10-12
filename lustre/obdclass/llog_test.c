@@ -861,86 +861,58 @@ out:
 /* -------------------------------------------------------------------------
  * Tests above, OSD API functions below
  * ------------------------------------------------------------------------- */
-static int llog_run_tests(struct obd_device *obd)
+static int llog_run_tests(const struct lu_env *env, struct obd_device *obd)
 {
         struct llog_handle *llh;
         struct llog_ctxt *ctxt = llog_get_context(obd, LLOG_TEST_ORIG_CTXT);
         int rc, err;
         char name[10];
-        struct lu_env env;
         ENTRY;
 
         LASSERT(ctxt);
-        rc = lu_env_init(&env, LCT_LOCAL | LCT_MG_THREAD);
-        if (rc)
-                GOTO(cleanup_ctxt, rc);
 
         sprintf(name, "%x", llog_test_rand);
 
-        rc = llog_test_1(&env, obd, name);
+        rc = llog_test_1(env, obd, name);
         if (rc)
-                GOTO(cleanup_env, rc);
+                GOTO(cleanup_ctxt, rc);
 
-        rc = llog_test_2(&env, obd, name, &llh);
+        rc = llog_test_2(env, obd, name, &llh);
         if (rc)
-                GOTO(cleanup_env, rc);
+                GOTO(cleanup_ctxt, rc);
 
-        rc = llog_test_3(&env, obd, llh);
-        if (rc)
-                GOTO(cleanup, rc);
-
-        rc = llog_test_4(&env, obd);
+        rc = llog_test_3(env, obd, llh);
         if (rc)
                 GOTO(cleanup, rc);
 
-        rc = llog_test_5(&env, obd);
+        rc = llog_test_4(env, obd);
         if (rc)
                 GOTO(cleanup, rc);
 
-        rc = llog_test_6(&env, obd, name);
+        rc = llog_test_5(env, obd);
         if (rc)
                 GOTO(cleanup, rc);
 
-        rc = llog_test_7(&env, obd);
+        rc = llog_test_6(env, obd, name);
+        if (rc)
+                GOTO(cleanup, rc);
+
+        rc = llog_test_7(env, obd);
         if (rc)
                 GOTO(cleanup, rc);
 
 cleanup:
-        err = llog_destroy(&env, llh);
+        err = llog_destroy(env, llh);
         if (err)
                 CERROR("cleanup: llog_destroy failed: %d\n", err);
-        llog_close(&env, llh);
+        llog_close(env, llh);
         if (!rc)
                 rc = err;
-cleanup_env:
-        lu_env_fini(&env);
 cleanup_ctxt:
         llog_ctxt_put(ctxt);
         return rc;
 }
 
-static int llog_test_llog_init(struct obd_device *obd,
-                               struct obd_llog_group *olg,
-                               struct obd_device *tgt, int *index)
-{
-        int rc;
-        ENTRY;
-
-        rc = llog_setup(tgt, &tgt->obd_olg, LLOG_TEST_ORIG_CTXT, tgt, 0, NULL,
-                        &llog_osd_ops);
-        RETURN(rc);
-}
-
-static int llog_test_llog_finish(struct obd_device *obd, int count)
-{
-        struct obd_device *tgt;
-        int rc;
-        ENTRY;
-
-        tgt = obd->obd_lvfs_ctxt.dt->dd_lu_dev.ld_obd;
-        rc = llog_cleanup(llog_get_context(tgt, LLOG_TEST_ORIG_CTXT));
-        RETURN(rc);
-}
 #ifdef LPROCFS
 static struct lprocfs_vars lprocfs_llog_test_obd_vars[] = { {0} };
 static struct lprocfs_vars lprocfs_llog_test_module_vars[] = { {0} };
@@ -953,20 +925,24 @@ static void lprocfs_llog_test_init_vars(struct lprocfs_static_vars *lvars)
 
 static int llog_test_cleanup(struct obd_device *obd)
 {
-        int rc = obd_llog_finish(obd, 0);
+        struct obd_device *tgt;
+        int rc;
+        ENTRY;
+
+        tgt = obd->obd_lvfs_ctxt.dt->dd_lu_dev.ld_obd;
+        rc = llog_cleanup(llog_get_context(tgt, LLOG_TEST_ORIG_CTXT));
         if (rc)
                 CERROR("failed to llog_test_llog_finish: %d\n", rc);
 
-        return rc;
+        RETURN(rc);
 }
 
 static int llog_test_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 {
-        struct lprocfs_static_vars lvars;
         struct obd_device *tgt;
         struct llog_ctxt *ctxt;
         struct dt_object *o;
-
+        struct lu_env env;
         int rc;
         ENTRY;
 
@@ -988,6 +964,10 @@ static int llog_test_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
                 RETURN(-EINVAL);
         }
 
+        rc = lu_env_init(&env, LCT_LOCAL | LCT_MG_THREAD);
+        if (rc)
+                RETURN(rc);
+
         CWARN("Setup llog-test device over %s device\n",
               lustre_cfg_string(lcfg, 1));
 
@@ -995,9 +975,10 @@ static int llog_test_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 
         obd->obd_lvfs_ctxt.dt = lu2dt_dev(tgt->obd_lu_dev);
 
-        rc = obd_llog_init(obd, NULL, tgt, NULL);
+        rc = llog_setup(&env, tgt, &tgt->obd_olg, LLOG_TEST_ORIG_CTXT, tgt,
+                        0, NULL, &llog_osd_ops);
         if (rc)
-                RETURN(rc);
+                GOTO(cleanup_env, rc);
 
         /* use MGS llog dir for tests */
         ctxt = llog_get_context(tgt, LLOG_CONFIG_ORIG_CTXT);
@@ -1012,12 +993,11 @@ static int llog_test_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 
         llog_test_rand = cfs_rand();
 
-        rc = llog_run_tests(tgt);
+        rc = llog_run_tests(&env, tgt);
         if (rc)
                 llog_test_cleanup(obd);
-
-        lprocfs_llog_test_init_vars(&lvars);
-
+cleanup_env:
+        lu_env_fini(&env);
         RETURN(rc);
 }
 
@@ -1025,8 +1005,6 @@ static struct obd_ops llog_obd_ops = {
         .o_owner       = THIS_MODULE,
         .o_setup       = llog_test_setup,
         .o_cleanup     = llog_test_cleanup,
-        .o_llog_init   = llog_test_llog_init,
-        .o_llog_finish = llog_test_llog_finish,
 };
 
 static int __init llog_test_init(void)
