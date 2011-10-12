@@ -25,10 +25,6 @@ CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 # BUG NUMBER:
 ALWAYS_EXCEPT="$REPLAY_OST_SINGLE_EXCEPT"
 
-# Orion:
-# 6 - ORI-124
-ALWAYS_EXCEPT="6 $ALWAYS_EXCEPT"
-
 #					
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="5"
 FAIL_ON_ERROR=false
@@ -181,6 +177,9 @@ kbytesfree() {
 test_6() {
     remote_mds_nodsh && skip "remote MDS with nodsh" && return 0
 
+    # wait till space from previous tests is back
+    wait_delete_completed || return 33
+
     f=$TDIR/$tfile
     before=`kbytesfree`
     dd if=/dev/urandom bs=4096 count=1280 of=$f || return 28
@@ -210,6 +209,9 @@ test_6() {
 run_test 6 "Fail OST before obd_destroy"
 
 test_7() {
+    # wait till space from previous tests is back
+    wait_delete_completed || return 33
+
     f=$TDIR/$tfile
     before=`kbytesfree`
     dd if=/dev/urandom bs=4096 count=1280 of=$f || return 4
