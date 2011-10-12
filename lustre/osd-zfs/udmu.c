@@ -105,6 +105,16 @@ int udmu_objset_open(char *osname, udmu_objset_t *uos)
         }
         ASSERT(uos->root != 0);
 
+        /* Check that user/group usage tracking is supported */
+        if (!dmu_objset_userused_enabled(uos->os) ||
+            DMU_USERUSED_DNODE(uos->os)->dn_type != DMU_OT_USERGROUP_USED ||
+            DMU_GROUPUSED_DNODE(uos->os)->dn_type != DMU_OT_USERGROUP_USED) {
+                CERROR("Space accounting not supported by this target, "
+                       "aborting\n");
+                error = ENOTSUPP;
+                goto out;
+        }
+
         /*
          * as DMU doesn't maintain f_files absolutely actual (it's updated
          * at flush, not when object is create/destroed) we've implemented
@@ -372,9 +382,12 @@ static int udmu_obj2dbuf(objset_t *os, uint64_t oid, dmu_buf_t **dbp, void *tag)
         }
 
         dmu_object_info_from_db(*dbp, &doi);
-        if (doi.doi_bonus_type != DMU_OT_ZNODE ||
-            doi.doi_bonus_size < sizeof (znode_phys_t)) {
+        if (unlikely (oid != DMU_USERUSED_OBJECT &&
+                      oid != DMU_GROUPUSED_OBJECT &&
+                      (doi.doi_bonus_type != DMU_OT_ZNODE ||
+                       doi.doi_bonus_size < sizeof (znode_phys_t)))) {
                 dmu_buf_rele(*dbp, tag);
+                *dbp = NULL;
                 return (EINVAL);
         }
 
@@ -998,7 +1011,8 @@ int udmu_object_is_zap(dmu_buf_t *db)
         DB_DNODE_ENTER(dbi);
 
         dn = DB_DNODE(dbi);
-        rc = dn->dn_type == DMU_OT_DIRECTORY_CONTENTS;
+        rc = (dn->dn_type == DMU_OT_DIRECTORY_CONTENTS ||
+              dn->dn_type == DMU_OT_USERGROUP_USED);
 
         DB_DNODE_EXIT(dbi);
 

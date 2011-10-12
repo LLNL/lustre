@@ -133,12 +133,17 @@ static struct dt_it *osd_it_acct_init(const struct lu_env *env,
                                       struct lustre_capa *capa)
 {
         struct osd_thread_info  *info = osd_oti_get(env);
-        struct osd_it_quota     *it   = &info->oti_it_quota;
+        struct osd_it_quota     *it;
         struct lu_object        *lo   = &dt->do_lu;
         struct osd_object       *obj  = osd_dt_obj(dt);
         ENTRY;
+
         LASSERT(lu_object_exists(lo));
 
+        if (info == NULL)
+                RETURN(ERR_PTR(-EINVAL));
+
+        it = &info->oti_it_quota;
         memset(it, 0, sizeof(*it));
         lu_object_get(lo);
         it->oiq_obj = obj;

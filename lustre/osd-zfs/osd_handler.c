@@ -55,16 +55,17 @@
 #include <obd_class.h>
 #include <lustre_disk.h>
 #include <lustre_fid.h>
+#include <lu_quota.h>
 
 #include "udmu.h"
 #include "osd_internal.h"
 
 
-static struct lu_context_key            osd_key;
-static struct lu_device_operations      osd_lu_ops;
-static struct lu_object_operations      osd_lu_obj_ops;
-static struct dt_object_operations      osd_obj_ops;
-static struct dt_body_operations        osd_body_ops;
+struct lu_context_key               osd_key;
+static struct lu_device_operations  osd_lu_ops;
+static struct lu_object_operations  osd_lu_obj_ops;
+static struct dt_object_operations  osd_obj_ops;
+static struct dt_body_operations    osd_body_ops;
 
 static char *osd_object_tag = "osd_object";
 static char *root_tag = "osd_mount, rootdb";
@@ -74,52 +75,9 @@ static char *objdir_tag = "osd_mount, objdb";
  * Helpers.
  */
 
-static int lu_device_is_osd(const struct lu_device *d)
+int lu_device_is_osd(const struct lu_device *d)
 {
         return ergo(d != NULL && d->ld_ops != NULL, d->ld_ops == &osd_lu_ops);
-}
-
-static struct osd_object *osd_obj(const struct lu_object *o)
-{
-        LASSERT(lu_device_is_osd(o->lo_dev));
-        return container_of0(o, struct osd_object, oo_dt.do_lu);
-}
-
-static struct osd_device *osd_dt_dev(const struct dt_device *d)
-{
-        LASSERT(lu_device_is_osd(&d->dd_lu_dev));
-        return container_of0(d, struct osd_device, od_dt_dev);
-}
-
-static struct osd_device *osd_dev(const struct lu_device *d)
-{
-        LASSERT(lu_device_is_osd(d));
-        return osd_dt_dev(container_of0(d, struct dt_device, dd_lu_dev));
-}
-
-static struct osd_object *osd_dt_obj(const struct dt_object *d)
-{
-        return osd_obj(&d->do_lu);
-}
-
-static struct osd_device *osd_obj2dev(const struct osd_object *o)
-{
-        return osd_dev(o->oo_dt.do_lu.lo_dev);
-}
-
-static struct lu_device *osd2lu_dev(struct osd_device *osd)
-{
-        return &osd->od_dt_dev.dd_lu_dev;
-}
-
-static int osd_invariant(const struct osd_object *obj)
-{
-        return 1;
-}
-
-static int osd_object_invariant(const struct lu_object *l)
-{
-        return osd_invariant(osd_obj(l));
 }
 
 static void lu_attr2vattr(struct lu_attr *la, vattr_t *vap)
@@ -248,11 +206,6 @@ static void vattr2lu_attr(vattr_t *vap, struct lu_attr *la)
 
 }
 
-static struct osd_thread_info *osd_oti_get(const struct lu_env *env)
-{
-        return lu_context_key_get(&env->le_ctx, &osd_key);
-}
-
 /* XXX: f_ver is not counted, but may differ too */
 static void osd_fid2str(char *buf, const struct lu_fid *fid)
 {
@@ -264,9 +217,9 @@ static int osd_fid_lookup(const struct lu_env *env,
                           struct osd_object *obj, const struct lu_fid *fid)
 {
         struct osd_thread_info *info;
+        char                   *buf;
         struct lu_device       *ldev = obj->oo_dt.do_lu.lo_dev;
         struct osd_device      *dev;
-        char                    buf[32];
         uint64_t                oid;
         int                     rc;
         ENTRY;
@@ -274,6 +227,7 @@ static int osd_fid_lookup(const struct lu_env *env,
         LASSERT(osd_invariant(obj));
 
         info = osd_oti_get(env);
+        buf  = info->oti_buf;
         dev  = osd_dev(ldev);
 
         if (OBD_FAIL_CHECK(OBD_FAIL_OST_ENOENT))
@@ -292,7 +246,13 @@ static int osd_fid_lookup(const struct lu_env *env,
                         oid = fid->f_oid;
                 }
         } else if (unlikely(fid_is_acct(fid))) {
-                RETURN(-ENOENT);
+                /* DMU_USERUSED_OBJECT & DMU_GROUPUSED_OBJECT are special
+                 * objects which have no d_buf_t structure.
+                 * As a consequence, udmu_object_get_dmu_buf() gets a fake
+                 * buffer which is good enough to pass all the checks done
+                 * during object creation, but this buffer should really not
+                 * be used by osd_quota.c */
+                oid = osd_quota_fid2dmu(fid);
         } else {
                 osd_fid2str(buf, fid);
 
@@ -310,7 +270,8 @@ static int osd_fid_lookup(const struct lu_env *env,
         } else if (rc == ENOENT) {
                 LASSERT(obj->oo_db == NULL);
         } else {
-                CERROR("error during lookup %s: %d\n", buf, rc);
+                osd_fid2str(buf, fid);
+                CERROR("error during lookup %s/"LPX64": %d\n", buf, oid, rc);
         }
 
         LASSERT(osd_invariant(obj));
@@ -1752,7 +1713,7 @@ static struct dt_index_operations osd_index_ops = {
 };
 
 static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
-                                const struct dt_index_features *feat)
+                         const struct dt_index_features *feat)
 {
         struct osd_object *obj  = osd_dt_obj(dt);
         LASSERT(obj->oo_db != NULL);
@@ -1763,6 +1724,12 @@ static int osd_index_try(const struct lu_env *env, struct dt_object *dt,
          */
         if (feat->dif_flags & DT_IND_RANGE)
                 RETURN(-ERANGE);
+
+        if (unlikely(feat == &dt_acct_features)) {
+                LASSERT(fid_is_acct(lu_object_fid(&dt->do_lu)));
+                dt->do_index_ops = &osd_acct_index_ops;
+                RETURN(0);
+        }
 
         if (udmu_object_is_zap(obj->oo_db))
                 dt->do_index_ops = &osd_index_ops;
@@ -2509,7 +2476,7 @@ static void osd_key_exit(const struct lu_context *ctx,
         memset(info, 0, sizeof(*info));
 }
 
-static struct lu_context_key osd_key = {
+struct lu_context_key osd_key = {
         .lct_tags = LCT_DT_THREAD | LCT_MD_THREAD | LCT_MG_THREAD | LCT_LOCAL,
         .lct_init = osd_key_init,
         .lct_fini = osd_key_fini,
