@@ -932,8 +932,8 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
         osp_mds_ost_orig_logops.lop_declare_add = llog_obd_origin_declare_add;
         osp_mds_ost_orig_logops.lop_connect = llog_origin_connect;
 
-        rc = llog_setup(obd, &obd->obd_olg, LLOG_MDS_OST_ORIG_CTXT, obd, 1,
-                        &osi->osi_cid.lci_logid, &osp_mds_ost_orig_logops);
+        rc = llog_setup(env, obd, &obd->obd_olg, LLOG_MDS_OST_ORIG_CTXT, obd,
+                        1, &osi->osi_cid.lci_logid, &osp_mds_ost_orig_logops);
         if (rc) {
                 CERROR("rc: %d\n", rc);
                 RETURN(rc);

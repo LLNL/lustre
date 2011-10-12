@@ -4345,28 +4345,13 @@ static int mdt_stack_init(struct lu_env *env,
  */
 static int mdt_obd_llog_setup(struct obd_device *obd)
 {
-        int    rc;
-
         /* XXX: we need llog to access changelogs remotely */
         return 0;
-        OBD_SET_CTXT_MAGIC(&obd->obd_lvfs_ctxt);
-        //obd->obd_lvfs_ctxt.dt = lmi->lmi_dt_dev;
-
-        rc = llog_setup(obd, &obd->obd_olg, LLOG_CONFIG_ORIG_CTXT, obd,
-                        0, NULL, &llog_osd_ops);
-        if (rc)
-                CERROR("llog_setup() failed: %d\n", rc);
-
-        return rc;
 }
 
 static void mdt_obd_llog_cleanup(struct obd_device *obd)
 {
-        struct llog_ctxt *ctxt;
-
-        ctxt = llog_get_context(obd, LLOG_CONFIG_ORIG_CTXT);
-        if (ctxt)
-                llog_cleanup(ctxt);
+        return;
 }
 
 static void mdt_fini(const struct lu_env *env, struct mdt_device *m)

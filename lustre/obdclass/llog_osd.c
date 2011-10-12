@@ -290,16 +290,17 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
         struct dt_object              *o;
         struct thandle                *_th;
         int                            rc;
+        ENTRY;
 
         cfs_mutex_lock(&lsb_list_mutex);
         lsb = __llog_osd_find_sb(dev);
         if (lsb)
-                GOTO(out, lsb);
+                GOTO(out_lsb, lsb);
 
         /* not found, then create */
         OBD_ALLOC_PTR(lsb);
         if (lsb == NULL)
-                GOTO(out, lsb = ERR_PTR(-ENOMEM));
+                GOTO(out_lsb, lsb = ERR_PTR(-ENOMEM));
 
         cfs_atomic_set(&lsb->lsb_refcount, 1);
         cfs_spin_lock_init(&lsb->lsb_id_lock);
@@ -322,18 +323,14 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
 
         o = llog_osd_locate(env, lsb, &lgi->lgi_fid);
         if(IS_ERR(o))
-                GOTO(out, lsb = ERR_PTR(PTR_ERR(o)));
-
-        lgi->lgi_off = 0;
-        lgi->lgi_buf.lb_buf = &sbd;
-        lgi->lgi_buf.lb_len = sizeof(sbd);
+                GOTO(out_lsb, lsb = ERR_PTR(PTR_ERR(o)));
 
         if (!dt_object_exists(o)) {
                 LASSERT(th == NULL);
 
                 _th = dt_trans_create(env, dev);
                 if (IS_ERR(_th))
-                        GOTO(out, lsb = ERR_PTR(PTR_ERR(_th)));
+                        GOTO(out, rc = PTR_ERR(_th));
 
                 rc = llog_osd_declare_new_object(env, o, _th);
                 if (rc)
@@ -357,6 +354,9 @@ static struct llog_superblock *llog_osd_get_sb(const struct lu_env *env,
 
                 sbd.next_id = 2;
 
+                lgi->lgi_off = 0;
+                lgi->lgi_buf.lb_buf = &sbd;
+                lgi->lgi_buf.lb_len = sizeof(sbd);
                 rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off,
                                      _th);
                 if (rc)
@@ -365,16 +365,23 @@ out_trans:
                 dt_trans_stop(env, dev, _th);
                 _th = NULL;
         } else {
+                lgi->lgi_off = 0;
+                lgi->lgi_buf.lb_buf = &sbd;
+                lgi->lgi_buf.lb_len = sizeof(sbd);
                 rc = dt_record_read(env, o, &lgi->lgi_buf, &lgi->lgi_off);
         }
-
+out:
         if (rc) {
                 lsb = ERR_PTR(rc);
+                /* drop object immediately from cache */
+                cfs_set_bit(LU_OBJECT_HEARD_BANSHEE,
+                            &o->do_lu.lo_header->loh_flags);
+                lu_object_put(env, &o->do_lu);
         } else {
                 lsb->lsb_last_oid = sbd.next_id;
                 lsb->lsb_obj = o;
         }
-out:
+out_lsb:
         cfs_mutex_unlock(&lsb_list_mutex);
         return lsb;
 }
@@ -1071,7 +1078,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
         LASSERT(dt);
 
         lsb = llog_osd_get_sb(env, dt, NULL);
-        LASSERT(lsb);
+        LASSERT(!(IS_ERR(lsb)));
 
         handle = llog_alloc_handle();
         if (handle == NULL)
@@ -1306,14 +1313,14 @@ out_trans:
         RETURN(rc);
 }
 
-static int llog_osd_setup(struct obd_device *obd, struct obd_llog_group *olg,
-                          int ctxt_idx, struct obd_device *disk_obd, int count,
+static int llog_osd_setup(const struct lu_env *env, struct obd_device *obd,
+                          struct obd_llog_group *olg, int ctxt_idx,
+                          struct obd_device *disk_obd, int count,
                           struct llog_logid *logid, const char *name)
 {
         struct llog_superblock *lsb;
         struct llog_ctxt       *ctxt;
-        struct lu_env           env;
-        int                     rc;
+        int                     rc = 0;
         ENTRY;
 
         LASSERT(obd);
@@ -1321,16 +1328,11 @@ static int llog_osd_setup(struct obd_device *obd, struct obd_llog_group *olg,
 
         ctxt = llog_ctxt_get(olg->olg_ctxts[ctxt_idx]);
         LASSERT(ctxt);
-        rc = lu_env_init(&env, LCT_LOCAL);
-        if (rc)
-                GOTO(out_ctxt, rc);
 
         /* pin llog_superblock with corresponding dt device */
-        lsb = llog_osd_get_sb(&env, obd->obd_lvfs_ctxt.dt, NULL);
-        if (lsb == NULL)
-                GOTO(out_env, rc = -ENODEV);
-out_env:
-        lu_env_fini(&env);
+        lsb = llog_osd_get_sb(env, obd->obd_lvfs_ctxt.dt, NULL);
+        if (IS_ERR(lsb))
+                GOTO(out_ctxt, rc = PTR_ERR(lsb));
 out_ctxt:
         llog_ctxt_put(ctxt);
         return rc;

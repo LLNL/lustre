@@ -211,21 +211,24 @@ int llog_cat_reverse_process(const struct lu_env *env,
 int llog_cat_set_first_idx(struct llog_handle *cathandle, int index);
 
 /* llog_obd.c */
-int llog_setup_named(struct obd_device *obd, struct obd_llog_group *olg,
-                     int index, struct obd_device *disk_obd, int count,
+int llog_setup_named(const struct lu_env *env, struct obd_device *obd,
+                     struct obd_llog_group *olg, int index,
+                     struct obd_device *disk_obd, int count,
                      struct llog_logid *logid, const char *logname,
                      struct llog_operations *op);
-int llog_setup(struct obd_device *obd, struct obd_llog_group *olg, int index,
+int llog_setup(const struct lu_env *env, struct obd_device *obd,
+               struct obd_llog_group *olg, int index,
                struct obd_device *disk_obd, int count,
                struct llog_logid *logid, struct llog_operations *op);
 int __llog_ctxt_put(struct llog_ctxt *ctxt);
-int llog_cleanup(struct llog_ctxt *);
+int llog_cleanup(struct llog_ctxt *ctxt);
 int llog_sync(struct llog_ctxt *ctxt, struct obd_export *exp);
-int llog_cancel(struct llog_ctxt *, struct lov_stripe_md *lsm,
-                int count, struct llog_cookie *cookies, int flags);
+int llog_cancel(const struct lu_env *, struct llog_ctxt *, int count,
+                struct llog_cookie *cookies, int flags);
 
-int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
-                          int index, struct obd_device *disk_obd, int count,
+int llog_obd_origin_setup(const struct lu_env *env, struct obd_device *obd,
+                          struct obd_llog_group *olg, int index,
+                          struct obd_device *disk_obd, int count,
                           struct llog_logid *logid, const char *name);
 int llog_obd_origin_cleanup(struct llog_ctxt *ctxt);
 int llog_obd_origin_declare_add(const struct lu_env *, struct llog_ctxt *ctxt,
@@ -257,9 +260,8 @@ int llog_origin_connect(struct llog_ctxt *ctxt,
 int llog_handle_connect(struct ptlrpc_request *req);
 
 /* recov_thread.c */
-int llog_obd_repl_cancel(struct llog_ctxt *ctxt,
-                         struct lov_stripe_md *lsm, int count,
-                         struct llog_cookie *cookies, int flags);
+int llog_obd_repl_cancel(const struct lu_env *env, struct llog_ctxt *ctxt,
+                         int count, struct llog_cookie *cookies, int flags);
 int llog_obd_repl_sync(struct llog_ctxt *ctxt, struct obd_export *exp);
 int llog_obd_repl_connect(struct llog_ctxt *ctxt,
                           struct llog_logid *logid, struct llog_gen *gen,
@@ -296,12 +298,13 @@ struct llog_operations {
          */
         int (*lop_read_header)(struct llog_handle *handle);
 
-        int (*lop_setup)(struct obd_device *obd, struct obd_llog_group *olg,
-                         int ctxt_idx, struct obd_device *disk_obd, int count,
+        int (*lop_setup)(const struct lu_env *env, struct obd_device *obd,
+                         struct obd_llog_group *olg, int ctxt_idx,
+                         struct obd_device *disk_obd, int count,
                          struct llog_logid *logid, const char *name);
         int (*lop_sync)(struct llog_ctxt *ctxt, struct obd_export *exp);
         int (*lop_cleanup)(struct llog_ctxt *ctxt);
-        int (*lop_cancel)(struct llog_ctxt *ctxt, struct lov_stripe_md *lsm,
+        int (*lop_cancel)(const struct lu_env *env, struct llog_ctxt *ctxt,
                           int count, struct llog_cookie *cookies, int flags);
         int (*lop_connect)(struct llog_ctxt *ctxt,
                            struct llog_logid *logid, struct llog_gen *gen,
