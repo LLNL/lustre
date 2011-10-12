@@ -50,6 +50,20 @@
 #define DMU_OSD_OI_NAME         "OBJECTS"
 
 /**
+ * Iterator's in-memory data structure for quota file.
+ */
+struct osd_it_quota {
+        struct osd_object    *oiq_obj;
+        /* DMU accounting object id */
+        uint64_t              oiq_oid;
+        /* ZAP cursor */
+        zap_cursor_t         *oiq_zc;
+        /** identifier for current quota record */
+        __u64                 oiq_id;
+        unsigned              oiq_reset:1; /* 1 -- no need to advance */
+};
+
+/**
  * Storage representation for fids.
  *
  * Variable size, first byte contains the length of the whole record.
@@ -74,7 +88,19 @@ struct osd_thread_info {
         struct lustre_capa     oti_capa;
 
         struct osd_fid_pack    oti_fid_pack;
+
+        char                   oti_buf[32];
+
+        /** osd iterator context used for iterator session */
+        struct osd_it_quota oti_it_quota;
 };
+
+extern struct lu_context_key osd_key;
+
+static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
+{
+        return lu_context_key_get(&env->le_ctx, &osd_key);
+}
 
 struct osd_thandle {
         struct thandle          ot_super;
@@ -156,6 +182,56 @@ struct osd_zap_it {
 #define DT_IT2DT(it) (&((struct osd_zap_it *)it)->ozi_obj->oo_dt)
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
+extern const struct dt_index_operations osd_acct_index_ops;
+uint64_t osd_quota_fid2dmu(const struct lu_fid *fid);
+
+/*
+ * Helpers.
+ */
+int lu_device_is_osd(const struct lu_device *d);
+static inline struct osd_object *osd_obj(const struct lu_object *o)
+{
+        LASSERT(lu_device_is_osd(o->lo_dev));
+        return container_of0(o, struct osd_object, oo_dt.do_lu);
+}
+
+static inline struct osd_device *osd_dt_dev(const struct dt_device *d)
+{
+        LASSERT(lu_device_is_osd(&d->dd_lu_dev));
+        return container_of0(d, struct osd_device, od_dt_dev);
+}
+
+static inline struct osd_device *osd_dev(const struct lu_device *d)
+{
+        LASSERT(lu_device_is_osd(d));
+        return osd_dt_dev(container_of0(d, struct dt_device, dd_lu_dev));
+}
+
+static inline struct osd_object *osd_dt_obj(const struct dt_object *d)
+{
+        return osd_obj(&d->do_lu);
+}
+
+static inline struct osd_device *osd_obj2dev(const struct osd_object *o)
+{
+        return osd_dev(o->oo_dt.do_lu.lo_dev);
+}
+
+static inline struct lu_device *osd2lu_dev(struct osd_device *osd)
+{
+        return &osd->od_dt_dev.dd_lu_dev;
+}
+
+static inline int osd_invariant(const struct osd_object *obj)
+{
+        return 1;
+}
+
+static inline int osd_object_invariant(const struct lu_object *l)
+{
+        return osd_invariant(osd_obj(l));
+}
+
 
 #ifdef LPROCFS
 enum {
@@ -175,6 +251,6 @@ extern struct lprocfs_vars lprocfs_osd_module_vars[];
 
 int osd_procfs_init(struct osd_device *osd, const char *name);
 int osd_procfs_fini(struct osd_device *osd);
-#endif
 
+#endif
 #endif /* _OSD_INTERNAL_H */
