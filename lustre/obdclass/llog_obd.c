@@ -156,8 +156,9 @@ int llog_cleanup(struct llog_ctxt *ctxt)
 }
 EXPORT_SYMBOL(llog_cleanup);
 
-int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
-                     int index, struct obd_device *disk_obd, int count,
+int llog_setup_named(const struct lu_env *env, struct obd_device *obd,
+                     struct obd_llog_group *olg, int index,
+                     struct obd_device *disk_obd, int count,
                      struct llog_logid *logid, const char *logname,
                      struct llog_operations *op)
 {
@@ -188,11 +189,6 @@ int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
                 if (rc == -EEXIST) {
                         ctxt = llog_group_get_ctxt(olg, index);
                         if (ctxt) {
-                                /*
-                                 * mds_lov_update_desc() might call here multiple
-                                 * times. So if the llog is already set up then
-                                 * don't to do it again. 
-                                 */
                                 CDEBUG(D_CONFIG, "obd %s ctxt %d already set up\n",
                                        obd->obd_name, index);
                                 LASSERT(ctxt->loc_olg == olg);
@@ -210,7 +206,7 @@ int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
                 if (OBD_FAIL_CHECK(OBD_FAIL_OBD_LLOG_SETUP))
                         rc = -EOPNOTSUPP;
                 else
-                        rc = op->lop_setup(obd, olg, index, disk_obd, count,
+                        rc = op->lop_setup(env, obd, olg, index, disk_obd, count,
                                            logid, logname);
         }
 
@@ -229,11 +225,12 @@ int llog_setup_named(struct obd_device *obd,  struct obd_llog_group *olg,
 }
 EXPORT_SYMBOL(llog_setup_named);
 
-int llog_setup(struct obd_device *obd,  struct obd_llog_group *olg,
-               int index, struct obd_device *disk_obd, int count,
+int llog_setup(const struct lu_env *env, struct obd_device *obd,
+               struct obd_llog_group *olg, int index,
+               struct obd_device *disk_obd, int count,
                struct llog_logid *logid, struct llog_operations *op)
 {
-        return llog_setup_named(obd, olg, index, disk_obd, count, logid,
+        return llog_setup_named(env, obd, olg, index, disk_obd, count, logid,
                                 NULL, op);
 }
 EXPORT_SYMBOL(llog_setup);
@@ -253,7 +250,7 @@ int llog_sync(struct llog_ctxt *ctxt, struct obd_export *exp)
 }
 EXPORT_SYMBOL(llog_sync);
 
-int llog_cancel(struct llog_ctxt *ctxt, struct lov_stripe_md *lsm,
+int llog_cancel(const struct lu_env *env, struct llog_ctxt *ctxt,
                 int count, struct llog_cookie *cookies, int flags)
 {
         int rc;
@@ -265,7 +262,7 @@ int llog_cancel(struct llog_ctxt *ctxt, struct lov_stripe_md *lsm,
         }
 
         CTXT_CHECK_OP(ctxt, cancel, -EOPNOTSUPP);
-        rc = CTXTP(ctxt, cancel)(ctxt, lsm, count, cookies, flags);
+        rc = CTXTP(ctxt, cancel)(env, ctxt, count, cookies, flags);
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cancel);
@@ -325,13 +322,13 @@ cat_cleanup:
 
 /* lop_setup method for filter/osc */
 // XXX how to set exports
-int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
-                          int index, struct obd_device *disk_obd, int count,
+int llog_obd_origin_setup(const struct lu_env *env, struct obd_device *obd,
+                          struct obd_llog_group *olg, int index,
+                          struct obd_device *disk_obd, int count,
                           struct llog_logid *logid, const char *name)
 {
         struct llog_ctxt   *ctxt;
         struct llog_handle *handle;
-        struct lu_env       env;
         int rc;
         ENTRY;
 
@@ -339,20 +336,15 @@ int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
                 RETURN(0);
 
         LASSERT(count == 1);
-
-        rc = lu_env_init(&env, LCT_LOCAL);
-        if (rc)
-                RETURN(rc);
-
         LASSERT(olg != NULL);
         ctxt = llog_group_get_ctxt(olg, index);
         if (!ctxt)
-                GOTO(out_env, rc = -ENODEV);
+                RETURN(rc = -ENODEV);
 
         if (logid && logid->lgl_oid) {
-                rc = llog_open_create(&env, ctxt, &handle, logid, NULL);
+                rc = llog_open_create(env, ctxt, &handle, logid, NULL);
         } else {
-                rc = llog_open_create(&env, ctxt, &handle, NULL, (char *)name);
+                rc = llog_open_create(env, ctxt, &handle, NULL, (char *)name);
                 if (rc == 0 && logid)
                         *logid = handle->lgh_id;
         }
@@ -364,14 +356,12 @@ int llog_obd_origin_setup(struct obd_device *obd, struct obd_llog_group *olg,
         if (rc)
                 GOTO(out, rc);
 
-        rc = llog_process(&env, handle, (llog_cb_t)cat_cancel_cb, NULL, NULL);
+        rc = llog_process(env, handle, (llog_cb_t)cat_cancel_cb, NULL, NULL);
         if (rc)
                 CERROR("llog_process() with cat_cancel_cb failed: %d\n", rc);
         GOTO(out, rc);
 out:
         llog_ctxt_put(ctxt);
-out_env:
-        lu_env_fini(&env);
         return rc;
 }
 EXPORT_SYMBOL(llog_obd_origin_setup);
