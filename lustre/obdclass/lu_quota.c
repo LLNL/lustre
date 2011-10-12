@@ -232,8 +232,9 @@ EXPORT_SYMBOL(lu_quotactl);
  */
 
 /* global shared environment */
-struct lu_env   quota_procfs_env;
-cfs_semaphore_t quota_procfs_sem;  /* protect the quota_procfs_env */
+static struct lu_env   quota_procfs_env;
+static cfs_semaphore_t quota_procfs_sem;  /* protect the quota_procfs_env */
+static int             quota_print_header;
 
 static void *lprocfs_quota_seq_start(struct seq_file *p, loff_t *pos)
 {
@@ -244,12 +245,7 @@ static void *lprocfs_quota_seq_start(struct seq_file *p, loff_t *pos)
         int                     rc;
 
         cfs_down(&quota_procfs_sem); /* released in lprocfs_quota_seq_stop() */
-        rc = lu_env_init(&quota_procfs_env, LCT_MD_THREAD);
-        if (rc) {
-                CERROR("Error %d initializing env\n", rc);
-                return NULL;
-        }
-
+        quota_print_header = 1;
         if (obj == NULL)
                 /* accounting not enabled */
                 return NULL;
@@ -280,8 +276,6 @@ not_found:
 
 static void lprocfs_quota_seq_stop(struct seq_file *p, void *v)
 {
-        if (quota_procfs_env.le_ctx.lc_state == LCS_ENTERED)
-                lu_env_fini(&quota_procfs_env);
         cfs_up(&quota_procfs_sem);
 }
 
@@ -313,15 +307,24 @@ static int lprocfs_quota_seq_show(struct seq_file *p, void *v)
         struct dt_object       *obj = p->private;
         const struct dt_it_ops *iops;
         struct dt_it           *it;
+        struct dt_key          *key;
         struct acct_rec         rec;
         int                     rc;
 
         iops = &obj->do_index_ops->dio_it;
         it = (struct dt_it *)v;
 
-        /* 'root' is always the first entry */
-        if (*((__u64 *)iops->key(&quota_procfs_env, it)) == 0)
+        /* print header the first time */
+        if (quota_print_header) {
                 seq_printf(p, "%10s\t%20s\t%20s\n", "id", "inodes", "bytes");
+                quota_print_header = 0;
+        }
+
+        key = iops->key(&quota_procfs_env, it);
+        if (IS_ERR(key)) {
+                CERROR("Error %ld key\n", PTR_ERR(key));
+                return PTR_ERR(key);
+        }
 
         rc = iops->rec(&quota_procfs_env, it, (struct dt_rec *)&rec, 0);
         if (rc) {
@@ -329,8 +332,7 @@ static int lprocfs_quota_seq_show(struct seq_file *p, void *v)
                 return rc;
         }
 
-        seq_printf(p, "%10llu\t%20llu\t%20llu\n",
-                   *((__u64 *)iops->key(&quota_procfs_env, it)),
+        seq_printf(p, "%10llu\t%20llu\t%20llu\n", *((__u64 *)key),
                    rec.ispace, rec.bspace);
         return 0;
 }
@@ -377,7 +379,11 @@ void lprocfs_quota_init(struct lu_quota *quota,
 
         LASSERT(obd_proc_entry != NULL);
 
-        cfs_sema_init(&quota_procfs_sem, 1);
+        cfs_down(&quota_procfs_sem);
+        rc = lu_env_refill(&quota_procfs_env);
+        cfs_up(&quota_procfs_sem);
+        if (rc)
+                CWARN("Failed to refill lu_quota env for procfs %d\n", rc);
 
         rc = lprocfs_seq_create(obd_proc_entry, "quota_acct_user",
                                 0444, &lprocfs_quota_seq_fops,
@@ -397,3 +403,32 @@ static void lprocfs_quota_init(struct lu_quota *quota,
                                cfs_proc_dir_entry_t *obd_proc_entry)
 { return; }
 #endif /* LPROCFS */
+
+/**
+ * Initialize global paramaters. Called only once from lu_global_init().
+ */
+int lu_quota_global_init(void)
+{
+        int rc = 0;
+#ifdef LPROCFS
+        cfs_sema_init(&quota_procfs_sem, 1);
+        rc = lu_env_init(&quota_procfs_env, LCT_DT_THREAD);
+        if (rc) {
+                CERROR("Error initializing global quota env, failed with %d\n",
+                        rc);
+                return rc;
+        }
+#endif
+        return rc;
+}
+
+/**
+ * Release global paramaters. Called only once from lu_global_fini().
+ */
+void lu_quota_global_fini(void)
+{
+#ifdef LPROCFS
+        if (quota_procfs_env.le_ctx.lc_state == LCS_ENTERED)
+                lu_env_fini(&quota_procfs_env);
+#endif
+}
