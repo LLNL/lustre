@@ -1,9 +1,26 @@
 # lustre.spec
 %{!?version: %define version @VERSION@}
+
+# Requires to build with mock in the Chaos 5 BuildFarm.  The kernel-devel
+# packages will be install but they will not match the running kernel.
+# Additionally, make the ldiskfs and zfs build dependencies non-conditional
+# to ensure that mock installs them in the chroot environment.
+%if 0%{?el6}
+%define klnk %{_usrsrc}/kernels/*/include/config
+%{!?kver: %define kver %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
+%{!?kdir: %define kdir %(dir=$(echo "%configure_args" | sed -ne 's/.*--with-linux=\\([^ ][^ ]*\\).*$/\\1/p'); if [ -n "$dir" ]; then echo "$dir"; else if [ -n "%kver" ]; then kversion="%kver"; else kversion="$(uname -r)"; fi; echo "%{_usrsrc}/kernels/$kversion"; fi)}
+%{!?kobjdir: %define kobjdir %kdir}
+BuildRequires: kernel-devel kernel-debuginfo-common-%{_target_cpu}
+BuildRequires: spl-modules-devel zfs-modules-devel zfs-devel zfs
+%else
+
+# Other platforms
 %{!?kver: %define kver ""}
 %{!?kdir: %define kdir %(dir=$(echo "%configure_args" | sed -ne 's/.*--with-linux=\\([^ ][^ ]*\\).*$/\\1/p'); if [ -n "$dir" ]; then echo "$dir"; else if [ -n "%kver" ]; then kversion="%kver"; else kversion="$(uname -r)"; fi; echo "/lib/modules/$kversion/source"; fi)}
 
 %{!?kobjdir: %define kobjdir %(dir=$(echo "%configure_args" | sed -ne 's/.*--with-linux-obj=\\([^ ][^ ]*\\).*$/\\1/p'); if [ -n "$dir" ]; then echo "$dir"; else if [ -n "%kver" ]; then kversion="%kver"; else kversion="$(uname -r)"; fi; if [ "%kdir" = "/lib/modules/$kversion/source" ]; then echo "/lib/modules/$kversion/build"; else echo "%kdir"; fi; fi)}
+
+%endif
 
 # as an alternative to this implementation we could simply "make -C $kdir kernelversion"
 %{!?kversion: %define kversion %(if test -s %kobjdir/include/linux/utsrelease.h ; then LINUXRELEASEHEADER=utsrelease.h; else LINUXRELEASEHEADER=version.h; fi; sed -ne '/^#define UTS_RELEASE/s/.*"\\(.*\\)"$/\\1/p' %kobjdir/include/linux/$LINUXRELEASEHEADER)}
@@ -70,6 +87,10 @@ Userspace tools and files for the Lustre file system.
 
 %package modules
 Summary: Kernel Lustre modules for Linux %{kversion}
+# CHAOS 5.x
+%if 0%{?el6}
+Requires: kernel spl-modules zfs-modules spl zfs
+%else
 # for SLES11, we need nothing here
 # for SLES10, we need (where %{flavor} is, i.e. smp):
 %if %sles10
@@ -79,6 +100,7 @@ Requires: kernel-%{flavor}
 # for RHEL we need to require the specific kernel still since weak-modules
 # support on RH is, well, weak, to be punny about it
 Requires: kernel = %{krequires}
+%endif
 %endif
 %endif
 %if ! %{is_client}
