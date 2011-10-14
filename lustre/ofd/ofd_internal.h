@@ -405,10 +405,10 @@ int ofd_clear_truncated_page(struct inode *inode);
 
 /* ofd_recovery.c */
 struct thandle *ofd_trans_create(const struct lu_env *env,
-                                 struct ofd_device *ofd,
-                                 struct ofd_object *fo);
+                                 struct ofd_device *ofd);
 int ofd_trans_start(const struct lu_env *env,
-                    struct ofd_device *ofd, struct thandle *th);
+                    struct ofd_device *ofd, struct ofd_object *fo,
+                    struct thandle *th);
 void ofd_trans_stop(const struct lu_env *env, struct ofd_device *ofd,
                     struct thandle *th, int rc);
 int ofd_client_free(struct lu_env *env, struct obd_export *exp);
@@ -564,6 +564,10 @@ static inline void ofd_info2oti(struct ofd_thread_info *info,
                                    struct obd_trans_info *oti)
 {
         oti->oti_xid = info->fti_xid;
+        LASSERTF(ergo(oti->oti_transno > 0,
+                      oti->oti_transno == info->fti_transno),
+                 "Overwrite replay transno "LPX64" by "LPX64"\n",
+                 oti->oti_transno, info->fti_transno);
         oti->oti_transno = info->fti_transno;
         oti->oti_pre_version = info->fti_pre_version;
 }

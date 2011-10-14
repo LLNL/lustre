@@ -80,20 +80,25 @@ const struct lu_buf *mdt_buf_const(const struct lu_env *env,
 struct thandle* mdt_trans_create(const struct lu_env *env,
                                 struct mdt_device *mdt)
 {
-        return dt_trans_create(env, mdt->mdt_bottom);
-}
-
-int mdt_trans_start(const struct lu_env *env,
-                                struct mdt_device *mdt, struct thandle *th)
-{
-
         struct mdt_thread_info *mti;
+        struct thandle *th;
+
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
+        LASSERT(mti);
+        th = dt_trans_create(env, mdt->mdt_bottom);
+        if (IS_ERR(th))
+                return th;
 
         /* export can require sync operations */
         if (mti->mti_exp != NULL)
                 th->th_sync |= mti->mti_exp->exp_need_sync;
+        return th;
 
+}
+
+int mdt_trans_start(const struct lu_env *env,
+                    struct mdt_device *mdt, struct thandle *th)
+{
         return dt_trans_start(env, mdt->mdt_bottom, th);
 }
 
@@ -472,23 +477,27 @@ static int mdt_txn_start_cb(const struct lu_env *env,
 {
         struct mdt_device *mdt = cookie;
         struct mdt_thread_info *mti;
-        loff_t off;
         int rc;
         ENTRY;
 
         mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
 
         LASSERT(mdt->mdt_lut.lut_last_rcvd);
-        off = mti->mti_exp ?
-                mti->mti_exp->exp_target_data.ted_lr_off : 0;
+        if (mti->mti_exp == NULL)
+                RETURN(0);
+
         rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
-                                     sizeof(struct lsd_client_data), off, th);
+                                     sizeof(struct lsd_client_data),
+                                     mti->mti_exp->exp_target_data.ted_lr_off,
+                                     th);
         if (rc)
                 RETURN(rc);
+
         rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
                                      sizeof(struct lr_server_data), 0, th);
         if (rc)
                 RETURN(rc);
+
         if (mti->mti_mos != NULL)
                 rc = dt_declare_version_set(env, mdt_obj2dt(mti->mti_mos), th);
         RETURN(rc);
