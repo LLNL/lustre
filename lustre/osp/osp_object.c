@@ -128,7 +128,7 @@ static int osp_attr_set(const struct lu_env *env, struct dt_object *dt,
          * once transaction is committed put proper command on
          * the queue going to our OST
          */
-        rc = osp_sync_add(env, o, MDS_SETATTR64_REC, th);
+        rc = osp_sync_add(env, o, MDS_SETATTR64_REC, th, attr);
 
         /* XXX: we need a change in OSD API to track committness */
 
@@ -288,7 +288,7 @@ static int osp_object_destroy(const struct lu_env *env,
          * once transaction is committed put proper command on
          * the queue going to our OST
          */
-        rc = osp_sync_add(env, o, MDS_UNLINK64_REC, th);
+        rc = osp_sync_add(env, o, MDS_UNLINK64_REC, th, NULL);
 
         /* XXX: we need a change in OSD API to track committness */
 

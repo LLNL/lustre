@@ -210,7 +210,8 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 
 static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
                             const struct lu_fid *fid, llog_op_type type,
-                            int count, struct thandle *th)
+                            int count, struct thandle *th,
+                            const struct lu_attr *attr)
 {
         struct osp_thread_info *osi = osp_env_info(env);
         struct llog_ctxt    *ctxt;
@@ -236,6 +237,9 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
                         osi->u.hdr.lrh_type = MDS_SETATTR64_REC;
                         osi->u.setattr.lsr_oid  = osi->osi_oi.oi_id;
                         osi->u.setattr.lsr_oseq = osi->osi_oi.oi_seq;
+                        LASSERT(attr);
+                        osi->u.setattr.lsr_uid = attr->la_uid;
+                        osi->u.setattr.lsr_gid = attr->la_gid;
                         break;
                 default:
                         LBUG();
@@ -273,16 +277,18 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
 }
 
 int osp_sync_add(const struct lu_env *env, struct osp_object *o,
-                 llog_op_type type, struct thandle *th)
+                 llog_op_type type, struct thandle *th,
+                 const struct lu_attr *attr)
 {
         return osp_sync_add_rec(env, lu2osp_dev(o->opo_obj.do_lu.lo_dev),
-                                lu_object_fid(&o->opo_obj.do_lu), type, 1, th);
+                                lu_object_fid(&o->opo_obj.do_lu), type, 1,
+                                th, attr);
 }
 
 int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
                  struct lu_fid *fid, int lost, struct thandle *th)
 {
-        return osp_sync_add_rec(env, d, fid, MDS_UNLINK64_REC, lost, th);
+        return osp_sync_add_rec(env, d, fid, MDS_UNLINK64_REC, lost, th, NULL);
 }
 
 /*

@@ -300,7 +300,8 @@ int osp_sync_init(const struct lu_env *env, struct osp_device *d);
 int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
                          llog_op_type type, struct thandle *th);
 int osp_sync_add(const struct lu_env *env, struct osp_object *d,
-                 llog_op_type type, struct thandle *th);
+                 llog_op_type type, struct thandle *th,
+                 const struct lu_attr *attr);
 int osp_sync_gap(const struct lu_env *env, struct osp_device *d,
                  struct lu_fid *fid, int lost, struct thandle *th);
 int osp_sync_fini(struct osp_device *d);
