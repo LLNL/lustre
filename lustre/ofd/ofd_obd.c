@@ -648,7 +648,7 @@ int ofd_setattr(const struct lu_env *env, struct obd_export *exp,
         ofd_build_resid(&info->fti_fid, &info->fti_resid);
 
         rc = ofd_auth_capa(ofd, &info->fti_fid, oa->o_seq,
-                              oinfo_capa(oinfo), CAPA_OPC_META_WRITE);
+                           oinfo_capa(oinfo), CAPA_OPC_META_WRITE);
         if (rc)
                 GOTO(out, rc);
 

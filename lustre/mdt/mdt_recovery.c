@@ -450,15 +450,14 @@ static int mdt_txn_start_cb(const struct lu_env *env,
 {
 	struct mdt_device *mdt = cookie;
 	struct mdt_thread_info *mti;
-	loff_t off;
 	int rc;
 	ENTRY;
 
 	mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
 
 	LASSERT(mdt->mdt_lut.lut_last_rcvd);
-	off = mti->mti_exp ?
-	      mti->mti_exp->exp_target_data.ted_lr_off : 0;
+	if (mti->mti_exp == NULL)
+		RETURN(0);
 
 	rc = dt_declare_record_write(env, mdt->mdt_lut.lut_last_rcvd,
 				     sizeof(struct lsd_client_data),

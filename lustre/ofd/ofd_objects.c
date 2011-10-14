@@ -166,7 +166,7 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
         info->fti_off = 0;
 
         ofd_write_lock(env, fo);
-        th = ofd_trans_create(env, ofd, fo);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(out_unlock, rc = PTR_ERR(th));
 
@@ -241,7 +241,7 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(unlock, rc);
 
-        th = ofd_trans_create(env, ofd, la->la_valid & LA_SIZE ? fo : NULL);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
@@ -249,7 +249,7 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(stop, rc);
 
-        rc = ofd_trans_start(env, ofd, th);
+        rc = ofd_trans_start(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
         if (rc)
                 GOTO(stop, rc);
 
@@ -290,7 +290,7 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(unlock, rc);
 
-        th = ofd_trans_create(env, ofd, fo);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
@@ -302,7 +302,7 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(stop, rc);
 
-        rc = ofd_trans_start(env, ofd, th);
+        rc = ofd_trans_start(env, ofd, fo, th);
         if (rc)
                 GOTO(stop, rc);
 
@@ -332,7 +332,7 @@ int ofd_object_destroy(const struct lu_env *env, struct ofd_object *fo,
         if (!ofd_object_exists(fo))
                 GOTO(unlock, rc = -ENOENT);
 
-        th = ofd_trans_create(env, ofd, NULL);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
 
@@ -341,7 +341,7 @@ int ofd_object_destroy(const struct lu_env *env, struct ofd_object *fo,
         if (orphan)
                 rc = dt_trans_start_local(env, ofd->ofd_osd, th);
         else
-                rc = ofd_trans_start(env, ofd, th);
+                rc = ofd_trans_start(env, ofd, NULL, th);
         if (rc)
                 GOTO(stop, rc);
 

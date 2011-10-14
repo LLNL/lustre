@@ -322,7 +322,7 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
                 GOTO(out, rc = -EINPROGRESS);
 
 retry:
-        th = ofd_trans_create(env, ofd, fo);
+        th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
 
@@ -345,7 +345,7 @@ retry:
                         GOTO(out_stop, rc);
         }
 
-        rc = ofd_trans_start(env, ofd, th);
+        rc = ofd_trans_start(env, ofd, fo, th);
         if (rc)
                 GOTO(out_stop, rc);
 

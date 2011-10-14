@@ -45,14 +45,10 @@
 #include "ofd_internal.h"
 
 struct thandle *ofd_trans_create(const struct lu_env *env,
-                                 struct ofd_device *ofd,
-                                 struct ofd_object *obj)
+                                 struct ofd_device *ofd)
 {
         struct ofd_thread_info *info = ofd_info(env);
         struct thandle *th;
-        struct filter_export_data *fed;
-        struct tg_export_data *ted;
-        int rc;
 
         LASSERT(info);
 
@@ -63,44 +59,45 @@ struct thandle *ofd_trans_create(const struct lu_env *env,
         /* export can require sync operations */
         if (info->fti_exp != NULL)
                 th->th_sync |= info->fti_exp->exp_need_sync;
+        return th;
+}
 
-        /* no last_rcvd update needed */
+int ofd_trans_start(const struct lu_env *env, struct ofd_device *ofd,
+                    struct ofd_object *obj, struct thandle *th)
+{
+        struct ofd_thread_info *info = ofd_info(env);
+        int rc;
+
         if (info->fti_exp == NULL)
-                return th;
+                return 0;
 
         /* declare last_rcvd update */
-        fed = &info->fti_exp->exp_filter_data;
-        ted = &fed->fed_ted;
         rc = dt_declare_record_write(env, ofd->ofd_last_rcvd,
-                                     sizeof(*ted->ted_lcd),
-                                     ted->ted_lr_off, th);
+                                     sizeof(struct lsd_client_data),
+                                     info->fti_exp->exp_target_data.ted_lr_off,
+                                     th);
         if (rc)
-                RETURN(ERR_PTR(rc));
+                RETURN(rc);
+
         /* declare last_rcvd header update */
         rc = dt_declare_record_write(env, ofd->ofd_last_rcvd,
                                      sizeof(ofd->ofd_fsd), 0, th);
         if (rc)
-                RETURN(ERR_PTR(rc));
+                RETURN(rc);
+
         /* version change is required for this object */
         if (obj) {
                 ofd_info(env)->fti_obj = obj;
                 rc = dt_declare_version_set(env, ofd_object_child(obj), th);
                 if (rc)
-                        RETURN(ERR_PTR(rc));
+                        RETURN(rc);
         }
-        return th;
-}
 
-int ofd_trans_start(const struct lu_env *env,
-                       struct ofd_device *ofd,
-                       struct thandle *th)
-{
         return dt_trans_start(env, ofd->ofd_osd, th);
 }
 
-void ofd_trans_stop(const struct lu_env *env,
-                       struct ofd_device *ofd,
-                       struct thandle *th, int rc)
+void ofd_trans_stop(const struct lu_env *env, struct ofd_device *ofd,
+                    struct thandle *th, int rc)
 {
         th->th_result = rc;
         dt_trans_stop(env, ofd->ofd_osd, th);
