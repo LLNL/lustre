@@ -21,7 +21,8 @@ ONLY=${ONLY:-"$*"}
 # useful any more. Then add it to ALWAYS_EXCEPT. b=19835
 # We have changed the mechanism of quota, test_12 is meanless now.
 # b=20877
-ALWAYS_EXCEPT="10 12 $SANITY_QUOTA_EXCEPT"
+# XXX only enable quota accounting tests for now.
+ALWAYS_EXCEPT="0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 $SANITY_QUOTA_EXCEPT"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
 case `uname -r` in
@@ -62,10 +63,6 @@ DIRECTIO=${DIRECTIO:-$LUSTRE/tests/directio}
 
 require_dsh_mds || exit 0
 require_dsh_ost || exit 0
-
-# Orion
-skip_env "$0: is not functional in Orion until quota rework"
-exit 0
 
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="9 10 11 18b 21"
 
@@ -300,12 +297,6 @@ quota_show_check() {
 # set quota
 quota_init() {
 	do_nodes $(comma_list $(nodes_list)) "lctl set_param debug=+quota"
-
-	log "do the quotacheck ..."
-	$LFS quotacheck -ug $DIR
-
-	resetquota -u $TSTUSR
-	resetquota -g $TSTUSR
 }
 quota_init
 
@@ -337,7 +328,7 @@ test_0() {
 
 	resetquota -u $TSTUSR
 }
-run_test_with_stat 0 "Test basic quota performance ==="
+run_test 0 "Test basic quota performance ==="
 
 # test for specific quota limitation, qunit, qtune $1=block_quota_limit
 test_1_sub() {
@@ -426,7 +417,7 @@ test_1() {
 	    set_blk_tunesz $((128 * 1024 / 2))
         done
 }
-run_test_with_stat 1 "Block hard limit (normal use and out of quota) ==="
+run_test 1 "Block hard limit (normal use and out of quota) ==="
 
 # test for specific quota limitation, qunit, qtune $1=block_quota_limit
 test_2_sub() {
@@ -516,7 +507,7 @@ test_2() {
 	    set_file_tunesz 2560
         done
 }
-run_test_with_stat 2 "File hard limit (normal use and out of quota) ==="
+run_test 2 "File hard limit (normal use and out of quota) ==="
 
 test_block_soft() {
 	TESTFILE=$1
@@ -617,7 +608,7 @@ test_3() {
 	test_block_soft $TESTFILE $GRACE
 	resetquota -g $TSTUSR
 }
-run_test_with_stat 3 "Block soft limit (start timer, timer goes off, stop timer) ==="
+run_test 3 "Block soft limit (start timer, timer goes off, stop timer) ==="
 
 test_file_soft() {
 	TESTFILE=$1
@@ -705,7 +696,7 @@ test_4a() {	# was test_4
 	$LFS setquota -t -u --block-grace $MAX_DQ_TIME --inode-grace $MAX_IQ_TIME $DIR
 	$LFS setquota -t -g --block-grace $MAX_DQ_TIME --inode-grace $MAX_IQ_TIME $DIR
 }
-run_test_with_stat 4a "File soft limit (start timer, timer goes off, stop timer) ==="
+run_test 4a "File soft limit (start timer, timer goes off, stop timer) ==="
 
 test_4b() {	# was test_4a
         GR_STR1="1w3d"
@@ -733,7 +724,7 @@ test_4b() {	# was test_4a
         $LFS setquota -t -u --block-grace $MAX_DQ_TIME --inode-grace $MAX_IQ_TIME $DIR
         $LFS setquota -t -g --block-grace $MAX_DQ_TIME --inode-grace $MAX_IQ_TIME $DIR
 }
-run_test_with_stat 4b "Grace time strings handling ==="
+run_test 4b "Grace time strings handling ==="
 
 # chown & chgrp (chown & chgrp successfully even out of block/file quota)
 test_5() {
@@ -767,7 +758,7 @@ test_5() {
 	resetquota -u $TSTUSR
 	resetquota -g $TSTUSR
 }
-run_test_with_stat 5 "Chown & chgrp successfully even out of block/file quota ==="
+run_test 5 "Chown & chgrp successfully even out of block/file quota ==="
 
 # block quota acquire & release
 test_6() {
@@ -874,7 +865,7 @@ test_6() {
 	resetquota -g $TSTUSR
 	return 0
 }
-run_test_with_stat 6 "Block quota acquire & release ========="
+run_test 6 "Block quota acquire & release ========="
 
 # quota recovery (block quota only by now)
 test_7()
@@ -926,7 +917,7 @@ test_7()
 	# cleanup
 	resetquota -u $TSTUSR
 }
-run_test_with_stat 7 "Quota recovery (only block limit) ======"
+run_test 7 "Quota recovery (only block limit) ======"
 
 # run dbench with quota enabled
 test_8() {
@@ -951,7 +942,7 @@ test_8() {
 
 	return 0
 }
-run_test_with_stat 8 "Run dbench with quota enabled ==========="
+run_test 8 "Run dbench with quota enabled ==========="
 
 # run for fixing bug10707, it needs a big room. test for 64bit
 KB=1024
@@ -1023,7 +1014,7 @@ test_9() {
 
         return $RC
 }
-run_test_with_stat 9 "run for fixing bug10707(64bit) ==========="
+run_test 9 "run for fixing bug10707(64bit) ==========="
 
 # 2.0 version does not support 32 bit qd_count,
 # test_10 "run for fixing bug10707(32bit) " is obsolete
@@ -1100,7 +1091,7 @@ test_12() {
 
         resetquota -u $TSTUSR
 }
-run_test_with_stat 12 "test a deadlock between quota and journal ==="
+run_test 12 "test a deadlock between quota and journal ==="
 
 # test multiple clients write block quota b=11693
 test_13() {
@@ -1164,7 +1155,7 @@ test_13() {
 
 	resetquota -u $TSTUSR
 }
-run_test_with_stat 13 "test multiple clients write block quota ==="
+run_test 13 "test multiple clients write block quota ==="
 
 check_if_quota_zero(){
         line=`$LFS quota -v -$1 $2 $DIR | wc -l`
@@ -1219,7 +1210,7 @@ test_14a() {	# was test_14 b=12223 -- setting quota on root
 	rm -f $TESTFILE
 	sync; sleep 3; sync;
 }
-run_test_with_stat 14a "test setting quota on root ==="
+run_test 14a "test setting quota on root ==="
 
 test_15(){
         LIMIT=$((24 * 1024 * 1024 * 1024 * 1024)) # 24 TB
@@ -1253,7 +1244,7 @@ test_15(){
         $LFS quotainv -ugf $DIR
         $LFS quotacheck -ug $DIR
 }
-run_test_with_stat 15 "set block quota more than 4T ==="
+run_test 15 "set block quota more than 4T ==="
 
 # 2.0 version does not support WITHOUT_CHANGE_QS,
 # test_16 "test without adjusting qunit" is obsolete
@@ -1316,7 +1307,7 @@ test_17() {
 
 	return $RC
 }
-run_test_with_stat 17 "run for fixing bug14526 ==========="
+run_test 17 "run for fixing bug14526 ==========="
 
 # test when mds takes a long time to handle a quota req so that
 # the ost has dropped it, the ost still could work well b=14840
@@ -1378,7 +1369,7 @@ test_18() {
 	set_blk_unitsz $((128 * 1024))
 	set_blk_tunesz $((128 * 1024 / 2))
 }
-run_test_with_stat 18 "run for fixing bug14840 ==========="
+run_test 18 "run for fixing bug14840 ==========="
 
 # test when mds drops a quota req, the ost still could work well b=14840
 test_18a() {
@@ -1431,7 +1422,7 @@ test_18a() {
 	set_blk_unitsz $((128 * 1024))
 	set_blk_tunesz $((128 * 1024 / 2))
 }
-run_test_with_stat 18a "run for fixing bug14840 ==========="
+run_test 18a "run for fixing bug14840 ==========="
 
 # test when mds do failover, the ost still could work well without trigger
 # watchdog b=14840
@@ -1527,7 +1518,7 @@ test_18b() {
 	[ `echo "$watchdog" | wc -l` -ge 3 ] && error "$watchdog"
 	rm -f $TMP/lustre-log-${TESTNAME}.log
 }
-run_test_with_stat 18b "run for fixing bug14840(mds failover, no watchdog) ==========="
+run_test 18b "run for fixing bug14840(mds failover, no watchdog) ==========="
 
 # test when mds does failover, the ost still could work well
 # this test will prevent OST_DISCONNET from happening b=14840
@@ -1538,7 +1529,7 @@ test_18c() {
 	test_18bc_sub directio
 	lustre_fail ost  0
 }
-run_test_with_stat 18c "run for fixing bug14840(mds failover, OST_DISCONNECT is disabled) ==========="
+run_test 18c "run for fixing bug14840(mds failover, OST_DISCONNECT is disabled) ==========="
 
 run_to_block_limit() {
 	local LIMIT=$((($OSTCOUNT + 1) * $BUNIT_SZ))
@@ -1585,7 +1576,7 @@ test_19() {
 	set_blk_tunesz $((128 * 1024 / 2))
 
 }
-run_test_with_stat 19 "test if administrative limits updates do not zero operational limits (14790) ==="
+run_test 19 "test if administrative limits updates do not zero operational limits (14790) ==="
 
 test_20()
 {
@@ -1607,7 +1598,7 @@ test_20()
 
         resetquota -u $TSTUSR
 }
-run_test_with_stat 20 "test if setquota specifiers work properly (15754)"
+run_test 20 "test if setquota specifiers work properly (15754)"
 
 test_21_sub() {
 	local testfile=$1
@@ -1685,7 +1676,7 @@ test_21() {
 
 	return $RC
 }
-run_test_with_stat 21 "run for fixing bug16053 ==========="
+run_test 21 "run for fixing bug16053 ==========="
 
 test_22() {
         quota_save_version "ug3"
@@ -1701,7 +1692,7 @@ test_22() {
 
         quota_init
 }
-run_test_with_stat 22 "test if quota_type saved as permanent parameter ===="
+run_test 22 "test if quota_type saved as permanent parameter ===="
 
 test_23_sub() {
 	mkdir -p $DIR/$tdir
@@ -1760,7 +1751,7 @@ test_23() {
 	log "run for $((40 * $slave_cnt))MB test file"
 	test_23_sub $((40 * $slave_cnt * 1024))
 }
-run_test_with_stat 23 "run for fixing bug16125 ==========="
+run_test 23 "run for fixing bug16125 ==========="
 
 test_24() {
 	local TESTFILE="$DIR/$tdir/$tfile"
@@ -1777,7 +1768,7 @@ test_24() {
 	set_blk_tunesz $((128 * 1024 / 2))
         
 }
-run_test_with_stat 24 "test if lfs draws an asterix when limit is reached (16646) ==========="
+run_test 24 "test if lfs draws an asterix when limit is reached (16646) ==========="
 
 show_quota() {
         if [ $1 = "-u" ]; then
@@ -1888,7 +1879,7 @@ test_25() {
 	log "run for chgrp case"
 	test_25_sub -g
 }
-run_test_with_stat 25 "test whether quota usage is transfered when chown/chgrp (18081) ==========="
+run_test 25 "test whether quota usage is transfered when chown/chgrp (18081) ==========="
 
 test_26() {
 	mkdir -p $DIR/$tdir
@@ -1933,14 +1924,14 @@ test_26() {
 	set_blk_tunesz $((128 * 1024 / 2))
 	resetquota -u $TSTUSR
 }
-run_test_with_stat 26 "test for false quota error(bz18491) ======================================"
+run_test 26 "test for false quota error(bz18491) ======================================"
 
 test_27a() {
         $LFS quota $TSTUSR $DIR && error "lfs succeeded with no type, but should have failed"
         $LFS setquota $TSTUSR $DIR && error "lfs succeeded with no type, but should have failed"
         return 0
 }
-run_test_with_stat 27a "lfs quota/setquota should handle wrong arguments (19612) ================="
+run_test 27a "lfs quota/setquota should handle wrong arguments (19612) ================="
 
 test_27b() {
         $LFS setquota -u $TSTID -b 1000 -B 1000 -i 1000 -I 1000 $DIR || \
@@ -2001,7 +1992,7 @@ test_28() {
 
         resetquota -u $TSTUSR
 }
-run_test_with_stat 28 "test for consistency for qunit when setquota (18574) ==========="
+run_test 28 "test for consistency for qunit when setquota (18574) ==========="
 
 test_29()
 {
@@ -2039,7 +2030,7 @@ test_29()
 
         resetquota -u $TSTUSR
 }
-run_test_with_stat 29 "unhandled quotactls must not hang lustre client (19778) ========"
+run_test 29 "unhandled quotactls must not hang lustre client (19778) ========"
 
 test_30()
 {
@@ -2078,7 +2069,7 @@ test_30()
         set_blk_unitsz $((128 * 1024))
         set_blk_tunesz $((128 * 1024 / 2))
 }
-run_test_with_stat 30 "hard limit updates should not reset grace times ================"
+run_test 30 "hard limit updates should not reset grace times ================"
 
 # test duplicate quota releases b=18630
 test_31() {
@@ -2126,7 +2117,7 @@ test_31() {
         lustre_fail ost 0
         resetquota -u $TSTUSR
 }
-run_test_with_stat 31 "test duplicate quota releases ==="
+run_test 31 "test duplicate quota releases ==="
 
 # check hash_cur_bits
 check_quota_hash_cur_bits() {
@@ -2253,6 +2244,9 @@ test_33() {
 
         cleanup_quota_test
 
+        echo "Wait for unlink objects finished..."
+        wait_delete_completed
+
         echo "Verify disk usage after delete"
         wait_delete_completed
         USED=`getquota -u $TSTID global curspace`
@@ -2287,6 +2281,9 @@ test_34() {
         echo "chown the file to user $TSTID"
         chown $TSTID $DIR/$tdir/$tfile || error "chown failed"
 
+        echo "Wait for setattr on objects finished..."
+        wait_delete_completed
+
         echo "Verify disk usage for user $TSTID"
         USED=`getquota -u $TSTID global curspace`
         [ $USED -lt $BLK_CNT ] && \
@@ -2297,6 +2294,9 @@ test_34() {
 
         echo "chgrp the file to group $TSTID"
         chgrp $TSTID $DIR/$tdir/$tfile || error "chgrp failed"
+
+        echo "Wait for setattr on objects finished..."
+        wait_delete_completed
 
         echo "Verify disk usage for group $TSTID"
         USED=`getquota -g $TSTID global curspace`
@@ -2366,10 +2366,8 @@ test_35() {
 run_test 35 "usage is still accessible across reboot ============================"
 
 
-# turn off quota
 quota_fini()
 {
-	$LFS quotaoff $DIR
         do_nodes $(comma_list $(nodes_list)) "lctl set_param debug=-quota"
 }
 quota_fini
