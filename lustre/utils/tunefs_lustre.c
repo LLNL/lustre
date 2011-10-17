@@ -352,6 +352,9 @@ int main(int argc, char *const argv[])
 
         set_defaults(&mop);
 
+        /* device is last arg */
+        strscpy(mop.mo_device, argv[argc - 1], sizeof(mop.mo_device));
+
         ret = osd_init();
         if (ret)
                 return ret;
