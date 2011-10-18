@@ -267,6 +267,7 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
         struct thandle       *th;
         int                   rc = 0;
         int retries = 0;
+        __u64                   valid = 0;
         ENTRY;
 
         LASSERT(objcount == 1);
@@ -289,6 +290,35 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
                 GOTO(out, rc);
         LASSERT(ln->la_valid & LA_MODE);
 
+        /*
+         * If the object still has SUID+SGID bits set (see
+         * ofd_precreate_object()) then we will accept the UID+GID if sent by
+         * the client for initializing the ownership of this object.  We only
+         * allow this to happen once (so clear these bits) and later only allow
+         * setattr.
+         */
+        if ((ln->la_mode & S_ISUID) && (la->la_valid & LA_UID))
+                valid |= LA_UID;
+        if ((ln->la_mode & S_ISGID) && (la->la_valid & LA_GID))
+                valid |= LA_GID;
+        la->la_valid &= ~(LA_UID | LA_GID);
+        info->fti_buf.lb_buf = NULL;
+        if (valid) {
+                la->la_valid |= LA_MODE;
+                la->la_mode = ln->la_mode;
+                if (valid & LA_UID) {
+                        la->la_mode &= ~S_ISUID;
+                        la->la_valid |= LA_UID;
+                }
+                if (valid & LA_GID) {
+                        la->la_mode &= ~S_ISGID;
+                        la->la_valid |= LA_GID;
+                }
+
+                info->fti_buf.lb_len = sizeof(*ff);
+                info->fti_buf.lb_buf = ff;
+        }
+
 retry:
         th = ofd_trans_create(env, ofd, fo);
         if (IS_ERR(th))
@@ -296,15 +326,7 @@ retry:
 
         th->th_sync |= oti->oti_sync_write;
 
-        info->fti_buf.lb_buf = NULL;
-
-        if (ln->la_mode & S_ISUID || ln->la_mode & S_ISGID) {
-                la->la_valid |= LA_MODE;
-                la->la_mode = ln->la_mode & ~(S_ISUID | S_ISGID);
-
-                info->fti_buf.lb_len = sizeof(*ff);
-                info->fti_buf.lb_buf = ff;
-
+        if (info->fti_buf.lb_buf != NULL) {
                 rc = dt_declare_xattr_set(env, o, &info->fti_buf,
                                           XATTR_NAME_FID, 0, th);
                 if (rc)
