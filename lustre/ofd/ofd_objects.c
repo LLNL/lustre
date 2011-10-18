@@ -142,6 +142,11 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
                 RETURN(PTR_ERR(fo));
 
         info->fti_attr.la_valid = LA_TYPE | LA_MODE;
+        /*
+         * We mark object SUID+SGID to flag it for accepting UID+GID from
+         * client on first write.  Currently the permission bits on the OST are
+         * never used, so this is OK.
+         */
         info->fti_attr.la_mode = S_IFREG | S_ISUID | S_ISGID | 0666;
         info->fti_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
