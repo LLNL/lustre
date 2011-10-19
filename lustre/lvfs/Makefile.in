@@ -2,7 +2,7 @@ MODULES := lvfs
 @LDISKFS_ENABLED_TRUE@MODULES += fsfilt_ldiskfs
 @QUOTA_TRUE@MODULES += quotafmt_test
 
-lvfs-objs := lvfs_common.o lvfs_linux.o fsfilt.o lvfs_lib.o
+lvfs-objs := lvfs_linux.o fsfilt.o lvfs_lib.o
 
 @QUOTA_TRUE@quotafmt-objs := quotafmt_test.o
 
