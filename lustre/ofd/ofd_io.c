@@ -261,13 +261,13 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
                       struct obd_trans_info *oti, int old_rc)
 {
         struct ofd_thread_info *info = ofd_info(env);
-        struct ofd_object *fo;
-        struct dt_object     *o;
-        struct lu_attr       *ln = &info->fti_attr2;
-        struct thandle       *th;
-        int                   rc = 0;
-        int retries = 0;
+        struct ofd_object      *fo;
+        struct dt_object       *o;
+        struct lu_attr         *ln = &info->fti_attr2;
+        struct thandle         *th;
         __u64                   valid = 0;
+        int                     rc = 0;
+        int                     retries = 0;
         ENTRY;
 
         LASSERT(objcount == 1);
@@ -410,12 +410,12 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                     struct niobuf_local *lnb, struct obd_trans_info *oti,
                     int old_rc)
 {
-        struct ofd_device      *ofd = ofd_exp(exp);
-        struct lu_env             *env = oti->oti_env;
         struct ofd_thread_info *info;
         struct ofd_mod_data    *fmd;
         __u64                      valid;
-        int                        rc = 0;
+        struct ofd_device      *ofd = ofd_exp(exp);
+        struct lu_env          *env = oti->oti_env;
+        int                     rc = 0;
 
         info = ofd_info(env);
         ofd_oti2info(info, oti);
