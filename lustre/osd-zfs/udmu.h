@@ -94,12 +94,14 @@ typedef struct udmu_objset {
 
 /* Statfs space reservation for grant, fragmentation, and unlink space. */
 #define OSD_STATFS_RESERVED_BLKS  (1ULL << (22 - SPA_MAXBLOCKSHIFT)) /* 4MB */
-#define OSD_STATFS_RESERVED_SHIFT (10)         /* reserve 0.1% of all space */
+#define OSD_STATFS_RESERVED_SHIFT (7)         /* reserve 0.78% of all space */
 
 /* Statfs {minimum, safe estimate, and maximum} dnodes per block */
 #define OSD_DNODE_MIN_BLKSHIFT (SPA_MAXBLOCKSHIFT - DNODE_SHIFT) /* 17-9 =8 */
 #define OSD_DNODE_EST_BLKSHIFT (SPA_MAXBLOCKSHIFT - 12)          /* 17-12=5 */
 #define OSD_DNODE_EST_COUNT    1024
+
+#define OSD_GRANT_FOR_LOCAL_OIDS (2ULL << 20) /* 2MB for last_rcvd, ... */
 
 void udmu_init(void);
 void udmu_fini(void);

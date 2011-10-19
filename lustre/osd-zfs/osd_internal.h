@@ -45,7 +45,6 @@
 #include <dt_object.h>
 
 #define LUSTRE_ROOT_FID_SEQ     0
-#define DMU_RESERVED_FRACTION   25 /* default reserved fraction 1/25 = 4% */
 #define DMU_OSD_SVNAME          "svname"
 #define DMU_OSD_OI_NAME         "OBJECTS"
 
@@ -145,7 +144,6 @@ struct osd_device {
         char                      od_mntdev[128];
         char                      od_svname[128];
 
-        int                       od_reserved_fraction;
         int                       od_connects;
         struct lu_site            od_site;
 };
