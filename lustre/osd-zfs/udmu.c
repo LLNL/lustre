@@ -206,13 +206,16 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
         osfs->os_bfree = availbytes >> SPA_MAXBLOCKSHIFT;
         osfs->os_bavail = osfs->os_bfree; /* no extra root reservation */
 
+        /* Take replication (i.e. number of copies) into account */
+        osfs->os_bavail /= uos->os->os_copies;
+
         /*
          * Reserve some space so we don't run into ENOSPC due to grants not
          * accounting for metadata overhead in ZFS, and to avoid fragmentation.
          * Rather than report this via os_bavail (which makes users unhappy if
          * they can't fill the filesystem 100%), reduce os_blocks as well.
          *
-         * Reserve 0.1% of total space, at least 1MB for small filesystems,
+         * Reserve 0.78% of total space, at least 4MB for small filesystems,
          * for internal files to be created/unlinked when space is tight.
          */
         CLASSERT(OSD_STATFS_RESERVED_BLKS > 0);

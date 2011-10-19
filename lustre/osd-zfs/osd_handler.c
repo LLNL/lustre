@@ -449,8 +449,16 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
 
         rc = udmu_tx_assign(oh->ot_tx, TXG_WAIT);
         if (unlikely(rc != 0)) {
+                struct osd_device *osd = osd_dt_dev(d);
                 /* dmu will call commit callback with error code during abort */
-                CERROR("can't assign tx: %d\n", rc);
+                if (rc == ENOSPC)
+                        CERROR("%s: failed to start transaction due to ENOSPC. "
+                               "Metadata overhead is underestimated or "
+                               "grant_ratio is too low.\n",
+                               osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name);
+                else
+                        CERROR("%s: can't assign tx: %d\n",
+                               osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name, -rc);
         } else {
                 /* add commit callback */
                 udmu_tx_cb_register(oh->ot_tx, osd_trans_commit_cb, (void *)oh);
@@ -633,24 +641,16 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
                struct obd_statfs *osfs)
 {
         struct osd_device *osd = osd_dt_dev(d);
-        unsigned long long reserved = 0;
-        int                rc = 0;
+        int                rc;
         ENTRY;
 
-        /* XXX: do we really need a cache here? -bzzz */
         rc = udmu_objset_statfs(&osd->od_objset, osfs);
-        if (likely(osd->od_reserved_fraction))
-                reserved = osfs->os_blocks / osd->od_reserved_fraction;
-        if (osfs->os_bfree < reserved)
-                osfs->os_bfree = 0;
-        else
-                osfs->os_bfree -= reserved;
-        if (osfs->os_bavail < reserved)
-                osfs->os_bavail = 0;
-        else
-                osfs->os_bavail -= reserved;
-
-        RETURN (rc);
+        if (rc)
+                RETURN(rc);
+        osfs->os_bavail -= min_t(obd_size,
+                                 OSD_GRANT_FOR_LOCAL_OIDS / osfs->os_bsize,
+                                 osfs->os_bavail);
+        RETURN(0);
 }
 
 /*
@@ -669,6 +669,21 @@ static void osd_conf_get(const struct lu_env *env,
         /* XXX: remove when new llog/mountconf over osd are ready -bzzz */
         param->ddp_mnt           = NULL;
         param->ddp_mount_type    = LDD_MT_ZFS;
+        /* for maxbytes, report same value as ZPL */
+        param->ddp_maxbytes      = MAX_LFS_FILESIZE;
+
+        /* Default reserved fraction of the available space that should be kept
+         * for error margin. Unfortunately, there are many factors that can
+         * impact the overhead with zfs, so let's be very cautious for now and
+         * reserve 20% of the available space which is not given out as grant.
+         * This tunable can be changed on a live system via procfs if needed. */
+        param->ddp_grant_reserved = 20;
+
+        /* inodes are dynamically allocated, so we report the per-inode space
+         * consumption to upper layers
+        param->ddp_inodespace = XXX; TBD */
+        /* per-fragment overhead to be used by the client code
+        param->ddp_grant_frag = XXX; TBD */
 }
 
 /*
@@ -994,23 +1009,6 @@ static void osd_ah_init(const struct lu_env *env, struct dt_allocation_hint *ah,
         ah->dah_mode = child_mode;
 }
 
-static int osd_check_for_reserved_space(struct osd_device *osd)
-{
-        struct obd_statfs osfs;
-        int               rc;
-
-        if (osd->od_reserved_fraction == 0)
-                return 0;
-
-        rc = udmu_objset_statfs(&osd->od_objset, &osfs);
-        if (rc == 0) {
-                osfs.os_blocks = osfs.os_blocks / osd->od_reserved_fraction;
-                if (osfs.os_bavail < osfs.os_blocks)
-                        rc = -ENOSPC;
-        }
-        return rc;
-}
-
 static int osd_declare_object_create(const struct lu_env *env,
                                      struct dt_object *dt,
                                      struct lu_attr *attr,
@@ -1024,20 +1022,9 @@ static int osd_declare_object_create(const struct lu_env *env,
         struct osd_thandle  *oh;
         uint64_t             zapid;
         char                 buf[64];
-        int                  rc;
         ENTRY;
 
         LASSERT(dof);
-
-        /*
-         * XXX: this is a very short-term solution to reserve space
-         * for unlinks. by default 1/25 of space is reserved.
-         */
-        if (fid->f_seq != FID_SEQ_LLOG_OBJ) {
-                rc = osd_check_for_reserved_space(osd);
-                if (rc)
-                        RETURN(rc);
-        }
 
         switch (dof->dof_type) {
                 case DFT_REGULAR:
@@ -1576,7 +1563,6 @@ static int osd_declare_index_insert(const struct lu_env *env,
         struct osd_object  *obj = osd_dt_obj(dt);
         struct osd_thandle *oh;
         uint64_t            zapid;
-        int                 rc;
         ENTRY;
 
         LASSERT(th != NULL);
@@ -1584,10 +1570,6 @@ static int osd_declare_index_insert(const struct lu_env *env,
 
         LASSERT(obj->oo_db);
         LASSERT(udmu_object_is_zap(obj->oo_db));
-
-        rc = osd_check_for_reserved_space(osd_obj2dev(obj));
-        if (rc)
-                RETURN(rc);
 
         zapid = udmu_object_get_id(obj->oo_db);
 
@@ -2212,56 +2194,65 @@ static ssize_t osd_write(const struct lu_env *env, struct dt_object *dt,
         RETURN(rc);
 }
 
-static int osd_get_bufs(const struct lu_env *env, struct dt_object *dt,
-                        loff_t offset, ssize_t len, struct niobuf_local *_lb,
-                        int rw, struct lustre_capa *capa)
+static int osd_map_remote_to_local(struct dt_object *dt, loff_t offset,
+                                   ssize_t len, struct niobuf_local *lnb)
 {
-        struct osd_object   *obj  = osd_dt_obj(dt);
-        struct niobuf_local *lb = _lb;
-        int i, plen, npages = 0;
-
-        LASSERT(dt_object_exists(dt));
-        LASSERT(obj->oo_db);
+        int plen;
+        int nrpages = 0;
 
         while (len > 0) {
                 plen = len;
                 if (plen > CFS_PAGE_SIZE)
                         plen = CFS_PAGE_SIZE;
 
-                lb->lnb_file_offset = offset;
-                lb->lnb_page_offset = 0;
-                lb->lnb_len = plen;
-                lb->lnb_page = NULL;
-                lb->lnb_rc = 0;
-                lb->lnb_obj = dt;
+                lnb->lnb_file_offset = offset;
+                lnb->lnb_page_offset = 0;
+                lnb->lnb_len = plen;
+                lnb->lnb_page = NULL;
+                lnb->lnb_rc = 0;
+                lnb->lnb_obj = dt;
 
                 offset += plen;
                 len -= plen;
-                lb++;
-                npages++;
+                lnb++;
+                nrpages++;
         }
+        return nrpages;
+}
 
-        for (i = 0, lb = _lb; i< npages; i++, lb++) {
-                lb->lnb_page = alloc_page(GFP_NOFS | __GFP_HIGHMEM);
-                if (lb->lnb_page == NULL)
-                        goto out_err;
+static int osd_get_bufs(const struct lu_env *env, struct dt_object *dt,
+                        loff_t offset, ssize_t len, struct niobuf_local *lnb,
+                        int rw, struct lustre_capa *capa)
+{
+        struct osd_object   *obj     = osd_dt_obj(dt);
+        int                  rc, i, npages;
+        ENTRY;
+
+        LASSERT(dt_object_exists(dt));
+        LASSERT(obj->oo_db);
+
+        npages = osd_map_remote_to_local(dt, offset, len, lnb);
+
+        for (i = 0; i < npages; i++) {
+                lnb[i].lnb_page = alloc_page(GFP_NOFS | __GFP_HIGHMEM);
+                if (lnb[i].lnb_page == NULL)
+                        GOTO(out_err, rc = -ENOMEM);
                 lu_object_get(&dt->do_lu);
         }
 
-        return npages;
+        RETURN(npages);
 out_err:
-        lb = _lb;
         while (--i >= 0) {
-                LASSERT(lb->lnb_page);
+                LASSERT(lnb[i].lnb_page);
                 lu_object_put(env, &dt->do_lu);
-                __free_page(lb->lnb_page);
-                lb->lnb_page = NULL;
+                __free_page(lnb[i].lnb_page);
+                lnb[i].lnb_page = NULL;
         }
-        return -ENOMEM;
+        RETURN(rc);
 }
 
 static int osd_put_bufs(const struct lu_env *env, struct dt_object *dt,
-                        struct niobuf_local *lb, int npages)
+                        struct niobuf_local *lnb, int npages)
 {
         struct osd_object *obj  = osd_dt_obj(dt);
         int                i;
@@ -2269,20 +2260,20 @@ static int osd_put_bufs(const struct lu_env *env, struct dt_object *dt,
         LASSERT(dt_object_exists(dt));
         LASSERT(obj->oo_db);
 
-        for (i = 0; i < npages; i++, lb++) {
-                LASSERT(lb->lnb_obj == dt);
-                if (lb->lnb_page == NULL)
+        for (i = 0; i < npages; i++) {
+                LASSERT(lnb[i].lnb_obj == dt);
+                if (lnb[i].lnb_page == NULL)
                         continue;
                 lu_object_put(env, &dt->do_lu);
-                __free_page(lb->lnb_page);
-                lb->lnb_page = NULL;
+                __free_page(lnb[i].lnb_page);
+                lnb[i].lnb_page = NULL;
         }
 
         return 0;
 }
 
 static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
-                          struct niobuf_local *lb, int npages)
+                          struct niobuf_local *lnb, int npages)
 {
         struct osd_object *obj = osd_dt_obj(dt);
 
@@ -2294,13 +2285,13 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
 
 static int osd_declare_write_commit(const struct lu_env *env,
                                     struct dt_object *dt,
-                                    struct niobuf_local *lb, int npages,
+                                    struct niobuf_local *lnb, int npages,
                                     struct thandle *th)
 {
         struct osd_object  *obj = osd_dt_obj(dt);
         struct osd_thandle *oh;
-        uint64_t            offset;
-        uint32_t            size;
+        uint64_t            offset = 0;
+        uint32_t            size = 0;
         uint64_t            oid;
         int                 i;
         ENTRY;
@@ -2308,29 +2299,36 @@ static int osd_declare_write_commit(const struct lu_env *env,
         LASSERT(dt_object_exists(dt));
         LASSERT(obj->oo_db);
 
-        LASSERT(lb);
+        LASSERT(lnb);
         LASSERT(npages > 0);
-        LASSERT(lb->lnb_obj == dt);
+        LASSERT(lnb->lnb_obj == dt);
 
         oh = container_of0(th, struct osd_thandle, ot_super);
-
         oid = udmu_object_get_id(obj->oo_db);
 
-        offset = lb->lnb_file_offset;
-        size = lb->lnb_len;
-        lb++;
-        npages--;
-
-        for (i = 0; i < npages; i++, lb++) {
-                if (offset + size == lb->lnb_file_offset) {
-                        size += lb->lnb_len;
+        for (i = 0; i < npages; i++) {
+                if (lnb[i].lnb_rc)
+                        /* ENOSPC, network RPC error, etc.
+                         * We don't want to book space for pages which will be
+                         * skipped in osd_write_commit(). Hence we skip pages
+                         * with lnb_rc != 0 here too */
+                        continue;
+                if (size == 0) {
+                        /* first valid lnb */
+                        offset = lnb[i].lnb_file_offset;
+                        size = lnb[i].lnb_len;
+                        continue;
+                }
+                if (offset + size == lnb[i].lnb_file_offset) {
+                        /* this lnb is contiguous to the previous one */
+                        size += lnb[i].lnb_len;
                         continue;
                 }
 
                 udmu_tx_hold_write(oh->ot_tx, oid, offset, size);
 
-                offset = lb->lnb_file_offset;
-                size = lb->lnb_len;
+                offset = lnb->lnb_file_offset;
+                size = lnb->lnb_len;
         }
 
         if (size)
@@ -2342,7 +2340,7 @@ static int osd_declare_write_commit(const struct lu_env *env,
 }
 
 static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
-                            struct niobuf_local *lb, int npages,
+                            struct niobuf_local *lnb, int npages,
                             struct thandle *th)
 {
         struct osd_object  *obj  = osd_dt_obj(dt);
@@ -2359,18 +2357,33 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
         LASSERT(th != NULL);
         oh = container_of0(th, struct osd_thandle, ot_super);
 
-        for (i = 0; i < npages; i++, lb++) {
-                CDEBUG(D_OTHER, "write %u bytes at %u\n",
-                       (unsigned) lb->lnb_len, (unsigned) lb->lnb_file_offset);
+        for (i = 0; i < npages; i++) {
+                CDEBUG(D_INODE, "write %u bytes at %u\n",
+                       (unsigned) lnb[i].lnb_len,
+                       (unsigned) lnb[i].lnb_file_offset);
+
+                if (lnb[i].lnb_rc) {
+                        /* ENOSPC, network RPC error, etc.
+                         * Unlike ldiskfs, zfs allocates new blocks on rewrite,
+                         * so we skip this page if lnb_rc is set to -ENOSPC */
+                        CDEBUG(D_INODE, "Skipping [%d] == %d\n", i, lnb[i].lnb_rc);
+                        continue;
+                }
 
                 udmu_object_write(&osd->od_objset, obj->oo_db, oh->ot_tx,
-                                  lb->lnb_file_offset, lb->lnb_len,
-                                  kmap(lb->lnb_page));
-                kunmap(lb->lnb_page);
-                if (new_size < lb->lnb_file_offset + lb->lnb_len)
-                        new_size = lb->lnb_file_offset + lb->lnb_len;
+                                  lnb[i].lnb_file_offset, lnb[i].lnb_len,
+                                  kmap(lnb[i].lnb_page));
+                kunmap(lnb[i].lnb_page);
+                if (new_size < lnb[i].lnb_file_offset + lnb[i].lnb_len)
+                        new_size = lnb[i].lnb_file_offset + lnb[i].lnb_len;
+        }
 
-                lb->lnb_rc = lb->lnb_len;
+        if (unlikely(new_size == 0)) {
+                /* no pages to write, no transno is needed */
+                th->th_local = 1;
+                /* it is important to return 0 even when all lnb_rc == -ENOSPC
+                 * since ofd_commitrw_write() retries several times on ENOSPC */
+                RETURN(0);
         }
 
         udmu_object_getattr(obj->oo_db, &va);
@@ -2384,7 +2397,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 }
 
 static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
-                          struct niobuf_local *lb, int npages)
+                         struct niobuf_local *lnb, int npages)
 {
         struct osd_object *obj  = osd_dt_obj(dt);
         struct lu_buf      buf;
@@ -2394,22 +2407,21 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
         LASSERT(dt_object_exists(dt));
         LASSERT(obj->oo_db);
 
-        for (i = 0; i < npages; i++, lb++) {
-                buf.lb_buf = kmap(lb->lnb_page);
-                buf.lb_len = lb->lnb_len;
-                offset = lb->lnb_file_offset;
+        for (i = 0; i < npages; i++) {
+                buf.lb_buf = kmap(lnb[i].lnb_page);
+                buf.lb_len = lnb[i].lnb_len;
+                offset = lnb[i].lnb_file_offset;
 
-                CDEBUG(D_OTHER, "read %u bytes at %u\n", (unsigned) lb->lnb_len,
-                       (unsigned) lb->lnb_file_offset);
-                lb->lnb_rc = osd_read(env, dt, &buf, &offset, NULL);
-                kunmap(lb->lnb_page);
+                CDEBUG(D_OTHER, "read %u bytes at %u\n",
+                       (unsigned) lnb[i].lnb_len,
+                       (unsigned) lnb[i].lnb_file_offset);
+                lnb[i].lnb_rc = osd_read(env, dt, &buf, &offset, NULL);
+                kunmap(lnb[i].lnb_page);
 
-                if (lb->lnb_rc < buf.lb_len) {
+                if (lnb[i].lnb_rc < buf.lb_len) {
                         /* all subsequent rc should be 0 */
-                        while (++i < npages) {
-                                lb++;
-                                lb->lnb_rc = 0;
-                        }
+                        while (++i < npages)
+                                lnb[i].lnb_rc = 0;
                         break;
                 }
         }
@@ -2601,7 +2613,6 @@ static int osd_device_init0(const struct lu_env *env,
 
         cfs_spin_lock_init(&o->od_osfs_lock);
         o->od_osfs_age = cfs_time_shift_64(-1000);
-        o->od_reserved_fraction = DMU_RESERVED_FRACTION;
 
         rc = osd_mount(env, o, cfg);
         if (rc)
