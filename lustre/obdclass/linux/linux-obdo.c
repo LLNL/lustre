@@ -107,6 +107,8 @@ void la_from_obdo(struct lu_attr *dst, struct obdo *obdo, obd_flag valid)
 {
         __u64 newvalid = 0;
 
+        valid &= obdo->o_valid;
+
         if (valid & OBD_MD_FLATIME) {
                 dst->la_atime = obdo->o_atime;
                 newvalid |= LA_ATIME;
