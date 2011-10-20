@@ -2214,6 +2214,7 @@ test_33() {
         trap cleanup_quota_test EXIT
 
         # make sure the system is clean
+        wait_delete_completed
         USED=`getquota -u $TSTID global curspace`
         [ $USED -ne 0 ] && \
                 error "Used space ($USED) for user $TSTID isn't 0."
@@ -2231,13 +2232,17 @@ test_33() {
         USED=`getquota -u $TSTID global curspace`
         [ $USED -lt $TOTAL_BLKS ] && \
                error "Used space for user $TSTID is $USED, expected $TOTAL_BLKS"
-        USED=`getquota -u $TSTID global curinodes`
-        [ $USED -lt $INODES ] && \
-               error "Used inode for user $TSTID is $USED, expected $INODES"
-
         USED=`getquota -g $TSTID global curspace`
         [ $USED -lt $TOTAL_BLKS ] && \
               error "Used space for group $TSTID is $USED, expected $TOTAL_BLKS"
+
+        echo "Verify inode usage after write"
+        # With zfs, inode usage is computed from block usage, so it cannot be
+        # accurate. As a result, we only check that inode usage is increasing
+        [ "$FSTYPE" == "zfs" ] && INODES=1
+        USED=`getquota -u $TSTID global curinodes`
+        [ $USED -lt $INODES ] && \
+               error "Used inode for user $TSTID is $USED, expected $INODES"
         USED=`getquota -g $TSTID global curinodes`
         [ $USED -lt $INODES ] && \
               error "Used inode for group $TSTID is $USED, expected $INODES"
@@ -2268,6 +2273,7 @@ test_34() {
         trap cleanup_quota_test EXIT
 
         # make sure the system is clean
+        wait_delete_completed
         USED=`getquota -u $TSTID global curspace`
         [ $USED -ne 0 ] && error "Used space ($USED) for user $TSTID isn't 0."
         USED=`getquota -g $TSTID global curspace`
@@ -2363,7 +2369,6 @@ test_35() {
         cleanup_quota_test
 }
 run_test 35 "usage is still accessible across reboot ============================"
-
 
 quota_fini()
 {

@@ -183,10 +183,74 @@ void udmu_objset_close(udmu_objset_t *uos)
         uos->os = NULL;
 }
 
+/* Estimate the number of objects from a number of blocks */
+static uint64_t udmu_objs_count_estimate(uint64_t refdbytes,
+                                         uint64_t usedobjs,
+                                         uint64_t nrblocks)
+{
+        uint64_t est_objs, est_refdblocks, est_usedobjs;
+
+        /* Compute an nrblocks estimate based on the actual number of
+         * dnodes that could fit in the space.  Since we don't know the
+         * overhead associated with each dnode (xattrs, SAs, VDEV overhead,
+         * etc) just using DNODE_SHIFT isn't going to give a good estimate.
+         * Instead, compute an estimate based on the average space usage per
+         * dnode, with an upper and lower cap.
+         *
+         * In case there aren't many dnodes or blocks used yet, add a small
+         * correction factor using OSD_DNODE_EST_SHIFT.  This correction
+         * factor gradually disappears as the number of real dnodes grows.
+         * This also avoids the need to check for divide-by-zero later.
+         */
+        CLASSERT(OSD_DNODE_MIN_BLKSHIFT > 0);
+        CLASSERT(OSD_DNODE_EST_BLKSHIFT > 0);
+
+        est_refdblocks = (refdbytes >> SPA_MAXBLOCKSHIFT) +
+                         (OSD_DNODE_EST_COUNT << OSD_DNODE_EST_BLKSHIFT);
+        est_usedobjs   = usedobjs + OSD_DNODE_EST_COUNT;
+
+        /* Average space/dnode more than maximum dnode size, use max dnode
+         * size to estimate free dnodes from adjusted free blocks count.
+         * OSTs typically use more than one block dnode so this case applies. */
+        if (est_usedobjs <= est_refdblocks * 2) {
+                est_objs = nrblocks;
+
+        /* Average space/dnode smaller than min dnode size (probably due to
+         * metadnode compression), use min dnode size to estimate the number of
+         * objects.
+         * An MDT typically uses below 512 bytes/dnode so this case applies. */
+        } else if (est_usedobjs >= (est_refdblocks << OSD_DNODE_MIN_BLKSHIFT)) {
+                est_objs = nrblocks << OSD_DNODE_MIN_BLKSHIFT;
+
+        /* Between the extremes, we try to use the average size of existing
+         * dnodes to compute the number of dnodes that fit into nrblocks:
+         *
+         * est_objs = nrblocks * (est_usedobjs / est_refblocks);
+         *
+         * but this may overflow 64 bits or become 0 if not handled well.
+         *
+         * We know nrblocks is below (64 - 17 = 47) bits from SPA_MAXBLKSHIFT,
+         * and est_usedobjs is under 48 bits due to DN_MAX_OBJECT_SHIFT, which
+         * means that multiplying them may get as large as 2 ^ 95.
+         *
+         * We also know (est_usedobjs / est_refdblocks) is between 2 and 256,
+         * due to above checks, so we can safely compute this first.  We care
+         * more about accuracy on the MDT (many dnodes/block) which is good
+         * because this is where truncation errors are smallest.  This adds
+         * 8 bits to nrblocks so we can use 7 bits to compute a fixed-point
+         * fraction and nrblocks can still fit in 64 bits. */
+        } else {
+                unsigned dnodes_per_block = (est_usedobjs << 7)/est_refdblocks;
+
+                est_objs = (nrblocks * dnodes_per_block) >> 7;
+        }
+        return est_objs;
+}
+
 int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
 {
         uint64_t refdbytes, availbytes, usedobjs, availobjs;
-        uint64_t est_refdblocks, est_usedobjs, est_availobjs;
+        uint64_t est_availobjs;
         uint64_t reserved;
 
         dmu_objset_space(uos->os, &refdbytes, &availbytes, &usedobjs,
@@ -234,60 +298,10 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
          * useless, since it reports the number of objects that might
          * theoretically still fit into the dataset, independent of minor
          * issues like how much space is actually available in the pool.
-         *
-         * Compute an os_bfree estimate based on the actual number of
-         * dnodes that could fit in the available space.  Since we don't
-         * know the overhead associated with each dnode (xattrs, SAs,
-         * VDEV overhead, etc) just using DNODE_SHIFT isn't going to give
-         * a good estimate.  Instead, compute an estimate based on the
-         * average space usage per dnode, with an upper and lower cap.
-         *
-         * In case there aren't many dnodes or blocks used yet, add a small
-         * correction factor using OSD_DNODE_EST_SHIFT.  This correction
-         * factor gradually disappears as the number of real dnodes grows.
-         * This also avoids the need to check for divide-by-zero later.
+         * Compute a better estimate in udmu_objs_count_estimate().
          */
-        CLASSERT(OSD_DNODE_MIN_BLKSHIFT > 0);
-        CLASSERT(OSD_DNODE_EST_BLKSHIFT > 0);
-
-        est_refdblocks = (refdbytes >> SPA_MAXBLOCKSHIFT) +
-                         (OSD_DNODE_EST_COUNT << OSD_DNODE_EST_BLKSHIFT);
-        est_usedobjs   = usedobjs + OSD_DNODE_EST_COUNT;
-
-        /* Average space/dnode more than maximum dnode size, use max dnode
-         * size to estimate free dnodes from adjusted free blocks count.
-         * OSTs typically use more than one block dnode so this case applies. */
-        if (est_usedobjs <= est_refdblocks * 2) {
-                est_availobjs = osfs->os_bfree;
-
-        /* Average space/dnode smaller than min dnode size (probably due to
-         * metadnode compression), use min dnode size to estimate free objs.
-         * An MDT typically uses below 512 bytes/dnode so this case applies. */
-        } else if (est_usedobjs >= (est_refdblocks << OSD_DNODE_MIN_BLKSHIFT)) {
-                est_availobjs = osfs->os_bfree << OSD_DNODE_MIN_BLKSHIFT;
-
-        /* Between the extremes, we try to use the average size of existing
-         * dnodes to compute the number of dnodes that fit into the free space:
-         *
-         * est_availobjs = osfs->os_bfree * (est_usedobjs / est_refblocks);
-         *
-         * but this may overflow 64 bits or become 0 if not handled well.
-         *
-         * We know os_bfree is below (64 - 17 = 47) bits from SPA_MAXBLKSHIFT,
-         * and est_usedobjs is under 48 bits due to DN_MAX_OBJECT_SHIFT, which
-         * means that multiplying them may get as large as 2 ^ 95.
-         *
-         * We also know (est_usedobjs / est_refdblocks) is between 2 and 256,
-         * due to above checks, so we can safely compute this first.  We care
-         * more about accuracy on the MDT (many dnodes/block) which is good
-         * because this is where truncation errors are smallest.  This adds
-         * 8 bits to os_bfree so we can use 7 bits to compute a fixed-point
-         * fraction and os_bfree can still fit in 64 bits. */
-        } else {
-                unsigned dnodes_per_block = (est_usedobjs << 7)/est_refdblocks;
-
-                est_availobjs = (osfs->os_bfree * dnodes_per_block) >> 7;
-        }
+        est_availobjs = udmu_objs_count_estimate(refdbytes, usedobjs,
+                                                 osfs->os_bfree);
 
         osfs->os_ffree = min(availobjs, est_availobjs);
         osfs->os_files = osfs->os_ffree + uos->objects;
@@ -308,6 +322,28 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
         osfs->os_maxbytes = OBD_OBJECT_EOF;
 
         return 0;
+}
+
+/**
+ * Helper function to estimate the number of inodes in use for a give uid/gid
+ * from the block usage
+ */
+uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes)
+{
+        uint64_t refdbytes, availbytes, usedobjs, availobjs;
+        uint64_t uidobjs;
+
+        /* get fresh statfs info */
+        dmu_objset_space(uos->os, &refdbytes, &availbytes, &usedobjs,
+                         &availobjs);
+
+        /* estimate the number of objects based on the disk usage */
+        uidobjs = udmu_objs_count_estimate(refdbytes, usedobjs,
+                                           uidbytes >> SPA_MAXBLOCKSHIFT);
+        if (uidbytes > 0)
+                /* if we have at least 1 byte, we have at least one dnode ... */
+                uidobjs = max_t(uint64_t, uidobjs, 1);
+        return uidobjs;
 }
 
 /* Get the objset name.
