@@ -466,6 +466,16 @@ if $1; then
 			LDISKFS_SERIES="2.6-rhel5-ext4.series"
 		fi
 		;;
+	2.6.32-2*rh6*)
+		if test x$RHEL_KERNEL = xyes; then
+			LDISKFS_SERIES="2.6-rhel6.2.series"
+		fi
+		;;
+	2.6.32-2*ch5*)
+		if test x$RHEL_KERNEL = xyes; then
+			LDISKFS_SERIES="2.6-rhel6.2.series"
+		fi
+		;;
 	2.6.32*)
 		if test x$RHEL_KERNEL = xyes; then
 			LDISKFS_SERIES="2.6-rhel6.series"
