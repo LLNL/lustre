@@ -110,6 +110,7 @@ void udmu_fini(void);
 int udmu_objset_open(char *osname, udmu_objset_t *uos);
 void udmu_objset_close(udmu_objset_t *uos);
 int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs);
+uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes);
 int udmu_objset_root(udmu_objset_t *uos, dmu_buf_t **dbp, void *tag);
 void udmu_wait_synced(udmu_objset_t *uos, dmu_tx_t *tx);
 void udmu_wait_txg_synced(udmu_objset_t *uos, uint64_t txg);
