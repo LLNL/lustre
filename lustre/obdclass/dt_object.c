@@ -445,7 +445,8 @@ struct dt_object *dt_find_or_create(const struct lu_env *env,
                 GOTO(out, rc = PTR_ERR(th));
 
         rc = dt_declare_create(env, dto, at, NULL, dof, th);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(trans_stop, rc);
 
         rc = dt_trans_start_local(env, dt, th);
         if (rc)
@@ -459,12 +460,11 @@ struct dt_object *dt_find_or_create(const struct lu_env *env,
                (unsigned long) fid->f_oid, fid->f_seq);
 
         rc = dt_create(env, dto, at, NULL, dof, th);
-        LASSERT(rc == 0);
+        if (rc)
+                GOTO(unlock, rc);
         LASSERT(dt_object_exists(dto));
-
 unlock:
         dt_write_unlock(env, dto);
-
 trans_stop:
         dt_trans_stop(env, dt, th);
 out:
