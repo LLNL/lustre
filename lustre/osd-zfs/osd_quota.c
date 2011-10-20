@@ -170,7 +170,7 @@ static struct dt_it *osd_it_acct_init(const struct lu_env *env,
         LASSERT(lu_object_exists(lo));
 
         if (info == NULL)
-                RETURN(ERR_PTR(-EINVAL));
+                RETURN(ERR_PTR(-ENOMEM));
 
         it = &info->oti_it_quota;
         memset(it, 0, sizeof(*it));

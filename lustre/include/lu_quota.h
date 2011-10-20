@@ -35,8 +35,9 @@
 /* generic structure allocated by each quota user (i.e. MDD and OFD) used to
  * to access per-user/group usage/quota information from underlying storage */
 struct lu_quota {
-        struct dt_object *acct_user_obj;
-        struct dt_object *acct_group_obj;
+        /* account objects for both users and groups */
+        struct dt_object *lq_acct_user_obj;
+        struct dt_object *lq_acct_group_obj;
         /* TODO: slave and master objects to be added here */
 };
 
