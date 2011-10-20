@@ -1743,9 +1743,6 @@ void cl_global_fini(void);
 int  lu_ref_global_init(void);
 void lu_ref_global_fini(void);
 
-int lu_quota_global_init(void);
-void lu_quota_global_fini(void);
-
 int dt_global_init(void);
 void dt_global_fini(void);
 
@@ -1794,10 +1791,6 @@ int lu_global_init(void)
         result = dt_global_init();
         if (result)
                 GOTO(out, result);
-
-        result = lu_quota_global_init();
-        if (result)
-                GOTO(out, result);
 #endif
         result = cl_global_init();
 out:
@@ -1813,7 +1806,6 @@ void lu_global_fini(void)
         cl_global_fini();
 #ifdef __KERNEL__
         dt_global_fini();
-        lu_quota_global_fini();
 #endif
         lu_time_global_fini();
         if (lu_site_shrinker != NULL) {
