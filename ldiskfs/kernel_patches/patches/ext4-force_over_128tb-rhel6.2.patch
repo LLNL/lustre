@@ -1,0 +1,57 @@
+Index: linux-stage/fs/ext4/super.c
+===================================================================
+--- linux-stage.orig/fs/ext4/super.c
++++ linux-stage/fs/ext4/super.c
+@@ -61,6 +61,8 @@ static struct ext4_lazy_init *ext4_li_in
+ static struct mutex ext4_li_mtx;
+ static struct ext4_features *ext4_feat;
+ 
++static int force_over_128tb;
++
+ static int ext4_load_journal(struct super_block *, struct ext4_super_block *,
+ 			     unsigned long journal_devnum);
+ static int ext4_commit_super(struct super_block *sb, int sync);
+@@ -1182,7 +1184,7 @@ enum {
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_discard, Opt_nodiscard,
+ 	Opt_init_inode_table, Opt_noinit_inode_table,
+-	Opt_mballoc, Opt_bigendian_extents,
++	Opt_mballoc, Opt_bigendian_extents, Opt_force_over_128tb,
+ };
+ 
+ static const match_table_t tokens = {
+@@ -1253,6 +1255,7 @@ static const match_table_t tokens = {
+ 	{Opt_auto_da_alloc, "auto_da_alloc"},
+ 	{Opt_noauto_da_alloc, "noauto_da_alloc"},
+ 	{Opt_bigendian_extents, "bigendian_extents"},
++	{Opt_force_over_128tb, "force_over_128tb"},
+ 	{Opt_mballoc, "mballoc"},
+ 	{Opt_discard, "discard"},
+ 	{Opt_nodiscard, "nodiscard"},
+@@ -1720,6 +1723,9 @@ set_qf_format:
+ 			break;
+ 		case Opt_mballoc:
+ 			break;
++		case Opt_force_over_128tb:
++			force_over_128tb = 1;
++			break;
+ 		default:
+ 			ext4_msg(sb, KERN_ERR,
+ 			       "Unrecognized mount option \"%s\" "
+@@ -3137,6 +3143,16 @@ static int ext4_fill_super(struct super_
+ 		goto failed_mount;
+ 	}
+ 
++	if (ext4_blocks_count(es) > (8ULL << 32)) {
++		if (force_over_128tb == 0) {
++			printk(KERN_ERR "EXT4-fs does not support filesystems "
++			       "greater than 128TB and can cause data corruption."
++			       "Use \"force_over_128tb\" mount option to override."
++			       "\n");
++			goto failed_mount;
++		}
++	}
++
+ 	if (EXT4_BLOCKS_PER_GROUP(sb) == 0)
+ 		goto cantfind_ext4;
+ 
