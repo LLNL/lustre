@@ -50,45 +50,6 @@ uint64_t osd_quota_fid2dmu(const struct lu_fid *fid)
  */
 
 /**
- * Helper function to estimate the number of inodes in use from the block usage
- */
-static void osd_acct_estimate_iuse(const struct lu_env *env,
-                                   struct osd_device *osd,
-                                   struct acct_rec *rec)
-{
-        uint64_t refdbytes, availbytes, usedobjs, availobjs;
-        uint64_t avg_size;
-
-        dmu_objset_space(osd->od_objset.os, &refdbytes, &availbytes, &usedobjs,
-                         &availobjs);
-
-        if (refdbytes == 0 || usedobjs == 0) {
-                /* no dnodes or no blocks allocated, so the id cannot own any
-                 * inodes */
-                rec->ispace = 0;
-                return;
-        }
-
-        /* compute average object size */
-        avg_size = refdbytes;
-        do_div(avg_size, usedobjs);
-
-        if (avg_size == 0) {
-                CERROR("%s: average object size is 0, something is wrong ("LPU64
-                       " "LPU64")\n",
-                        osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name,
-                        refdbytes, usedobjs);
-                rec->ispace = rec->bspace;
-                return;
-        }
-
-        /* estimate #inodes used by this id from the block usage and the average
-         * file size */
-        rec->ispace = rec->bspace;
-        do_div(rec->ispace, avg_size);
-}
-
-/**
  * Return space usage consumed by a given uid or gid.
  * Block usage is accurrate since it is maintained by DMU itself.
  * However, DMU does not provide inode accounting, so the #inodes in use
@@ -144,7 +105,7 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 
         /* as for inode accounting, it is not maintained by DMU, so we just
          * estimate inode usage from the block usage & statfs information */
-        osd_acct_estimate_iuse(env, osd, rec);
+        rec->ispace = udmu_objset_user_iused(&osd->od_objset, rec->bspace);
         RETURN(+1);
 }
 
@@ -320,6 +281,7 @@ static int osd_it_acct_rec(const struct lu_env *env,
 {
         struct osd_it_quota *it = (struct osd_it_quota *)di;
         struct acct_rec     *rec  = (struct acct_rec *)dtrec;
+        struct osd_device   *osd = osd_obj2dev(it->oiq_obj);
         int                  bytes_read;
         int                  rc;
         ENTRY;
@@ -331,7 +293,7 @@ static int osd_it_acct_rec(const struct lu_env *env,
                 RETURN(-rc);
 
         /* estimate #inodes in use */
-        osd_acct_estimate_iuse(env, osd_obj2dev(it->oiq_obj), rec);
+        rec->ispace = udmu_objset_user_iused(&osd->od_objset, rec->bspace);
         RETURN(0);
 }
 
