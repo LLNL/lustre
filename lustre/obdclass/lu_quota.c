@@ -33,8 +33,8 @@
 #include <lu_quota.h>
 #include <obd.h>
 
-void lprocfs_quota_init(struct lu_quota *quota,
-                        cfs_proc_dir_entry_t *obd_proc_entry);
+static void lprocfs_quota_init(struct lu_quota *quota,
+                               cfs_proc_dir_entry_t *obd_proc_entry);
 
 /* index features supported by the accounting objects */
 const struct dt_index_features dt_acct_features = {
@@ -226,6 +226,8 @@ int lu_quotactl(const struct lu_env *env, struct lu_quota *lu_quota,
 }
 EXPORT_SYMBOL(lu_quotactl);
 
+#undef LPROCFS /* XXX workaround until ORI-380 is fixed */
+
 #ifdef LPROCFS
 /*
  * quota procfs operations
@@ -371,8 +373,8 @@ struct file_operations lprocfs_quota_seq_fops = {
         .release = lprocfs_seq_release,
 };
 
-void lprocfs_quota_init(struct lu_quota *quota,
-                        cfs_proc_dir_entry_t *obd_proc_entry)
+static void lprocfs_quota_init(struct lu_quota *quota,
+                               cfs_proc_dir_entry_t *obd_proc_entry)
 {
         int rc = 0;
         ENTRY;
