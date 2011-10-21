@@ -1406,7 +1406,7 @@ static int mgs_write_log_lod(const struct lu_env *env, struct mgs_device *mgs,
 {
         struct llog_handle *llh = NULL;
         struct lov_desc *lovdesc;
-        char *uuid, *diskname;
+        char *uuid, *osdname;
         int rc = 0;
         ENTRY;
 
@@ -1434,7 +1434,7 @@ static int mgs_write_log_lod(const struct lu_env *env, struct mgs_device *mgs,
         /* can these be the same? */
         uuid = (char *)lovdesc->ld_uuid.uuid;
 
-        rc = name_create(&diskname, logname, "-dsk");
+        rc = name_create(&osdname, logname, "-osd");
         if (rc)
                 GOTO(out_free, rc);
         /* This should always be the first entry in a log.
@@ -1449,7 +1449,7 @@ static int mgs_write_log_lod(const struct lu_env *env, struct mgs_device *mgs,
         rc = record_attach(env, llh, lovname, "lod", uuid);
         if (rc)
                 GOTO(out_end, rc);
-        rc = record_lov_setup(env, llh, lovname, lovdesc, diskname);
+        rc = record_lov_setup(env, llh, lovname, lovdesc, osdname);
         if (rc)
                 GOTO(out_end, rc);
         rc = record_marker(env, llh, fsdb, CM_END, lovname, "lod setup");
@@ -1459,7 +1459,7 @@ static int mgs_write_log_lod(const struct lu_env *env, struct mgs_device *mgs,
 out_end:
         record_end_log(env, &llh);
 out_name:
-        name_destroy(&diskname);
+        name_destroy(&osdname);
 out_free:
         OBD_FREE_PTR(lovdesc);
         return rc;
@@ -2012,7 +2012,7 @@ static int mgs_write_log_osp_to_lod(const struct lu_env *env,
 {
         struct llog_handle *llh = NULL;
         char *nodeuuid, *ospname, *ospuuid, *loduuid, *svname;
-        char *dskname;
+        char *osdname;
         char index[7];
         int i, rc;
 
@@ -2043,7 +2043,7 @@ static int mgs_write_log_osp_to_lod(const struct lu_env *env,
         rc = name_create(&loduuid, lodname, "_UUID");
         if (rc)
                 GOTO(out_ospuuid, rc);
-        rc = name_create(&dskname, logname, "-dsk");
+        rc = name_create(&osdname, logname, "-osd");
         if (rc)
                 GOTO(out_loduuid, rc);
 
@@ -2077,7 +2077,8 @@ static int mgs_write_log_osp_to_lod(const struct lu_env *env,
         rc = record_attach(env, llh, ospname, LUSTRE_OSP_NAME, loduuid);
         if (rc)
                 GOTO(out_end, rc);
-        rc = record_setup(env, llh, ospname, mti->mti_uuid, nodeuuid, dskname, index);
+        rc = record_setup(env, llh, ospname, mti->mti_uuid, nodeuuid,
+                          osdname, index);
         if (rc)
                 GOTO(out_end, rc);
         rc = mgs_write_log_failnids(env, mti, llh, ospname);
@@ -2093,7 +2094,7 @@ static int mgs_write_log_osp_to_lod(const struct lu_env *env,
 out_end:
         record_end_log(env, &llh);
 out_free:
-        name_destroy(&dskname);
+        name_destroy(&osdname);
 out_loduuid:
         name_destroy(&loduuid);
 out_ospuuid:
