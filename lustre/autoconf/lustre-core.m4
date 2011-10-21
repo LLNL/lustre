@@ -1170,26 +1170,18 @@ AC_DEFUN([LC_EXPORT_INVALIDATE_MAPPING_PAGES],
 # LC_EXT4_DISCARD_PREALLOCATIONS
 #
 AC_DEFUN([LC_EXT4_DISCARD_PREALLOCATIONS],
-[AC_MSG_CHECKING([if ldiskfs_discard_preallocations defined])
+[AC_MSG_CHECKING([if ext4_discard_preallocatoins defined])
 tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-I$LINUX/fs -I$LDISKFS_DIR"
+EXTRA_KCFLAGS="-I$LINUX/fs"
 LB_LINUX_TRY_COMPILE([
-        #ifdef LDISKFS_DEVEL
-        #include <ldiskfs/ldiskfs.h>
-        #else
         #include <ext4/ext4.h>
-        #endif
 ],[
         struct inode i __attribute__ ((unused));
-        #ifdef LDISKFS_DEVEL
-        ldiskfs_discard_preallocations(&i);
-        #else
         ext4_discard_preallocations(&i);
-        #endif
 ],[
         AC_MSG_RESULT(yes)
         AC_DEFINE(LDISKFS_DISCARD_PREALLOCATIONS, 1,
-                  [ext4_discard_preallocations defined])
+                  [ext4_discard_preacllocations defined])
 ],[
         AC_MSG_RESULT(no)
 ])
@@ -1200,24 +1192,16 @@ EXTRA_KCFLAGS="$tmp_flags"
 # LC_EXT_INSERT_EXTENT_WITH_5ARGS
 #
 AC_DEFUN([LC_EXT_INSERT_EXTENT_WITH_5ARGS],
-[AC_MSG_CHECKING([if ldiskfs_ext_insert_extent needs 5 arguments])
+[AC_MSG_CHECKING([ext4_ext_insert_extent needs 5 arguments])
 tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-I$LINUX/fs -I$LDISKFS_DIR"
+EXTRA_KCFLAGS="-I$LINUX/fs"
 LB_LINUX_TRY_COMPILE([
-        #ifdef LDISKFS_DEVEL
-        #include <ldiskfs/ldiskfs_extents.h>
-        #else
         #include <ext4/ext4_extents.h>
-        #endif
 ],[
-        #ifdef LDISKFS_DEVEL
-        ldiskfs_ext_insert_extent(NULL, NULL, NULL, NULL, 0);
-        #else
         ext4_ext_insert_extent(NULL, NULL, NULL, NULL, 0);
-        #endif
 ],[
         AC_DEFINE([EXT_INSERT_EXTENT_WITH_5ARGS], 1,
-                  [ldiskfs_ext_insert_exent needs 5 arguments])
+                  [ext4_ext_insert_exent needs 5 arguments])
         AC_MSG_RESULT([yes])
 ],[
         AC_MSG_RESULT([no])
@@ -2101,28 +2085,19 @@ LB_LINUX_TRY_COMPILE([
 # LC_EXT4_SINGLEDATA_TRANS_BLOCKS_SB
 #
 AC_DEFUN([LC_EXT4_SINGLEDATA_TRANS_BLOCKS_SB],
-[AC_MSG_CHECKING([if LDISKFS_SINGLEDATA_TRANS_BLOCKS takes the sb as argument])
+[AC_MSG_CHECKING([if EXT4_SINGLEDATA_TRANS_BLOCKS takes the sb as argument])
 tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-I$LINUX/fs -I$LDISKFS_DIR"
+EXTRA_KCFLAGS="-I$LINUX/fs"
 LB_LINUX_TRY_COMPILE([
-        #ifdef LDISKFS_DEVEL
-        #include <ldiskfs/ldiskfs.h>
-        #include <ldiskfs/ldiskfs_jbd2.h>
-        #else
         #include <ext4/ext4.h>
         #include <ext4/ext4_jbd2.h>
-        #endif
 ],[
         struct super_block sb;
-        #ifdef LDISKFS_DEVEL
-        LDISKFS_SINGLEDATA_TRANS_BLOCKS(&sb);
-        #else
         EXT4_SINGLEDATA_TRANS_BLOCKS(&sb);
-        #endif
 ],[
         AC_MSG_RESULT(yes)
         AC_DEFINE(LDISKFS_SINGLEDATA_TRANS_BLOCKS_HAS_SB, 1,
-                  [LDISKFS_SINGLEDATA_TRANS_BLOCKS takes sb as argument])
+                  [EXT4_SINGLEDATA_TRANS_BLOCKS takes sb as argument])
 ],[
         AC_MSG_RESULT(no)
 ])
