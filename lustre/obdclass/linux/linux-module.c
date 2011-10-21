@@ -334,8 +334,9 @@ struct lprocfs_vars lprocfs_base[] = {
 		       obd_proc_wr_jobid_var, NULL },
 	{ 0 }
 };
-#else
+#else /* !LPROCFS */
 #define lprocfs_base NULL
+void *proc_lustre_root;
 #endif /* LPROCFS */
 
 #ifdef __KERNEL__
