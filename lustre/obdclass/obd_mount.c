@@ -1199,7 +1199,7 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
                "Attempting to start %s, type=%s, lsifl=%x, mountfl=%lx\n",
                lsi->lsi_svname, lsi->lsi_osd_type, lsi->lsi_flags, mflags);
 
-        sprintf(lsi->lsi_osd_obdname, "%s-dsk", lsi->lsi_svname);
+        sprintf(lsi->lsi_osd_obdname, "%s-osd", lsi->lsi_svname);
         strcpy(lsi->lsi_osd_uuid, lsi->lsi_osd_obdname);
         strcat(lsi->lsi_osd_uuid, "_UUID");
         sprintf(flagstr, "%lu", mflags);
