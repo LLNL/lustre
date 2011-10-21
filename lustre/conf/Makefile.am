@@ -35,7 +35,7 @@
 #
 
 EXTRA_DIST = lustre.dtd slapd-lustre.conf lustre2ldif.xsl top.ldif \
-             99-lustre.rules lustre ldev.conf
+             99-lustre.rules
 ldapconfdir = $(sysconfdir)/openldap
 
 if UTILS
@@ -45,8 +45,3 @@ endif
 
 udevrulesdir = $(sysconfdir)/udev/rules.d
 udevrules_DATA = 99-lustre.rules
-
-sysconfigdir = $(sysconfdir)/sysconfig
-sysconfig_DATA = lustre
-
-sysconf_DATA = ldev.conf
