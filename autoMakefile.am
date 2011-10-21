@@ -20,23 +20,6 @@ EXTRA_DIST += debian/*
 endif
 
 if LDISKFS_ENABLED
-if LDISKFS_DEVEL
-@SYMVERFILE@:
-	touch @SYMVERFILE@
-	-grep -v ldiskfs @SYMVERFILE@ > @SYMVERFILE@.old
-	cat @SYMVERFILE@.old > @SYMVERFILE@
-	@if [ -f @LDISKFS_DIR@/@SYMVERFILE@ ]; then \
-		cat @LDISKFS_DIR@/@SYMVERFILE@ >>@SYMVERFILE@; \
-	elif [ -f @LDISKFS_DIR@/ldiskfs/@SYMVERFILE@ ]; then \
-		cat @LDISKFS_DIR@/ldiskfs/@SYMVERFILE@ >>@SYMVERFILE@; \
-	else \
-		echo -e "\n" \
-		"*** Missing ldiskfs symbols. Ensure you have built ldiskfs:\n" \
-		"*** - @LDISKFS_OBJ@/@SYMVERFILE@, or\n" \
-		"*** - @LDISKFS_OBJ@/ldiskfs/@SYMVERFILE@\n"; \
-		exit 1; \
-	fi
-else
 if !LDISKFS_IN_KERNEL
 
 EXTRA_DIST += @SYMVERFILE@
@@ -45,7 +28,6 @@ EXTRA_DIST += @SYMVERFILE@
 	touch @SYMVERFILE@
 	-grep -v ldiskfs @SYMVERFILE@ > @SYMVERFILE@.old
 	cat @SYMVERFILE@.old @LDISKFS_DIR@/@SYMVERFILE@ > @SYMVERFILE@
-endif
 endif
 endif
 
