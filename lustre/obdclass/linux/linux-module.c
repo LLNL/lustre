@@ -325,7 +325,7 @@ static int obd_proc_read_health(char *page, char **start, off_t off,
 }
 
 /* Root for /proc/fs/lustre */
-struct proc_dir_entry *proc_lustre_root = NULL;
+struct proc_dir_entry *proc_lustre_root;
 
 struct lprocfs_vars lprocfs_base[] = {
         { "version", obd_proc_read_version, NULL, NULL },
@@ -333,8 +333,9 @@ struct lprocfs_vars lprocfs_base[] = {
         { "health_check", obd_proc_read_health, NULL, NULL },
         { 0 }
 };
-#else
+#else /* !LPROCFS */
 #define lprocfs_base NULL
+void *proc_lustre_root;
 #endif /* LPROCFS */
 
 #ifdef __KERNEL__

@@ -742,7 +742,7 @@ extern int lprocfs_quota_wr_qs_factor(struct file *file,
 #else
 /* LPROCFS is not defined */
 
-
+#define proc_lustre_root NULL
 
 static inline void lprocfs_counter_add(struct lprocfs_stats *stats,
                                        int index, long amount)
