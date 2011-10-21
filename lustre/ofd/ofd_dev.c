@@ -476,7 +476,7 @@ static int ofd_stack_init(const struct lu_env *env,
 
         LASSERT(m->ofd_osd_exp == NULL);
         snprintf(info->fti_u.name, sizeof(info->fti_u.name),
-                 "%s-dsk", lustre_cfg_string(cfg, 0));
+                 "%s-osd", lustre_cfg_string(cfg, 0));
 
         rc = ofd_connect_to_next(env, m, info->fti_u.name);
         if (rc)
