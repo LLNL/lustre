@@ -1057,8 +1057,8 @@ struct mdd_object *mdd_open_index_internal(const struct lu_env *env,
                                            const struct lu_fid *fid)
 {
         struct md_device    *md = &mdd->mdd_md_dev;
-        struct md_attr       ma;
-        struct lu_attr      *la = &ma.ma_attr;
+        struct md_attr      *ma = &mdd_env_info(env)->mti_ma;
+        struct lu_attr      *la = &ma->ma_attr;
         struct md_object    *mdo, *dir;
         struct md_op_spec    spec;
         struct mdd_object   *mddo;
@@ -1094,16 +1094,14 @@ struct mdd_object *mdd_open_index_internal(const struct lu_env *env,
         spec.sp_cr_mode = 0;
         spec.sp_ck_split = 0;
 
-        memset(&ma, 0, sizeof(ma));
-        ma.ma_valid = 0;
-        ma.ma_need = 0;
+        memset(ma, 0, sizeof(ma));
 
         la->la_mode = S_IFDIR | S_IXUGO;
         la->la_mode |= S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
         la->la_uid = la->la_gid = 0;
         la->la_valid = LA_MODE | LA_UID | LA_GID;
 
-        rc = mdo_create(env, dir, &lname, mdo, &spec, &ma);
+        rc = mdo_create(env, dir, &lname, mdo, &spec, ma);
 
         if (rc) {
                 lu_object_put(env, &mdo->mo_lu);
