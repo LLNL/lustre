@@ -57,9 +57,20 @@
 #include <lustre_fid.h>
 #include <lu_quota.h>
 
-#include "udmu.h"
 #include "osd_internal.h"
 
+#include <sys/dnode.h>
+#include <sys/dbuf.h>
+#include <sys/spa.h>
+#include <sys/stat.h>
+#include <sys/zap.h>
+#include <sys/spa_impl.h>
+#include <sys/zfs_znode.h>
+#include <sys/dmu_tx.h>
+#include <sys/dmu_objset.h>
+#include <sys/dsl_prop.h>
+#include <sys/sa_impl.h>
+#include <sys/txg.h>
 
 struct lu_context_key               osd_key;
 static struct lu_device_operations  osd_lu_ops;
@@ -546,15 +557,54 @@ static struct thandle *osd_trans_create(const struct lu_env *env,
         RETURN(th);
 }
 
+static void udmu_declare_object_delete(const struct lu_env *env,
+                                       udmu_objset_t *uos, dmu_tx_t *tx, dmu_buf_t *db)
+{
+        zap_attribute_t *za = &osd_oti_get(env)->oti_za;
+        znode_phys_t    *zp = db->db_data;
+        uint64_t         oid = db->db_object, xid;
+        zap_cursor_t    *zc;
+        int              rc;
+
+        dmu_tx_hold_free(tx, oid, 0, DMU_OBJECT_END);
+
+        /* zap holding xattrs */
+        if ((oid = zp->zp_xattr)) {
+                dmu_tx_hold_free(tx, oid, 0, DMU_OBJECT_END);
+
+                rc = udmu_zap_cursor_init(&zc, uos, oid, 0);
+                if (rc) {
+                        if (tx->tx_err == 0)
+                                tx->tx_err = rc;
+                        return;
+                }
+                while ((rc = zap_cursor_retrieve(zc, za)) == 0) {
+                        BUG_ON(za->za_integer_length != sizeof(uint64_t));
+                        BUG_ON(za->za_num_integers != 1);
+
+                        rc = zap_lookup(uos->os, zp->zp_xattr, za->za_name,
+                                        sizeof(uint64_t), 1, &xid);
+                        if (rc) {
+                                printk("error during xattr lookup: %d\n", rc);
+                                break;
+                        }
+                        dmu_tx_hold_free(tx, xid, 0, DMU_OBJECT_END);
+
+                        zap_cursor_advance(zc);
+                }
+                udmu_zap_cursor_fini(zc);
+        }
+}
+
 static int osd_declare_object_destroy(const struct lu_env *env,
                                       struct dt_object *dt,
                                       struct thandle *th)
 {
+        char                   *buf = osd_oti_get(env)->oti_str;
         struct osd_object      *obj = osd_dt_obj(dt);
         struct osd_device      *osd = osd_obj2dev(obj);
         struct osd_thandle     *oh;
         uint64_t                zapid;
-        char                    buf[32];
         ENTRY;
 
         LASSERT(th != NULL);
@@ -564,7 +614,7 @@ static int osd_declare_object_destroy(const struct lu_env *env,
         LASSERT(oh->ot_tx != NULL);
 
         /* declare that we'll destroy the object */
-        udmu_declare_object_delete(&osd->od_objset, oh->ot_tx, obj->oo_db);
+        udmu_declare_object_delete(env, &osd->od_objset, oh->ot_tx, obj->oo_db);
 
         /* declare that we'll remove object from fid-dnode mapping */
         osd_fid2str(buf, lu_object_fid(&obj->oo_dt.do_lu));
@@ -574,15 +624,67 @@ static int osd_declare_object_destroy(const struct lu_env *env,
         RETURN(0);
 }
 
+/*
+ * Delete a DMU object
+ *
+ * The transaction passed to this routine must have
+ * udmu_tx_hold_free(tx, oid, 0, DMU_OBJECT_END) called
+ * and then assigned to a transaction group.
+ *
+ * This will release db and set it to NULL to prevent further dbuf releases.
+ */
+static int udmu_object_delete(const struct lu_env *env, udmu_objset_t *uos,
+                              dmu_buf_t **db, dmu_tx_t *tx, void *tag)
+{
+        znode_phys_t           *zp = (*db)->db_data;
+        uint64_t                oid, xid;
+        zap_attribute_t        *za = &osd_oti_get(env)->oti_za;
+        zap_cursor_t           *zc;
+        int                     rc;
+
+        /* Assert that the transaction has been assigned to a
+           transaction group. */
+        ASSERT(tx->tx_txg != 0);
+
+        /* zap holding xattrs */
+        if ((oid = zp->zp_xattr)) {
+
+                rc = udmu_zap_cursor_init(&zc, uos, oid, 0);
+                if (rc)
+                        return rc;
+                while ((rc = zap_cursor_retrieve(zc, za)) == 0) {
+                        BUG_ON(za->za_integer_length != sizeof(uint64_t));
+                        BUG_ON(za->za_num_integers != 1);
+
+                        rc = zap_lookup(uos->os, zp->zp_xattr, za->za_name,
+                                        sizeof(uint64_t), 1, &xid);
+                        if (rc) {
+                                printk("error during xattr lookup: %d\n", rc);
+                                break;
+                        }
+                        udmu_object_free(uos, xid, tx);
+
+                        zap_cursor_advance(zc);
+                }
+                udmu_zap_cursor_fini(zc);
+
+                udmu_object_free(uos, zp->zp_xattr, tx);
+        }
+
+        oid = (*db)->db_object;
+
+        return udmu_object_free(uos, oid, tx);
+}
+
 static int osd_object_destroy(const struct lu_env *env,
                               struct dt_object *dt,
                               struct thandle *th)
 {
+        char                   *buf = osd_oti_get(env)->oti_str;
         struct osd_object      *obj = osd_dt_obj(dt);
         struct osd_device      *osd = osd_obj2dev(obj);
         dmu_buf_t              *zapdb = osd->od_objdir_db;
         struct osd_thandle     *oh;
-        char                    buf[32];
         int                     rc;
         ENTRY;
 
@@ -604,7 +706,7 @@ static int osd_object_destroy(const struct lu_env *env,
         }
 
         /* kill object */
-        rc = udmu_object_delete(&osd->od_objset, &obj->oo_db,
+        rc = udmu_object_delete(env, &osd->od_objset, &obj->oo_db,
                                 oh->ot_tx, osd_object_tag);
         if (rc) {
                 CERROR("udmu_object_delete() failed with error %d\n", rc);
@@ -1033,12 +1135,12 @@ static int osd_declare_object_create(const struct lu_env *env,
                                      struct dt_object_format *dof,
                                      struct thandle *handle)
 {
+        char                *buf = osd_oti_get(env)->oti_str;
         const struct lu_fid *fid = lu_object_fid(&dt->do_lu);
         struct osd_object   *obj = osd_dt_obj(dt);
         struct osd_device   *osd = osd_obj2dev(obj);
         struct osd_thandle  *oh;
         uint64_t             zapid;
-        char                 buf[64];
         ENTRY;
 
         LASSERT(dof);
@@ -1213,8 +1315,6 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
         struct osd_thandle *oh;
         dmu_buf_t *db;
         uint64_t oid;
-        vattr_t vap;
-        char buf[64];
         int rc;
 
         ENTRY;
@@ -1232,7 +1332,7 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 
         LASSERT(obj->oo_db == NULL);
 
-        osd_fid2str(buf, fid);
+        osd_fid2str(info->oti_str, fid);
 
         db = osd_create_type_f(dof->dof_type)(info, osd, attr, oh);
 
@@ -1242,17 +1342,17 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
         oid = udmu_object_get_id(db);
 
         /* XXX: zapdb should be replaced with zap-mapping-fids-to-dnode */
-        rc = udmu_zap_insert(&osd->od_objset, zapdb, oh->ot_tx, buf,
+        rc = udmu_zap_insert(&osd->od_objset, zapdb, oh->ot_tx, info->oti_str,
                              &oid, sizeof (oid));
         if (rc)
                 GOTO(out, rc);
 
         obj->oo_db = db;
 
-        lu_attr2vattr(attr , &vap);
-        udmu_object_setattr(db, oh->ot_tx, &vap);
-        udmu_object_getattr(db, &vap);
-        vattr2lu_attr(&vap, attr);
+        lu_attr2vattr(attr , &info->oti_vap);
+        udmu_object_setattr(db, oh->ot_tx, &info->oti_vap);
+        udmu_object_getattr(db, &info->oti_vap);
+        vattr2lu_attr(&info->oti_vap, attr);
 
         CDEBUG(D_OTHER, "create object "DFID" (dnode %llu)\n",
                PFID(fid), oid);
@@ -1385,6 +1485,24 @@ static void osd_zap_it_put(const struct lu_env *env, struct dt_it *di)
 }
 
 
+int udmu_zap_cursor_retrieve_key(const struct lu_env *env,
+                                 zap_cursor_t *zc, char *key, int max)
+{
+        zap_attribute_t *za = &osd_oti_get(env)->oti_za;
+        int             err;
+
+        if ((err = zap_cursor_retrieve(zc, za)))
+                return err;
+
+        if (key) {
+                if (strlen(za->za_name) > max)
+                        return EOVERFLOW;
+                strcpy(key, za->za_name);
+        }
+
+        return 0;
+}
+
 /**
  * to load a directory entry at a time and stored it in
  * iterator's in-memory data structure.
@@ -1411,7 +1529,7 @@ static int osd_zap_it_next(const struct lu_env *env, struct dt_it *di)
          * retrieve to check if there is any record.  We should make
          * changes to Iterator API to not return status for this API
          */
-        rc = udmu_zap_cursor_retrieve_key(it->ozi_zc, NULL, NAME_MAX);
+        rc = udmu_zap_cursor_retrieve_key(env, it->ozi_zc, NULL, NAME_MAX);
         if (rc == ENOENT) /* end of dir*/
                 RETURN(+1);
 
@@ -1426,7 +1544,7 @@ static struct dt_key *osd_zap_it_key(const struct lu_env *env,
         ENTRY;
 
         it->ozi_reset = 0;
-        rc = udmu_zap_cursor_retrieve_key(it->ozi_zc, it->ozi_name, NAME_MAX+1);
+        rc = udmu_zap_cursor_retrieve_key(env, it->ozi_zc, it->ozi_name, NAME_MAX+1);
         if (!rc)
                 RETURN((struct dt_key *)it->ozi_name);
         else
@@ -1440,11 +1558,47 @@ static int osd_zap_it_key_size(const struct lu_env *env, const struct dt_it *di)
         ENTRY;
 
         it->ozi_reset = 0;
-        rc = udmu_zap_cursor_retrieve_key(it->ozi_zc, it->ozi_name, NAME_MAX+1);
+        rc = udmu_zap_cursor_retrieve_key(env, it->ozi_zc, it->ozi_name, NAME_MAX+1);
         if (!rc)
                 RETURN(strlen(it->ozi_name));
         else
                 RETURN(-rc);
+}
+
+/*
+ * zap_cursor_retrieve read from current record.
+ * to read bytes we need to call zap_lookup explicitly.
+ */
+int udmu_zap_cursor_retrieve_value(const struct lu_env *env,
+                                   zap_cursor_t *zc,  char *buf,
+                                   int buf_size, int *bytes_read)
+{
+        zap_attribute_t *za = &osd_oti_get(env)->oti_za;
+        int err, actual_size;
+
+
+        if ((err = zap_cursor_retrieve(zc, za)))
+                return err;
+
+        if (za->za_integer_length <= 0)
+                return (ERANGE);
+
+        actual_size = za->za_integer_length * za->za_num_integers;
+
+        if (actual_size > buf_size) {
+                actual_size = buf_size;
+                buf_size = actual_size / za->za_integer_length;
+        } else {
+                buf_size = za->za_num_integers;
+        }
+
+        err = zap_lookup(zc->zc_objset, zc->zc_zapobj,
+                        za->za_name, za->za_integer_length, buf_size, buf);
+
+        if (!err)
+                *bytes_read = actual_size;
+
+        return err;
 }
 
 static int osd_zap_it_rec(const struct lu_env *env, const struct dt_it *di,
@@ -1462,14 +1616,14 @@ static int osd_zap_it_rec(const struct lu_env *env, const struct dt_it *di,
         lde->lde_attrs = LUDA_FID;
         lde->lde_hash = cpu_to_le64(udmu_zap_cursor_serialize(it->ozi_zc));
 
-        rc = udmu_zap_cursor_retrieve_value(it->ozi_zc, (char *) &pack,
+        rc = udmu_zap_cursor_retrieve_value(env, it->ozi_zc, (char *) &pack,
                                             IT_REC_SIZE, &bytes_read);
         if (rc)
                 GOTO(out, rc);
         rc = osd_fid_unpack(&lde->lde_fid, &pack);
         LASSERT(rc == 0);
 
-        rc = udmu_zap_cursor_retrieve_key(it->ozi_zc, lde->lde_name,
+        rc = udmu_zap_cursor_retrieve_key(env, it->ozi_zc, lde->lde_name,
                                           NAME_MAX + 1);
         if (rc)
                 GOTO(out, rc);
@@ -1512,7 +1666,7 @@ static int osd_zap_it_load(const struct lu_env *env,
         it->ozi_reset = 0;
 
         /* same as osd_zap_it_next()*/
-        rc = udmu_zap_cursor_retrieve_key(it->ozi_zc, NULL, NAME_MAX + 1);
+        rc = udmu_zap_cursor_retrieve_key(env, it->ozi_zc, NULL, NAME_MAX + 1);
         if (rc == 0)
                 RETURN(+1);
 
@@ -1918,21 +2072,49 @@ static int osd_xattr_del(const struct lu_env *env, struct dt_object *dt,
 }
 
 static int osd_xattr_list(const struct lu_env *env,
-                          struct dt_object *dt, struct lu_buf *buf,
+                          struct dt_object *dt, struct lu_buf *lb,
                           struct lustre_capa *capa)
 {
-        struct osd_object  *obj = osd_dt_obj(dt);
-        struct osd_device  *osd = osd_obj2dev(obj);
-        int                 rc;
+        struct osd_thread_info *oti = osd_oti_get(env);
+        struct osd_object      *obj = osd_dt_obj(dt);
+        struct osd_device      *osd = osd_obj2dev(obj);
+        znode_phys_t           *zp;
+        zap_cursor_t           *zc;
+        int                    rc, counted = 0, remain = lb->lb_len;
         ENTRY;
 
         LASSERT(obj->oo_db != NULL);
         LASSERT(osd_invariant(obj));
         LASSERT(dt_object_exists(dt));
 
+        zp = obj->oo_db->db_data;
+
         cfs_down(&obj->oo_guard);
-        rc = udmu_xattr_list(&osd->od_objset, obj->oo_db,
-                              buf->lb_buf, buf->lb_len);
+
+        if (zp->zp_xattr == 0)
+                GOTO(out, rc = 0);
+
+        rc = udmu_zap_cursor_init(&zc, &osd->od_objset, zp->zp_xattr, 0);
+        if (rc)
+                GOTO(out, rc);
+
+        while ((rc = udmu_zap_cursor_retrieve_key(env, zc, oti->oti_key, MAXNAMELEN)) == 0) {
+                rc = strlen(oti->oti_key);
+                if (rc + 1 <= remain) {
+                        memcpy(lb->lb_buf, oti->oti_key, rc);
+                        lb->lb_buf += rc;
+                        *((char *)lb->lb_buf) = '\0';
+                        lb->lb_buf++;
+                        remain -= rc + 1;
+                }
+                counted += rc + 1;
+                udmu_zap_cursor_advance(zc);
+        }
+        rc = counted;
+
+        udmu_zap_cursor_fini(zc);
+
+out:
         cfs_up(&obj->oo_guard);
 
         RETURN(rc);
@@ -2361,10 +2543,10 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                             struct niobuf_local *lnb, int npages,
                             struct thandle *th)
 {
+        vattr_t            *va = &osd_oti_get(env)->oti_vap;
         struct osd_object  *obj  = osd_dt_obj(dt);
         struct osd_device  *osd = osd_obj2dev(obj);
         struct osd_thandle *oh;
-        vattr_t             va;
         uint64_t            new_size = 0;
         int                 i;
         ENTRY;
@@ -2404,11 +2586,11 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                 RETURN(0);
         }
 
-        udmu_object_getattr(obj->oo_db, &va);
-        if (va.va_size < new_size) {
-                va.va_size = new_size;
-                va.va_mask = DMU_AT_SIZE;
-                udmu_object_setattr(obj->oo_db, oh->ot_tx, &va);
+        udmu_object_getattr(obj->oo_db, va);
+        if (va->va_size < new_size) {
+                va->va_size = new_size;
+                va->va_mask = DMU_AT_SIZE;
+                udmu_object_setattr(obj->oo_db, oh->ot_tx, va);
         }
 
         RETURN(0);
