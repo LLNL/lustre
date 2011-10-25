@@ -71,6 +71,20 @@ static char *osd_object_tag = "osd_object";
 static char *root_tag = "osd_mount, rootdb";
 static char *objdir_tag = "osd_mount, objdb";
 
+/* Slab for OSD object allocation */
+static cfs_mem_cache_t *osd_object_kmem;
+
+static struct lu_kmem_descr osd_caches[] = {
+        {
+                .ckd_cache = &osd_object_kmem,
+                .ckd_name  = "zfs_osd_obj",
+                .ckd_size  = sizeof(struct osd_object)
+        },
+        {
+                .ckd_cache = NULL
+        }
+};
+
 /*
  * Helpers.
  */
@@ -218,7 +232,6 @@ static int osd_fid_lookup(const struct lu_env *env,
 {
         struct osd_thread_info *info;
         char                   *buf;
-        struct lu_device       *ldev = obj->oo_dt.do_lu.lo_dev;
         struct osd_device      *dev;
         uint64_t                oid;
         int                     rc;
@@ -228,7 +241,7 @@ static int osd_fid_lookup(const struct lu_env *env,
 
         info = osd_oti_get(env);
         buf  = info->oti_buf;
-        dev  = osd_dev(ldev);
+        dev  = osd_dev(obj->oo_dt.do_lu.lo_dev);
 
         if (OBD_FAIL_CHECK(OBD_FAIL_OST_ENOENT))
                 RETURN(-ENOENT);
@@ -305,7 +318,7 @@ static struct lu_object *osd_object_alloc(const struct lu_env *env,
 {
         struct osd_object *mo;
 
-        OBD_ALLOC_PTR(mo);
+        OBD_SLAB_ALLOC_PTR_GFP(mo, osd_object_kmem, CFS_ALLOC_IO);
         if (mo != NULL) {
                 struct lu_object *l;
 
@@ -381,7 +394,7 @@ static void osd_object_free(const struct lu_env *env, struct lu_object *l)
         LASSERT(osd_invariant(obj));
 
         dt_object_fini(&obj->oo_dt);
-        OBD_FREE_PTR(obj);
+        OBD_SLAB_FREE_PTR(obj, osd_object_kmem);
 }
 
 /*
@@ -1282,6 +1295,7 @@ static struct dt_it *osd_zap_it_init(const struct lu_env *env,
                                      __u32 unused,
                                      struct lustre_capa *capa)
 {
+        struct osd_thread_info  *info = osd_oti_get(env);
         struct osd_zap_it       *it;
         struct osd_object       *obj = osd_dt_obj(dt);
         struct osd_device       *osd = osd_obj2dev(obj);
@@ -1294,19 +1308,19 @@ static struct dt_it *osd_zap_it_init(const struct lu_env *env,
         LASSERT(obj->oo_db);
         LASSERT(udmu_object_is_zap(obj->oo_db));
 
-        OBD_ALLOC_PTR(it);
-        if (it != NULL) {
-                if (udmu_zap_cursor_init(&it->ozi_zc, &osd->od_objset,
-                                         udmu_object_get_id(obj->oo_db), 0))
-                        RETURN(ERR_PTR(-ENOMEM));
+        if (info == NULL)
+                RETURN(ERR_PTR(-ENOMEM));
+        it = &info->oti_it_zap;
 
-                it->ozi_obj = obj;
-                it->ozi_capa = capa;
-                it->ozi_reset = 1;
-                lu_object_get(lo);
-                RETURN((struct dt_it *)it);
-        }
-        RETURN(ERR_PTR(-ENOMEM));
+        if (udmu_zap_cursor_init(&it->ozi_zc, &osd->od_objset,
+                                 udmu_object_get_id(obj->oo_db), 0))
+                RETURN(ERR_PTR(-ENOMEM));
+
+        it->ozi_obj   = obj;
+        it->ozi_capa  = capa;
+        it->ozi_reset = 1;
+        lu_object_get(lo);
+        RETURN((struct dt_it *)it);
 }
 
 static void osd_zap_it_fini(const struct lu_env *env, struct dt_it *di)
@@ -1323,7 +1337,6 @@ static void osd_zap_it_fini(const struct lu_env *env, struct dt_it *di)
         udmu_zap_cursor_fini(it->ozi_zc);
         lu_object_put(env, &obj->oo_dt.do_lu);
 
-        OBD_FREE_PTR(it);
         EXIT;
 }
 
@@ -2855,14 +2868,24 @@ static struct obd_ops osd_obd_device_ops = {
 
 int __init osd_init(void)
 {
-        return class_register_type(&osd_obd_device_ops, NULL,
-                                   lprocfs_osd_module_vars,
-                                   LUSTRE_OSD_ZFS_NAME, &osd_device_type);
+        int rc;
+
+        rc = lu_kmem_init(osd_caches);
+        if (rc)
+                return rc;
+
+        rc = class_register_type(&osd_obd_device_ops, NULL,
+                                 lprocfs_osd_module_vars,
+                                 LUSTRE_OSD_ZFS_NAME, &osd_device_type);
+        if (rc)
+                lu_kmem_fini(osd_caches);
+        return rc;
 }
 
 void __exit osd_exit(void)
 {
         class_unregister_type(LUSTRE_OSD_ZFS_NAME);
+        lu_kmem_fini(osd_caches);
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");

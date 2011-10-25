@@ -58,6 +58,20 @@ struct ofd_intent_args {
         int *liblustre;
 };
 
+/* Slab for OFD object allocation */
+static cfs_mem_cache_t *ofd_object_kmem;
+
+static struct lu_kmem_descr ofd_caches[] = {
+        {
+                .ckd_cache = &ofd_object_kmem,
+                .ckd_name  = "ofd_obj",
+                .ckd_size  = sizeof(struct ofd_object)
+        },
+        {
+                .ckd_cache = NULL
+        }
+};
+
 static enum interval_iter ofd_intent_cb(struct interval_node *n,
                                            void *args)
 {
@@ -317,7 +331,7 @@ static struct lu_object *ofd_object_alloc(const struct lu_env *env,
 
         ENTRY;
 
-        OBD_ALLOC_PTR(of);
+        OBD_SLAB_ALLOC_PTR_GFP(of, ofd_object_kmem, CFS_ALLOC_IO);
         if (of != NULL) {
                 struct lu_object *o;
                 struct lu_object_header *h;
@@ -367,7 +381,7 @@ static void ofd_object_free(const struct lu_env *env, struct lu_object *o)
 
         lu_object_fini(o);
         lu_object_header_fini(h);
-        OBD_FREE_PTR(of);
+        OBD_SLAB_FREE_PTR(of, ofd_object_kmem);
         EXIT;
 }
 
@@ -866,17 +880,22 @@ int __init ofd_init(void)
         struct lprocfs_static_vars lvars;
         int rc;
 
+        rc = lu_kmem_init(ofd_caches);
+        if (rc)
+                return rc;
+
         lprocfs_ofd_init_vars(&lvars);
 
         rc = ofd_fmd_init();
-        if (rc)
+        if (rc) {
+                lu_kmem_fini(ofd_caches);
                 return(rc);
+        }
 
         rc = class_register_type(&ofd_obd_ops, NULL, lvars.module_vars,
                                  LUSTRE_OST_NAME, &ofd_device_type);
-        if (rc) {
+        if (rc)
                 ofd_fmd_exit();
-        }
 
         return rc;
 }
@@ -886,6 +905,7 @@ void __exit ofd_exit(void)
         ofd_fmd_exit();
 
         class_unregister_type(LUSTRE_OST_NAME);
+        lu_kmem_fini(ofd_caches);
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
