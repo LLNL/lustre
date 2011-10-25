@@ -99,8 +99,6 @@ struct osd_ctxt {
 };
 #endif
 
-struct osd_compat_objid;
-
 struct osd_directory {
         struct iam_container od_container;
         struct iam_descr     od_descr;
