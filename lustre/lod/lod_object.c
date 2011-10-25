@@ -700,7 +700,7 @@ static int lod_declare_init_size(const struct lu_env *env,
 {
         struct dt_object   *next = dt_object_child(dt);
         struct lod_object  *mo = lod_dt_obj(dt);
-        struct lu_attr      attr;
+        struct lu_attr     *attr = &lod_env_info(env)->lti_attr;
         uint64_t            size, offs;
         int                 rc, stripe;
         ENTRY;
@@ -709,12 +709,12 @@ static int lod_declare_init_size(const struct lu_env *env,
         LASSERT(mo->mbo_stripe || mo->mbo_stripenr == 0);
         LASSERT(mo->mbo_stripe_size > 0);
 
-        rc = dt_attr_get(env, next, &attr, BYPASS_CAPA);
-        LASSERT(attr.la_valid & LA_SIZE);
+        rc = dt_attr_get(env, next, attr, BYPASS_CAPA);
+        LASSERT(attr->la_valid & LA_SIZE);
         if (rc)
                 RETURN(rc);
 
-        size = attr.la_size;
+        size = attr->la_size;
         if (size == 0)
                 RETURN(0);
 
@@ -723,13 +723,13 @@ static int lod_declare_init_size(const struct lu_env *env,
         stripe = ll_do_div64(size, (__u64) mo->mbo_stripenr);
 
         size = size * mo->mbo_stripe_size;
-        offs = attr.la_size;
+        offs = attr->la_size;
         size += ll_do_div64(offs, mo->mbo_stripe_size);
 
-        attr.la_valid = LA_SIZE;
-        attr.la_size = size;
+        attr->la_valid = LA_SIZE;
+        attr->la_size = size;
 
-        rc = dt_declare_attr_set(env, mo->mbo_stripe[stripe], &attr, th);
+        rc = dt_declare_attr_set(env, mo->mbo_stripe[stripe], attr, th);
 
         RETURN(rc);
 }
