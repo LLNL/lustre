@@ -547,8 +547,9 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
                  struct obd_device *obd,
                  struct lustre_sb_info *lsi)
 {
+        struct mdt_thread_info *mti;
         struct dt_object_format dof;
-        struct lu_attr          attr;
+        struct lu_attr          *attr;
         struct lu_fid fid;
         struct dt_object *o;
         int rc = 0;
@@ -556,6 +557,10 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
 
         if (OBD_FAIL_CHECK(OBD_FAIL_MDS_FS_SETUP))
                 RETURN(-ENOENT);
+
+        mti = lu_context_key_get(&env->le_ctx, &mdt_thread_key);
+        LASSERT(mti);
+        attr = &mti->mti_attr.ma_attr;
 
         /* prepare transactions callbacks */
         mdt->mdt_txn_cb.dtc_txn_start = mdt_txn_start_cb;
@@ -572,12 +577,12 @@ int mdt_fs_setup(const struct lu_env *env, struct mdt_device *mdt,
                 RETURN(rc);
 
         lu_local_obj_fid(&fid, MDD_CAPA_KEYS_OID);
-        memset(&attr, 0, sizeof(attr));
-        attr.la_valid = LA_MODE;
-        attr.la_mode = S_IFREG | 0666;
+        memset(attr, 0, sizeof(*attr));
+        attr->la_valid = LA_MODE;
+        attr->la_mode = S_IFREG | 0666;
         dof.dof_type = DFT_REGULAR;
 
-        o = dt_find_or_create(env, mdt->mdt_bottom, &fid, &dof, &attr);
+        o = dt_find_or_create(env, mdt->mdt_bottom, &fid, &dof, attr);
         if (!IS_ERR(o)) {
                 mdt->mdt_ck_obj = o;
                 rc = mdt_capa_keys_init(env, mdt);
