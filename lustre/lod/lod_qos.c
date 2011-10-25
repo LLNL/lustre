@@ -57,7 +57,7 @@
 
 #define D_QOS   D_OTHER
 
-#if 1
+#if 0
 #define QOS_DEBUG(fmt, ...)     CDEBUG(D_OTHER, fmt, ## __VA_ARGS__)
 #define QOS_CONSOLE(fmt, ...)   LCONSOLE(D_OTHER, fmt, ## __VA_ARGS__)
 #else
@@ -637,10 +637,11 @@ static int inline lod_qos_dev_is_full(struct obd_statfs *msfs)
 }
 
 /* Allocate objects on osts with round-robin algorithm */
-static int lod_alloc_rr(const struct lu_env *env, struct lod_object *lo,
-                        struct lu_attr *attr, int flags, struct thandle *th)
+int lod_alloc_rr(const struct lu_env *env, struct lod_object *lo,
+                 int flags, struct thandle *th)
 {
         struct lod_device *m = lu2lod_dev(lo->mbo_obj.do_lu.lo_dev);
+        struct obd_statfs *sfs = &lod_env_info(env)->lti_osfs;
         struct dt_object  *o;
         unsigned array_idx;
         int i, rc;
@@ -653,7 +654,6 @@ static int lod_alloc_rr(const struct lu_env *env, struct lod_object *lo,
         struct pool_desc *pool = NULL;
         struct ost_pool *osts;
         struct lov_qos_rr *lqr;
-        struct obd_statfs sfs;
         ENTRY;
 
         if (lo->mbo_pool)
@@ -718,7 +718,7 @@ repeat_find:
                 if (OBD_FAIL_CHECK(OBD_FAIL_MDS_OSC_PRECREATE) && ost_idx == 0)
                         continue;
 
-                rc = lod_statfs_and_check(env, m, ost_idx, &sfs);
+                rc = lod_statfs_and_check(env, m, ost_idx, sfs);
                 if (rc) {
                         /* this OSP doesn't feel well */
                         CERROR("can't statfs #%u: %d\n", ost_idx, rc);
@@ -728,7 +728,7 @@ repeat_find:
                 /*
                  * skip empty devices - usually it means inactive device 
                  */
-                if (sfs.os_blocks == 0) {
+                if (sfs->os_blocks == 0) {
                         QOS_DEBUG("#%d: inactive\n", ost_idx);
                         continue;
                 }
@@ -736,7 +736,7 @@ repeat_find:
                 /*
                  * skip full devices
                  */
-                if (lod_qos_dev_is_full(&sfs)) {
+                if (lod_qos_dev_is_full(sfs)) {
                         QOS_DEBUG("#%d is full\n", ost_idx);
                         continue;
                 }
@@ -745,7 +745,7 @@ repeat_find:
                  * We expect number of precreated objects in f_ffree at
                  * the first iteration, skip OSPs with no objects ready
                  */
-                if (sfs.os_ffree == 0 && speed == 0) {
+                if (sfs->os_ffree == 0 && speed == 0) {
                         QOS_DEBUG("#%d: precreation is empty\n", ost_idx);
                         continue;
                 }
@@ -753,7 +753,7 @@ repeat_find:
                 /*
                  * try to use another OSP if this one is degraded
                  */
-                if (sfs.os_state == OS_STATE_DEGRADED && speed == 0) {
+                if (sfs->os_state == OS_STATE_DEGRADED && speed == 0) {
                         QOS_DEBUG("#%d: degraded\n", ost_idx);
                         continue;
                 }
@@ -806,16 +806,16 @@ out:
 
 /* alloc objects on osts with specific stripe offset */
 int lod_alloc_specific(const struct lu_env *env, struct lod_object *lo,
-                              struct lu_attr *attr, int flags, struct thandle *th)
+                       int flags, struct thandle *th)
 {
         struct lod_device *m = lu2lod_dev(lo->mbo_obj.do_lu.lo_dev);
+        struct obd_statfs *sfs = &lod_env_info(env)->lti_osfs;
         struct dt_object  *o;
         unsigned ost_idx, array_idx, ost_count;
         int i, rc, stripe_num = 0;
         int speed = 0;
         struct pool_desc *pool = NULL;
         struct ost_pool *osts;
-        struct obd_statfs sfs;
         ENTRY;
 
         if (lo->mbo_pool)
@@ -863,7 +863,7 @@ repeat_find:
                  * start OST, then it can be skipped, otherwise skip it only
                  * if it is inactive/recovering/out-of-space." */
 
-                rc = lod_statfs_and_check(env, m, ost_idx, &sfs);
+                rc = lod_statfs_and_check(env, m, ost_idx, sfs);
                 if (rc) {
                         /* this OSP doesn't feel well */
                         CERROR("can't statfs #%u: %d\n", ost_idx, rc);
@@ -873,7 +873,7 @@ repeat_find:
                 /*
                  * skip empty devices - usually it means inactive device 
                  */
-                if (sfs.os_blocks == 0)
+                if (sfs->os_blocks == 0)
                         continue;
 
                 /*
@@ -881,7 +881,7 @@ repeat_find:
                  * the first iteration, skip OSPs with no objects ready
                  * don't apply this logic to OST specified with stripe_offset
                  */
-                if (i != 0 && sfs.os_ffree == 0 && speed == 0)
+                if (i != 0 && sfs->os_ffree == 0 && speed == 0)
                         continue;
 
                 o = lod_qos_declare_object_on(env, m, ost_idx, th);
@@ -948,10 +948,11 @@ static inline int lod_qos_is_usable(struct lod_device *lod)
    - free space
    - network resources (shared OSS's)
 */
-static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
-                         struct lu_attr *attr, int flags, struct thandle *th)
+int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
+                  int flags, struct thandle *th)
 {
         struct lod_device *m = lu2lod_dev(lo->mbo_obj.do_lu.lo_dev);
+        struct obd_statfs *sfs = &lod_env_info(env)->lti_osfs;
         struct lod_ost_desc *ost;
         struct dt_object  *o;
         __u64 total_weight = 0;
@@ -960,7 +961,6 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
         int stripe_cnt_min = min_stripe_count(stripe_cnt, flags);
         struct pool_desc *pool = NULL;
         struct ost_pool *osts;
-        struct obd_statfs sfs;
         ENTRY;
 
         if (stripe_cnt_min < 1)
@@ -975,8 +975,6 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
         } else {
                 osts = &(m->lod_pool_info);
         }
-
-        lod_qos_statfs_update(env, m);
 
         /* Detect -EAGAIN early, before expensive lock is taken. */
         if (!lod_qos_is_usable(m))
@@ -1002,7 +1000,7 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
                 if (!cfs_bitmap_check(m->lod_ost_bitmap, osts->op_array[i]))
                         continue;
 
-                rc = lod_statfs_and_check(env, m, osts->op_array[i], &sfs);
+                rc = lod_statfs_and_check(env, m, osts->op_array[i], sfs);
                 if (rc) {
                         /* this OSP doesn't feel well */
                         CERROR("can't statfs #%u: %d\n", i, rc);
@@ -1012,13 +1010,13 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
                 /*
                  * skip empty devices - usually it means inactive device
                  */
-                if (sfs.os_blocks == 0)
+                if (sfs->os_blocks == 0)
                         continue;
 
                 /*
                  * skip full devices
                  */
-                if (lod_qos_dev_is_full(&sfs))
+                if (lod_qos_dev_is_full(sfs))
                         continue;
 
                 /* Fail Check before osc_precreate() is called
@@ -1131,8 +1129,6 @@ out_nolock:
                 lod_pool_putref(pool);
         }
 
-        if (rc == -EAGAIN)
-                rc = lod_alloc_rr(env, lo, attr, flags, th);
         RETURN(rc);
 }
 
@@ -1410,10 +1406,13 @@ int lod_qos_prep_create(const struct lu_env *env, struct lod_object *lo,
 
                 lod_getref(d);
                 /* XXX: support for non-0 files w/o objects */
-                if (lo->mbo_def_stripe_offset >= d->lod_desc.ld_tgt_count)
-                        rc = lod_alloc_qos(env, lo, attr, flag, th);
-                else
-                        rc = lod_alloc_specific(env, lo, attr, flag, th);
+                if (lo->mbo_def_stripe_offset >= d->lod_desc.ld_tgt_count) {
+                        lod_qos_statfs_update(env, d);
+                        rc = lod_alloc_qos(env, lo, flag, th);
+                        if (rc == -EAGAIN)
+                                rc = lod_alloc_rr(env, lo, flag, th);
+                } else
+                        rc = lod_alloc_specific(env, lo, flag, th);
                 lod_putref(d);
         } else {
                 /*
