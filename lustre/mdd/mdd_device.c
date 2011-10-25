@@ -71,6 +71,20 @@ static struct lu_device_type mdd_device_type;
 static const char mdd_root_dir_name[] = "ROOT";
 static const char mdd_obf_dir_name[] = "fid";
 
+/* Slab for OSD object allocation */
+cfs_mem_cache_t *mdd_object_kmem;
+
+static struct lu_kmem_descr mdd_caches[] = {
+        {
+                .ckd_cache = &mdd_object_kmem,
+                .ckd_name  = "mdd_obj",
+                .ckd_size  = sizeof(struct mdd_object)
+        },
+        {
+                .ckd_cache = NULL
+        }
+};
+
 static int mdd_connect_to_next(const struct lu_env *env, struct mdd_device *m,
                                const char *nextdev)
 {
@@ -1676,15 +1690,25 @@ LU_CONTEXT_KEY_DEFINE(mdd, LCT_MD_THREAD);
 static int __init mdd_mod_init(void)
 {
         struct lprocfs_static_vars lvars;
+        int                        rc;
+
+        rc = lu_kmem_init(mdd_caches);
+        if (rc)
+                return rc;
+
         lprocfs_mdd_init_vars(&lvars);
 
-        return class_register_type(&mdd_obd_device_ops, NULL, lvars.module_vars,
-                                   LUSTRE_MDD_NAME, &mdd_device_type);
+        rc = class_register_type(&mdd_obd_device_ops, NULL, lvars.module_vars,
+                                 LUSTRE_MDD_NAME, &mdd_device_type);
+        if (rc)
+                lu_kmem_fini(mdd_caches);
+        return rc;
 }
 
 static void __exit mdd_mod_exit(void)
 {
         class_unregister_type(LUSTRE_MDD_NAME);
+        lu_kmem_fini(mdd_caches);
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");

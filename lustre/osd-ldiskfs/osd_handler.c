@@ -108,6 +108,20 @@ extern const struct dt_body_operations        osd_body_ops_new;
 static const struct dt_index_operations       osd_index_iam_ops;
 static const struct dt_index_operations       osd_index_ea_ops;
 
+/* Slab for OSD object allocation */
+static cfs_mem_cache_t *osd_object_kmem;
+
+static struct lu_kmem_descr osd_caches[] = {
+        {
+                .ckd_cache = &osd_object_kmem,
+                .ckd_name  = "ldiskfs_osd_obj",
+                .ckd_size  = sizeof(struct osd_object)
+        },
+        {
+                .ckd_cache = NULL
+        }
+};
+
 /*
  * Helpers.
  */
@@ -247,7 +261,7 @@ static struct lu_object *osd_object_alloc(const struct lu_env *env,
 {
         struct osd_object *mo;
 
-        OBD_ALLOC_PTR(mo);
+        OBD_SLAB_ALLOC_PTR_GFP(mo, osd_object_kmem, CFS_ALLOC_IO);
         if (mo != NULL) {
                 struct lu_object *l;
 
@@ -425,7 +439,7 @@ static void osd_object_free(const struct lu_env *env, struct lu_object *l)
         dt_object_fini(&obj->oo_dt);
         if (obj->oo_hl_head != NULL)
                 ldiskfs_htree_lock_head_free(obj->oo_hl_head);
-        OBD_FREE_PTR(obj);
+        OBD_SLAB_FREE_PTR(obj, osd_object_kmem);
 }
 
 /*
@@ -4586,16 +4600,25 @@ static struct obd_ops osd_obd_device_ops = {
 static int __init osd_mod_init(void)
 {
         struct lprocfs_static_vars lvars;
+        int                        rc;
+
+        rc = lu_kmem_init(osd_caches);
+        if (rc)
+                return rc;
 
         osd_oi_mod_init();
         lprocfs_osd_init_vars(&lvars);
-        return class_register_type(&osd_obd_device_ops, NULL, lvars.module_vars,
-                                   LUSTRE_OSD_LDISKFS_NAME, &osd_device_type);
+        rc = class_register_type(&osd_obd_device_ops, NULL, lvars.module_vars,
+                                 LUSTRE_OSD_LDISKFS_NAME, &osd_device_type);
+        if (rc)
+                lu_kmem_fini(osd_caches);
+        return rc;
 }
 
 static void __exit osd_mod_exit(void)
 {
         class_unregister_type(LUSTRE_OSD_LDISKFS_NAME);
+        lu_kmem_fini(osd_caches);
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");

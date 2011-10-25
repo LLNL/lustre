@@ -54,13 +54,27 @@
 extern struct lu_object_operations lod_lu_obj_ops;
 extern struct dt_object_operations lod_obj_ops;
 
+/* Slab for OSD object allocation */
+cfs_mem_cache_t *lod_object_kmem;
+
+static struct lu_kmem_descr lod_caches[] = {
+        {
+                .ckd_cache = &lod_object_kmem,
+                .ckd_name  = "lod_obj",
+                .ckd_size  = sizeof(struct lod_object)
+        },
+        {
+                .ckd_cache = NULL
+        }
+};
+
 struct lu_object *lod_object_alloc(const struct lu_env *env,
                                     const struct lu_object_header *hdr,
                                     struct lu_device *d)
 {
         struct lod_object *o;
 
-        OBD_ALLOC_PTR(o);
+        OBD_SLAB_ALLOC_PTR_GFP(o, lod_object_kmem, CFS_ALLOC_IO);
         if (o != NULL) {
                 struct lu_object *l;
 
@@ -675,6 +689,10 @@ static int __init lod_mod_init(void)
         cfs_proc_dir_entry_t       *lov_proc_dir;
         int                         rc;
 
+        rc = lu_kmem_init(lod_caches);
+        if (rc)
+                return rc;
+
         lprocfs_lod_init_vars(&lvars);
 
         rc = class_register_type(&lod_obd_device_ops, NULL, lvars.module_vars,
@@ -690,6 +708,8 @@ static int __init lod_mod_init(void)
                                 CERROR("lod: can't create compat entry \"lov\": %d\n",
                                        (int)PTR_ERR(lov_proc_dir));
                 }
+        } else {
+                lu_kmem_fini(lod_caches);
         }
 
         return rc;
@@ -701,6 +721,7 @@ static void __exit lod_mod_exit(void)
         lprocfs_try_remove_proc_entry("lov", proc_lustre_root);
 
         class_unregister_type(LUSTRE_LOD_NAME);
+        lu_kmem_fini(lod_caches);
 }
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
