@@ -247,6 +247,7 @@ struct mdd_thread_info {
         /** used in to set fid into common ea */
         struct lustre_mdt_attrs   mti_mdt_attrs;
         struct lu_buf             mti_mdt_attrs_buf;
+        struct md_attr            mti_ma;
 };
 
 extern const char orph_index_name[];
