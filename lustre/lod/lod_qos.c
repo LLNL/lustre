@@ -153,9 +153,8 @@ out:
         RETURN(rc);
 }
 
-static int lod_statfs_and_check(const struct lu_env *env,
-                                struct lod_device *d, int index,
-                                struct obd_statfs *sfs)
+int lod_statfs_and_check(const struct lu_env *env, struct lod_device *d,
+                         int index, struct obd_statfs *sfs)
 {
         struct lod_ost_desc *ost;
         int                  rc;
@@ -248,7 +247,7 @@ out:
 
 /* Recalculate per-object penalties for OSSs and OSTs,
    depends on size of each ost in an oss */
-static int lod_qos_calc_ppo(struct lod_device *lod)
+int lod_qos_calc_ppo(struct lod_device *lod)
 {
         struct lov_qos_oss *oss;
         __u64 ba_max, ba_min, temp;
@@ -361,7 +360,7 @@ out:
         RETURN(rc);
 }
 
-static int lod_qos_calc_weight(struct lod_device *lod, int i)
+int lod_qos_calc_weight(struct lod_device *lod, int i)
 {
         __u64 temp, temp2;
 
@@ -377,7 +376,7 @@ static int lod_qos_calc_weight(struct lod_device *lod, int i)
 }
 
 /* We just used this index for a stripe; adjust everyone's weights */
-static int lod_qos_used(struct lod_device *lod, struct ost_pool *osts,
+int lod_qos_used(struct lod_device *lod, struct ost_pool *osts,
                         __u32 index, __u64 *total_wt)
 {
         struct lod_ost_desc *ost;
@@ -564,7 +563,7 @@ struct lov_request;
  *            we can't block at execution (when create method is called).
  *            otherwise we'd block whole transaction batch
  */
-static struct dt_object *lod_qos_declare_object_on(const struct lu_env *env,
+struct dt_object *lod_qos_declare_object_on(const struct lu_env *env,
                                                    struct lod_device *d,
                                                    int ost_idx,
                                                    struct thandle *th)
