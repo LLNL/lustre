@@ -48,6 +48,8 @@
 
 #include "osp_internal.h"
 
+extern cfs_mem_cache_t *osp_object_kmem;
+
 static __u64 osp_object_assign_id(const struct lu_env *env,
                                   struct osp_device *d, struct osp_object *o)
 {
@@ -325,7 +327,7 @@ static void osp_object_free(const struct lu_env *env, struct lu_object *o)
 
         dt_object_fini(&obj->opo_obj);
         lu_object_header_fini(h);
-        OBD_FREE_PTR(obj);
+        OBD_SLAB_FREE_PTR(obj, osp_object_kmem);
 }
 
 static void osp_object_release(const struct lu_env *env, struct lu_object *o)

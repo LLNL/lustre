@@ -63,6 +63,21 @@ struct osd_it_quota {
 };
 
 /**
+ * Iterator's in-memory data structure for ZAPs
+ */
+#define IT_REC_SIZE 256
+
+struct osd_zap_it {
+        zap_cursor_t            *ozi_zc;
+        struct osd_object       *ozi_obj;
+        struct lustre_capa      *ozi_capa;
+        unsigned                 ozi_reset:1;     /* 1 -- no need to advance */
+        char                     ozi_name[NAME_MAX + 1];
+        char                     ozi_rec[IT_REC_SIZE];
+};
+#define DT_IT2DT(it) (&((struct osd_zap_it *)it)->ozi_obj->oo_dt)
+
+/**
  * Storage representation for fids.
  *
  * Variable size, first byte contains the length of the whole record.
@@ -91,7 +106,10 @@ struct osd_thread_info {
         char                   oti_buf[32];
 
         /** osd iterator context used for iterator session */
-        struct osd_it_quota oti_it_quota;
+        union {
+                struct osd_zap_it   oti_it_zap;
+                struct osd_it_quota oti_it_quota;
+        };
 };
 
 extern struct lu_context_key osd_key;
@@ -166,18 +184,6 @@ struct osd_object {
         uint64_t                oo_mode;
         uint64_t                oo_type;
 };
-
-#define IT_REC_SIZE 256
-
-struct osd_zap_it {
-        zap_cursor_t            *ozi_zc;
-        struct osd_object       *ozi_obj;
-        struct lustre_capa      *ozi_capa;
-        unsigned                 ozi_reset:1;     /* 1 -- no need to advance */
-        char                     ozi_name[NAME_MAX + 1];
-        char                     ozi_rec[IT_REC_SIZE];
-};
-#define DT_IT2DT(it) (&((struct osd_zap_it *)it)->ozi_obj->oo_dt)
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
 extern const struct dt_index_operations osd_acct_index_ops;
