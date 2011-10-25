@@ -1419,7 +1419,7 @@ static int osd_zap_it_next(const struct lu_env *env, struct dt_it *di)
 }
 
 static struct dt_key *osd_zap_it_key(const struct lu_env *env,
-                const struct dt_it *di)
+                                     const struct dt_it *di)
 {
         struct osd_zap_it *it = (struct osd_zap_it *)di;
         int                rc = 0;
@@ -1497,7 +1497,7 @@ static __u64 osd_zap_it_store(const struct lu_env *env, const struct dt_it *di)
  */
 
 static int osd_zap_it_load(const struct lu_env *env,
-                const struct dt_it *di, __u64 hash)
+                           const struct dt_it *di, __u64 hash)
 {
         struct osd_zap_it *it = (struct osd_zap_it *)di;
         struct osd_object *obj = it->ozi_obj;
