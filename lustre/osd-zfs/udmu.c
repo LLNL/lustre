@@ -548,14 +548,20 @@ void udmu_object_create(udmu_objset_t *uos, dmu_buf_t **dbp, dmu_tx_t *tx,
  * The transaction passed to this routine must have
  * udmu_tx_hold_zap(tx, DMU_NEW_OBJECT, ...) called and then assigned
  * to a transaction group.
- */
+ *
+ * Using ZAP_FLAG_HASH64 will force the ZAP to always be a FAT ZAP.
+ * This is fine for directories today, because storing the FID in the dirent
+ * will also require a FAT ZAP.  If there is a new type of micro ZAP created
+ * then we might need to re-evaluate the use of this flag and instead do
+ * a conversion from the different internal ZAP hash formats being used. */
 static void udmu_zap_create_impl(objset_t *os, dmu_buf_t **zap_dbp,
                                  dmu_tx_t *tx, void *tag)
 {
-        znode_phys_t    *zp;
-        uint64_t        oid;
-        timestruc_t     now;
-        uint64_t        gen;
+        znode_phys_t *zp;
+        uint64_t      oid;
+        timestruc_t   now;
+        uint64_t      gen;
+        zap_flags_t   flags = ZAP_FLAG_HASH64;
 
         ASSERT(tag);
 
@@ -567,8 +573,8 @@ static void udmu_zap_create_impl(objset_t *os, dmu_buf_t **zap_dbp,
         udmu_gethrestime(&now);
         gen = dmu_tx_get_txg(tx);
 
-        oid = zap_create(os, DMU_OT_DIRECTORY_CONTENTS, DMU_OT_ZNODE,
-                         sizeof (znode_phys_t), tx);
+        oid = zap_create_flags(os, 0, flags, DMU_OT_DIRECTORY_CONTENTS, 9, 12,
+                               DMU_OT_ZNODE, sizeof(znode_phys_t), tx);
 
         VERIFY(0 == dmu_bonus_hold(os, oid, tag, zap_dbp));
 
@@ -610,7 +616,7 @@ int udmu_object_get_dmu_buf(udmu_objset_t *uos, uint64_t object,
  * called and then assigned to a transaction group.
  */
 static int udmu_zap_insert_impl(objset_t *os, dmu_buf_t *zap_db, dmu_tx_t *tx,
-                    const char *name, void *value, int len)
+                                const char *name, void *value, int len)
 {
         uint64_t oid = zap_db->db_object;
         int num_int = 1, int_size = 8;
@@ -655,17 +661,48 @@ int udmu_zap_delete(udmu_objset_t *uos, dmu_buf_t *zap_db, dmu_tx_t *tx,
         return (zap_remove(uos->os, oid, name, tx));
 }
 
+/* We don't actually have direct access to the zap_hashbits() function
+ * so just pretend like we do for now.  If this ever breaks we can look at
+ * it at that time. */
+#define zap_hashbits(zc) 48
+/*
+ * ZFS hash format:
+ * | cd (16 bits) | hash (48 bits) |
+ * we need it in other form:
+ * |0| hash (48 bit) | cd (15 bit) |
+ * to be a full 64-bit ordered hash so that Lustre readdir can use it to merge
+ * the readdir hashes from multiple directory stripes uniformly on the client.
+ * Another point is sign bit, the hash range should be in [0, 2^63-1] because
+ * loff_t (for llseek) needs to be a positive value.  This means the "cd" field
+ * should only be the low 15 bits.
+ */
+uint64_t udmu_zap_cursor_serialize(zap_cursor_t *zc)
+{
+        uint64_t zfs_hash = zap_cursor_serialize(zc) & (~0ULL >> 1);
+
+        return (zfs_hash >> zap_hashbits(zc)) |
+               (zfs_hash << (63 - zap_hashbits(zc)));
+}
+
+void udmu_zap_cursor_init_serialized(zap_cursor_t *zc, udmu_objset_t *uos,
+                                     uint64_t zapobj, uint64_t dirhash)
+{
+        uint64_t zfs_hash = ((dirhash << zap_hashbits(zc)) & (~0ULL >> 1)) |
+                            (dirhash >> (63 - zap_hashbits(zc)));
+        zap_cursor_init_serialized(zc, uos->os, zapobj, zfs_hash);
+}
+
 /*
  * Zap cursor APIs
  */
 int udmu_zap_cursor_init(zap_cursor_t **zc, udmu_objset_t *uos,
-                         uint64_t zapobj, uint64_t hash)
+                         uint64_t zapobj, uint64_t dirhash)
 {
-        zap_cursor_t * t;
+        zap_cursor_t *t;
 
         t = kmem_alloc(sizeof(*t), KM_NOSLEEP);
         if (t) {
-                zap_cursor_init_serialized(t, uos->os, zapobj, hash);
+                udmu_zap_cursor_init_serialized(t, uos, zapobj, dirhash);
                 *zc = t;
                 return 0;
         }
@@ -733,11 +770,6 @@ int udmu_zap_cursor_retrieve_value(zap_cursor_t *zc,  char *buf,
 void udmu_zap_cursor_advance(zap_cursor_t *zc)
 {
         zap_cursor_advance(zc);
-}
-
-uint64_t udmu_zap_cursor_serialize(zap_cursor_t *zc)
-{
-        return zap_cursor_serialize(zc);
 }
 
 int udmu_zap_cursor_move_to_key(zap_cursor_t *zc, const char *name)
