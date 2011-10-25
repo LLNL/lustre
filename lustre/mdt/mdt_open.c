@@ -1036,8 +1036,7 @@ out:
         LASSERT(ergo(rc < 0, lustre_msg_get_transno(req->rq_repmsg) == 0));
 }
 
-int mdt_open_by_fid(struct mdt_thread_info* info,
-                    struct ldlm_reply *rep)
+int mdt_open_by_fid(struct mdt_thread_info* info, struct ldlm_reply *rep)
 {
         __u32                    flags = info->mti_spec.sp_cr_flags;
         struct mdt_reint_record *rr = &info->mti_rr;
@@ -1075,8 +1074,7 @@ int mdt_open_by_fid(struct mdt_thread_info* info,
 }
 
 int mdt_open_anon_by_fid(struct mdt_thread_info *info,
-                         struct ldlm_reply *rep,
-                         struct mdt_lock_handle *lhc)
+                         struct ldlm_reply *rep, struct mdt_lock_handle *lhc)
 {
         const struct lu_env     *env   = info->mti_env;
         struct mdt_device       *mdt   = info->mti_mdt;
