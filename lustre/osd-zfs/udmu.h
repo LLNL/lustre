@@ -137,17 +137,13 @@ int udmu_zap_insert(udmu_objset_t *uos, dmu_buf_t *zap_db, dmu_tx_t *tx,
 
 int udmu_zap_delete(udmu_objset_t *uos, dmu_buf_t *zap_db, dmu_tx_t *tx,
                     const char *name);
+int udmu_object_free(udmu_objset_t *uos, uint64_t oid, dmu_tx_t *tx);
 
 /* zap cursor apis */
 int udmu_zap_cursor_init(zap_cursor_t **zc, udmu_objset_t *uos,
                          uint64_t zapobj, uint64_t hash);
 
 void udmu_zap_cursor_fini(zap_cursor_t *zc);
-
-int udmu_zap_cursor_retrieve_key(zap_cursor_t *zc, char *key, int max);
-
-int udmu_zap_cursor_retrieve_value(zap_cursor_t *zc,  char *buf,
-                int buf_size, int *bytes_read);
 
 void udmu_zap_cursor_advance(zap_cursor_t *zc);
 
@@ -180,10 +176,6 @@ void udmu_object_setattr(dmu_buf_t *db, dmu_tx_t *tx, vattr_t *vap);
 int udmu_object_punch(udmu_objset_t *uos, dmu_buf_t *db, dmu_tx_t *tx,
                       uint64_t offset, uint64_t len);
 
-void udmu_declare_object_delete(udmu_objset_t *uos, dmu_tx_t *tx,
-                                dmu_buf_t *db);
-int udmu_object_delete(udmu_objset_t *uos, dmu_buf_t **db, dmu_tx_t *tx,
-                       void *tag);
 int udmu_object_set_blocksize(udmu_objset_t *os, uint64_t oid,
                               unsigned bsize, dmu_tx_t *tx);
 

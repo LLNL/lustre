@@ -267,7 +267,7 @@ static int osd_it_acct_next(const struct lu_env *env, struct dt_it *di)
         if (it->oiq_reset == 0)
                 udmu_zap_cursor_advance(it->oiq_zc);
         it->oiq_reset = 0;
-        rc = udmu_zap_cursor_retrieve_key(it->oiq_zc, NULL, 32);
+        rc = udmu_zap_cursor_retrieve_key(env, it->oiq_zc, NULL, 32);
         if (rc == ENOENT) /* reached the end */
                 RETURN(+1);
         RETURN(-rc);
@@ -289,7 +289,7 @@ static struct dt_key *osd_it_acct_key(const struct lu_env *env,
         ENTRY;
 
         it->oiq_reset = 0;
-        rc = udmu_zap_cursor_retrieve_key(it->oiq_zc, buf, 32);
+        rc = udmu_zap_cursor_retrieve_key(env, it->oiq_zc, buf, 32);
         if (rc)
                 RETURN(ERR_PTR(-rc));
         it->oiq_id = simple_strtoull(buf, &p, 10);
@@ -325,7 +325,7 @@ static int osd_it_acct_rec(const struct lu_env *env,
         ENTRY;
 
         it->oiq_reset = 0;
-        rc = udmu_zap_cursor_retrieve_value(it->oiq_zc, (char *)&rec->bspace,
+        rc = udmu_zap_cursor_retrieve_value(env, it->oiq_zc, (char *)&rec->bspace,
                                             sizeof(uint64_t), &bytes_read);
         if (rc)
                 RETURN(-rc);
@@ -377,7 +377,7 @@ static int osd_it_acct_load(const struct lu_env *env,
         it->oiq_zc = zc;
         it->oiq_reset = 0;
 
-        rc = udmu_zap_cursor_retrieve_key(it->oiq_zc, NULL, 32);
+        rc = udmu_zap_cursor_retrieve_key(env, it->oiq_zc, NULL, 32);
         if (rc > 0)
                 RETURN(-rc);
         /* compare hash and return 0 for exact match */

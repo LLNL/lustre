@@ -44,6 +44,8 @@
 
 #include <dt_object.h>
 
+#include "udmu.h"
+
 #define LUSTRE_ROOT_FID_SEQ     0
 #define DMU_OSD_SVNAME          "svname"
 #define DMU_OSD_OI_NAME         "OBJECTS"
@@ -110,6 +112,13 @@ struct osd_thread_info {
                 struct osd_zap_it   oti_it_zap;
                 struct osd_it_quota oti_it_quota;
         };
+
+        char                   oti_str[64];
+        char                   oti_key[MAXNAMELEN + 1];
+
+        vattr_t                oti_vap;
+        zap_attribute_t        oti_za;
+        struct obd_statfs      oti_osfs;
 };
 
 extern struct lu_context_key osd_key;
@@ -255,6 +264,12 @@ extern struct lprocfs_vars lprocfs_osd_module_vars[];
 
 int osd_procfs_init(struct osd_device *osd, const char *name);
 int osd_procfs_fini(struct osd_device *osd);
+
+int udmu_zap_cursor_retrieve_key(const struct lu_env *env,
+                                 zap_cursor_t *zc, char *key, int max);
+int udmu_zap_cursor_retrieve_value(const struct lu_env *env,
+                                   zap_cursor_t *zc,  char *buf,
+                                   int buf_size, int *bytes_read);
 
 #endif
 #endif /* _OSD_INTERNAL_H */

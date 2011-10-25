@@ -715,58 +715,6 @@ void udmu_zap_cursor_fini(zap_cursor_t *zc)
         kmem_free(zc, sizeof(*zc));
 }
 
-int udmu_zap_cursor_retrieve_key(zap_cursor_t *zc, char *key, int max)
-{
-        zap_attribute_t za;
-        int             err;
-
-        if ((err = zap_cursor_retrieve(zc, &za)))
-                return err;
-
-        if (key) {
-                if (strlen(za.za_name) > max)
-                        return EOVERFLOW;
-                strcpy(key, za.za_name);
-        }
-
-        return 0;
-}
-
-/*
- * zap_cursor_retrieve read from current record.
- * to read bytes we need to call zap_lookup explicitly.
- */
-int udmu_zap_cursor_retrieve_value(zap_cursor_t *zc,  char *buf,
-                int buf_size, int *bytes_read)
-{
-        int err, actual_size;
-        zap_attribute_t za;
-
-
-        if ((err = zap_cursor_retrieve(zc, &za)))
-                return err;
-
-        if (za.za_integer_length <= 0)
-                return (ERANGE);
-
-        actual_size = za.za_integer_length * za.za_num_integers;
-
-        if (actual_size > buf_size) {
-                actual_size = buf_size;
-                buf_size = actual_size / za.za_integer_length;
-        } else {
-                buf_size = za.za_num_integers;
-        }
-
-        err = zap_lookup(zc->zc_objset, zc->zc_zapobj,
-                        za.za_name, za.za_integer_length, buf_size, buf);
-
-        if (!err)
-                *bytes_read = actual_size;
-
-        return err;
-}
-
 void udmu_zap_cursor_advance(zap_cursor_t *zc)
 {
         zap_cursor_advance(zc);
@@ -979,45 +927,7 @@ int udmu_object_punch(udmu_objset_t *uos, dmu_buf_t *db, dmu_tx_t *tx,
         return udmu_object_punch_impl(uos->os, db, tx, off, len);
 }
 
-void udmu_declare_object_delete(udmu_objset_t *uos, dmu_tx_t *tx, dmu_buf_t *db)
-{
-        znode_phys_t    *zp = db->db_data;
-        uint64_t         oid = db->db_object, xid;
-        zap_attribute_t  za;
-        zap_cursor_t    *zc;
-        int              rc;
-
-        dmu_tx_hold_free(tx, oid, 0, DMU_OBJECT_END);
-
-        /* zap holding xattrs */
-        if ((oid = zp->zp_xattr)) {
-                dmu_tx_hold_free(tx, oid, 0, DMU_OBJECT_END);
-
-                rc = udmu_zap_cursor_init(&zc, uos, oid, 0);
-                if (rc) {
-                        if (tx->tx_err == 0)
-                                tx->tx_err = rc;
-                        return;
-                }
-                while ((rc = zap_cursor_retrieve(zc, &za)) == 0) {
-                        BUG_ON(za.za_integer_length != sizeof(uint64_t));
-                        BUG_ON(za.za_num_integers != 1);
-
-                        rc = zap_lookup(uos->os, zp->zp_xattr, za.za_name,
-                                        sizeof(uint64_t), 1, &xid);
-                        if (rc) {
-                                printk("error during xattr lookup: %d\n", rc);
-                                break;
-                        }
-                        dmu_tx_hold_free(tx, xid, 0, DMU_OBJECT_END);
-
-                        zap_cursor_advance(zc);
-                }
-                udmu_zap_cursor_fini(zc);
-        }
-}
-
-static int udmu_object_free(udmu_objset_t *uos, uint64_t oid, dmu_tx_t *tx)
+int udmu_object_free(udmu_objset_t *uos, uint64_t oid, dmu_tx_t *tx)
 {
         ASSERT(uos->objects != 0);
         cfs_spin_lock(&uos->lock);
@@ -1025,64 +935,6 @@ static int udmu_object_free(udmu_objset_t *uos, uint64_t oid, dmu_tx_t *tx)
         cfs_spin_unlock(&uos->lock);
 
         return dmu_object_free(uos->os, oid, tx);
-}
-
-/*
- * Delete a DMU object
- *
- * The transaction passed to this routine must have
- * udmu_tx_hold_free(tx, oid, 0, DMU_OBJECT_END) called
- * and then assigned to a transaction group.
- *
- * This will release db and set it to NULL to prevent further dbuf releases.
- */
-static int udmu_object_delete_impl(udmu_objset_t *uos, dmu_buf_t **db, dmu_tx_t *tx,
-                       void *tag)
-{
-        znode_phys_t    *zp = (*db)->db_data;
-        uint64_t         oid, xid;
-        zap_attribute_t  za;
-        zap_cursor_t    *zc;
-        int              rc;
-
-        /* Assert that the transaction has been assigned to a
-           transaction group. */
-        ASSERT(tx->tx_txg != 0);
-
-        /* zap holding xattrs */
-        if ((oid = zp->zp_xattr)) {
-
-                rc = udmu_zap_cursor_init(&zc, uos, oid, 0);
-                if (rc)
-                        return rc;
-                while ((rc = zap_cursor_retrieve(zc, &za)) == 0) {
-                        BUG_ON(za.za_integer_length != sizeof(uint64_t));
-                        BUG_ON(za.za_num_integers != 1);
-
-                        rc = zap_lookup(uos->os, zp->zp_xattr, za.za_name,
-                                        sizeof(uint64_t), 1, &xid);
-                        if (rc) {
-                                printk("error during xattr lookup: %d\n", rc);
-                                break;
-                        }
-                        udmu_object_free(uos, xid, tx);
-
-                        zap_cursor_advance(zc);
-                }
-                udmu_zap_cursor_fini(zc);
-
-                udmu_object_free(uos, zp->zp_xattr, tx);
-        }
-
-        oid = (*db)->db_object;
-
-        return udmu_object_free(uos, oid, tx);
-}
-
-int udmu_object_delete(udmu_objset_t *uos, dmu_buf_t **db, dmu_tx_t *tx,
-                       void *tag)
-{
-        return udmu_object_delete_impl(uos, db, tx, tag);
 }
 
 /*
@@ -1463,40 +1315,6 @@ int udmu_xattr_del(udmu_objset_t *uos, dmu_buf_t *db,
 
 out:
         return error;
-}
-
-int udmu_xattr_list(udmu_objset_t *uos, dmu_buf_t *db, void *buf, int buflen)
-{
-        znode_phys_t    *zp = db->db_data;
-        char             key[MAXNAMELEN + 1];
-        zap_cursor_t    *zc;
-        int              rc;
-        int              remain = buflen;
-        int              counted = 0;
-
-        if (zp->zp_xattr == 0)
-                return 0;
-
-        rc = udmu_zap_cursor_init(&zc, uos, zp->zp_xattr, 0);
-        if (rc)
-                return -rc;
-
-        while ((rc = udmu_zap_cursor_retrieve_key(zc, key, MAXNAMELEN)) == 0) {
-                rc = strlen(key);
-                if (rc + 1 <= remain) {
-                        memcpy(buf, key, rc);
-                        buf += rc;
-                        *((char *)buf) = '\0';
-                        buf++;
-                        remain -= rc + 1;
-                }
-                counted += rc + 1;
-                udmu_zap_cursor_advance(zc);
-        }
-
-        udmu_zap_cursor_fini(zc);
-
-        return counted;
 }
 
 void udmu_freeze(udmu_objset_t *uos)
