@@ -151,11 +151,13 @@ struct lod_object {
 
 struct lod_thread_info {
         /* per-thread buffer for LOV EA */
-        void         *lti_ea_store;
-        int           lti_ea_store_size;
-        struct lu_buf lti_buf;
-        struct ost_id lti_ostid;
-        struct lu_fid lti_fid;
+        void             *lti_ea_store;
+        int               lti_ea_store_size;
+        struct lu_buf     lti_buf;
+        struct ost_id     lti_ostid;
+        struct lu_fid     lti_fid;
+        struct obd_statfs lti_osfs;
+        struct lu_attr    lti_attr;
 };
 
 extern const struct lu_device_operations lod_lu_ops;
