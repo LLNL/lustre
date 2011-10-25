@@ -56,6 +56,7 @@
 
 #include "lod_internal.h"
 
+extern cfs_mem_cache_t *lod_object_kmem;
 static const struct dt_body_operations lod_body_lnk_ops;
 
 static int lod_index_lookup(const struct lu_env *env, struct dt_object *dt,
@@ -1136,7 +1137,7 @@ static void lod_object_free(const struct lu_env *env, struct lu_object *o)
         lod_object_set_pool(mo, NULL);
 
         lu_object_fini(o);
-        OBD_FREE_PTR(mo);
+        OBD_SLAB_FREE_PTR(mo, lod_object_kmem);
 
         EXIT;
 }

@@ -98,8 +98,6 @@ struct osd_ctxt {
 };
 #endif
 
-struct osd_compat_objid;
-
 struct osd_directory {
         struct iam_container od_container;
         struct iam_descr     od_descr;
@@ -259,8 +257,10 @@ struct osd_device {
 #define OSD_EXEC_OP(handle, op)     {                            \
         struct osd_thandle *oh;                                  \
         oh = container_of0(handle, struct osd_thandle, ot_super);\
-        LASSERT((oh)->ot_declare_ ##op > 0);                     \
-        ((oh)->ot_declare_ ##op)--; }
+        if (((oh)->ot_declare_ ##op) > 0) {                      \
+                ((oh)->ot_declare_ ##op)--;                      \
+        }                                                        \
+        }
 #else
 #define OSD_DECLARE_OP(oh, op)
 #define OSD_EXEC_OP(oh, op)

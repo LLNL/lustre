@@ -67,6 +67,8 @@ static int mdd_xattr_get(const struct lu_env *env,
                          struct md_object *obj, struct lu_buf *buf,
                          const char *name);
 
+extern cfs_mem_cache_t *mdd_object_kmem;
+
 int mdd_la_get(const struct lu_env *env, struct mdd_object *obj,
                struct lu_attr *la, struct lustre_capa *capa)
 {
@@ -147,7 +149,7 @@ struct lu_object *mdd_object_alloc(const struct lu_env *env,
 {
         struct mdd_object *mdd_obj;
 
-        OBD_ALLOC_PTR(mdd_obj);
+        OBD_SLAB_ALLOC_PTR_GFP(mdd_obj, mdd_object_kmem, CFS_ALLOC_IO);
         if (mdd_obj != NULL) {
                 struct lu_object *o;
 
@@ -197,7 +199,7 @@ static void mdd_object_free(const struct lu_env *env, struct lu_object *o)
         struct mdd_object *mdd = lu2mdd_obj(o);
 
         lu_object_fini(o);
-        OBD_FREE_PTR(mdd);
+        OBD_SLAB_FREE_PTR(mdd, mdd_object_kmem);
 }
 
 static int mdd_object_print(const struct lu_env *env, void *cookie,
