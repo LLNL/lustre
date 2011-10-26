@@ -80,6 +80,7 @@ struct lustre_disk_data {
 #define MO_FORCEFORMAT          0x02
 #define MO_FAILOVER             0x04
 #define MO_DRYRUN               0x08
+#define MO_QUOTA                0x10
 
 /* used to describe the options to format the lustre disk, not persistent */
 struct mkfs_opts {
@@ -154,7 +155,7 @@ int osd_prepare_lustre(struct mkfs_opts *mop,
                        char *always_mountopts, int always_len);
 int osd_tune_lustre(char *dev, struct mount_opts *mop);
 int osd_label_lustre(struct mount_opts *mop);
-
+int osd_enable_quota(struct mkfs_opts *mop);
 int osd_init(void);
 void osd_fini(void);
 
@@ -168,6 +169,7 @@ int ldiskfs_prepare_lustre(struct mkfs_opts *mop,
                            char *always_mountopts, int always_len);
 int ldiskfs_tune_lustre(char *dev, struct mount_opts *mop);
 int ldiskfs_label_lustre(struct mount_opts *mop);
+int ldiskfs_enable_quota(struct mkfs_opts *mop);
 int ldiskfs_init(void);
 void ldiskfs_fini(void);
 #endif
