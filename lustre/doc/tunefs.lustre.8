@@ -91,6 +91,10 @@ Correct order of operations is:
 * Mount MDT and OSTs
 .br
 * Mount clients
+.TP
+.BI \--quota
+Enable space accounting on old 2.x devices.
+
 .SH EXAMPLES
 .TP
 .B tunefs.lustre --erase-param --mgsnode=<new_nid> --writeconf /dev/sda
@@ -106,6 +110,7 @@ Upgrade an old 1.4.X Lustre MDT to 1.6. The new filesystem name is "testfs".
 .B tunefs.lustre --writeconf --mgs --mdt --fsname=testfs /dev/sda1
 Upgrade an old 1.4.X Lustre MDT to 1.6, and start with brand-new 1.6
 configuration logs. All old servers and clients must be stopped.
+
 
 .SH BUGS
 Please report all bugs to Sun Microsystems using http://bugzilla.lustre.org/

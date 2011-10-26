@@ -1052,6 +1052,127 @@ int ldiskfs_label_lustre(struct mount_opts *mop)
         return rc;
 }
 
+static int is_feature_enabled(const char *feature, const char *devpath)
+{
+        char cmd[PATH_MAX];
+        FILE *fp;
+        char enabled_features[4096] = "";
+
+        snprintf(cmd, sizeof(cmd), "%s -R features %s 2>&1",
+                 DEBUGFS, devpath);
+
+        /* Using popen() instead of run_command() since debugfs does
+         * not return proper error code if command is not supported */
+        fp = popen(cmd, "r");
+        if (!fp) {
+                fprintf(stderr, "%s: %s\n", progname, strerror(errno));
+                return 0;
+        }
+
+        fread(enabled_features, 1, sizeof(enabled_features), fp);
+        fclose(fp);
+
+        if (strstr(enabled_features, feature))
+                return 1;
+        return 0;
+}
+
+static int copy_file(const char *source, const char *dest)
+{
+        char cmd[1024];
+        int cmdsz = sizeof(cmd);
+
+        snprintf(cmd, cmdsz, "cp -f %s %s", source, dest);
+        return run_command(cmd, cmdsz);
+}
+
+/* Enable quota accounting */
+int ldiskfs_enable_quota(struct mkfs_opts *mop)
+{
+        char mntpt[] = "/tmp/mntXXXXXX";
+        char *dev;
+        char source[PATH_MAX], dest[PATH_MAX];
+        char cmd[512];
+        int cmdsz = sizeof(cmd), ret;
+
+        if (is_e2fsprogs_feature_supp("-O quota") != 0) {
+                fprintf(stderr, "%s: \"-O quota\" is is not supported by "
+                        "current e2fsprogs\n", progname);
+                return EINVAL;
+        }
+
+        dev = mop->mo_device;
+        if (mop->mo_flags & MO_IS_LOOP)
+                dev = mop->mo_loopdev;
+
+        /* Quota feature is already enabled? */
+        if (is_feature_enabled("quota", dev)) {
+                vprint("Quota feature is already enabled.\n");
+                return 0;
+        }
+
+        if (!mkdtemp(mntpt)) {
+                fprintf(stderr, "%s: Can't create temp mount point %s: %s\n",
+                        progname, mntpt, strerror(errno));
+                return errno;
+        }
+
+        ret = mount(dev, mntpt, MT_STR(&mop->mo_ldd), 0,
+                    mop->mo_ldd.ldd_mount_opts);
+        if (ret) {
+                fprintf(stderr, "%s: Unable to mount %s: %s\n",
+                        progname, dev, strerror(errno));
+                ret = errno;
+                if (errno == ENODEV) {
+                        fprintf(stderr, "Is the %s module available?\n",
+                                MT_STR(&mop->mo_ldd));
+                }
+                goto out;
+        }
+
+        /* Copy old lquota_v2.user to aquota.user */
+        sprintf(source, "%s/%s", mntpt, "lquota_v2.user");
+        if (access(source, F_OK) == 0) {
+                sprintf(dest, "%s/%s", mntpt, "aquota.user");
+                ret = copy_file(source, dest);
+                if (ret) {
+                        fprintf(stderr, "Copy lquota_v2.user to aquota.user "
+                                "failed. (%d)\n", ret);
+                        umount(mntpt);
+                        goto out;
+                }
+        } else {
+                vprint("lquota_v2.user doesn't exist\n");
+        }
+
+        /* Copy old lquota_v2.group to aquota.group */
+        sprintf(source, "%s/%s", mntpt, "lquota_v2.group");
+        if (access(source, F_OK) == 0) {
+                sprintf(dest, "%s/%s", mntpt, "aquota.group");
+                ret = copy_file(source, dest);
+                if (ret) {
+                        fprintf(stderr, "Copy lquota_v2.group to aquota.group "
+                                "failed. (%d)\n", ret);
+                        umount(mntpt);
+                        goto out;
+                }
+        } else {
+                vprint("lquota_v2.group doesn't exist\n");
+        }
+
+        umount(mntpt);
+
+        /* Turn on quota feature by "tune2fs -O quota" */
+        snprintf(cmd, cmdsz, "%s -O quota %s", TUNE2FS, dev);
+        ret = run_command(cmd, cmdsz);
+        if (ret)
+                fprintf(stderr, "command:%s (%d)", cmd, ret);
+
+out:
+        rmdir(mntpt);
+        return ret;
+}
+
 int ldiskfs_init(void)
 {
         /* Required because full path to DEBUGFS is not specified */
