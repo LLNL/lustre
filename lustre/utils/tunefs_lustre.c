@@ -91,6 +91,7 @@ static void usage(FILE *out)
                 "\t\t--erase-params : erase all old parameter settings\n"
                 "\t\t--nomgs: turn off MGS service on this MDT\n"
                 "\t\t--writeconf: erase all config logs for this fs.\n"
+                "\t\t--quota: enable space accounting on old 2.x device.\n"
                 "\t\t--dryrun: just report, don't write to disk\n"
                 "\t\t--verbose : e.g. show mkfs progress\n"
                 "\t\t--quiet\n",
@@ -147,6 +148,7 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                 {"verbose", 0, 0, 'v'},
                 {"writeconf", 0, 0, 'w'},
                 {"network", 1, 0, 't'},
+                {"quota", 0, 0, 'Q'},
                 {0, 0, 0, 0}
         };
         char *optstring = "C:ef:Ghi:L:m:MnNo:Op:Pqs:t:u:vw";
@@ -302,6 +304,9 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
                 case 'w':
                         mop->mo_ldd.ldd_flags |= LDD_F_WRITECONF;
                         break;
+                case 'Q':
+                        mop->mo_flags |= MO_QUOTA;
+                        break;
                 default:
                         if (opt != '?') {
                                 fatal();
@@ -351,6 +356,10 @@ int main(int argc, char *const argv[])
         if (ret)
                 return ret;
 
+        ret = parse_opts(argc, argv, &mop, &mountopts);
+        if (ret)
+                goto out;
+
         /* Check whether the disk has already been formatted by mkfs.lustre */
         ret = osd_is_lustre(mop.mo_device, &mount_type);
         if (ret == 0) {
@@ -374,10 +383,6 @@ int main(int argc, char *const argv[])
 
         if (verbose > 0)
                 osd_print_ldd("Read previous values", ldd);
-
-        ret = parse_opts(argc, argv, &mop, &mountopts);
-        if (ret)
-                goto out;
 
         if (!(IS_MDT(ldd) || IS_OST(ldd) || IS_MGS(ldd))) {
                 fatal();
@@ -463,6 +468,12 @@ int main(int argc, char *const argv[])
                                 mop.mo_device, strerror(ret));
                         goto out;
                 }
+        }
+
+        /* Enable quota accounting */
+        if (mop.mo_flags & MO_QUOTA) {
+                ret = osd_enable_quota(&mop);
+                goto out;
         }
 
         /* Write our config files */
