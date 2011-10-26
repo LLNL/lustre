@@ -837,9 +837,9 @@ static int ofd_destroy_by_fid(const struct lu_env *env,
         RETURN(rc);
 }
 
-int ofd_destroy(struct obd_export *exp,
-                   struct obdo *oa, struct lov_stripe_md *md,
-                   struct obd_trans_info *oti, struct obd_export *md_exp, void *capa)
+int ofd_destroy(struct obd_export *exp, struct obdo *oa,
+                struct lov_stripe_md *md, struct obd_trans_info *oti,
+                struct obd_export *md_exp, void *capa)
 {
         struct lu_env *env = oti->oti_env;
         struct ofd_device *ofd = ofd_exp(exp);
