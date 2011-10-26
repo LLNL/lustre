@@ -824,6 +824,8 @@ static void ofd_key_exit(const struct lu_context *ctx,
         info->fti_pre_version = 0;
         info->fti_obj = NULL;
         info->fti_has_trans = 0;
+        info->fti_mult_trans = 0;
+        info->fti_used = 0;
 
         memset(&info->fti_attr, 0, sizeof info->fti_attr);
 }
