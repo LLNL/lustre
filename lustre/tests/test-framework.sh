@@ -121,7 +121,7 @@ init_test_env() {
 
     export MKE2FS=$MKE2FS
     if [ -z "$MKE2FS" ]; then
-        if which mkfs.ldiskfs; then
+        if which mkfs.ldiskfs >/dev/null 2>&1; then
             export MKE2FS=mkfs.ldiskfs
         else
             export MKE2FS=mke2fs
@@ -130,7 +130,7 @@ init_test_env() {
 
     export DEBUGFS=$DEBUGFS
     if [ -z "$DEBUGFS" ]; then
-        if which debugfs.ldiskfs; then
+        if which debugfs.ldiskfs >/dev/null 2>&1; then
             export DEBUGFS=debugfs.ldiskfs
         else
             export DEBUGFS=debugfs
@@ -139,7 +139,7 @@ init_test_env() {
 
     export TUNE2FS=$TUNE2FS
     if [ -z "$TUNE2FS" ]; then
-        if which tunefs.ldiskfs; then
+        if which tunefs.ldiskfs >/dev/null 2>&1; then
             export TUNE2FS=tunefs.ldiskfs
         else
             export TUNE2FS=tune2fs
@@ -148,7 +148,7 @@ init_test_env() {
 
     export E2LABEL=$E2LABEL
     if [ -z "$E2LABEL" ]; then
-        if which label.ldiskfs; then
+        if which label.ldiskfs >/dev/null 2>&1; then
             export E2LABEL=label.ldiskfs
         else
             export E2LABEL=e2label
@@ -157,7 +157,7 @@ init_test_env() {
 
     export DUMPE2FS=$DUMPE2FS
     if [ -z "$DUMPE2FS" ]; then
-        if which dumpfs.ldiskfs; then
+        if which dumpfs.ldiskfs >/dev/null 2>&1; then
             export DUMPE2FS=dumpfs.ldiskfs
         else
             export DUMPE2FS=dumpe2fs
@@ -166,7 +166,7 @@ init_test_env() {
 
     export E2FSCK=$E2FSCK
     if [ -z "$E2FSCK" ]; then
-        if which fsck.ldiskfs; then
+        if which fsck.ldiskfs >/dev/null 2>&1; then
             export E2FSCK=fsck.ldiskfs
         else
             export E2FSCK=e2fsck
