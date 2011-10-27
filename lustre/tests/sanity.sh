@@ -26,7 +26,8 @@ ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 # Orion: to be fixed
 # 160 -- (bug 22448) changelogs don't work yet
 # 124a - LU-479 is not yet merged
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 160"
+# 220 -- ORI-355
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 160 220"
 
 # ZFS/DMU exceptions:
 # 56r -- dmu-osd doesn't return correct type in direntry
