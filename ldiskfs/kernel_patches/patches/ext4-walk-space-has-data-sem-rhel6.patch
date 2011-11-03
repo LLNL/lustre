@@ -1,0 +1,28 @@
+Add WALK_SPACE_HAS_DATA_SEM macro on "new" kernels
+
+In order for Lustre to correctly build its ldiskfs lvfs code, it needs
+some insight into whether the ext4_ext_walk_space function which ldiskfs
+was built against downs the i_data_sem internally. Thus, on kernels
+which exhibit this behaviour (i.e. 2.6.32 based kernels or newer), the
+WALK_SPACE_HAS_DATA_SEM macro is needed.
+
+Index: linux-stage/fs/ext4/ext4.h
+===================================================================
+--- linux-stage.orig/fs/ext4/ext4.h
++++ linux-stage/fs/ext4/ext4.h
+@@ -38,6 +38,15 @@
+  * The fourth extended filesystem constants/structures
+  */
+ 
++/*
++ * In order for Lustre to properly build its ldiskfs lvfs code, Lustre
++ * relies on this macro being set when the ext4_ext_walk_space function
++ * internally downs the i_data_sem semaphore. Thus, this macro is needed
++ * on kernels which exhibit this behavior (i.e. 2.6.32 based kernels or
++ * newer).
++ */
++#define WALK_SPACE_HAS_DATA_SEM 1
++
+ /*
+  * Define EXT4FS_DEBUG to produce debug messages
+  */
