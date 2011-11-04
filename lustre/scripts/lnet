@@ -22,22 +22,15 @@ declare -r TOP_MODULES=(	\
 	obdecho			\
 	llite			\
 	lustre			\
-	lov			\
 	osc			\
-	osd_ldiskfs		\
-	cmm			\
-	mdt			\
-	mdd			\
+	lov			\
 	mds			\
 	mdc			\
 	mgs			\
 	mgc			\
-	obdfilter		\
 	ost			\
-	fid			\
-	lmv			\
+	obdfilter		\
 	lquota			\
-	fld			\
 	ptlrpc			\
 )
 declare -r BOTTOM_MODULES=(	\
