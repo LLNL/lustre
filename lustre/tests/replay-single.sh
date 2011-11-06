@@ -23,9 +23,8 @@ require_dsh_mds || exit 0
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="12 16  44a     44b    65 66 67 68"
 FAIL_ON_ERROR=false
 
-# test 61a - ORI-341
 # test 74  - ORI-259
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 61a 74"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 74"
 
 build_test_filter
 
