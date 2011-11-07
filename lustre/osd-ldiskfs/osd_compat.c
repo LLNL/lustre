@@ -67,7 +67,7 @@ struct osd_compat_objid_group {
         struct dentry        **dirs;         /* O/<group>/d0-dXX */
 };
 
-#define MAX_OBJID_GROUP         1024
+#define MAX_OBJID_GROUP (FID_SEQ_OST_MAX - 1)
 
 struct osd_compat_objid {
         int                             subdir_count;

@@ -4421,6 +4421,7 @@ out_compat:
 out_oi:
         osd_oi_fini(info, &o->od_oi_table, o->od_oi_count);
 out_mnt:
+        osd_shutdown(env, o);
         mntput(o->od_mnt);
         o->od_mnt = NULL;
 out_capa:
