@@ -57,6 +57,35 @@
 #include <lustre_fsfilt.h>
 #include <lustre_disk.h>
 
+static int mgc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
+                         struct obd_device *tgt, int *index)
+{
+        struct llog_ctxt *ctxt;
+        int rc;
+        ENTRY;
+
+        LASSERT(olg == &obd->obd_olg);
+
+        rc = llog_setup(NULL, obd, olg, LLOG_CONFIG_REPL_CTXT, tgt, 0, NULL,
+                        &llog_client_ops);
+        if (rc == 0) {
+                ctxt = llog_group_get_ctxt(olg, LLOG_CONFIG_REPL_CTXT);
+                llog_initiator_connect(ctxt);
+                llog_ctxt_put(ctxt);
+        }
+
+        RETURN(rc);
+}
+
+static int mgc_llog_finish(struct obd_device *obd, int count)
+{
+        int rc;
+        ENTRY;
+
+        rc = llog_cleanup(llog_get_context(obd, LLOG_CONFIG_REPL_CTXT));
+
+        RETURN(rc);
+}
 
 static int mgc_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 {
@@ -72,7 +101,7 @@ static int mgc_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
         /* liblustre only support null flavor to MGS */
         obd->u.cli.cl_flvr_mgc.sf_rpc = SPTLRPC_FLVR_NULL;
 
-        rc = obd_llog_init(obd, &obd->obd_olg, obd, NULL);
+        rc = mgc_llog_init(obd, &obd->obd_olg, obd, NULL);
         if (rc) {
                 CERROR("failed to setup llogging subsystems\n");
                 GOTO(err_cleanup, rc);
@@ -96,7 +125,7 @@ static int mgc_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
         case OBD_CLEANUP_EARLY:
         case OBD_CLEANUP_EXPORTS:
                 obd_cleanup_client_import(obd);
-                rc = obd_llog_finish(obd, 0);
+                rc = mgc_llog_finish(obd, 0);
                 if (rc != 0)
                         CERROR("failed to cleanup llogging subsystems\n");
                 break;
@@ -118,35 +147,6 @@ static int mgc_cleanup(struct obd_device *obd)
         RETURN(rc);
 }
 
-static int mgc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
-                         struct obd_device *tgt, int *index)
-{
-        struct llog_ctxt *ctxt;
-        int rc;
-        ENTRY;
-
-        LASSERT(olg == &obd->obd_olg);
-        rc = llog_setup(NULL, obd, olg, LLOG_CONFIG_REPL_CTXT, tgt, 0, NULL,
-                        &llog_client_ops);
-        if (rc == 0) {
-                ctxt = llog_group_get_ctxt(olg, LLOG_CONFIG_REPL_CTXT);
-                llog_initiator_connect(ctxt);
-                llog_ctxt_put(ctxt);
-        }
-
-        RETURN(rc);
-}
-
-static int mgc_llog_finish(struct obd_device *obd, int count)
-{
-        int rc;
-        ENTRY;
-
-        rc = llog_cleanup(llog_get_context(obd, LLOG_CONFIG_REPL_CTXT));
-
-        RETURN(rc);
-}
-
 struct obd_ops mgc_obd_ops = {
         .o_owner        = THIS_MODULE,
         .o_setup        = mgc_setup,
@@ -156,8 +156,6 @@ struct obd_ops mgc_obd_ops = {
         .o_del_conn     = client_import_del_conn,
         .o_connect      = client_connect_import,
         .o_disconnect   = client_disconnect_export,
-        .o_llog_init    = mgc_llog_init,
-        .o_llog_finish  = mgc_llog_finish,
 };
 
 int __init mgc_init(void)

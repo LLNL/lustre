@@ -1327,18 +1327,6 @@ static int ost_handle_quota_adjust_qunit(struct ptlrpc_request *req)
 }
 #endif
 
-static int ost_llog_handle_connect(struct obd_export *exp,
-                                   struct ptlrpc_request *req)
-{
-        struct llogd_conn_body *body;
-        int rc;
-        ENTRY;
-
-        body = req_capsule_client_get(&req->rq_pill, &RMF_LLOGD_CONN_BODY);
-        rc = obd_llog_connect(exp, body);
-        RETURN(rc);
-}
-
 #define ost_init_sec_none(reply, exp)                                   \
 do {                                                                    \
         reply->ocd_connect_flags &= ~(OBD_CONNECT_RMT_CLIENT |          \
@@ -2261,28 +2249,6 @@ int ost_handle(struct ptlrpc_request *req)
                 rc = target_handle_ping(req);
                 break;
         /* FIXME - just reply status */
-        case LLOG_ORIGIN_CONNECT:
-                DEBUG_REQ(D_INODE, req, "log connect");
-                req_capsule_set(&req->rq_pill, &RQF_LLOG_ORIGIN_CONNECT);
-                rc = ost_llog_handle_connect(req->rq_export, req);
-                req->rq_status = rc;
-                rc = req_capsule_server_pack(&req->rq_pill);
-                if (rc)
-                        RETURN(rc);
-                RETURN(ptlrpc_reply(req));
-        case OBD_LOG_CANCEL:
-                CDEBUG(D_INODE, "log cancel\n");
-                req_capsule_set(&req->rq_pill, &RQF_LOG_CANCEL);
-                if (OBD_FAIL_CHECK(OBD_FAIL_OBD_LOG_CANCEL_NET))
-                        RETURN(0);
-                rc = llog_origin_handle_cancel(req);
-                if (OBD_FAIL_CHECK(OBD_FAIL_OBD_LOG_CANCEL_REP))
-                        RETURN(0);
-                req->rq_status = rc;
-                rc = req_capsule_server_pack(&req->rq_pill);
-                if (rc)
-                        RETURN(rc);
-                RETURN(ptlrpc_reply(req));
         case LDLM_ENQUEUE:
                 CDEBUG(D_INODE, "enqueue\n");
                 req_capsule_set(&req->rq_pill, &RQF_LDLM_ENQUEUE);

@@ -242,11 +242,6 @@ int llog_obd_origin_add(const struct lu_env *, struct llog_ctxt *ctxt,
                         struct llog_cookie *logcookies, int numcookies,
                         struct thandle *th);
 
-int obd_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
-                  struct obd_device *disk_obd, int *idx);
-
-int obd_llog_finish(struct obd_device *obd, int count);
-
 /* llog_ioctl.c */
 int llog_ioctl(const struct lu_env *env, struct llog_ctxt *ctxt, int cmd,
                struct obd_ioctl_data *data);

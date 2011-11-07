@@ -601,6 +601,40 @@ static void mgc_requeue_add(struct config_llog_data *cld)
 }
 
 /********************** class fns **********************/
+static int mgc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
+                         struct obd_device *tgt, int *index)
+{
+        struct llog_ctxt *ctxt;
+        int rc;
+        ENTRY;
+
+        LASSERT(olg == &obd->obd_olg);
+
+        rc = llog_setup(NULL, obd, olg, LLOG_CONFIG_REPL_CTXT, tgt, 0, NULL,
+                        &llog_client_ops);
+        if (rc == 0) {
+                ctxt = llog_get_context(obd, LLOG_CONFIG_REPL_CTXT);
+                if (!ctxt)
+                        RETURN(-ENODEV);
+                llog_initiator_connect(ctxt);
+                llog_ctxt_put(ctxt);
+        }
+
+        RETURN(rc);
+}
+
+static int mgc_llog_finish(struct obd_device *obd, int count)
+{
+        struct llog_ctxt *ctxt;
+        int rc = 0;
+        ENTRY;
+
+        ctxt = llog_get_context(obd, LLOG_CONFIG_REPL_CTXT);
+        if (ctxt)
+                rc = llog_cleanup(ctxt);
+
+        RETURN(rc);
+}
 
 static cfs_atomic_t mgc_count = CFS_ATOMIC_INIT(0);
 static int mgc_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
@@ -626,7 +660,7 @@ static int mgc_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
                         }
                 }
                 obd_cleanup_client_import(obd);
-                rc = obd_llog_finish(obd, 0);
+                rc = mgc_llog_finish(obd, 0);
                 if (rc != 0)
                         CERROR("failed to cleanup llogging subsystems\n");
                 break;
@@ -667,7 +701,7 @@ static int mgc_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
         if (rc)
                 GOTO(err_decref, rc);
 
-        rc = obd_llog_init(obd, &obd->obd_olg, obd, NULL);
+        rc = mgc_llog_init(obd, &obd->obd_olg, obd, NULL);
         if (rc) {
                 CERROR("failed to setup llogging subsystems\n");
                 GOTO(err_cleanup, rc);
@@ -1051,41 +1085,6 @@ static int mgc_import_event(struct obd_device *obd,
                 CERROR("Unknown import event %#x\n", event);
                 LBUG();
         }
-        RETURN(rc);
-}
-
-static int mgc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
-                         struct obd_device *tgt, int *index)
-{
-        struct llog_ctxt *ctxt;
-        int rc;
-        ENTRY;
-
-        LASSERT(olg == &obd->obd_olg);
-
-        rc = llog_setup(NULL, obd, olg, LLOG_CONFIG_REPL_CTXT, tgt, 0, NULL,
-                        &llog_client_ops);
-        if (rc == 0) {
-                ctxt = llog_get_context(obd, LLOG_CONFIG_REPL_CTXT);
-                if (!ctxt)
-                        RETURN(-ENODEV);
-                llog_initiator_connect(ctxt);
-                llog_ctxt_put(ctxt);
-        }
-
-        RETURN(rc);
-}
-
-static int mgc_llog_finish(struct obd_device *obd, int count)
-{
-        struct llog_ctxt *ctxt;
-        int rc = 0;
-        ENTRY;
-
-        ctxt = llog_get_context(obd, LLOG_CONFIG_REPL_CTXT);
-        if (ctxt)
-                rc = llog_cleanup(ctxt);
-
         RETURN(rc);
 }
 
@@ -1647,8 +1646,6 @@ struct obd_ops mgc_obd_ops = {
         .o_set_info_async = mgc_set_info_async,
         .o_get_info       = mgc_get_info,
         .o_import_event = mgc_import_event,
-        .o_llog_init    = mgc_llog_init,
-        .o_llog_finish  = mgc_llog_finish,
         .o_process_config = mgc_process_config,
 };
 
