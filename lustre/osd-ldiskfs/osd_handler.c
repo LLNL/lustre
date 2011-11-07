@@ -4281,12 +4281,12 @@ out_compat:
 out_oi:
         osd_oi_fini(info, &o->od_oi);
 out_mnt:
+        osd_shutdown(env, o);
         mntput(o->od_mnt);
         o->od_mnt = NULL;
 out_capa:
         if (o->od_capa_hash)
                 cleanup_capa_hash(o->od_capa_hash);
-
 out:
         RETURN(rc);
 }
