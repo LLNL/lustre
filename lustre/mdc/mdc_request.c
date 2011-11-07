@@ -2065,6 +2065,39 @@ static int mdc_cancel_for_recovery(struct ldlm_lock *lock)
         RETURN(1);
 }
 
+static int mdc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
+                         struct obd_device *tgt, int *index)
+{
+        struct llog_ctxt *ctxt;
+        int rc;
+        ENTRY;
+
+        LASSERT(olg == &obd->obd_olg);
+
+        rc = llog_setup(NULL, obd, olg, LLOG_CHANGELOG_REPL_CTXT, tgt,
+                        0, NULL, &llog_client_ops);
+        if (rc == 0) {
+                ctxt = llog_group_get_ctxt(olg, LLOG_CHANGELOG_REPL_CTXT);
+                llog_initiator_connect(ctxt);
+                llog_ctxt_put(ctxt);
+        }
+
+        RETURN(rc);
+}
+
+static int mdc_llog_finish(struct obd_device *obd, int count)
+{
+        struct llog_ctxt *ctxt;
+        int rc = 0;
+        ENTRY;
+
+        ctxt = llog_get_context(obd, LLOG_CHANGELOG_REPL_CTXT);
+        if (ctxt)
+                rc = llog_cleanup(ctxt);
+
+        RETURN(rc);
+}
+
 static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
 {
         struct client_obd *cli = &obd->u.cli;
@@ -2099,7 +2132,7 @@ static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
 
         ns_register_cancel(obd->obd_namespace, mdc_cancel_for_recovery);
 
-        rc = obd_llog_init(obd, &obd->obd_olg, obd, NULL);
+        rc = mdc_llog_init(obd, &obd->obd_olg, obd, NULL);
         if (rc) {
                 mdc_cleanup(obd);
                 CERROR("failed to setup llogging subsystems\n");
@@ -2155,7 +2188,7 @@ static int mdc_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
 
                 obd_cleanup_client_import(obd);
 
-                rc = obd_llog_finish(obd, 0);
+                rc = mdc_llog_finish(obd, 0);
                 if (rc != 0)
                         CERROR("failed to cleanup llogging subsystems\n");
                 break;
@@ -2176,40 +2209,6 @@ static int mdc_cleanup(struct obd_device *obd)
         ptlrpcd_decref();
 
         return client_obd_cleanup(obd);
-}
-
-
-static int mdc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
-                         struct obd_device *tgt, int *index)
-{
-        struct llog_ctxt *ctxt;
-        int rc;
-        ENTRY;
-
-        LASSERT(olg == &obd->obd_olg);
-
-        rc = llog_setup(NULL, obd, olg, LLOG_CHANGELOG_REPL_CTXT, tgt,
-                        0, NULL, &llog_client_ops);
-        if (rc == 0) {
-                ctxt = llog_group_get_ctxt(olg, LLOG_CHANGELOG_REPL_CTXT);
-                llog_initiator_connect(ctxt);
-                llog_ctxt_put(ctxt);
-        }
-
-        RETURN(rc);
-}
-
-static int mdc_llog_finish(struct obd_device *obd, int count)
-{
-        struct llog_ctxt *ctxt;
-        int rc = 0;
-        ENTRY;
-
-        ctxt = llog_get_context(obd, LLOG_CHANGELOG_REPL_CTXT);
-        if (ctxt)
-                rc = llog_cleanup(ctxt);
-
-        RETURN(rc);
 }
 
 static int mdc_process_config(struct obd_device *obd, obd_count len, void *buf)
@@ -2365,8 +2364,6 @@ struct obd_ops mdc_obd_ops = {
         .o_fid_alloc        = mdc_fid_alloc,
         .o_fid_delete       = mdc_fid_delete,
         .o_import_event     = mdc_import_event,
-        .o_llog_init        = mdc_llog_init,
-        .o_llog_finish      = mdc_llog_finish,
         .o_get_info         = mdc_get_info,
         .o_process_config   = mdc_process_config,
         .o_get_uuid         = mdc_get_uuid,
