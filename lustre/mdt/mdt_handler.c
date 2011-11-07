@@ -4421,21 +4421,6 @@ static int mdt_stack_init(struct lu_env *env,
         return 0;
 }
 
-/**
- * setup CONFIG_ORIG context, used to access local config log.
- * this may need to be rewrite as part of llog rewrite for lu-api.
- */
-static int mdt_obd_llog_setup(struct obd_device *obd)
-{
-        /* XXX: we need llog to access changelogs remotely */
-        return 0;
-}
-
-static void mdt_obd_llog_cleanup(struct obd_device *obd)
-{
-        return;
-}
-
 static void mdt_fini(const struct lu_env *env, struct mdt_device *m)
 {
         struct md_device  *next = m->mdt_child;
@@ -4451,7 +4436,6 @@ static void mdt_fini(const struct lu_env *env, struct mdt_device *m)
 #ifdef XXX_MDD_CHANGELOG
         mdt_llog_ctxt_unclone(env, m, LLOG_CHANGELOG_ORIG_CTXT);
 #endif
-        mdt_obd_llog_cleanup(obd);
         obd_exports_barrier(obd);
         obd_zombie_barrier();
 
@@ -4720,16 +4704,12 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         if (rc)
                 GOTO(err_capa, rc);
 
-        rc = mdt_obd_llog_setup(obd);
-        if (rc)
-                GOTO(err_fs_cleanup, rc);
-
 #ifdef XXX_MDD_CHANGELOG
         /* XXX: doesn't work w/o OBD yet */
         if (obd->obd_fsops) {
                 rc = mdt_llog_ctxt_clone(env, m, LLOG_CHANGELOG_ORIG_CTXT);
                 if (rc)
-                        GOTO(err_llog_cleanup, rc);
+                        GOTO(err_fs_cleanup, rc);
         }
 #endif
         mdt_adapt_sptlrpc_conf(env, obd, 1);
@@ -4754,7 +4734,7 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         rc = mdt_procfs_init(m, dev);
         if (rc) {
                 CERROR("Can't init MDT lprocfs, rc %d\n", rc);
-                GOTO(err_recovery, rc);
+                GOTO(err_upcall, rc);
         }
 
         lu_quota_init(env, m->mdt_bottom, &m->mdt_lu_quota,
@@ -4791,15 +4771,13 @@ err_stop_service:
 err_procfs:
         lu_quota_fini(env, m->mdt_bottom, &m->mdt_lu_quota);
         mdt_procfs_fini(m);
-err_recovery:
+err_upcall:
         upcall_cache_cleanup(m->mdt_identity_cache);
         m->mdt_identity_cache = NULL;
 err_chlog:
 #ifdef XXX_MDD_CHANGELOG
         mdt_llog_ctxt_unclone(env, m, LLOG_CHANGELOG_ORIG_CTXT);
-err_llog_cleanup:
 #endif
-        mdt_obd_llog_cleanup(obd);
 err_fs_cleanup:
         mdt_fs_cleanup(env, m);
 err_capa:
