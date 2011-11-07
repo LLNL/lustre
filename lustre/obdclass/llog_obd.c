@@ -452,31 +452,6 @@ int llog_obd_origin_declare_add(const struct lu_env *env, struct llog_ctxt *ctxt
 }
 EXPORT_SYMBOL(llog_obd_origin_declare_add);
 
-int obd_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
-                  struct obd_device *disk_obd, int *index)
-{
-        int rc;
-        ENTRY;
-        OBD_CHECK_DT_OP(obd, llog_init, 0);
-        OBD_COUNTER_INCREMENT(obd, llog_init);
-
-        rc = OBP(obd, llog_init)(obd, olg, disk_obd, index);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(obd_llog_init);
-
-int obd_llog_finish(struct obd_device *obd, int count)
-{
-        int rc;
-        ENTRY;
-        OBD_CHECK_DT_OP(obd, llog_finish, 0);
-        OBD_COUNTER_INCREMENT(obd, llog_finish);
-
-        rc = OBP(obd, llog_finish)(obd, count);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(obd_llog_finish);
-
 /* context key constructor/destructor: tg_key_init, tg_key_fini */
 LU_KEY_INIT_FINI(llog, struct llog_thread_info);
 

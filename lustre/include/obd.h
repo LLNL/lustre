@@ -1356,12 +1356,6 @@ struct obd_ops {
         int (*o_extent_calc)(struct obd_export *, struct lov_stripe_md *,
                              int cmd, obd_off *);
 
-        /* llog related obd_methods */
-        int (*o_llog_init)(struct obd_device *obd, struct obd_llog_group *grp,
-                           struct obd_device *disk_obd, int *idx);
-        int (*o_llog_finish)(struct obd_device *obd, int count);
-        int (*o_llog_connect)(struct obd_export *, struct llogd_conn_body *);
-
         /* metadata-only methods */
         int (*o_pin)(struct obd_export *, const struct lu_fid *fid,
                      struct obd_capa *, struct obd_client_handle *, int flag);
