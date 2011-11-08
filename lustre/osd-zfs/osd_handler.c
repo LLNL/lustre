@@ -471,6 +471,11 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
         if (rc != 0)
                 RETURN(rc);
 
+        if (OBD_FAIL_CHECK(OBD_FAIL_OST_MAPBLK_ENOSPC))
+                /* Unlike ldiskfs, ZFS checks for available space and returns
+                 * -ENOSPC when assigning txg */
+                RETURN(-ENOSPC);
+
         rc = udmu_tx_assign(oh->ot_tx, TXG_WAIT);
         if (unlikely(rc != 0)) {
                 struct osd_device *osd = osd_dt_dev(d);
