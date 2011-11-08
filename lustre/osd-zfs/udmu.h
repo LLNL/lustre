@@ -99,6 +99,7 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs);
 uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes);
 int udmu_objset_root(udmu_objset_t *uos, dmu_buf_t **dbp, void *tag);
 uint64_t udmu_get_txg(udmu_objset_t *uos, dmu_tx_t *tx);
+int udmu_blk_insert_cost(void);
 
 /* buf must have at least MAXNAMELEN bytes */
 void udmu_objset_name_get(udmu_objset_t *uos, char *buf);

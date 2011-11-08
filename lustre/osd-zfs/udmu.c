@@ -61,6 +61,25 @@
 
 #include "udmu.h"
 
+int udmu_blk_insert_cost(void) {
+        int max_blockshift, nr_blkptrshift;
+
+        /* max_blockshift is the log2 of the number of blocks needed to reach
+         * the maximum filesize (that's to say 2^64) */
+        max_blockshift = DN_MAX_OFFSET_SHIFT - SPA_MAXBLOCKSHIFT;
+
+        /* nr_blkptrshift is the log2 of the number of block pointers that can
+         * be stored in an indirect block */
+        CLASSERT(DN_MAX_INDBLKSHIFT > SPA_BLKPTRSHIFT);
+        nr_blkptrshift = DN_MAX_INDBLKSHIFT - SPA_BLKPTRSHIFT;
+
+        /* max_blockshift / nr_blkptrshift is thus the maximum depth of the
+         * tree. We add +1 for rounding purpose.
+         * The tree depth times the indirect block size gives us the maximum
+         * cost of inserting a block in the tree */
+        return (max_blockshift / nr_blkptrshift + 1) * (1 << DN_MAX_INDBLKSHIFT);
+}
+
 int udmu_objset_open(char *osname, udmu_objset_t *uos)
 {
         uint64_t refdbytes, availbytes, usedobjs, availobjs;

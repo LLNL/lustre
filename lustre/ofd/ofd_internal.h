@@ -502,7 +502,8 @@ static inline int ofd_grant_compat(struct obd_export *exp,
         /* Clients which don't support OBD_CONNECT_GRANT_PARAM cannot handle
          * a block size > page size and consume CFS_PAGE_SIZE of grant when
          * dirtying a page regardless of the block size */
-        if (ofd->ofd_blockbits > COMPAT_BSIZE_SHIFT &&
+        if (ofd_obd(ofd)->obd_self_export != exp &&
+            ofd->ofd_blockbits > COMPAT_BSIZE_SHIFT &&
             !ofd_grant_param_supp(exp))
                 return 1;
         return 0;
@@ -529,6 +530,7 @@ void ofd_grant_prepare_write(const struct lu_env *env, struct obd_export *exp,
                              struct obdo *oa, struct niobuf_remote *rnb,
                              int niocount);
 void ofd_grant_commit(const struct lu_env *env, struct obd_export *exp, int rc);
+int ofd_grant_create(const struct lu_env *env, struct obd_export *exp, int *nr);
 
 /* The same as osc_build_res_name() */
 static inline void ofd_build_resid(const struct lu_fid *fid,

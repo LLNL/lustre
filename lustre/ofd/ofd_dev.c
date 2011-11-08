@@ -393,8 +393,7 @@ static int ofd_object_print(const struct lu_env *env, void *cookie,
 
 extern int ost_handle(struct ptlrpc_request *req);
 
-static int ofd_start(const struct lu_env *env,
-                        struct lu_device *dev)
+static int ofd_start(const struct lu_env *env, struct lu_device *dev)
 {
         struct ofd_device *d = ofd_dev(dev);
         struct lu_device     *next = &d->ofd_osd->dd_lu_dev;
@@ -414,10 +413,29 @@ static int ofd_start(const struct lu_env *env,
         RETURN(rc);
 }
 
+static int ofd_recovery_complete(const struct lu_env *env,
+                                 struct lu_device *dev)
+{
+        struct ofd_device *ofd = ofd_dev(dev);
+        struct lu_device  *next = &ofd->ofd_osd->dd_lu_dev;
+        int                rc;
+        ENTRY;
+
+        /* Grant space for object precreation on the self export.
+         * This initial reserved space (i.e. 20MB for zfs and 560KB for ldiskfs)
+         * is enough to create 20k objects. It is then adapted based on the
+         * precreate request size (see ofd_grant_create() */
+        ofd_grant_connect(env, dev->ld_obd->obd_self_export,
+                          OST_MAX_PRECREATE * ofd->ofd_dt_conf.ddp_inodespace);
+        rc = next->ld_ops->ldo_recovery_complete(env, next);
+        RETURN(rc);
+}
+
 static struct lu_device_operations ofd_lu_ops = {
-        .ldo_object_alloc   = ofd_object_alloc,
-        .ldo_process_config = ofd_process_config,
-        .ldo_start          = ofd_start,
+        .ldo_object_alloc      = ofd_object_alloc,
+        .ldo_process_config    = ofd_process_config,
+        .ldo_start             = ofd_start,
+        .ldo_recovery_complete = ofd_recovery_complete,
 };
 
 struct lu_object_operations ofd_obj_ops = {
