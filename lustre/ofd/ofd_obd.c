@@ -330,6 +330,23 @@ static int ofd_destroy_export(struct obd_export *exp)
         RETURN(0);
 }
 
+int ofd_obd_postrecov(struct obd_device *obd)
+{
+        struct lu_env     env;
+        struct lu_device *ldev = obd->obd_lu_dev;
+        int               rc;
+        ENTRY;
+
+        rc = lu_env_init(&env, LCT_DT_THREAD);
+        if (rc)
+                RETURN(rc);
+        ofd_info_init(&env, obd->obd_self_export);
+
+        rc = ldev->ld_ops->ldo_recovery_complete(&env, ldev);
+        lu_env_fini(&env);
+        RETURN(rc);
+}
+
 static int ofd_adapt_sptlrpc_conf(const struct lu_env *env,
                                   struct obd_device *obd, int initial)
 {
@@ -612,6 +629,17 @@ static int ofd_statfs(struct obd_export *exp, struct obd_statfs *osfs,
         osfs->os_bavail -= min_t(obd_size, osfs->os_bavail,
                                  ((ofd->ofd_tot_dirty + ofd->ofd_tot_pending +
                                    osfs->os_bsize - 1) >> ofd->ofd_blockbits));
+
+        /* The QoS code on the MDS does not care about space reserved for
+         * precreate, so take it out. */
+        if (exp->exp_connect_flags & OBD_CONNECT_MDS) {
+                struct filter_export_data *fed;
+
+                fed = &obd->obd_self_export->exp_filter_data;
+                osfs->os_bavail -= min_t(obd_size, osfs->os_bavail,
+                                         fed->fed_grant >> ofd->ofd_blockbits);
+        }
+
         ofd_grant_sanity_check(obd, __FUNCTION__);
         CDEBUG(D_CACHE, LPU64" blocks: "LPU64" free, "LPU64" avail; "
                LPU64" objects: "LPU64" free; state %x\n",
@@ -980,10 +1008,10 @@ static int ofd_orphans_destroy(const struct lu_env *env,
 int ofd_create(struct obd_export *exp, struct obdo *oa,
                struct lov_stripe_md **ea, struct obd_trans_info *oti)
 {
-        struct ofd_device *ofd = ofd_exp(exp);
-        struct lu_env *env = oti->oti_env;
+        struct ofd_device      *ofd = ofd_exp(exp);
+        struct lu_env          *env = oti->oti_env;
         struct ofd_thread_info *info;
-        int rc = 0, diff;
+        int                     rc = 0, diff;
         ENTRY;
 
         rc = lu_env_refill(env);
@@ -1057,6 +1085,20 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
                 obd_id next_id = ofd_last_id(ofd, oa->o_seq) + 1;
                 int i;
 
+                if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
+                    !(oa->o_flags & OBD_FL_DELORPHAN)) {
+                        /* don't enforce grant during orphan recovery */
+                        rc = ofd_grant_create(env,
+                                              ofd_obd(ofd)->obd_self_export,
+                                              &diff);
+                        if (rc) {
+                                CDEBUG(D_HA, "%s: failed to acquire grant space"
+                                       "for precreate (%d)\n",
+                                       ofd_obd(ofd)->obd_name, diff);
+                                diff = 0;
+                        }
+                }
+
                 CDEBUG(D_HA,
                        "%s: reserve %d objects in group "LPU64" at "LPU64"\n",
                        ofd_obd(ofd)->obd_name, diff, oa->o_seq, next_id);
@@ -1075,7 +1117,13 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
                         CERROR("unable to precreate: %d\n", rc);
                         oa->o_id = ofd_last_id(ofd, oa->o_seq);
                 }
+
                 oa->o_valid |= OBD_MD_FLID | OBD_MD_FLGROUP;
+
+                if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
+                    !(oa->o_flags & OBD_FL_DELORPHAN))
+                        ofd_grant_commit(env, ofd_obd(ofd)->obd_self_export,
+                                         rc);
         }
 
         ofd_info2oti(info, oti);
@@ -1365,6 +1413,7 @@ struct obd_ops ofd_obd_ops = {
         .o_destroy        = ofd_destroy,
         .o_init_export    = ofd_init_export,
         .o_destroy_export = ofd_destroy_export,
+        .o_postrecov      = ofd_obd_postrecov,
         .o_punch          = ofd_punch,
         .o_getattr        = ofd_getattr,
         .o_sync           = ofd_sync,

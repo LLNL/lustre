@@ -4362,8 +4362,9 @@ oos_full() {
                 local -a TOTAL=(${TOTALA[$i]//=/ })
                 GRANT=$((${GRANTA[$i]}/1024))
                 # allow 1% of total space in bavail because of delayed allocation
-                # with ZFS which might release some free space after txg commit
-                LIMIT=$((${TOTAL} / 100 + 400))
+                # with ZFS which might release some free space after txg commit.
+                # For small devices, we set a mininum of 8MB
+                LIMIT=$((${TOTAL} / 100 + 8000))
                 echo -n $(echo ${AVAIL1[0]} | cut -d"." -f2) avl=${AVAIL1[1]} \
                         grnt=$GRANT diff=$((AVAIL1[1] - GRANT)) limit=${LIMIT}
                 [ $((AVAIL1[1] - GRANT)) -lt $LIMIT ] && OSCFULL=0 && \
