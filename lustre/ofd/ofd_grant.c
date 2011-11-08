@@ -290,8 +290,7 @@ static void ofd_grant_incoming(const struct lu_env *env, struct obd_export *exp,
         if ((oa->o_valid & (OBD_MD_FLBLOCKS|OBD_MD_FLGRANT)) !=
                                         (OBD_MD_FLBLOCKS|OBD_MD_FLGRANT)) {
                 oa->o_valid &= ~OBD_MD_FLGRANT;
-                EXIT;
-                return;
+                RETURN_EXIT;
         }
 
         fed = &exp->exp_filter_data;
@@ -442,6 +441,7 @@ static void ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
         int                        i;
         int                        resend = 0;
         struct ofd_thread_info    *info = ofd_info(env);
+        ENTRY;
 
         LASSERT_SPIN_LOCKED(&ofd->ofd_grant_lock);
 
@@ -455,8 +455,26 @@ static void ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
         for (i = 0; i < niocount; i++) {
                 int bytes;
 
-                if ((oa->o_valid & OBD_MD_FLGRANT) &&
-                    (rnb[i].rnb_flags & OBD_BRW_FROM_GRANT)) {
+                if (obd->obd_recovering) {
+                        /* Replaying write. Grant info have been processed
+                         * already so no need to do any enforcement here.
+                         * It is worth noting that only bulk writes with all
+                         * rnbs having OBD_BRW_FROM_GRANT can be replayed.
+                         * If one page hasn't OBD_BRW_FROM_GRANT set, then
+                         * the whole bulk is written synchronously */
+                        if (rnb[i].rnb_flags & OBD_BRW_FROM_GRANT) {
+                                 rnb[i].rnb_flags |= OBD_BRW_GRANTED;
+                                 continue;
+                        } else {
+                                CERROR("%s: cli %s is replaying OST_WRITE "
+                                       "while one rnb hasn't OBD_BRW_FROM_GRANT"
+                                       " set (0x%x)\n", exp->exp_obd->obd_name,
+                                        exp->exp_client_uuid.uuid,
+                                        rnb[i].rnb_flags);
+
+                        }
+                } else if ((oa->o_valid & OBD_MD_FLGRANT) &&
+                           (rnb[i].rnb_flags & OBD_BRW_FROM_GRANT)) {
                         if (resend) {
                                 /* This is a recoverable resend so grant
                                  * information have already been processed */
@@ -516,6 +534,10 @@ static void ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
                "\n", obd->obd_name, exp->exp_client_uuid.uuid, exp,
                granted, ungranted, fed->fed_grant, fed->fed_dirty);
 
+        if (obd->obd_recovering)
+                /* don't update dirty accounting during recovery */
+                RETURN_EXIT;
+
         if (fed->fed_dirty < granted) {
                 CWARN("%s: cli %s/%p claims granted %lu > fed_dirty %lu\n",
                        obd->obd_name, exp->exp_client_uuid.uuid, exp,
@@ -532,6 +554,7 @@ static void ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
                 cfs_spin_unlock(&ofd->ofd_grant_lock);
                 LBUG();
         }
+        EXIT;
 }
 
 /**
@@ -818,7 +841,8 @@ refresh:
          * That said, it is worth running a sync only if some pages did not
          * consume grant space on the client and could thus fail with ENOSPC
          * later in ofd_grant_check() */
-        if (force != 2 && left < ofd_grant_chunk(exp, ofd)) {
+        if (!obd->obd_recovering && force != 2 &&
+            left < ofd_grant_chunk(exp, ofd)) {
                 cfs_spin_unlock(&ofd->ofd_grant_lock);
                 /* discard errors, at least we tried ... */
                 rc = dt_sync(env, ofd->ofd_osd);
@@ -832,6 +856,11 @@ refresh:
         /* check limit */
         ofd_grant_check(env, exp, oa, rnb, niocount, &left);
 
+        if (!(oa->o_valid & OBD_MD_FLGRANT)) {
+                cfs_spin_unlock(&ofd->ofd_grant_lock);
+                RETURN_EXIT;
+        }
+
         /* if OBD_FL_SHRINK_GRANT is set, the client is willing to release some
          * grant space. */
         if ((oa->o_valid & OBD_MD_FLFLAGS) &&
@@ -840,7 +869,6 @@ refresh:
         else
                 /* grant more space back to the client if possible */
                 oa->o_grant = ofd_grant(exp, oa->o_grant, oa->o_undirty, left);
-
         cfs_spin_unlock(&ofd->ofd_grant_lock);
 }
 
@@ -856,10 +884,13 @@ void ofd_grant_commit(const struct lu_env *env, struct obd_export *exp,
         struct ofd_device      *ofd  = ofd_exp(exp);
         struct ofd_thread_info *info = ofd_info(env);
         unsigned long           pending;
+        ENTRY;
 
         /* get space accounted in tot_pending for the I/O, set in
          * ofd_grant_check() */
         pending = info->fti_used;
+        if (pending == 0)
+                RETURN_EXIT;
 
         cfs_spin_lock(&ofd->ofd_grant_lock);
         /* Don't update statfs data for errors raised before commit (e.g.
@@ -909,4 +940,5 @@ void ofd_grant_commit(const struct lu_env *env, struct obd_export *exp,
         }
         ofd->ofd_tot_pending -= pending;
         cfs_spin_unlock(&ofd->ofd_grant_lock);
+        EXIT;
 }
