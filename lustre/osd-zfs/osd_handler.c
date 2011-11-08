@@ -813,10 +813,12 @@ static void osd_conf_get(const struct lu_env *env,
         param->ddp_grant_reserved = 20;
 
         /* inodes are dynamically allocated, so we report the per-inode space
-         * consumption to upper layers
-        param->ddp_inodespace = XXX; TBD */
-        /* per-fragment overhead to be used by the client code
-        param->ddp_grant_frag = XXX; TBD */
+         * consumption to upper layers. This static value is not really accurate
+         * and we should use the same logic as in udmu_objset_statfs() to
+         * estimate the real size consumed by an object */
+        param->ddp_inodespace = OSD_DNODE_EST_COUNT;
+        /* per-fragment overhead to be used by the client code */
+        param->ddp_grant_frag = udmu_blk_insert_cost();
 }
 
 /*

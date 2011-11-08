@@ -1026,7 +1026,6 @@ test_27m() {
 		[ $i -gt 256 ] && break
 	done
 	i=`expr $i + 1`
-	sleep_maxage
 	touch $DIR/d27/f27m_$i
 	[ `$GETSTRIPE $DIR/d27/f27m_$i | grep -A 10 obdidx | awk '{print $1}'| grep -w "0"` ] && \
 		error "OST0 was full but new created file still use it"

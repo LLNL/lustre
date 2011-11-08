@@ -773,17 +773,6 @@ static int osd_object_print(const struct lu_env *env, void *cookie,
                     d ? d->id_ops->id_name : "plain");
 }
 
-/**
- * Estimate space needed for file creations. We assume the largest filename
- * which is 2^64 - 1, hence a filename of 20 chars.
- * This is 28 bytes per object which is 28MB for 1M objects ... no so bad.
- */
-#ifdef __LDISKFS_DIR_REC_LEN
-#define PER_OBJ_USAGE __LDISKFS_DIR_REC_LEN(20)
-#else
-#define PER_OBJ_USAGE LDISKFS_DIR_REC_LEN(20)
-#endif
-
 #define GRANT_FOR_LOCAL_OIDS 32 /* 128kB for last_rcvd, quota files, ... */
 
 /*
@@ -792,11 +781,10 @@ static int osd_object_print(const struct lu_env *env, void *cookie,
 int osd_statfs(const struct lu_env *env, struct dt_device *d,
                struct obd_statfs *osfs)
 {
-        struct osd_device *osd = osd_dt_dev(d);
+        struct osd_device  *osd = osd_dt_dev(d);
         struct super_block *sb = osd_sb(osd);
-        int result = 0;
-        obd_size blocks_used, objects_est;
-        cfs_kstatfs_t kfs;
+        int                 result = 0;
+        cfs_kstatfs_t       kfs;
 
         kfs.f_frsize = 0;
         result = ll_do_statfs(sb, &kfs);
@@ -814,23 +802,6 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
                 return 0;
         }
         osfs->os_bavail -= GRANT_FOR_LOCAL_OIDS;
-
-        /* Object creations consume data blocks to store directory entries
-         * Use mean object size to estimate how many objects will fill the
-         * remaining blocks available for use in the filesystem:
-         *
-         * objects_est = blocks_avail * (inodes_used / blocks_used);
-         * inodes_used = (osfs->os_files - osfs->os_ffree); */
-        blocks_used = osfs->os_blocks - osfs->os_bfree;
-        objects_est = osfs->os_bavail * (osfs->os_files - osfs->os_ffree);
-        if (objects_est && blocks_used) {
-                do_div(objects_est, blocks_used);
-                if (objects_est > osfs->os_ffree)
-                        objects_est = osfs->os_ffree;
-                osfs->os_bavail -= min_t(obd_size, osfs->os_bavail,
-                                         (objects_est * PER_OBJ_USAGE)
-                                                       >> sb->s_blocksize_bits);
-        }
 
         /** Take out metadata overhead for indirect blocks */
         osfs->os_bavail -= osfs->os_bavail >> (sb->s_blocksize_bits - 3);
@@ -854,6 +825,17 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
         return 0;
 }
 
+/**
+ * Estimate space needed for file creations. We assume the largest filename
+ * which is 2^64 - 1, hence a filename of 20 chars.
+ * This is 28 bytes per object which is 28MB for 1M objects ... no so bad.
+ */
+#ifdef __LDISKFS_DIR_REC_LEN
+#define PER_OBJ_USAGE __LDISKFS_DIR_REC_LEN(20)
+#else
+#define PER_OBJ_USAGE LDISKFS_DIR_REC_LEN(20)
+#endif
+
 /*
  * Concurrency: doesn't access mutable data.
  */
@@ -875,8 +857,8 @@ static void osd_conf_get(const struct lu_env *env,
          * error margin which also avoids fragmenting the filesystem too much */
         param->ddp_grant_reserved = 2; /* end up to be 1.9% after conversion */
         /* inode are statically allocated, so per-inode space consumption
-         * is 0 for ldiskfs OSD */
-        param->ddp_inodespace     = 0;
+         * is the space consumed by the directory entry */
+        param->ddp_inodespace     = PER_OBJ_USAGE;
         /* per-fragment overhead to be used by the client code */
         param->ddp_grant_frag     = 6 * LDISKFS_BLOCK_SIZE(sb);
 }
