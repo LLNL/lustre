@@ -49,6 +49,7 @@ $LFS setstripe $OOS -c $STRIPECOUNT
 # add 20% of margin since the metadata overhead estimated in bavail might be
 # too aggressive and we might be able to write more than reported initially
 # by statfs.
+echo dd size $((ORIGFREE * 120 / 100))kB
 if dd if=/dev/zero of=$OOS count=$((ORIGFREE * 120 / 100)) bs=1k 2> $LOG; then
 	echo "ERROR: dd did not fail"
 	SUCCESS=0
