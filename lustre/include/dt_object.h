@@ -74,7 +74,6 @@ struct dt_device_param {
         unsigned           ddp_max_name_len;
         unsigned           ddp_max_nlink;
         unsigned           ddp_block_shift;
-        void              *ddp_mnt; /* XXX: old code can retrieve mnt -bzzz */
         int                ddp_mount_type;
         unsigned long long ddp_maxbytes;
         /* percentage of available space to reserve for grant error margin */
