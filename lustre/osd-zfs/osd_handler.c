@@ -781,8 +781,6 @@ static void osd_conf_get(const struct lu_env *env,
         param->ddp_max_name_len  = 256;
         param->ddp_max_nlink     = 2048;
         param->ddp_block_shift   = 12; /* XXX */
-        /* XXX: remove when new llog/mountconf over osd are ready -bzzz */
-        param->ddp_mnt           = NULL;
         param->ddp_mount_type    = LDD_MT_ZFS;
 
         param->ddp_mntopts        = 0;
@@ -2813,9 +2811,6 @@ static int osd_device_init0(const struct lu_env *env,
         o->od_capa_hash = init_capa_hash();
         if (o->od_capa_hash == NULL)
                 GOTO(out, rc = -ENOMEM);
-
-        cfs_spin_lock_init(&o->od_osfs_lock);
-        o->od_osfs_age = cfs_time_shift_64(-1000);
 
         rc = osd_mount(env, o, cfg);
         if (rc)
