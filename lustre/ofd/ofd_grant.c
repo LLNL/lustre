@@ -69,6 +69,9 @@ static inline obd_size ofd_grant_to_cli(struct obd_export *exp,
 static inline obd_size ofd_grant_chunk(struct obd_export *exp,
                                        struct ofd_device *ofd)
 {
+        if (exp && ofd_obd(ofd)->obd_self_export == exp)
+                /* Grant enough space to handle a big precreate request */
+                return OST_MAX_PRECREATE * ofd->ofd_dt_conf.ddp_inodespace;
         if (exp && ofd_grant_compat(exp, ofd))
                 /* Try to grant enough space to send a full-size RPC */
                 return PTLRPC_MAX_BRW_SIZE <<
@@ -109,7 +112,14 @@ void ofd_grant_sanity_check(struct obd_device *obd, const char *func)
         cfs_spin_lock(&ofd->ofd_grant_lock);
         cfs_list_for_each_entry(exp, &obd->obd_exports, exp_obd_chain) {
                 int error = 0;
+
                 fed = &exp->exp_filter_data;
+
+                if (obd->obd_self_export == exp)
+                        CDEBUG(D_CACHE, "%s: processing self export: %ld %ld "
+                               "%ld\n", obd->obd_name, fed->fed_grant,
+                               fed->fed_pending, fed->fed_dirty);
+
                 if (fed->fed_grant < 0 || fed->fed_pending < 0 ||
                     fed->fed_dirty < 0)
                         error = 1;
@@ -133,7 +143,7 @@ void ofd_grant_sanity_check(struct obd_device *obd, const char *func)
                 CDEBUG_LIMIT(error ? D_ERROR : D_CACHE, "%s: cli %s/%p dirty "
                              "%ld pend %ld grant %ld\n", obd->obd_name,
                              exp->exp_client_uuid.uuid, exp, fed->fed_dirty,
-                             fed->fed_pending,fed->fed_grant);
+                             fed->fed_pending, fed->fed_grant);
                 tot_granted += fed->fed_grant + fed->fed_pending;
                 tot_pending += fed->fed_pending;
                 tot_dirty += fed->fed_dirty;
@@ -891,6 +901,91 @@ refresh:
                 /* grant more space back to the client if possible */
                 oa->o_grant = ofd_grant(exp, oa->o_grant, oa->o_undirty, left);
         cfs_spin_unlock(&ofd->ofd_grant_lock);
+}
+
+/**
+ * Called during object precreation to consume grant space. More space is granted
+ * for precreation if possible.
+ *
+ * \param env - is the lu environment provided by the caller
+ * \param exp - is the export holding the grant space for precreation (= self
+ *              export currently)
+ * \paral nr - is the number of objects the caller wants to create objects
+ */
+int ofd_grant_create(const struct lu_env *env, struct obd_export *exp, int *nr)
+{
+        struct ofd_thread_info    *info = ofd_info(env);
+        struct ofd_device         *ofd = ofd_exp(exp);
+        struct filter_export_data *fed = &exp->exp_filter_data;
+        obd_size                   left = 0;
+        unsigned long              wanted;
+        ENTRY;
+
+        info->fti_used = 0;
+
+        if (exp->exp_obd->obd_recovering ||
+            ofd->ofd_dt_conf.ddp_inodespace == 0)
+                /* don't enforce grant during recovery */
+                RETURN(0);
+
+        /* Update statfs data if required */
+        ofd_grant_statfs(env, exp, 1, NULL);
+
+        /* protect all grant counters */
+        cfs_spin_lock(&ofd->ofd_grant_lock);
+
+        /* fail precreate request if there is not enough blocks available for
+         * writing */
+        if (ofd->ofd_osfs.os_bavail - (fed->fed_grant >> ofd->ofd_blockbits) <
+            (ofd->ofd_osfs.os_blocks >> 10)) {
+                cfs_spin_unlock(&ofd->ofd_grant_lock);
+                CDEBUG(D_RPCTRACE, "%s: not enough space for create "LPU64"\n",
+                       ofd_obd(ofd)->obd_name,
+                       ofd->ofd_osfs.os_bavail * ofd->ofd_osfs.os_blocks);
+                RETURN(-ENOSPC);
+        }
+
+        /* Grab free space from cached statfs data and take out space
+         * already granted to clients as well as reserved space */
+        left = ofd_grant_space_left(exp);
+
+        /* compute how much space is required to handle the precreation
+         * request */
+        wanted = *nr * ofd->ofd_dt_conf.ddp_inodespace;
+        if (wanted > fed->fed_grant + left) {
+                /* that's beyond what remains, adjust the number of objects that
+                 * can be safely precreated */
+                wanted = fed->fed_grant + left;
+                *nr = wanted / ofd->ofd_dt_conf.ddp_inodespace;
+                if (*nr == 0) {
+                        /* we really have no space any more for precreation,
+                         * fail the precreate request with ENOSPC */
+                        cfs_spin_unlock(&ofd->ofd_grant_lock);
+                        RETURN(-ENOSPC);
+                }
+                /* compute space needed for the new number of creations */
+                wanted = *nr * ofd->ofd_dt_conf.ddp_inodespace;
+        }
+        LASSERT(wanted <= fed->fed_grant + left);
+
+        if (wanted <= fed->fed_grant) {
+                /* we've enough grant space to handle this precreate request */
+                fed->fed_grant -= wanted;
+        } else {
+                /* we need to take some space from the ungranted pool */
+                ofd->ofd_tot_granted += wanted - fed->fed_grant;
+                left -= wanted - fed->fed_grant;
+                fed->fed_grant = 0;
+        }
+        info->fti_used = wanted;
+        fed->fed_pending += info->fti_used;
+        ofd->ofd_tot_pending += info->fti_used;
+
+        /* grant more space (twice as much as needed for this request) for
+         * precreate purpose if possible */
+        ofd_grant(exp, fed->fed_grant, wanted * 2, left);
+        cfs_spin_unlock(&ofd->ofd_grant_lock);
+        RETURN(0);
 }
 
 /**
