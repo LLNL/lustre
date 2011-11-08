@@ -678,7 +678,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                 if (lnb[i].lnb_rc == -ENOSPC &&
                     osd_is_mapped(inode, lnb[i].lnb_file_offset)) {
                         /* Allow the write to proceed if overwriting an
-                         *(ge_offset existing block */
+                         * existing block */
                         lnb[i].lnb_rc = 0;
                 }
 
