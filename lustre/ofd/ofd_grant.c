@@ -604,7 +604,11 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
         if (curgrant >= want || curgrant >= fed->fed_grant + grant_chunk)
                    RETURN(0);
 
-        grant = min(want, left >> 3);
+        if (!obd->obd_recovering)
+                /* don't grant more than 1/8th of the remaining free space in
+                 * one chunk */
+                left >>= 3;
+        grant = min(want, left);
         /* align grant on block size */
         grant &= ~((1ULL << ofd->ofd_blockbits) - 1);
 
