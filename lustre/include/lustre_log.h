@@ -129,16 +129,18 @@ static inline void fid_to_logid(struct lu_fid *fid, struct llog_logid *id)
 /* llog.c  -  general API */
 typedef int (*llog_cb_t)(const struct lu_env *, struct llog_handle *,
                          struct llog_rec_hdr *, void *);
-extern struct llog_handle *llog_alloc_handle(void);
-int llog_init_handle(struct llog_handle *handle, int flags,
-                     struct obd_uuid *uuid);
-extern void llog_free_handle(struct llog_handle *handle);
+int llog_init_handle(const struct lu_env *env, struct llog_handle *handle,
+                     int flags, struct obd_uuid *uuid);
 int llog_process(const struct lu_env *, struct llog_handle *loghandle,
                  llog_cb_t cb, void *data, void *catdata);
 int llog_reverse_process(const struct lu_env *, struct llog_handle *, llog_cb_t,
                          void *, void *);
-extern int llog_cancel_rec(const struct lu_env *, struct llog_handle *, int);
-extern int llog_get_size(struct llog_handle *loghandle);
+int llog_cancel_rec(const struct lu_env *, struct llog_handle *, int);
+int llog_get_size(struct llog_handle *loghandle);
+int llog_open(const struct lu_env *env, struct llog_ctxt *ctxt,
+              struct llog_handle **lgh, struct llog_logid *logid,
+              char *name, enum llog_open_flag open_flg);
+int llog_close(const struct lu_env *env, struct llog_handle *loghandle);
 
 /* llog_cat.c - catalog api */
 struct llog_process_data {
@@ -220,8 +222,8 @@ int llog_setup(const struct lu_env *env, struct obd_device *obd,
                struct obd_llog_group *olg, int index,
                struct obd_device *disk_obd, int count,
                struct llog_logid *logid, struct llog_operations *op);
-int __llog_ctxt_put(struct llog_ctxt *ctxt);
-int llog_cleanup(struct llog_ctxt *ctxt);
+int __llog_ctxt_put(const struct lu_env *env, struct llog_ctxt *ctxt);
+int llog_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt);
 int llog_sync(struct llog_ctxt *ctxt, struct obd_export *exp);
 int llog_cancel(const struct lu_env *, struct llog_ctxt *, int count,
                 struct llog_cookie *cookies, int flags);
@@ -230,7 +232,7 @@ int llog_obd_origin_setup(const struct lu_env *env, struct obd_device *obd,
                           struct obd_llog_group *olg, int index,
                           struct obd_device *disk_obd, int count,
                           struct llog_logid *logid, const char *name);
-int llog_obd_origin_cleanup(struct llog_ctxt *ctxt);
+int llog_obd_origin_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt);
 int llog_obd_origin_declare_add(const struct lu_env *, struct llog_ctxt *ctxt,
                                 struct llog_rec_hdr *rec,
                                 struct lov_stripe_md *lsm,
@@ -291,29 +293,28 @@ struct llog_operations {
         /**
          * Read llog header only.
          */
-        int (*lop_read_header)(struct llog_handle *handle);
+        int (*lop_read_header)(const struct lu_env *env,
+                               struct llog_handle *handle);
 
         int (*lop_setup)(const struct lu_env *env, struct obd_device *obd,
                          struct obd_llog_group *olg, int ctxt_idx,
                          struct obd_device *disk_obd, int count,
                          struct llog_logid *logid, const char *name);
         int (*lop_sync)(struct llog_ctxt *ctxt, struct obd_export *exp);
-        int (*lop_cleanup)(struct llog_ctxt *ctxt);
+        int (*lop_cleanup)(const struct lu_env *env, struct llog_ctxt *ctxt);
         int (*lop_cancel)(const struct lu_env *env, struct llog_ctxt *ctxt,
                           int count, struct llog_cookie *cookies, int flags);
         int (*lop_connect)(struct llog_ctxt *ctxt,
                            struct llog_logid *logid, struct llog_gen *gen,
                            struct obd_uuid *uuid);
         /**
-         * Any llog file must be opemed first using llog_open().  Llog can be
+         * Any llog file must be opened first using llog_open().  Llog can be
          * opened by name, logid or without both, in last case the new logid
          * will be generated.
-         * The llog_open() initializes new llog_handle() but not header.
-         * The llog_init_handle() need to be called for that.
          */
-        int (*lop_open)(const struct lu_env *, struct llog_ctxt *,
-                        struct llog_handle **, struct llog_logid *,
-                        char * name, enum llog_open_flag);
+        int (*lop_open)(const struct lu_env *env, struct llog_handle *lgh,
+                        struct llog_logid *logid, char * name,
+                        enum llog_open_flag);
         /**
          * Opened llog may not exist and this must be checked where needed using
          * the llog_exist() call.
@@ -546,7 +547,7 @@ static inline void llog_ctxt_put(struct llog_ctxt *ctxt)
         LASSERT(cfs_atomic_read(&ctxt->loc_refcount) < 0x5a5a5a);
         CDEBUG(D_INFO, "PUTting ctxt %p : new refcount %d\n", ctxt,
                cfs_atomic_read(&ctxt->loc_refcount) - 1);
-        __llog_ctxt_put(ctxt);
+        __llog_ctxt_put(NULL, ctxt);
 }
 
 static inline void llog_group_init(struct obd_llog_group *olg)
@@ -624,22 +625,6 @@ static inline int llog_group_ctxt_null(struct obd_llog_group *olg, int index)
 static inline int llog_ctxt_null(struct obd_device *obd, int index)
 {
         return (llog_group_ctxt_null(&obd->obd_olg, index));
-}
-
-static inline int llog_read_header(struct llog_handle *handle)
-{
-        struct llog_operations *lop;
-        int rc;
-        ENTRY;
-
-        rc = llog_handle2ops(handle, &lop);
-        if (rc)
-                RETURN(rc);
-        if (lop->lop_read_header == NULL)
-                RETURN(-EOPNOTSUPP);
-
-        rc = lop->lop_read_header(handle);
-        RETURN(rc);
 }
 
 static inline int llog_destroy(const struct lu_env *env, struct llog_handle *handle)
@@ -735,30 +720,6 @@ static inline int llog_connect(struct llog_ctxt *ctxt,
  *      llog_erase - open llog and destroy if exists.
  *      llog_write - write single llog record, hides all transaction stuff
  */
-static inline int llog_open(const struct lu_env *env,
-                            struct llog_ctxt *ctxt, struct llog_handle **res,
-                            struct llog_logid *logid, char *name,
-                            enum llog_open_flag flags)
-{
-        struct llog_operations *lop;
-        int raised, rc;
-        ENTRY;
-
-        rc = llog_obd2ops(ctxt, &lop);
-        if (rc)
-                RETURN(rc);
-        if (lop->lop_open == NULL)
-                RETURN(-EOPNOTSUPP);
-
-        raised = cfs_cap_raised(CFS_CAP_SYS_RESOURCE);
-        if (!raised)
-                cfs_cap_raise(CFS_CAP_SYS_RESOURCE);
-        rc = lop->lop_open(env, ctxt, res, logid, name, flags);
-        if (!raised)
-                cfs_cap_lower(CFS_CAP_SYS_RESOURCE);
-        RETURN(rc);
-}
-
 static inline int llog_exist(struct llog_handle *loghandle)
 {
         struct llog_operations *lop;
@@ -870,8 +831,8 @@ static inline int llog_write_rec(const struct lu_env *env,
 
         /* FIXME:  Why doesn't caller just set the right lrh_len itself? */
         if (buf)
-                buflen = rec->lrh_len + sizeof(struct llog_rec_hdr)
-                                + sizeof(struct llog_rec_tail);
+                buflen = rec->lrh_len + sizeof(struct llog_rec_hdr) +
+                         sizeof(struct llog_rec_tail);
         else
                 buflen = rec->lrh_len;
         LASSERT(cfs_size_round(buflen) == buflen);
@@ -940,24 +901,6 @@ static inline int llog_declare_add(const struct lu_env *env,
         rc = CTXTP(ctxt, declare_add)(env, ctxt, rec, lsm, th);
         if (!raised)
                 cfs_cap_lower(CFS_CAP_SYS_RESOURCE);
-        RETURN(rc);
-}
-
-static inline int llog_close(const struct lu_env *env,
-                             struct llog_handle *loghandle)
-{
-        struct llog_operations *lop;
-        int rc;
-        ENTRY;
-
-        rc = llog_handle2ops(loghandle, &lop);
-        if (rc)
-                GOTO(out, rc);
-        if (lop->lop_close == NULL)
-                GOTO(out, -EOPNOTSUPP);
-        rc = lop->lop_close(env, loghandle);
-out:
-        llog_free_handle(loghandle);
         RETURN(rc);
 }
 

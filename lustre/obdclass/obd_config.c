@@ -1395,7 +1395,7 @@ int class_config_parse_llog(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (rc)
                 RETURN(rc);
 
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(parse_out, rc);
 
@@ -1504,7 +1504,7 @@ int class_config_dump_llog(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (rc)
                 RETURN(rc);
 
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(parse_out, rc);
 

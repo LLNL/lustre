@@ -554,11 +554,11 @@ out:
         RETURN(rc);
 }
 
-static int llog_osd_read_header(struct llog_handle *handle)
+static int llog_osd_read_header(const struct lu_env *env,
+                                struct llog_handle *handle)
 {
         struct dt_object        *o;
         struct llog_thread_info *lgi;
-        struct lu_env            env;
         int                      rc;
         ENTRY;
 
@@ -567,30 +567,24 @@ static int llog_osd_read_header(struct llog_handle *handle)
         o = handle->lgh_obj;
         LASSERT(o);
 
-        rc = lu_env_init(&env, LCT_LOCAL);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                RETURN(rc);
-        }
+        lgi = llog_info(env);
 
-        lgi = llog_info(&env);
-
-        rc = dt_attr_get(&env, o, &lgi->lgi_attr, NULL);
+        rc = dt_attr_get(env, o, &lgi->lgi_attr, NULL);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
 
         if (lgi->lgi_attr.la_size == 0) {
                 CDEBUG(D_HA, "not reading header from 0-byte log\n");
-                GOTO(out, rc = LLOG_EEMPTY);
+                RETURN(LLOG_EEMPTY);
         }
 
         lgi->lgi_off = 0;
         lgi->lgi_buf.lb_buf = handle->lgh_hdr;
         lgi->lgi_buf.lb_len = LLOG_CHUNK_SIZE;
 
-        rc = dt_record_read(&env, o, &lgi->lgi_buf, &lgi->lgi_off);
+        rc = dt_record_read(env, o, &lgi->lgi_buf, &lgi->lgi_off);
         if (rc) {
                 CERROR("error reading log header from "DFID"\n",
                        PFID(lu_object_fid(&o->do_lu)));
@@ -619,8 +613,6 @@ static int llog_osd_read_header(struct llog_handle *handle)
         }
 
         handle->lgh_last_idx = handle->lgh_hdr->llh_tail.lrt_index;
-out:
-        lu_env_fini(&env);
         RETURN(rc);
 }
 
@@ -1058,12 +1050,12 @@ out:
 /*
  *
  */
-static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
-                         struct llog_handle **res, struct llog_logid *logid,
-                         char *name, enum llog_open_flag flags)
+static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
+                         struct llog_logid *logid, char *name,
+                         enum llog_open_flag flags)
 {
         struct llog_thread_info *lgi = llog_info(env);
-        struct llog_handle      *handle = NULL;
+        struct llog_ctxt        *ctxt = handle->lgh_ctxt;
         struct dt_object        *o;
         struct dt_device        *dt;
         struct llog_superblock  *lsb = NULL;
@@ -1080,10 +1072,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
         lsb = llog_osd_get_sb(env, dt, NULL);
         LASSERT(!(IS_ERR(lsb)));
 
-        handle = llog_alloc_handle();
-        if (handle == NULL)
-                GOTO(out, rc = -ENOMEM);
-        *res = handle;
+        LASSERT(handle);
 
         if (logid != NULL) {
                 logid_to_fid(logid, &lgi->lgi_fid);
@@ -1098,22 +1087,22 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
                         if (handle->lgh_name)
                                 strcpy(handle->lgh_name, name);
                         else
-                                GOTO(out_free, rc = -ENOMEM);
+                                GOTO(out, rc = -ENOMEM);
                         rc = llog_osd_generate_fid(env, lsb, &lgi->lgi_fid);
                 }
                 if (rc < 0)
-                        GOTO(out_free, rc);
+                        GOTO(out, rc);
         } else {
                 LASSERTF(flags & LLOG_OPEN_NEW, "%#x\n", flags);
                 /* generate fid for new llog */
                 rc = llog_osd_generate_fid(env, lsb, &lgi->lgi_fid);
                 if (rc < 0)
-                        GOTO(out_free, rc);
+                        GOTO(out, rc);
         }
 
         o = llog_osd_locate(env, lsb, &lgi->lgi_fid);
         if (IS_ERR(o))
-                GOTO(out_free, rc = PTR_ERR(o));
+                GOTO(out, rc = PTR_ERR(o));
 
         /* No new llog is expected but doesn't exist */
         if (!(flags & LLOG_OPEN_NEW) && !dt_object_exists(o))
@@ -1121,7 +1110,6 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
 
         fid_to_logid(&lgi->lgi_fid, &handle->lgh_id);
         handle->lgh_obj = o;
-        handle->lgh_ctxt = ctxt;
         cfs_atomic_inc(&lsb->lsb_refcount);
         handle->private_data = lsb;
         LASSERT(handle->lgh_ctxt);
@@ -1130,8 +1118,6 @@ static int llog_osd_open(const struct lu_env *env, struct llog_ctxt *ctxt,
 
 out_put:
         lu_object_put(env, &o->do_lu);
-out_free:
-        llog_free_handle(handle);
 out:
         llog_osd_put_sb(env, lsb);
         RETURN(rc);
@@ -1338,33 +1324,22 @@ out_ctxt:
         return rc;
 }
 
-static int llog_osd_cleanup(struct llog_ctxt *ctxt)
+static int llog_osd_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt)
 {
         struct llog_superblock *lsb;
-        struct obd_device      *obd;
-        struct lu_env           env;
-        int                     rc;
 
-        obd = ctxt->loc_exp->exp_obd;
-        LASSERT(obd);
-        lsb = llog_osd_find_sb(obd->obd_lvfs_ctxt.dt);
+        LASSERT(ctxt->loc_exp->exp_obd);
+        lsb = llog_osd_find_sb(ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt);
         if (lsb == NULL) {
                 CERROR("Can't find proper lsb\n");
                 return -ENODEV;
         }
 
-        rc = lu_env_init(&env, LCT_LOCAL);
-        if (rc) {
-                CERROR("can't init env: %d\n", rc);
-                return rc;
-        }
-
         /* release two references: one from
          * llog_osd_setup() and initial one */
-        llog_osd_put_sb(&env, lsb);
-        llog_osd_put_sb(&env, lsb);
+        llog_osd_put_sb(env, lsb);
+        llog_osd_put_sb(env, lsb);
 
-        lu_env_fini(&env);
         return 0;
 }
 

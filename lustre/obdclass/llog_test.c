@@ -117,7 +117,7 @@ static int llog_test_1(const struct lu_env *env, struct obd_device *obd,
                 CERROR("1a: llog_create with name %s failed: %d\n", name, rc);
                 GOTO(out, rc);
         }
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, &uuid);
         if (rc) {
                 CERROR("1a: can't init llog handle: %d\n", rc);
                 GOTO(out_close, rc);
@@ -155,7 +155,7 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd,
                 GOTO(out_put, rc);
         }
 
-        rc = llog_init_handle(*llh, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(env, *llh, LLOG_F_IS_PLAIN, &uuid);
         if (rc) {
                 CERROR("2a: can't init llog handle: %d\n", rc);
                 GOTO(out_close_llh, rc);
@@ -171,7 +171,7 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd,
                 CERROR("2b: create log failed\n");
                 GOTO(out_close_llh, rc);
         }
-        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(env, loghandle, LLOG_F_IS_PLAIN, &uuid);
         if (rc) {
                 CERROR("2b: can't init llog handle: %d\n", rc);
                 GOTO(out_close, rc);
@@ -187,7 +187,7 @@ static int llog_test_2(const struct lu_env *env, struct obd_device *obd,
                 GOTO(out_close_llh, rc);
         }
 
-        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, &uuid);
+        rc = llog_init_handle(env, loghandle, LLOG_F_IS_PLAIN, &uuid);
         if (rc) {
                 CERROR("2c: can't init llog handle: %d\n", rc);
                 GOTO(out_close, rc);
@@ -328,7 +328,7 @@ static int llog_test_4(const struct lu_env *env, struct obd_device *obd)
                 CERROR("4a: llog_create with name %s failed: %d\n", name, rc);
                 GOTO(ctxt_release, rc);
         }
-        rc = llog_init_handle(cath, LLOG_F_IS_CAT, &uuid);
+        rc = llog_init_handle(env, cath, LLOG_F_IS_CAT, &uuid);
         if (rc) {
                 CERROR("4a: can't init llog handle: %d\n", rc);
                 GOTO(out, rc);
@@ -500,7 +500,7 @@ static int llog_test_5(const struct lu_env *env, struct obd_device *obd)
                 GOTO(out_put, rc);
         }
 
-        rc = llog_init_handle(llh, LLOG_F_IS_CAT, &uuid);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_CAT, &uuid);
         if (rc) {
                 CERROR("5a: can't init llog handle: %d\n", rc);
                 GOTO(out, rc);
@@ -622,7 +622,7 @@ static int llog_test_6(const struct lu_env *env, struct obd_device *obd,
                 GOTO(nctxt_put, rc);
         }
 
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, NULL);
         if (rc) {
                 CERROR("6a: llog_init_handle failed %d\n", rc);
                 GOTO(parse_out, rc);
@@ -698,7 +698,8 @@ static int llog_test_7_sub(const struct lu_env *env, struct llog_ctxt *ctxt)
                 RETURN(rc);
         }
 
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN | LLOG_F_ZAP_WHEN_EMPTY,
+        rc = llog_init_handle(env, llh,
+                              LLOG_F_IS_PLAIN | LLOG_F_ZAP_WHEN_EMPTY,
                               &uuid);
         if (rc) {
                 CERROR("7_sub: can't init llog handle: %d\n", rc);
@@ -863,7 +864,7 @@ out:
  * ------------------------------------------------------------------------- */
 static int llog_run_tests(const struct lu_env *env, struct obd_device *obd)
 {
-        struct llog_handle *llh;
+        struct llog_handle *llh = NULL;
         struct llog_ctxt *ctxt = llog_get_context(obd, LLOG_TEST_ORIG_CTXT);
         int rc, err;
         char name[10];
@@ -926,14 +927,20 @@ static void lprocfs_llog_test_init_vars(struct lprocfs_static_vars *lvars)
 static int llog_test_cleanup(struct obd_device *obd)
 {
         struct obd_device *tgt;
+        struct lu_env env;
         int rc;
         ENTRY;
 
+        rc = lu_env_init(&env, LCT_LOCAL | LCT_MG_THREAD);
+        if (rc)
+                RETURN(rc);
+
         tgt = obd->obd_lvfs_ctxt.dt->dd_lu_dev.ld_obd;
-        rc = llog_cleanup(llog_get_context(tgt, LLOG_TEST_ORIG_CTXT));
+        rc = llog_cleanup(&env, llog_get_context(tgt, LLOG_TEST_ORIG_CTXT));
         if (rc)
                 CERROR("failed to llog_test_llog_finish: %d\n", rc);
 
+        lu_env_fini(&env);
         RETURN(rc);
 }
 
