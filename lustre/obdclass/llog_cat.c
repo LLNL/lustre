@@ -96,7 +96,7 @@ static int llog_cat_new_log(const struct lu_env *env,
                 RETURN(rc);
         }
 
-        rc = llog_init_handle(loghandle,
+        rc = llog_init_handle(env, loghandle,
                               LLOG_F_IS_PLAIN | LLOG_F_ZAP_WHEN_EMPTY,
                               &cathandle->lgh_hdr->llh_tgtuuid);
         if (rc)
@@ -187,7 +187,7 @@ int llog_cat_id2handle(const struct lu_env *env, struct llog_handle *cathandle,
                 GOTO(out, rc);
         }
 
-        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc < 0) {
                 llog_close(env, loghandle);
                 GOTO(out, rc);
@@ -213,12 +213,38 @@ int llog_cat_close(const struct lu_env *env, struct llog_handle *cathandle)
 
         cfs_list_for_each_entry_safe(loghandle, n, &cathandle->u.chd.chd_head,
                                      u.phd.phd_entry) {
+                struct llog_log_hdr *llh = loghandle->lgh_hdr;
+                int index;
+
                 /* unlink open-not-created llogs */
                 cfs_list_del_init(&loghandle->u.phd.phd_entry);
-                if (llog_close(env, loghandle))
-                        CERROR("error closing loghandle\n");
+                llh = loghandle->lgh_hdr;
+                if (llh != NULL &&
+                    (llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
+                    (llh->llh_count == 1)) {
+                        rc = llog_destroy(env, loghandle);
+                        if (rc)
+                                CERROR("failure destroying log during "
+                                       "cleanup: %d\n", rc);
+
+                        index = loghandle->u.phd.phd_cookie.lgc_index;
+
+                        LASSERT(index);
+                        llog_cat_set_first_idx(cathandle, index);
+                        rc = llog_cancel_rec(env, cathandle, index);
+                        if (rc == 0)
+                                CDEBUG(D_RPCTRACE,
+                                       "cancel plain log at index %u of "
+                                       "catalog "LPX64"\n",
+                                       index,cathandle->lgh_id.lgl_oid);
+                }
+                llog_close(env, loghandle);
         }
+        /* if handle was stored in ctxt, remove it too */
+        if (cathandle->lgh_ctxt->loc_handle == cathandle)
+                cathandle->lgh_ctxt->loc_handle = NULL;
         rc = llog_close(env, cathandle);
+
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cat_close);
@@ -620,7 +646,7 @@ int llog_cat_process_thread(void *data)
                        lgi->lgi_logid.lgl_ogen, rc);
                 GOTO(out_env, rc);
         }
-        rc = llog_init_handle(llh, LLOG_F_IS_CAT, NULL);
+        rc = llog_init_handle(&env, llh, LLOG_F_IS_CAT, NULL);
         if (rc) {
                 CERROR("llog_init_handle failed %d\n", rc);
                 GOTO(release_llh, rc);

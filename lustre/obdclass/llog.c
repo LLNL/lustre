@@ -79,7 +79,6 @@ struct llog_handle *llog_alloc_handle(void)
 
         RETURN(loghandle);
 }
-EXPORT_SYMBOL(llog_alloc_handle);
 
 /*
  * Free llog handle and header data if exists. Used in llog_close() only
@@ -100,7 +99,6 @@ void llog_free_handle(struct llog_handle *loghandle)
 out:
         OBD_FREE_PTR(loghandle);
 }
-EXPORT_SYMBOL(llog_free_handle);
 
 /* returns negative on error; 0 if success; 1 if success & log destroyed */
 int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle, int index)
@@ -174,8 +172,41 @@ out:
 }
 EXPORT_SYMBOL(llog_cancel_rec);
 
-int llog_init_handle(struct llog_handle *handle, int flags,
-                     struct obd_uuid *uuid)
+static int llog_read_header(const struct lu_env *env,
+                            struct llog_handle *handle,
+                            struct obd_uuid *uuid)
+{
+        struct llog_operations *lop;
+        int rc;
+
+        rc = llog_handle2ops(handle, &lop);
+        if (rc)
+                RETURN(rc);
+
+        if (lop->lop_read_header == NULL)
+                RETURN(-EOPNOTSUPP);
+
+        rc = lop->lop_read_header(env, handle);
+        if (rc == LLOG_EEMPTY) {
+                struct llog_log_hdr *llh = handle->lgh_hdr;
+
+                handle->lgh_last_idx = 0; /* header is record with index 0 */
+                llh->llh_count = 1;         /* for the header record */
+                llh->llh_hdr.lrh_type = LLOG_HDR_MAGIC;
+                llh->llh_hdr.lrh_len = llh->llh_tail.lrt_len = LLOG_CHUNK_SIZE;
+                llh->llh_hdr.lrh_index = llh->llh_tail.lrt_index = 0;
+                llh->llh_timestamp = cfs_time_current_sec();
+                if (uuid)
+                        memcpy(&llh->llh_tgtuuid, uuid, sizeof(llh->llh_tgtuuid));
+                llh->llh_bitmap_offset = offsetof(typeof(*llh), llh_bitmap);
+                ext2_set_bit(0, llh->llh_bitmap);
+                rc = 0;
+        }
+        return rc;
+}
+
+int llog_init_handle(const struct lu_env *env, struct llog_handle *handle,
+                     int flags, struct obd_uuid *uuid)
 {
         int rc;
         struct llog_log_hdr *llh;
@@ -188,34 +219,36 @@ int llog_init_handle(struct llog_handle *handle, int flags,
         handle->lgh_hdr = llh;
         /* first assign flags to use llog_client_ops */
         llh->llh_flags = flags;
-        rc = llog_read_header(handle);
+        rc = llog_read_header(env, handle, uuid);
         if (rc == 0) {
-                flags = llh->llh_flags;
-                if (uuid && !obd_uuid_equals(uuid, &llh->llh_tgtuuid)) {
+                if (unlikely((llh->llh_flags & LLOG_F_IS_PLAIN &&
+                              flags & LLOG_F_IS_CAT) ||
+                             (llh->llh_flags & LLOG_F_IS_CAT &&
+                              flags & LLOG_F_IS_PLAIN))) {
+                        CERROR("llog type is %s but initializing %s llog\n",
+                               llh->llh_flags & LLOG_F_IS_CAT ?
+                               "catalog" : "plain",
+                               flags & LLOG_F_IS_CAT ? "catalog" : "plain");
+                        GOTO(out, rc = -EINVAL);
+                } else if (llh->llh_flags & (LLOG_F_IS_PLAIN|LLOG_F_IS_CAT)) {
+                        /*
+                         * it is possible to open llog without specifying llog type
+                         * so it is taken from llh_flags
+                         */
+                        flags = llh->llh_flags;
+                } else {
+                        /* for some reason the llh_flags has no type set */
+                        CERROR("llog type is not specified!\n");
+                        GOTO(out, rc = -EINVAL);
+                }
+                if (unlikely(uuid &&
+                             !obd_uuid_equals(uuid, &llh->llh_tgtuuid))) {
                         CERROR("uuid mismatch: %s/%s\n", (char *)uuid->uuid,
                                (char *)llh->llh_tgtuuid.uuid);
-                        rc = -EEXIST;
+                        GOTO(out, rc = -EEXIST);
                 }
-                GOTO(out, rc);
-        } else if (rc != LLOG_EEMPTY || !flags) {
-                /* set a pesudo flag for initialization */
-                flags = LLOG_F_IS_CAT;
-                GOTO(out, rc);
         }
-        rc = 0;
 
-        handle->lgh_last_idx = 0; /* header is record with index 0 */
-        llh->llh_count = 1;         /* for the header record */
-        llh->llh_hdr.lrh_type = LLOG_HDR_MAGIC;
-        llh->llh_hdr.lrh_len = llh->llh_tail.lrt_len = LLOG_CHUNK_SIZE;
-        llh->llh_hdr.lrh_index = llh->llh_tail.lrt_index = 0;
-        llh->llh_timestamp = cfs_time_current_sec();
-        if (uuid)
-                memcpy(&llh->llh_tgtuuid, uuid, sizeof(llh->llh_tgtuuid));
-        llh->llh_bitmap_offset = offsetof(typeof(*llh), llh_bitmap);
-        ext2_set_bit(0, llh->llh_bitmap);
-
-out:
         if (flags & LLOG_F_IS_CAT) {
                 LASSERT(cfs_list_empty(&handle->u.chd.chd_head));
                 CFS_INIT_LIST_HEAD(&handle->u.chd.chd_head);
@@ -226,7 +259,7 @@ out:
                        flags, LLOG_F_IS_CAT, LLOG_F_IS_PLAIN);
                 LBUG();
         }
-
+out:
         if (rc) {
                 OBD_FREE_PTR(llh);
                 handle->lgh_hdr = NULL;
@@ -599,7 +632,7 @@ int llog_erase(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (rc < 0)
                 RETURN(rc);
 
-        rc = llog_init_handle(handle, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, handle, LLOG_F_IS_PLAIN, NULL);
         if (rc == 0)
                 rc = llog_destroy(env, handle);
 
@@ -648,3 +681,56 @@ out_trans:
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_write);
+
+int llog_open(const struct lu_env *env, struct llog_ctxt *ctxt,
+              struct llog_handle **lgh, struct llog_logid *logid,
+              char *name, enum llog_open_flag open_flg)
+{
+        int raised;
+        int rc;
+        ENTRY;
+
+        LASSERT(ctxt);
+        LASSERT(ctxt->loc_logops);
+
+        if (ctxt->loc_logops->lop_open == NULL) {
+                *lgh = NULL;
+                RETURN(-EOPNOTSUPP);
+        }
+
+        *lgh = llog_alloc_handle();
+        if (*lgh == NULL)
+                RETURN(-ENOMEM);
+        (*lgh)->lgh_ctxt = ctxt;
+
+        raised = cfs_cap_raised(CFS_CAP_SYS_RESOURCE);
+        if (!raised)
+                cfs_cap_raise(CFS_CAP_SYS_RESOURCE);
+        rc = ctxt->loc_logops->lop_open(env, *lgh, logid, name, open_flg);
+        if (!raised)
+                cfs_cap_lower(CFS_CAP_SYS_RESOURCE);
+        if (rc) {
+                llog_free_handle(*lgh);
+                *lgh = NULL;
+        }
+        RETURN(rc);
+}
+EXPORT_SYMBOL(llog_open);
+
+int llog_close(const struct lu_env *env, struct llog_handle *loghandle)
+{
+        struct llog_operations *lop;
+        int rc;
+        ENTRY;
+
+        rc = llog_handle2ops(loghandle, &lop);
+        if (rc)
+                GOTO(out, rc);
+        if (lop->lop_close == NULL)
+                GOTO(out, -EOPNOTSUPP);
+        rc = lop->lop_close(env, loghandle);
+out:
+        llog_free_handle(loghandle);
+        RETURN(rc);
+}
+EXPORT_SYMBOL(llog_close);

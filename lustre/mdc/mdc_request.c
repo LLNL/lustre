@@ -1299,7 +1299,7 @@ static int mdc_changelog_send_thread(void *csdata)
                 CERROR("llog_create() failed %d\n", rc);
                 GOTO(out, rc);
         }
-        rc = llog_init_handle(llh, LLOG_F_IS_CAT, NULL);
+        rc = llog_init_handle(NULL, llh, LLOG_F_IS_CAT, NULL);
         if (rc) {
                 CERROR("llog_init_handle failed %d\n", rc);
                 GOTO(out, rc);
@@ -2093,7 +2093,7 @@ static int mdc_llog_finish(struct obd_device *obd, int count)
 
         ctxt = llog_get_context(obd, LLOG_CHANGELOG_REPL_CTXT);
         if (ctxt)
-                rc = llog_cleanup(ctxt);
+                rc = llog_cleanup(NULL, ctxt);
 
         RETURN(rc);
 }

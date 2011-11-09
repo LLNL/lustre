@@ -859,7 +859,7 @@ static int osp_sync_thread(void *_arg)
 
         osp_sync_process_committed(&env, d);
 
-        rc = llog_cleanup(ctxt);
+        rc = llog_cleanup(&env, ctxt);
         if (rc)
                 CERROR("can't cleanup llog: %d\n", rc);
 out:
@@ -934,7 +934,7 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
         if (rc) {
                 CERROR("rc: %d\n", rc);
                 ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
-                llog_cleanup(ctxt);
+                llog_cleanup(env, ctxt);
                 GOTO(out, rc);
         }
 
@@ -963,12 +963,12 @@ out:
         RETURN(rc);
 }
 
-static void osp_sync_llog_fini(struct osp_device *d)
+static void osp_sync_llog_fini(const struct lu_env *env, struct osp_device *d)
 {
         struct llog_ctxt *ctxt;
 
         ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
-        llog_cleanup(ctxt);
+        llog_cleanup(env, ctxt);
 }
 
 /*
@@ -1016,7 +1016,7 @@ int osp_sync_init(const struct lu_env *env, struct osp_device *d)
         RETURN(0);
 
 err_llog:
-        osp_sync_llog_fini(d);
+        osp_sync_llog_fini(env, d);
 err_id:
         osp_sync_id_traction_fini(d);
         RETURN(rc);

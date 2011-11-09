@@ -1055,7 +1055,7 @@ int sptlrpc_target_local_copy_conf(const struct lu_env *env,
         rc = llog_open_create(env, ctxt, &llh, NULL, LOG_SPTLRPC_TMP);
         if (rc)
                 GOTO(out_dput, rc);
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -1135,7 +1135,7 @@ int sptlrpc_target_local_read_conf(const struct lu_env *env,
         if (rc)
                 GOTO(out_pop, rc);
 
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 

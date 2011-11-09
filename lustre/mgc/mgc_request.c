@@ -632,7 +632,7 @@ static int mgc_llog_finish(struct obd_device *obd, int count)
 
         ctxt = llog_get_context(obd, LLOG_CONFIG_REPL_CTXT);
         if (ctxt)
-                rc = llog_cleanup(ctxt);
+                rc = llog_cleanup(NULL, ctxt);
 
         RETURN(rc);
 }

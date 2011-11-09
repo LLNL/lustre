@@ -316,7 +316,7 @@ int llog_ioctl(const struct lu_env *env, struct llog_ctxt *ctxt, int cmd,
                 RETURN(-EINVAL);
         }
 
-        rc = llog_init_handle(handle, 0, NULL);
+        rc = llog_init_handle(env, handle, 0, NULL);
         if (rc)
                 GOTO(out_close, rc = -ENOENT);
 
