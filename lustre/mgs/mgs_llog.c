@@ -264,7 +264,7 @@ static int mgs_get_fsdb_from_llog(const struct lu_env *env,
         if (rc)
                 GOTO(out_pop, rc);
 
-        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -689,7 +689,7 @@ static int mgs_modify(const struct lu_env *env, struct mgs_device *mgs,
         if (rc)
                 GOTO(out_pop, rc);
 
-        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -928,7 +928,7 @@ static int record_start_log(const struct lu_env *env,
         if (rc)
                 GOTO(out_ctxt, rc);
 
-        rc = llog_init_handle(*llh, LLOG_F_IS_PLAIN, &cfg_uuid);
+        rc = llog_init_handle(env, *llh, LLOG_F_IS_PLAIN, &cfg_uuid);
         if (rc)
                 llog_close(env, *llh);
 out_ctxt:
@@ -964,7 +964,7 @@ static int mgs_log_is_empty(const struct lu_env *env,
         if (rc)
                 GOTO(out_ctxt, rc);
 
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -1282,7 +1282,7 @@ static int mgs_steal_llog_for_mdt_from_client(const struct lu_env *env,
         if (rc)
                 GOTO(out_pop, rc);
 
-        rc = llog_init_handle(loghandle, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, loghandle, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -2760,7 +2760,7 @@ int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env,
         if (rc)
                 GOTO(out, rc = 0);
 
-        rc = llog_init_handle(llh, LLOG_F_IS_PLAIN, NULL);
+        rc = llog_init_handle(env, llh, LLOG_F_IS_PLAIN, NULL);
         if (rc)
                 GOTO(out_close, rc);
 
