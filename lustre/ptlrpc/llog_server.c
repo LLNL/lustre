@@ -165,7 +165,8 @@ int llog_origin_handle_next_block(struct ptlrpc_request *req)
                 GOTO(out_pop, rc);
 
         flags = body->lgd_llh_flags;
-        rc = llog_init_handle(loghandle, flags, NULL);
+        rc = llog_init_handle(req->rq_svc_thread->t_env, loghandle, flags,
+                              NULL);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -215,7 +216,8 @@ int llog_origin_handle_prev_block(struct ptlrpc_request *req)
                 GOTO(out_pop, rc);
 
         flags = body->lgd_llh_flags;
-        rc = llog_init_handle(loghandle, flags, NULL);
+        rc = llog_init_handle(req->rq_svc_thread->t_env, loghandle, flags,
+                              NULL);
         if (rc)
                 GOTO(out_close, rc);
 
@@ -267,9 +269,11 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
          * llog_init_handle() reads the llog header
          */
         flags = body->lgd_llh_flags;
-        rc = llog_init_handle(loghandle, flags, NULL);
+        rc = llog_init_handle(req->rq_svc_thread->t_env, loghandle, flags,
+                              NULL);
         if (rc)
                 GOTO(out_close, rc);
+        flags = loghandle->lgh_hdr->llh_flags;
 
         rc = req_capsule_server_pack(&req->rq_pill);
         if (rc)
@@ -279,7 +283,12 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         *hdr = *loghandle->lgh_hdr;
         GOTO(out_close, rc);
 out_close:
-        llog_close(req->rq_svc_thread->t_env, loghandle);
+        if (flags & LLOG_F_IS_PLAIN)
+                llog_close(req->rq_svc_thread->t_env, loghandle);
+        else if (flags & LLOG_F_IS_CAT)
+                llog_cat_close(req->rq_svc_thread->t_env, loghandle);
+        else
+                CERROR("llog type is not defined!\n");
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;

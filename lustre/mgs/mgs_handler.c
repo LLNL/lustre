@@ -1095,7 +1095,7 @@ err_llog:
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         if (ctxt) {
                 ctxt->loc_dir = NULL;
-                llog_cleanup(ctxt);
+                llog_cleanup(env, ctxt);
         }
 err_fs:
         /* No extra cleanup needed for llog_init_commit_thread() */
@@ -1260,7 +1260,7 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
         ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
         if (ctxt) {
                 ctxt->loc_dir = NULL;
-                llog_cleanup(ctxt);
+                llog_cleanup(env, ctxt);
         }
 
         mgs_fs_cleanup(env, mgs);

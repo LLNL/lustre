@@ -2684,9 +2684,11 @@ struct llog_gen_rec {
 #define LLOG_MIN_REC_SIZE       (24) /* round(llog_rec_hdr + llog_rec_tail) */
 
 /* flags for the logs */
-#define LLOG_F_ZAP_WHEN_EMPTY   0x1
-#define LLOG_F_IS_CAT           0x2
-#define LLOG_F_IS_PLAIN         0x4
+enum llog_flag {
+        LLOG_F_ZAP_WHEN_EMPTY = 0x1,
+        LLOG_F_IS_CAT         = 0x2,
+        LLOG_F_IS_PLAIN       = 0x4,
+};
 
 struct llog_log_hdr {
         struct llog_rec_hdr     llh_hdr;

@@ -82,7 +82,7 @@ static int mgc_llog_finish(struct obd_device *obd, int count)
         int rc;
         ENTRY;
 
-        rc = llog_cleanup(llog_get_context(obd, LLOG_CONFIG_REPL_CTXT));
+        rc = llog_cleanup(NULL, llog_get_context(obd, LLOG_CONFIG_REPL_CTXT));
 
         RETURN(rc);
 }

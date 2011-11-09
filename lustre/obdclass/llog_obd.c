@@ -79,7 +79,7 @@ static void llog_ctxt_destroy(struct llog_ctxt *ctxt)
         OBD_FREE_PTR(ctxt);
 }
 
-int __llog_ctxt_put(struct llog_ctxt *ctxt)
+int __llog_ctxt_put(const struct lu_env *env, struct llog_ctxt *ctxt)
 {
         struct obd_llog_group *olg = ctxt->loc_olg;
         struct obd_device *obd;
@@ -110,7 +110,7 @@ int __llog_ctxt_put(struct llog_ctxt *ctxt)
 
         /* cleanup the llog ctxt here */
         if (CTXTP(ctxt, cleanup))
-                rc = CTXTP(ctxt, cleanup)(ctxt);
+                rc = CTXTP(ctxt, cleanup)(env, ctxt);
 
         llog_ctxt_destroy(ctxt);
         cfs_waitq_signal(&olg->olg_waitq);
@@ -118,7 +118,7 @@ int __llog_ctxt_put(struct llog_ctxt *ctxt)
 }
 EXPORT_SYMBOL(__llog_ctxt_put);
 
-int llog_cleanup(struct llog_ctxt *ctxt)
+int llog_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt)
 {
         struct l_wait_info lwi = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
         struct obd_llog_group *olg;
@@ -144,7 +144,7 @@ int llog_cleanup(struct llog_ctxt *ctxt)
         /* 
          * Try to free the ctxt. 
          */
-        rc = __llog_ctxt_put(ctxt);
+        rc = __llog_ctxt_put(env, ctxt);
         if (rc)
                 CERROR("Error %d while cleaning up ctxt %p\n",
                        rc, ctxt);
@@ -352,7 +352,7 @@ int llog_obd_origin_setup(const struct lu_env *env, struct obd_device *obd,
                 GOTO(out, rc);
 
         ctxt->loc_handle = handle;
-        rc = llog_init_handle(handle, LLOG_F_IS_CAT, NULL);
+        rc = llog_init_handle(env, handle, LLOG_F_IS_CAT, NULL);
         if (rc)
                 GOTO(out, rc);
 
@@ -366,55 +366,15 @@ out:
 }
 EXPORT_SYMBOL(llog_obd_origin_setup);
 
-int llog_obd_origin_cleanup(struct llog_ctxt *ctxt)
+int llog_obd_origin_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt)
 {
-        struct llog_handle *cathandle, *n, *loghandle;
-        struct llog_log_hdr *llh;
-        struct lu_env        env;
-        int rc, index;
         ENTRY;
 
         if (!ctxt)
                 RETURN(0);
 
-        rc = lu_env_init(&env, LCT_LOCAL);
-        if (rc) {
-                CERROR("can't initialize env: %d\n", rc);
-                RETURN(rc);
-        }
-
-        cathandle = ctxt->loc_handle;
-        if (cathandle) {
-                cfs_list_for_each_entry_safe(loghandle, n,
-                                             &cathandle->u.chd.chd_head,
-                                             u.phd.phd_entry) {
-                        llh = loghandle->lgh_hdr;
-                        if (llh == NULL) {
-                                /* open but not created llog (new api) */
-                                continue;
-                        }
-                        if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
-                            (llh->llh_count == 1)) {
-                                rc = llog_destroy(&env, loghandle);
-                                if (rc)
-                                        CERROR("failure destroying log during "
-                                               "cleanup: %d\n", rc);
-
-                                index = loghandle->u.phd.phd_cookie.lgc_index;
-                                llog_close(&env, loghandle);
-
-                                LASSERT(index);
-                                llog_cat_set_first_idx(cathandle, index);
-                                rc = llog_cancel_rec(&env, cathandle, index);
-                                if (rc == 0)
-                                        CDEBUG(D_RPCTRACE, "cancel plain log at"
-                                               "index %u of catalog "LPX64"\n",
-                                               index,cathandle->lgh_id.lgl_oid);
-                        }
-                }
-                llog_cat_close(&env, ctxt->loc_handle);
-        }
-        lu_env_fini(&env);
+        if (ctxt->loc_handle)
+                llog_cat_close(env, ctxt->loc_handle);
         RETURN(0);
 }
 EXPORT_SYMBOL(llog_obd_origin_cleanup);
