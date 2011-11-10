@@ -5,6 +5,12 @@ set -e
 # bug number:  10124
 ALWAYS_EXCEPT="15c   $REPLAY_DUAL_EXCEPT"
 
+# ZFS/DMU exceptions:
+# 21b -- dmu do not support replay_barrier_nosync (it does sync always)
+if [ "$FSTYPE" = "zfs" ]; then
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 21b"
+fi
+
 LFS=${LFS:-lfs}
 SETSTRIPE=${SETSTRIPE:-"$LFS setstripe"}
 GETSTRIPE=${GETSTRIPE:-"$LFS getstripe"}
