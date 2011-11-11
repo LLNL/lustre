@@ -32,6 +32,9 @@
  * Copyright (c) 2011, Intel Corporation.
  */
 /*
+ * Copyright (c) 2011 Whamcloud, Inc.
+ */
+/*
  * This file is part of Lustre, http://www.lustre.org/
  * Lustre is a trademark of Sun Microsystems, Inc.
  */
@@ -70,10 +73,16 @@ struct dt_object;
 struct dt_index_features;
 struct dt_quota_ctxt;
 
+typedef enum {
+        MNTOPT_USERXATTR        = 0x00000001,
+        MNTOPT_ACL              = 0x00000002,
+} mntopt_t;
+
 struct dt_device_param {
         unsigned           ddp_max_name_len;
         unsigned           ddp_max_nlink;
         unsigned           ddp_block_shift;
+        mntopt_t           ddp_mntopts;
 };
 
 /**
