@@ -6,9 +6,10 @@ set -e
 ALWAYS_EXCEPT="15c   $REPLAY_DUAL_EXCEPT"
 
 # ZFS/DMU exceptions:
+# 14b -- OST orphan deletion check based on block counts is not reliable on ZFS
 # 21b -- dmu do not support replay_barrier_nosync (it does sync always)
 if [ "$FSTYPE" = "zfs" ]; then
-    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 21b"
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 14b 21b"
 fi
 
 LFS=${LFS:-lfs}
