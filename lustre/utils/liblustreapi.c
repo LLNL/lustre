@@ -1951,8 +1951,6 @@ static int cb_find_init(char *path, DIR *parent, DIR *dir,
 
         LASSERT(parent != NULL || dir != NULL);
 
-        param->lmd->lmd_lmm.lmm_stripe_count = 0;
-
         /* If a regular expression is presented, make the initial decision */
         if (param->pattern != NULL) {
                 char *fname = strrchr(path, '/');
@@ -1985,6 +1983,7 @@ static int cb_find_init(char *path, DIR *parent, DIR *dir,
         ret = 0;
         /* Request MDS for the stat info. */
         if (param->have_fileinfo == 0) {
+                param->lmd->lmd_lmm.lmm_stripe_count = 0;
                 if (dir) {
                         /* retrieve needed file info */
                         ret = ioctl(dirfd(dir), LL_IOC_MDC_GETINFO,
