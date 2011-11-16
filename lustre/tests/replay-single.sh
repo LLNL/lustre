@@ -26,6 +26,11 @@ FAIL_ON_ERROR=false
 # test 74  - ORI-259
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 74"
 
+# 89 -- ORI-412
+if [ "$FSTYPE" = "zfs" ]; then
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 89"
+fi
+
 build_test_filter
 
 check_and_setup_lustre
@@ -2292,6 +2297,7 @@ test_89() {
         zconf_mount $(hostname) $MOUNT
         client_up || return 1
         wait_mds_ost_sync
+        wait_delete_completed
         BLOCKS2=$(df -P $MOUNT | tail -n 1 | awk '{ print $3 }')
         [ "$BLOCKS1" == "$BLOCKS2" ] || error $((BLOCKS2 - BLOCKS1)) blocks leaked
 }
