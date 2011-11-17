@@ -983,7 +983,7 @@ static int llog_test_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
         obd->obd_lvfs_ctxt.dt = lu2dt_dev(tgt->obd_lu_dev);
 
         rc = llog_setup(&env, tgt, &tgt->obd_olg, LLOG_TEST_ORIG_CTXT, tgt,
-                        0, NULL, &llog_osd_ops);
+                        &llog_osd_ops);
         if (rc)
                 GOTO(cleanup_env, rc);
 

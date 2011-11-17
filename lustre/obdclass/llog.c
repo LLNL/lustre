@@ -702,6 +702,7 @@ int llog_open(const struct lu_env *env, struct llog_ctxt *ctxt,
         if (*lgh == NULL)
                 RETURN(-ENOMEM);
         (*lgh)->lgh_ctxt = ctxt;
+        (*lgh)->lgh_logops = ctxt->loc_logops;
 
         raised = cfs_cap_raised(CFS_CAP_SYS_RESOURCE);
         if (!raised)
