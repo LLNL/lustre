@@ -132,15 +132,15 @@ int llog_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt)
 
         idx = ctxt->loc_idx;
 
-        /* 
+        /*
          * Banlance the ctxt get when calling llog_cleanup()
          */
         LASSERT(cfs_atomic_read(&ctxt->loc_refcount) < LI_POISON);
         LASSERT(cfs_atomic_read(&ctxt->loc_refcount) > 1);
         llog_ctxt_put(ctxt);
 
-        /* 
-         * Try to free the ctxt. 
+        /*
+         * Try to free the ctxt.
          */
         rc = __llog_ctxt_put(env, ctxt);
         if (rc)
@@ -154,11 +154,9 @@ int llog_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt)
 }
 EXPORT_SYMBOL(llog_cleanup);
 
-int llog_setup_named(const struct lu_env *env, struct obd_device *obd,
-                     struct obd_llog_group *olg, int index,
-                     struct obd_device *disk_obd, int count,
-                     struct llog_logid *logid, const char *logname,
-                     struct llog_operations *op)
+int llog_setup(const struct lu_env *env, struct obd_device *obd,
+               struct obd_llog_group *olg, int index,
+               struct obd_device *disk_obd, struct llog_operations *op)
 {
         struct llog_ctxt *ctxt;
         int rc = 0;
@@ -204,8 +202,7 @@ int llog_setup_named(const struct lu_env *env, struct obd_device *obd,
                 if (OBD_FAIL_CHECK(OBD_FAIL_OBD_LLOG_SETUP))
                         rc = -EOPNOTSUPP;
                 else
-                        rc = op->lop_setup(env, obd, olg, index, disk_obd, count,
-                                           logid, logname);
+                        rc = op->lop_setup(env, obd, olg, index, disk_obd);
         }
 
         if (rc) {
@@ -220,16 +217,6 @@ int llog_setup_named(const struct lu_env *env, struct obd_device *obd,
         }
 
         RETURN(rc);
-}
-EXPORT_SYMBOL(llog_setup_named);
-
-int llog_setup(const struct lu_env *env, struct obd_device *obd,
-               struct obd_llog_group *olg, int index,
-               struct obd_device *disk_obd, int count,
-               struct llog_logid *logid, struct llog_operations *op)
-{
-        return llog_setup_named(env, obd, olg, index, disk_obd, count, logid,
-                                NULL, op);
 }
 EXPORT_SYMBOL(llog_setup);
 
@@ -264,153 +251,6 @@ int llog_cancel(const struct lu_env *env, struct llog_ctxt *ctxt,
         RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cancel);
-
-/* callback func for llog_process in llog_obd_origin_setup */
-static int cat_cancel_cb(const struct lu_env *env, struct llog_handle *cathandle,
-                          struct llog_rec_hdr *rec, void *data)
-{
-        struct llog_logid_rec *lir = (struct llog_logid_rec *)rec;
-        struct llog_handle *loghandle;
-        struct llog_log_hdr *llh;
-        int rc, index;
-        ENTRY;
-
-        if (rec->lrh_type != LLOG_LOGID_MAGIC) {
-                CERROR("invalid record in catalog\n");
-                RETURN(-EINVAL);
-        }
-        CDEBUG(D_HA, "processing log "LPX64":%x at index %u of catalog "
-               LPX64"\n", lir->lid_id.lgl_oid, lir->lid_id.lgl_ogen,
-               rec->lrh_index, cathandle->lgh_id.lgl_oid);
-
-        rc = llog_cat_id2handle(env, cathandle, &loghandle, &lir->lid_id);
-        if (rc) {
-                CERROR("Cannot find handle for log "LPX64"\n",
-                       lir->lid_id.lgl_oid);
-                if (rc == -ENOENT) {
-                        index = rec->lrh_index;
-                        goto cat_cleanup;
-                }
-                RETURN(rc);
-        }
-
-        llh = loghandle->lgh_hdr;
-        if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
-            (llh->llh_count == 1)) {
-                rc = llog_destroy(env, loghandle);
-                if (rc)
-                        CERROR("failure destroying log in postsetup: %d\n", rc);
-
-                index = loghandle->u.phd.phd_cookie.lgc_index;
-                llog_close(env, loghandle);
-
-cat_cleanup:
-                LASSERT(index);
-                llog_cat_set_first_idx(cathandle, index);
-                rc = llog_cancel_rec(env, cathandle, index);
-                if (rc == 0)
-                        CDEBUG(D_HA, "cancel log "LPX64":%x at index %u of catalog "
-                              LPX64"\n", lir->lid_id.lgl_oid,
-                              lir->lid_id.lgl_ogen, rec->lrh_index,
-                              cathandle->lgh_id.lgl_oid);
-        }
-
-        RETURN(rc);
-}
-
-/* lop_setup method for filter/osc */
-// XXX how to set exports
-int llog_obd_origin_setup(const struct lu_env *env, struct obd_device *obd,
-                          struct obd_llog_group *olg, int index,
-                          struct obd_device *disk_obd, int count,
-                          struct llog_logid *logid, const char *name)
-{
-        struct llog_ctxt   *ctxt;
-        struct llog_handle *handle;
-        int rc;
-        ENTRY;
-
-        if (count == 0)
-                RETURN(0);
-
-        LASSERT(count == 1);
-        LASSERT(olg != NULL);
-        ctxt = llog_group_get_ctxt(olg, index);
-        if (!ctxt)
-                RETURN(rc = -ENODEV);
-
-        if (logid && logid->lgl_oid) {
-                rc = llog_open_create(env, ctxt, &handle, logid, NULL);
-        } else {
-                rc = llog_open_create(env, ctxt, &handle, NULL, (char *)name);
-                if (rc == 0 && logid)
-                        *logid = handle->lgh_id;
-        }
-        if (rc)
-                GOTO(out, rc);
-
-        ctxt->loc_handle = handle;
-        rc = llog_init_handle(env, handle, LLOG_F_IS_CAT, NULL);
-        if (rc)
-                GOTO(out, rc);
-
-        rc = llog_process(env, handle, (llog_cb_t)cat_cancel_cb, NULL, NULL);
-        if (rc)
-                CERROR("llog_process() with cat_cancel_cb failed: %d\n", rc);
-        GOTO(out, rc);
-out:
-        llog_ctxt_put(ctxt);
-        return rc;
-}
-EXPORT_SYMBOL(llog_obd_origin_setup);
-
-int llog_obd_origin_cleanup(const struct lu_env *env, struct llog_ctxt *ctxt)
-{
-        ENTRY;
-
-        if (!ctxt)
-                RETURN(0);
-
-        if (ctxt->loc_handle)
-                llog_cat_close(env, ctxt->loc_handle);
-        RETURN(0);
-}
-EXPORT_SYMBOL(llog_obd_origin_cleanup);
-
-/* add for obdfilter/sz and mds/unlink */
-int llog_obd_origin_add(const struct lu_env *env, struct llog_ctxt *ctxt,
-                        struct llog_rec_hdr *rec, struct lov_stripe_md *lsm,
-                        struct llog_cookie *logcookies, int numcookies,
-                        struct thandle *th)
-{
-        struct llog_handle *cathandle;
-        int rc;
-        ENTRY;
-
-        cathandle = ctxt->loc_handle;
-        LASSERT(cathandle != NULL);
-        rc = llog_cat_add_rec(env, cathandle, rec, logcookies, NULL, th);
-        if (rc != 0 && rc != 1)
-                CERROR("write one catalog record failed: %d\n", rc);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(llog_obd_origin_add);
-
-int llog_obd_origin_declare_add(const struct lu_env *env, struct llog_ctxt *ctxt,
-                                struct llog_rec_hdr *rec, struct lov_stripe_md *lsm,
-                                struct thandle *th)
-{
-        struct llog_handle *cathandle;
-        int rc;
-        ENTRY;
-
-        LASSERT(ctxt);
-        cathandle = ctxt->loc_handle;
-        LASSERT(cathandle != NULL);
-        rc = llog_cat_declare_add_rec(env, cathandle, rec, th);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(llog_obd_origin_declare_add);
 
 /* context key constructor/destructor: tg_key_init, tg_key_fini */
 LU_KEY_INIT_FINI(llog, struct llog_thread_info);

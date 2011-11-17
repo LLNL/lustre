@@ -1135,8 +1135,7 @@ out_trans:
 
 static int llog_osd_setup(const struct lu_env *env, struct obd_device *obd,
                           struct obd_llog_group *olg, int ctxt_idx,
-                          struct obd_device *disk_obd, int count,
-                          struct llog_logid *logid, const char *name)
+                          struct obd_device *disk_obd)
 {
         struct llog_superblock *lsb;
         struct llog_ctxt       *ctxt;
