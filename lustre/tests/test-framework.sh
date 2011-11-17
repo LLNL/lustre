@@ -177,22 +177,9 @@ init_test_env() {
     export LFSCK_ALWAYS=${LFSCK_ALWAYS:-"no"} # check fs after each test suite
     export FSCK_MAX_ERR=4   # File system errors left uncorrected
 
-    export ZFS_SRC=${ZFS_SRC:-$LUSTRE/zfs}
-
     export ZFS=${ZFS:-zfs}
-    if ! which "$ZFS" > /dev/null 2>&1; then
-        export ZFS=$ZFS_SRC/cmd/zfs/zfs
-    fi
-
     export ZPOOL=${ZPOOL:-zpool}
-    if ! which "$ZPOOL" > /dev/null 2>&1; then
-        export ZPOOL=$ZFS_SRC/cmd/zpool/zpool
-    fi
-
     export ZDB=${ZDB:-zdb}
-    if ! which "$ZDB" > /dev/null 2>&1; then
-        export ZDB=$ZFS_SRC/cmd/zdb/zdb
-    fi
 
     #[ -d /r ] && export ROOT=${ROOT:-/r}
     export TMP=${TMP:-$ROOT/tmp}
