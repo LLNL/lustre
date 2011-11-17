@@ -201,7 +201,7 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
         ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
         LASSERT(ctxt);
 
-        rc = llog_declare_add(env, ctxt, &osi->u.hdr, NULL, th);
+        rc = llog_declare_add(env, ctxt->loc_handle, &osi->u.hdr, th);
         llog_ctxt_put(ctxt);
 
         RETURN(rc);
@@ -254,7 +254,8 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
         ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
         if (ctxt == NULL)
                 RETURN(-ENOMEM);
-        rc = llog_add(env, ctxt, &osi->u.hdr, NULL, &osi->osi_cookie, 1, th);
+        rc = llog_add(env, ctxt->loc_handle, &osi->u.hdr, &osi->osi_cookie,
+                      NULL, th);
         llog_ctxt_put(ctxt);
 
         CDEBUG(D_OTHER, "%s: new record %lu:%lu:%lu/%lu: %d\n",
@@ -859,6 +860,7 @@ static int osp_sync_thread(void *_arg)
 
         osp_sync_process_committed(&env, d);
 
+        llog_cat_close(&env, llh);
         rc = llog_cleanup(&env, ctxt);
         if (rc)
                 CERROR("can't cleanup llog: %d\n", rc);
@@ -889,6 +891,7 @@ static struct llog_operations osp_mds_ost_orig_logops;
 static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
 {
         struct osp_thread_info *osi = osp_env_info(env);
+        struct llog_handle     *lgh;
         struct obd_device      *obd = d->opd_obd;
         struct llog_ctxt       *ctxt;
         int                     rc;
@@ -916,26 +919,46 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
                osi->osi_cid.lci_logid.lgl_ogen);
 
         osp_mds_ost_orig_logops = llog_osd_ops;
-        osp_mds_ost_orig_logops.lop_setup = llog_obd_origin_setup;
-        osp_mds_ost_orig_logops.lop_cleanup = llog_obd_origin_cleanup;
-        osp_mds_ost_orig_logops.lop_add = llog_obd_origin_add;
-        osp_mds_ost_orig_logops.lop_declare_add = llog_obd_origin_declare_add;
-        osp_mds_ost_orig_logops.lop_connect = llog_origin_connect;
-
         rc = llog_setup(env, obd, &obd->obd_olg, LLOG_MDS_OST_ORIG_CTXT, obd,
-                        1, &osi->osi_cid.lci_logid, &osp_mds_ost_orig_logops);
+                        &osp_mds_ost_orig_logops);
         if (rc) {
                 CERROR("rc: %d\n", rc);
                 RETURN(rc);
         }
 
+        ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
+        LASSERT(ctxt);
+
+        /* Create fresh llog */
+        if (unlikely(osi->osi_cid.lci_logid.lgl_oid == 0)) {
+                rc = llog_open_create(env, ctxt, &lgh, NULL, NULL);
+                if (rc)
+                        GOTO(out_cleanup, rc);
+                osi->osi_cid.lci_logid = lgh->lgh_id;
+        } else {
+                rc = llog_open(env, ctxt, &lgh, &osi->osi_cid.lci_logid, NULL,
+                               LLOG_OPEN_OLD);
+                if (rc)
+                        GOTO(out_cleanup, rc);
+        }
+
+        ctxt->loc_handle = lgh;
+        lgh->lgh_logops->lop_add = llog_cat_add_rec;
+        lgh->lgh_logops->lop_declare_add = llog_cat_declare_add_rec;
+
+        rc = llog_init_handle(env, lgh, LLOG_F_IS_CAT, NULL);
+        if (rc)
+                GOTO(out_close, rc);
+
+        rc = llog_process(env, lgh, cat_cancel_cb, NULL, NULL);
+        if (rc)
+                CERROR("llog_process() with cat_cancel_cb failed: %d\n", rc);
+
         rc = llog_put_cat_list(env, d->opd_storage, d->opd_index, 1,
                                &osi->osi_cid);
         if (rc) {
                 CERROR("rc: %d\n", rc);
-                ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
-                llog_cleanup(env, ctxt);
-                GOTO(out, rc);
+                GOTO(out_close, rc);
         }
 
         /*
@@ -951,15 +974,16 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
         memcpy(&osi->u.gen.lgr_gen, &d->opd_syn_generation,
                sizeof(osi->u.gen.lgr_gen));
 
-        ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
-        LASSERT(ctxt);
-        LASSERT(ctxt->loc_handle);
-        rc = llog_cat_add(env, ctxt->loc_handle, &osi->u.gen.lgr_hdr,
-                          &osi->osi_cookie, NULL);
-        if (rc == 1)
-                rc = 0;
+        rc = llog_cat_add(env, lgh, &osi->u.gen.lgr_hdr, &osi->osi_cookie,
+                          NULL);
+        if (rc < 0)
+                GOTO(out_close, rc);
         llog_ctxt_put(ctxt);
-out:
+        RETURN(0);
+out_close:
+        llog_cat_close(env, lgh);
+out_cleanup:
+        llog_cleanup(env, ctxt);
         RETURN(rc);
 }
 
@@ -968,6 +992,7 @@ static void osp_sync_llog_fini(const struct lu_env *env, struct osp_device *d)
         struct llog_ctxt *ctxt;
 
         ctxt = llog_get_context(d->opd_obd, LLOG_MDS_OST_ORIG_CTXT);
+        llog_cat_close(env, ctxt->loc_handle);
         llog_cleanup(env, ctxt);
 }
 

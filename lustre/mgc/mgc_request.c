@@ -610,7 +610,7 @@ static int mgc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
 
         LASSERT(olg == &obd->obd_olg);
 
-        rc = llog_setup(NULL, obd, olg, LLOG_CONFIG_REPL_CTXT, tgt, 0, NULL,
+        rc = llog_setup(NULL, obd, olg, LLOG_CONFIG_REPL_CTXT, tgt,
                         &llog_client_ops);
         if (rc == 0) {
                 ctxt = llog_get_context(obd, LLOG_CONFIG_REPL_CTXT);
