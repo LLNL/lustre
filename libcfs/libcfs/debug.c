@@ -78,13 +78,13 @@ CFS_MODULE_PARM(libcfs_console_ratelimit, "i", uint, 0644,
                 "Lustre kernel debug console ratelimit (0 to disable)");
 EXPORT_SYMBOL(libcfs_console_ratelimit);
 
-cfs_duration_t libcfs_console_max_delay;
-CFS_MODULE_PARM(libcfs_console_max_delay, "l", ulong, 0644,
+unsigned int libcfs_console_max_delay;
+CFS_MODULE_PARM(libcfs_console_max_delay, "l", uint, 0644,
                 "Lustre kernel debug console max delay (jiffies)");
 EXPORT_SYMBOL(libcfs_console_max_delay);
 
-cfs_duration_t libcfs_console_min_delay;
-CFS_MODULE_PARM(libcfs_console_min_delay, "l", ulong, 0644,
+unsigned int libcfs_console_min_delay;
+CFS_MODULE_PARM(libcfs_console_min_delay, "l", uint, 0644,
                 "Lustre kernel debug console min delay (jiffies)");
 EXPORT_SYMBOL(libcfs_console_min_delay);
 

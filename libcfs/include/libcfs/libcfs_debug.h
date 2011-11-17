@@ -51,8 +51,8 @@ extern unsigned int libcfs_debug;
 extern unsigned int libcfs_printk;
 extern unsigned int libcfs_console_ratelimit;
 extern unsigned int libcfs_watchdog_ratelimit;
-extern cfs_duration_t libcfs_console_max_delay;
-extern cfs_duration_t libcfs_console_min_delay;
+extern unsigned int libcfs_console_max_delay;
+extern unsigned int libcfs_console_min_delay;
 extern unsigned int libcfs_console_backoff;
 extern unsigned int libcfs_debug_binary;
 extern char libcfs_debug_file_path_arr[PATH_MAX];
@@ -166,9 +166,26 @@ struct ptldebug_header {
 #define CDEBUG_DEFAULT_BACKOFF   2
 typedef struct {
         cfs_time_t      cdls_next;
+        unsigned int    cdls_delay;
         int             cdls_count;
-        cfs_duration_t  cdls_delay;
 } cfs_debug_limit_state_t;
+
+struct libcfs_debug_msg_data {
+        const char              *msg_file;
+        const char              *msg_fn;
+        int                      msg_subsys;
+        int                      msg_line;
+        int                      msg_mask;
+        cfs_debug_limit_state_t *msg_cdls;
+};
+
+#define LIBCFS_DEBUG_MSG_DATA_DECL(dataname, cdls)             \
+        static struct libcfs_debug_msg_data dataname = {       \
+                .msg_subsys = DEBUG_SUBSYSTEM,                 \
+                .msg_file   = __FILE__,                        \
+                .msg_fn     = __FUNCTION__,                    \
+                .msg_line   = __LINE__,                        \
+                .msg_cdls   = (cdls)            }
 
 #if defined(__KERNEL__) || (defined(__arch_lib__) && !defined(LUSTRE_UTILS))
 
@@ -185,12 +202,11 @@ static inline int cfs_cdebug_show(unsigned int mask, unsigned int subsystem)
 
 #define __CDEBUG(cdls, mask, format, ...)                               \
 do {                                                                    \
-        CFS_CHECK_STACK();                                              \
-                                                                        \
-        if (cfs_cdebug_show(mask, DEBUG_SUBSYSTEM))                     \
-                libcfs_debug_msg(cdls, DEBUG_SUBSYSTEM, mask,           \
-                                 __FILE__, __FUNCTION__, __LINE__,      \
-                                 format, ## __VA_ARGS__);               \
+        LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, cdls);                      \
+        if (cfs_cdebug_show(mask, DEBUG_SUBSYSTEM)) {                   \
+                msgdata.msg_mask = mask;                                \
+                libcfs_debug_msg(&msgdata, format, ##__VA_ARGS__);      \
+        }                                                               \
 } while (0)
 
 #define CDEBUG(mask, format, ...) __CDEBUG(NULL, mask, format, ## __VA_ARGS__)
@@ -305,54 +321,20 @@ do {                                                                    \
         return;                                                         \
 } while (0)
 
-struct libcfs_debug_msg_data {
-        cfs_debug_limit_state_t *msg_cdls;
-        int                      msg_subsys;
-        const char              *msg_file;
-        const char              *msg_fn;
-        int                      msg_line;
-};
+extern int libcfs_debug_vmsg1(struct libcfs_debug_msg_data *msgdata,
+                              const char *format1, ...)
+        __attribute__ ((format (printf, 2, 3)));
 
-#define DEBUG_MSG_DATA_INIT(cdls, subsystem, file, func, ln ) { \
-        /* msg_cdls */          (cdls),       \
-        /* msg_subsys */        (subsystem),  \
-        /* msg_file */          (file),       \
-        /* msg_fn */            (func),       \
-        /* msg_line */          (ln)          \
-    }
+extern int libcfs_debug_vmsg2(struct libcfs_debug_msg_data *msgdata,
+                              const char *format1,
+                              va_list args, const char *format2, ...)
+        __attribute__ ((format (printf, 4, 5)));
 
+#define libcfs_debug_msg(data, format, ...)    \
+    libcfs_debug_vmsg1(data, format, ## __VA_ARGS__)
 
-extern int libcfs_debug_vmsg2(cfs_debug_limit_state_t *cdls,
-                              int subsys, int mask,
-                              const char *file, const char *fn, const int line,
-                              const char *format1, va_list args,
-                              const char *format2, ...)
-        __attribute__ ((format (printf, 9, 10)));
-
-#define libcfs_debug_vmsg(cdls, subsys, mask, file, fn, line, format, args)   \
-    libcfs_debug_vmsg2(cdls, subsys, mask, file, fn,line,format,args,NULL,NULL)
-
-#define libcfs_debug_msg(cdls, subsys, mask, file, fn, line, format, ...)    \
-    libcfs_debug_vmsg2(cdls, subsys, mask, file, fn,line,NULL,NULL,format, ## __VA_ARGS__)
-
-#define cdebug_va(cdls, mask, file, func, line, fmt, args)      do {          \
-        CFS_CHECK_STACK();                                                    \
-                                                                              \
-        if (cfs_cdebug_show(mask, DEBUG_SUBSYSTEM))                           \
-                libcfs_debug_vmsg(cdls, DEBUG_SUBSYSTEM, (mask),              \
-                                  (file), (func), (line), fmt, args);         \
-} while(0)
-
-#define cdebug(cdls, mask, file, func, line, fmt, ...) do {                   \
-        CFS_CHECK_STACK();                                                    \
-                                                                              \
-        if (cfs_cdebug_show(mask, DEBUG_SUBSYSTEM))                           \
-                libcfs_debug_msg(cdls, DEBUG_SUBSYSTEM, (mask),               \
-                                 (file), (func), (line), fmt, ## __VA_ARGS__);\
-} while(0)
-
-extern void libcfs_assertion_failed(const char *expr, const char *file,
-                                    const char *fn, const int line);
+extern void libcfs_assertion_failed(const char *expr,
+                                    struct libcfs_debug_msg_data *);
 
 /* one more external symbol that tracefile provides: */
 extern int cfs_trace_copyout_string(char *usr_buffer, int usr_buffer_nob,
