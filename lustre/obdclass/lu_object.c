@@ -425,10 +425,15 @@ int lu_cdebug_printer(const struct lu_env *env,
         vsnprintf(key->lck_area + used,
                   ARRAY_SIZE(key->lck_area) - used, format, args);
         if (complete) {
+                struct libcfs_debug_msg_data msgdata = {
+                                                 (char *) info->lpi_file,
+                                                 info->lpi_fn,
+                                                 info->lpi_subsys,
+                                                 info->lpi_line,
+                                                 info->lpi_mask,
+                                                 NULL};
                 if (cfs_cdebug_show(info->lpi_mask, info->lpi_subsys))
-                        libcfs_debug_msg(NULL, info->lpi_subsys, info->lpi_mask,
-                                         (char *)info->lpi_file, info->lpi_fn,
-                                         info->lpi_line, "%s", key->lck_area);
+                        libcfs_debug_msg(&msgdata, "%s", key->lck_area);
                 key->lck_area[0] = 0;
         }
         va_end(args);
