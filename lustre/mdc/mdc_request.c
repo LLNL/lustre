@@ -2075,7 +2075,7 @@ static int mdc_llog_init(struct obd_device *obd, struct obd_llog_group *olg,
         LASSERT(olg == &obd->obd_olg);
 
         rc = llog_setup(NULL, obd, olg, LLOG_CHANGELOG_REPL_CTXT, tgt,
-                        0, NULL, &llog_client_ops);
+                        &llog_client_ops);
         if (rc == 0) {
                 ctxt = llog_group_get_ctxt(olg, LLOG_CHANGELOG_REPL_CTXT);
                 llog_initiator_connect(ctxt);

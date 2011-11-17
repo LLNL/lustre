@@ -869,8 +869,8 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
                 GOTO(err_ns, rc);
         }
 
-        rc = llog_setup_named(env, obd, &obd->obd_olg, LLOG_CONFIG_ORIG_CTXT,
-                              obd, 0, NULL, "CONFIGS", &llog_osd_ops);
+        rc = llog_setup(env, obd, &obd->obd_olg, LLOG_CONFIG_ORIG_CTXT,
+                        obd, &llog_osd_ops);
         if (rc)
                 GOTO(err_fs, rc);
 
