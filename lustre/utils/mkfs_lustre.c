@@ -54,8 +54,12 @@
 char *progname;
 int verbose = 1;
 
-#define FSLIST_LDISKFS "ldiskfs"
-#define HAVE_FSLIST
+#ifdef HAVE_LDISKFS_OSD
+ #define FSLIST_LDISKFS "ldiskfs"
+ #define HAVE_FSLIST
+#else
+ #define FSLIST_LDISKFS ""
+#endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
  #ifdef HAVE_FSLIST
    #define FSLIST_ZFS "|zfs"
@@ -66,12 +70,21 @@ int verbose = 1;
 #else
  #define FSLIST_ZFS ""
 #endif /* HAVE_ZFS_OSD */
-
+#ifdef HAVE_BTRFS_OSD
+ #ifdef HAVE_FSLIST
+   #define FSLIST_BTRFS "|btrfs"
+ #else
+  #define FSLIST_BTRFS "btrfs"
+  #define HAVE_FSLIST
+ #endif
+#else
+ #define FSLIST_BTRFS ""
+#endif /* HAVE_BTRFS_OSD */
 #ifndef HAVE_FSLIST
  #error "no backing OSD types (ldiskfs or ZFS) are configured"
 #endif
 
-#define FSLIST FSLIST_LDISKFS FSLIST_ZFS
+#define FSLIST FSLIST_LDISKFS FSLIST_ZFS FSLIST_BTRFS
 
 void usage(FILE *out)
 {
@@ -116,9 +129,11 @@ void usage(FILE *out)
                 "\t\t--comment=<user comment>: arbitrary string (%d bytes)\n"
                 "\t\t--mountfsoptions=<opts> : permanent mount options\n"
                 "\t\t--network=<net>[,<...>] : restrict OST/MDT to network(s)\n"
-                "\t\t--backfstype=<fstype> : backing fs type (zfs, ldiskfs)\n"
+                "\t\t--backfstype=<fstype> : backing fs type ("FSLIST")\n"
                 "\t\t--device-size=#N(KB) : loop device or pool/dataset size\n"
+#ifdef HAVE_ZFS_OSD
                 "\t\t--vdev-size=#N(KB) : size for file based vdevs\n"
+#endif
                 "\t\t--mkfsoptions=<opts> : format options\n"
                 "\t\t--reformat: overwrite an existing disk\n"
                 "\t\t--stripe-count-hint=#N : for optimizing MDT inode size\n"
