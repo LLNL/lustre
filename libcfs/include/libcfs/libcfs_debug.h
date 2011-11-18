@@ -218,6 +218,55 @@ do {                                            \
         __CDEBUG(&cdls, mask, format, ## __VA_ARGS__);\
 } while (0)
 
+#ifdef CDEBUG_ENABLED
+
+void cfs_trace_goto(struct libcfs_debug_msg_data *, const char *, long_ptr_t);
+#define GOTO(label, rc)                                                 \
+do {                                                                    \
+        long_ptr_t GOTO__ret = (long_ptr_t)(rc);                        \
+        if (cfs_cdebug_show(D_TRACE, DEBUG_SUBSYSTEM)) {                \
+                LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, NULL);              \
+                msgdata.msg_mask = D_TRACE;                             \
+                cfs_trace_goto(&msgdata, #label, GOTO__ret);            \
+        }                                                               \
+        goto label;                                                     \
+} while (0)
+#else
+#define GOTO(label, rc) do { ((void)(rc)); goto label; } while (0)
+#endif
+
+#ifdef CDEBUG_ENTRY_EXIT
+
+/*
+ * if rc == NULL, we need to code as RETURN((void *)NULL), otherwise
+ * there will be a warning in osx.
+ */
+#if defined(__GNUC__)
+void cfs_trace_return(struct libcfs_debug_msg_data *m, long rc);
+#define RETURN(rc)                                                      \
+do {                                                                    \
+        typeof(rc) RETURN__ret = (rc);                                  \
+        if (cfs_cdebug_show(D_TRACE, DEBUG_SUBSYSTEM)) {                \
+                LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, NULL);              \
+                msgdata.msg_mask = D_TRACE;                             \
+                cfs_trace_return(&msgdata,(long)RETURN__ret);           \
+        }                                                               \
+        EXIT_NESTING;                                                   \
+        return RETURN__ret;                                             \
+} while (0)
+#elif defined(_MSC_VER)
+#define RETURN(rc)                                                      \
+do {                                                                    \
+        CDEBUG(D_TRACE, "Process leaving.\n");                          \
+        EXIT_NESTING;                                                   \
+        return (rc);                                                    \
+} while (0)
+#else
+# error "Unkown compiler"
+#endif /* __GNUC__ */
+
+#endif /* !CDEBUG_ENTRY_EXIT */
+
 #else /* !CDEBUG_ENABLED */
 static inline int cfs_cdebug_show(unsigned int mask, unsigned int subsystem)
 {
@@ -225,6 +274,7 @@ static inline int cfs_cdebug_show(unsigned int mask, unsigned int subsystem)
 }
 #define CDEBUG(mask, format, ...) (void)(0)
 #define CDEBUG_LIMIT(mask, format, ...) (void)(0)
+#define GOTO(label, rc) (void)(0)
 #warning "CDEBUG IS DISABLED. THIS SHOULD NEVER BE DONE FOR PRODUCTION!"
 #endif
 
@@ -258,6 +308,8 @@ do {                                                                    \
 
 #ifdef CDEBUG_ENABLED
 
+/* if optimized GOTO was not defined before */
+#ifndef GOTO
 #define GOTO(label, rc)                                                 \
 do {                                                                    \
         long_ptr_t GOTO__ret = (long_ptr_t)(rc);                        \
@@ -266,12 +318,15 @@ do {                                                                    \
                GOTO__ret, GOTO__ret);                                   \
         goto label;                                                     \
 } while (0)
+#endif /* !def GOTO */
 #else
 #define GOTO(label, rc) do { ((void)(rc)); goto label; } while (0)
 #endif
 
 #ifdef CDEBUG_ENTRY_EXIT
 
+/* if optimized RETURN was not defined before */
+#ifndef RETURN
 /*
  * if rc == NULL, we need to code as RETURN((void *)NULL), otherwise
  * there will be a warning in osx.
@@ -295,6 +350,7 @@ do {                                                                    \
 #else
 # error "Unkown compiler"
 #endif /* __GNUC__ */
+#endif /* !def RETURN */
 
 #define ENTRY                                                           \
 ENTRY_NESTING;                                                          \

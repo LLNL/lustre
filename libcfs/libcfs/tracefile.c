@@ -1190,6 +1190,29 @@ static void trace_cleanup_on_all_cpus(void)
         }
 }
 
+/*
+ * a helper function for RETURN(): the sole purpose is to save 8-16 bytes
+ * on the stack - function calling RETURN() doesn't need to allocate two
+ * additional 'rc' on the stack
+ */
+void cfs_trace_return(struct libcfs_debug_msg_data *m, long rc)
+{
+        libcfs_debug_vmsg1(m, "Process leaving (rc=%lu : %ld : %lx)\n", rc, rc, rc);
+}
+EXPORT_SYMBOL(cfs_trace_return);
+
+/*
+ * a helper function for GOTO(): the sole purpose is to save 8-16 bytes
+ * on the stack - function calling GOTO() doesn't need to allocate two
+ * additional 'rc' on the stack
+ */
+void cfs_trace_goto(struct libcfs_debug_msg_data *m, const char *l, long_ptr_t ret)
+{
+        libcfs_debug_vmsg1(m, "Process leaving via %s (rc=" LPLU " : " LPLD " : "
+                           LPLX ")\n", l, (ulong_ptr_t) ret, ret, ret);
+}
+EXPORT_SYMBOL(cfs_trace_goto);
+
 static void cfs_trace_cleanup(void)
 {
         struct page_collection pc;
