@@ -112,10 +112,7 @@ void udmu_objset_close(udmu_objset_t *uos);
 int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs);
 uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes);
 int udmu_objset_root(udmu_objset_t *uos, dmu_buf_t **dbp, void *tag);
-void udmu_wait_synced(udmu_objset_t *uos, dmu_tx_t *tx);
-void udmu_wait_txg_synced(udmu_objset_t *uos, uint64_t txg);
 uint64_t udmu_get_txg(udmu_objset_t *uos, dmu_tx_t *tx);
-void udmu_force_commit(udmu_objset_t *uos);
 
 /* buf must have at least MAXNAMELEN bytes */
 void udmu_objset_name_get(udmu_objset_t *uos, char *buf);
@@ -133,12 +130,11 @@ int udmu_zap_lookup(udmu_objset_t *uos, dmu_buf_t *zap_db, const char *name,
 void udmu_zap_create(udmu_objset_t *uos, dmu_buf_t **zap_dbp, dmu_tx_t *tx,
                      void *tag);
 
-int udmu_zap_insert(udmu_objset_t *uos, dmu_buf_t *zap_db, dmu_tx_t *tx,
+int udmu_zap_insert(objset_t *os, dmu_buf_t *zap_db, dmu_tx_t *tx,
                     const char *name, void *value, int len);
 
 int udmu_zap_delete(udmu_objset_t *uos, dmu_buf_t *zap_db, dmu_tx_t *tx,
                     const char *name);
-int udmu_object_free(udmu_objset_t *uos, uint64_t oid, dmu_tx_t *tx);
 
 /* zap cursor apis */
 int udmu_zap_cursor_init(zap_cursor_t **zc, udmu_objset_t *uos,
@@ -162,8 +158,6 @@ int udmu_object_get_dmu_buf(udmu_objset_t *uos, uint64_t object,
 
 void udmu_object_put_dmu_buf(dmu_buf_t *db, void *tag);
 
-uint64_t udmu_object_get_id(dmu_buf_t *db);
-
 int udmu_object_read(udmu_objset_t *uos, dmu_buf_t *db, uint64_t offset,
                      uint64_t size, void *buf);
 
@@ -173,9 +167,6 @@ void udmu_object_write(udmu_objset_t *uos, dmu_buf_t *db, struct dmu_tx *tx,
 void udmu_object_getattr(dmu_buf_t *db, vattr_t *vap);
 
 void udmu_object_setattr(dmu_buf_t *db, dmu_tx_t *tx, vattr_t *vap);
-
-int udmu_object_punch(udmu_objset_t *uos, dmu_buf_t *db, dmu_tx_t *tx,
-                      uint64_t offset, uint64_t len);
 
 int udmu_object_set_blocksize(udmu_objset_t *os, uint64_t oid,
                               unsigned bsize, dmu_tx_t *tx);
@@ -193,14 +184,6 @@ void udmu_tx_hold_zap(dmu_tx_t *tx, uint64_t object, int add, char *name);
 
 void udmu_tx_hold_bonus(dmu_tx_t *tx, uint64_t object);
 
-void udmu_tx_abort(dmu_tx_t *tx);
-
-int udmu_tx_assign(dmu_tx_t *tx, uint64_t txg_how);
-
-void udmu_tx_wait(dmu_tx_t *tx);
-
-void udmu_tx_commit(dmu_tx_t *tx);
-
 /* Commit callbacks */
 typedef void udmu_tx_callback_func_t(void *dcb_data, int error);
 void udmu_tx_cb_register(dmu_tx_t *tx, udmu_tx_callback_func_t *func,
@@ -214,21 +197,16 @@ void udmu_object_links_inc(dmu_buf_t *db, dmu_tx_t *tx);
 void udmu_object_links_dec(dmu_buf_t *db, dmu_tx_t *tx);
 
 /* Extended attributes */
-int udmu_xattr_get(udmu_objset_t *uos, dmu_buf_t *db, void *buf, int buflen,
-                   const char *name, int *size);
 int udmu_xattr_list(udmu_objset_t *uos, dmu_buf_t *db, void *val, int vallen);
 
 void udmu_xattr_declare_set(udmu_objset_t *uos, dmu_buf_t *db, int vallen,
                             const char *name, dmu_tx_t *tx);
-int udmu_xattr_set(udmu_objset_t *uos, dmu_buf_t *db, void *val, int vallen,
-                   const char *name, int fl, dmu_tx_t *tx);
 
 void udmu_xattr_declare_del(udmu_objset_t *uos, dmu_buf_t *db,
                             const char *name, dmu_tx_t *tx);
-int udmu_xattr_del(udmu_objset_t *uos, dmu_buf_t *db,
-                   const char *name, dmu_tx_t *tx);
 
 void udmu_freeze(udmu_objset_t *uos);
+
 #ifdef  __cplusplus
 }
 #endif

@@ -226,7 +226,7 @@ static int osd_it_acct_next(const struct lu_env *env, struct dt_it *di)
         ENTRY;
 
         if (it->oiq_reset == 0)
-                udmu_zap_cursor_advance(it->oiq_zc);
+                zap_cursor_advance(it->oiq_zc);
         it->oiq_reset = 0;
         rc = udmu_zap_cursor_retrieve_key(env, it->oiq_zc, NULL, 32);
         if (rc == ENOENT) /* reached the end */
