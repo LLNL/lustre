@@ -56,23 +56,60 @@
 char *progname;
 int verbose = 1;
 
+#ifdef HAVE_LDISKFS_OSD
+ #define FSLIST_LDISKFS "ldiskfs"
+ #define HAVE_FSLIST
+#else
+ #define FSLIST_LDISKFS ""
+#endif /* HAVE_LDISKFS_OSD */
+#ifdef HAVE_ZFS_OSD
+ #ifdef HAVE_FSLIST
+   #define FSLIST_ZFS "|zfs"
+ #else
+  #define FSLIST_ZFS "zfs"
+  #define HAVE_FSLIST
+ #endif
+#else
+ #define FSLIST_ZFS ""
+#endif /* HAVE_ZFS_OSD */
+#ifdef HAVE_BTRFS_OSD
+ #ifdef HAVE_FSLIST
+   #define FSLIST_BTRFS "|btrfs"
+ #else
+  #define FSLIST_BTRFS "btrfs"
+  #define HAVE_FSLIST
+ #endif
+#else
+ #define FSLIST_BTRFS ""
+#endif /* HAVE_BTRFS_OSD */
+
+#ifndef HAVE_FSLIST
+ #error "no backing OSD types (ldiskfs or ZFS) are configured"
+#endif
+
+#define FSLIST FSLIST_LDISKFS FSLIST_ZFS FSLIST_BTRFS
+
 static void usage(FILE *out)
 {
         fprintf(out, "%s v"LUSTRE_VERSION_STRING"\n", progname);
+#ifdef HAVE_ZFS_OSD
         fprintf(out, "usage: %s <target types> [--backfstype=zfs] [options] "
                 "<pool name>/<dataset name> [[<vdev type>] <device> "
                 "[<device> ...] [[vdev type>] ...]]\n", progname);
+#endif
 
-        fprintf(out, "usage: %s <target types> --backfstype=zfs|ldiskfs "
+        fprintf(out, "usage: %s <target types> --backfstype="FSLIST" "
                 "[options] <device>\n", progname);
         fprintf(out,
                 "\t<device>:block device or file (e.g /dev/sda or /tmp/ost1)\n"
+#ifdef HAVE_ZFS_OSD
                 "\t<pool name>: name of the ZFS pool where to create the "
                 "target (e.g. tank)\n"
                 "\t<dataset name>: name of the new dataset (e.g. ost1). The "
                 "dataset name must be unique within the ZFS pool\n"
                 "\t<vdev type>: type of vdev (mirror, raidz, raidz2, spare, "
                 "cache, log)\n"
+#endif
                 "\n"
                 "\ttarget types:\n"
                 "\t\t--ost: object storage, mutually exclusive with mdt,mgs\n"
@@ -95,9 +132,11 @@ static void usage(FILE *out)
                 "\t\t--comment=<user comment>: arbitrary string (%d bytes)\n"
                 "\t\t--mountfsoptions=<opts> : permanent mount options\n"
                 "\t\t--network=<net>[,<...>] : restrict OST/MDT to network(s)\n"
-                "\t\t--backfstype=<fstype> : backing fs type (zfs, ldiskfs)\n"
+                "\t\t--backfstype=<fstype> : backing fs type ("FSLIST")\n"
                 "\t\t--device-size=#N(KB) : loop device or pool/dataset size\n"
+#ifdef HAVE_ZFS_OSD
                 "\t\t--vdev-size=#N(KB) : size for file based vdevs\n"
+#endif
                 "\t\t--mkfsoptions=<opts> : format options\n"
                 "\t\t--reformat: overwrite an existing disk\n"
                 "\t\t--stripe-count-hint=#N : for optimizing MDT inode size\n"
@@ -117,7 +156,11 @@ static void set_defaults(struct mkfs_opts *mop)
         mop->mo_ldd.ldd_flags = LDD_F_NEED_INDEX | LDD_F_UPDATE | LDD_F_VIRGIN;
         mop->mo_mgs_failnodes = 0;
         strcpy(mop->mo_ldd.ldd_fsname, "lustre");
+#ifdef HAVE_LDISKFS_OSD
         mop->mo_ldd.ldd_mount_type = LDD_MT_LDISKFS;
+#else
+        mop->mo_ldd.ldd_mount_type = LDD_MT_ZFS;
+#endif
         mop->mo_ldd.ldd_svindex = 0;
         mop->mo_stripe_count = 1;
         mop->mo_pool_vdevs = NULL;
