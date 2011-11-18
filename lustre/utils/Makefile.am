@@ -19,10 +19,13 @@ EXTRA_PROGRAMS = wirecheck
 
 # mount only finds helpers in /sbin
 rootsbin_PROGRAMS = mount.lustre
-sbin_PROGRAMS = mkfs.lustre tunefs.lustre lctl wiretest \
-	l_getidentity llverfs llverdev \
-	llog_reader lr_reader lshowmount lustre_rsync \
-	ll_recover_lost_found_objs ltrack_stats ll_decode_filter_fid
+sbin_PROGRAMS = lctl wiretest llverfs llog_reader lshowmount \
+                lustre_rsync ltrack_stats
+if SERVER
+sbin_PROGRAMS += mkfs.lustre tunefs.lustre l_getidentity llverdev \
+                 lr_reader ll_recover_lost_found_objs ll_decode_filter_fid
+endif
+
 if LIBPTHREAD
 sbin_PROGRAMS += loadgen
 endif
