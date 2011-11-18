@@ -119,6 +119,7 @@ struct osd_thread_info {
         vattr_t                oti_vap;
         zap_attribute_t        oti_za;
         struct obd_statfs      oti_osfs;
+        dmu_object_info_t      oti_doi;
 };
 
 extern struct lu_context_key osd_key;
@@ -190,11 +191,16 @@ struct osd_object {
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
 extern const struct dt_index_operations osd_acct_index_ops;
 uint64_t osd_quota_fid2dmu(const struct lu_fid *fid);
+extern struct lu_device_operations  osd_lu_ops;
 
 /*
  * Helpers.
  */
-int lu_device_is_osd(const struct lu_device *d);
+static inline int lu_device_is_osd(const struct lu_device *d)
+{
+        return ergo(d != NULL && d->ld_ops != NULL, d->ld_ops == &osd_lu_ops);
+}
+
 static inline struct osd_object *osd_obj(const struct lu_object *o)
 {
         LASSERT(lu_device_is_osd(o->lo_dev));
@@ -226,6 +232,11 @@ static inline struct osd_device *osd_obj2dev(const struct osd_object *o)
 static inline struct lu_device *osd2lu_dev(struct osd_device *osd)
 {
         return &osd->od_dt_dev.dd_lu_dev;
+}
+
+static inline struct objset * osd_dtobj2objset(struct dt_object *o)
+{
+        return osd_dev(o->do_lu.lo_dev)->od_objset.os;
 }
 
 static inline int osd_invariant(const struct osd_object *obj)
