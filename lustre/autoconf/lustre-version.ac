@@ -1,7 +1,9 @@
 m4_define([LUSTRE_MAJOR],[2])
-m4_define([LUSTRE_MINOR],[1])
-m4_define([LUSTRE_PATCH],[56])
-m4_define([LUSTRE_FIX],[0])
+m4_define([LUSTRE_MINOR],[2])
+m4_define([LUSTRE_PATCH],[49])
+m4_define([LUSTRE_FIX],[56])
+dnl # please track Orion versions via LUSTRE_FIX, so that it stays
+dnl # below the first 2.2.50 development versions on master
 
 dnl # liblustre delta is 0.0.1.32 , next version with fixes is ok, but
 dnl # after following release candidate/beta would spill this warning already.
