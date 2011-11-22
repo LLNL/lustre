@@ -752,6 +752,12 @@ static inline int mdo_rename_tgt(const struct lu_env *env,
         }
 }
 
+static inline int md_should_create(__u64 flags)
+{
+       return !(flags & MDS_OPEN_DELAY_CREATE ||
+                !(flags & FMODE_WRITE));
+}
+
 struct dt_device;
 
 /** @} md */
