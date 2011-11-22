@@ -42,6 +42,9 @@
 
 #define DEBUG_SUBSYSTEM S_MDS
 
+#include <obd_class.h>
+#include <obd_support.h>
+
 #include "mdd_internal.h"
 
 struct thandle *mdd_trans_create(const struct lu_env *env,
