@@ -48,14 +48,8 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
 #include <obd_class.h>
-#include <lustre_ver.h>
 #include <obd_support.h>
-#include <lprocfs_status.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
 #include <lustre_fid.h>
 
 #include "mdd_internal.h"
@@ -558,29 +552,27 @@ static void __mdd_index_delete(const struct lu_env *env, struct mdd_object *pobj
  * \param tname - target name string
  * \param handle - transacion handle
  */
-static int mdd_changelog_ns_store(const struct lu_env  *env,
-                                  struct mdd_device    *mdd,
-                                  enum changelog_rec_type type,
-                                  struct mdd_object    *target,
-                                  struct mdd_object    *parent,
-                                  const struct lu_fid  *tf,
-                                  const struct lu_name *tname,
-                                  struct mdd_thandle *handle)
+static void mdd_changelog_ns_store(const struct lu_env  *env,
+                                   struct mdd_device *mdd,
+                                   enum changelog_rec_type type, int flags,
+                                   struct mdd_object *target,
+                                   struct mdd_object *parent,
+                                   const struct lu_fid *tf,
+                                   const struct lu_name *tname,
+                                   struct mdd_thandle *handle)
 {
-#ifdef XXX_MDD_CHANGELOG
-        const struct lu_fid *tfid;
-        const struct lu_fid *tpfid = mdo2fid(parent);
+        const struct lu_fid       *tfid;
+        const struct lu_fid       *tpfid = mdo2fid(parent);
         struct llog_changelog_rec *rec;
-        struct lu_buf *buf;
-        int reclen;
-        int rc;
+        struct lu_buf             *buf;
+        int                        reclen;
         ENTRY;
 
         /* Not recording */
         if (!(mdd->mdd_cl.mc_flags & CLM_ON))
-                RETURN(0);
+                RETURN_EXIT;
         if ((mdd->mdd_cl.mc_mask & (1 << type)) == 0)
-                RETURN(0);
+                RETURN_EXIT;
 
         LASSERT(parent != NULL);
         LASSERT(tname != NULL);
@@ -588,10 +580,19 @@ static int mdd_changelog_ns_store(const struct lu_env  *env,
 
         /* target */
         reclen = llog_data_len(sizeof(*rec) + tname->ln_namelen);
-        buf = mdd_buf_alloc(env, reclen);
-        if (buf->lb_buf == NULL)
-                RETURN(-ENOMEM);
-        rec = (struct llog_changelog_rec *)buf->lb_buf;
+        /* CL_EXT is second changelog record in rename case, it shoudn't
+         * re-use mti_cl_buf and corrupt it context */
+        if (type == CL_EXT)
+                buf = &mdd_env_info(env)->mti_cl2_buf;
+        else
+                buf = &mdd_env_info(env)->mti_cl_buf;
+
+        buf = __mdd_buf_alloc(env, reclen, buf);
+        if (buf->lb_buf == NULL) {
+                mdd_tx_set_error(handle, -ENOMEM);
+                RETURN_EXIT;
+        }
+        rec = buf->lb_buf;
 
         rec->cr.cr_flags = CLF_VERSION | (CLF_FLAGMASK & flags);
         rec->cr.cr_type = (__u32)type;
@@ -603,14 +604,9 @@ static int mdd_changelog_ns_store(const struct lu_env  *env,
         if (likely(target))
                 target->mod_cltime = cfs_time_current_64();
 
-        rc = mdd_changelog_llog_write(mdd, rec, handle);
-        if (rc < 0) {
-                CERROR("changelog failed: rc=%d, op%d %s c"DFID" p"DFID"\n",
-                       rc, type, tname->ln_name, PFID(tfid), PFID(tpfid));
-                return -EFAULT;
-        }
-#endif
-        return 0;
+        mdd_tx_changelog(env, mdd, rec, handle);
+
+        RETURN_EXIT;
 }
 
 static int mdd_link(const struct lu_env *env, struct md_object *tgt_obj,
@@ -680,7 +676,7 @@ static int mdd_link(const struct lu_env *env, struct md_object *tgt_obj,
 
         EXIT;
 
-        mdd_changelog_ns_store(env, mdd, CL_HARDLINK, mdd_sobj, mdd_tobj,
+        mdd_changelog_ns_store(env, mdd, CL_HARDLINK, 0, mdd_sobj, mdd_tobj,
                                NULL, lname, handle);
         rc = mdd_tx_end(env, handle);
 
@@ -772,6 +768,7 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
         int quota_opc = 0;
 #endif
         int rc, is_dir, nlink;
+        int cl_flags;
         ENTRY;
 
         LASSERTF(mdd_object_exists(mdd_cobj) > 0, "FID is "DFID"\n",
@@ -840,13 +837,17 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
                 mdd_links_rename(env, mdd_cobj, mdo2fid(mdd_pobj),
                                  lname, NULL, NULL, handle);
 
-        EXIT;
 
+        cl_flags = (ma->ma_attr.la_nlink == 0) ? CLF_UNLINK_LAST : 0;
+        if ((ma->ma_valid & MA_HSM) &&
+            (ma->ma_hsm.mh_flags & HS_EXISTS))
+                cl_flags |= CLF_UNLINK_HSM_EXISTS;
         mdd_changelog_ns_store(env, mdd, is_dir ? CL_RMDIR : CL_UNLINK,
-                               mdd_cobj, mdd_pobj, NULL, lname, handle);
+                               cl_flags, mdd_cobj, mdd_pobj, NULL, lname,
+                               handle);
 
         rc = mdd_tx_end(env, handle);
-
+        EXIT;
 cleanup:
         mdd_write_unlock(env, mdd_cobj);
         mdd_pdo_write_unlock(env, mdd_pobj, dlh);
@@ -1298,7 +1299,7 @@ static int mdd_create(const struct lu_env *env,
                                S_ISDIR(attr->la_mode) ? CL_MKDIR :
                                S_ISREG(attr->la_mode) ? CL_CREATE :
                                S_ISLNK(attr->la_mode) ? CL_SOFTLINK : CL_MKNOD,
-                               son, mdd_pobj, NULL, lname, handle);
+                               0, son, mdd_pobj, NULL, lname, handle);
 
         rc = mdd_tx_end(env, handle);
 
@@ -1611,10 +1612,10 @@ static int mdd_rename(const struct lu_env *env,
 
         EXIT;
 
-        mdd_changelog_ns_store(env, mdd, CL_RENAME, mdd_tobj, mdd_spobj,
+        mdd_changelog_ns_store(env, mdd, CL_RENAME, 0, mdd_tobj, mdd_spobj,
                                lf, lsname, handle);
-        mdd_changelog_ns_store(env, mdd, CL_EXT, mdd_tobj,
-                               mdd_tpobj, lf, ltname, handle);
+        mdd_changelog_ns_store(env, mdd, CL_EXT, 0, mdd_tobj, mdd_tpobj, lf,
+                               ltname, handle);
 
         rc = mdd_tx_end(env, handle);
 

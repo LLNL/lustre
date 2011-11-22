@@ -45,15 +45,8 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
 #include <obd_class.h>
-#include <lustre_ver.h>
 #include <obd_support.h>
-#include <lprocfs_status.h>
-
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
 #include <obd_cksum.h>
 
 #include "mdd_internal.h"
@@ -682,6 +675,73 @@ void __mdd_tx_destroy(const struct lu_env *env, struct mdd_object *pobj,
         }
 }
 
+int mdd_tx_changelog_exec(const struct lu_env *env, struct thandle *th,
+                        struct mdd_tx_arg *arg)
+{
+        struct obd_device *obd = mdd2obd_dev(arg->u.chg_log.mdd);
+        struct llog_ctxt *ctxt;
+        int rc;
+
+        ctxt = llog_get_context(obd, LLOG_CHANGELOG_ORIG_CTXT);
+        LASSERT(ctxt);
+
+        rc = llog_add(env, ctxt->loc_handle, &arg->u.chg_log.rec->cr_hdr,
+                      NULL, NULL, th);
+        llog_ctxt_put(ctxt);
+
+        cfs_waitq_signal(&arg->u.chg_log.mdd->mdd_cl.mc_waitq);
+        if (rc > 0)
+                rc = 0;
+        return rc;
+}
+
+/** Add a changelog entry \a rec to the changelog llog
+ * \param mdd
+ * \param rec
+ * \param tx
+ * \retval is saved in tx->mtx_err
+ */
+void __mdd_tx_changelog(const struct lu_env *env, struct mdd_device *mdd,
+                        struct llog_changelog_rec *rec, struct mdd_thandle *tx,
+                        char *file, int line)
+{
+        struct obd_device *obd = mdd2obd_dev(mdd);
+        struct llog_ctxt  *ctxt;
+        struct mdd_tx_arg *arg;
+        int                rc;
+
+        /* don't proceed if any of previous declaration failed */
+        if (tx->mtx_err)
+                return;
+
+        rec->cr_hdr.lrh_len = llog_data_len(sizeof(*rec) + rec->cr.cr_namelen);
+        rec->cr_hdr.lrh_type = CHANGELOG_REC;
+        rec->cr.cr_time = cl_time();
+        cfs_spin_lock(&mdd->mdd_cl.mc_lock);
+
+        /* NB: I suppose it's possible llog_add adds out of order wrt cr_index,
+           but as long as the MDD transactions are ordered correctly for e.g.
+           rename conflicts, I don't think this should matter. */
+        rec->cr.cr_index = ++mdd->mdd_cl.mc_index;
+        cfs_spin_unlock(&mdd->mdd_cl.mc_lock);
+
+        ctxt = llog_get_context(obd, LLOG_CHANGELOG_ORIG_CTXT);
+        LASSERT(ctxt);
+
+        rc = llog_declare_add(env, ctxt->loc_handle, &rec->cr_hdr,
+                              tx->mtx_handle);
+        llog_ctxt_put(ctxt);
+        tx->mtx_err = rc;
+
+        if (likely(rc == 0)) {
+                arg = mdd_tx_add_exec(tx, mdd_tx_changelog_exec, NULL, file, line);
+                LASSERT(arg);
+                arg->object = NULL;
+                arg->u.chg_log.rec = rec;
+                arg->u.chg_log.mdd = mdd;
+        }
+}
+
 struct mdd_thandle *mdd_tx_start(const struct lu_env *env, struct mdd_device *mdd)
 {
         struct mdd_thandle *th = &mdd_env_info(env)->mti_thandle;
@@ -747,6 +807,12 @@ stop:
         if (info->mti_big_buf.lb_len > OBD_ALLOC_BIG)
                 /* if we vmalloced a large buffer drop it */
                 mdd_buf_put(&info->mti_big_buf);
+        if (info->mti_cl_buf.lb_len > OBD_ALLOC_BIG)
+                /* if we vmalloced a large buffer drop it */
+                mdd_buf_put(&info->mti_cl_buf);
+        if (info->mti_cl2_buf.lb_len > OBD_ALLOC_BIG)
+                /* if we vmalloced a large buffer drop it */
+                mdd_buf_put(&info->mti_cl2_buf);
 
         RETURN(rc);
 }

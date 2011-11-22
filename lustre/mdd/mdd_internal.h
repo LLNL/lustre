@@ -45,14 +45,12 @@
 #include <lustre_eacl.h>
 #include <md_object.h>
 #include <dt_object.h>
-#include <linux/sched.h>
-#include <linux/capability.h>
 #ifdef HAVE_QUOTA_SUPPORT
 # include <lustre_quota.h>
 #endif
 #include <lustre_capa.h>
 #include <lprocfs_status.h>
-//#include <lustre_fsfilt.h>
+#include <lustre_log.h>
 
 #ifdef HAVE_QUOTA_SUPPORT
 /* quota stuff */
@@ -103,7 +101,6 @@ struct mdd_txn_op_descr {
 /** some changelog records purged */
 #define CLM_PURGE 0x40000
 
-#ifdef XXX_MDD_CHANGELOG
 struct mdd_changelog {
         cfs_spinlock_t                   mc_lock;    /* for index */
         cfs_waitq_t                      mc_waitq;
@@ -114,7 +111,14 @@ struct mdd_changelog {
         cfs_spinlock_t                   mc_user_lock;
         int                              mc_lastuser;
 };
-#endif
+
+static inline __u64 cl_time(void) {
+        cfs_fs_time_t time;
+
+        cfs_fs_time_current(&time);
+        return (((__u64)time.tv_sec) << 30) + time.tv_nsec;
+}
+
 /** Objects in .lustre dir */
 struct mdd_dot_lustre_objs {
         struct mdd_object *mdd_obf;
@@ -124,15 +128,14 @@ struct mdd_device {
         struct md_device                 mdd_md_dev;
         struct obd_export               *mdd_child_exp;
         struct dt_device                *mdd_child;
+        struct dt_device                *mdd_bottom;
         struct lu_fid                    mdd_root_fid;
         struct dt_device_param           mdd_dt_conf;
         struct mdd_object               *mdd_orphans;
         cfs_proc_dir_entry_t            *mdd_proc_entry;
         struct lprocfs_stats            *mdd_stats;
         struct mdd_txn_op_descr          mdd_tod[MDD_TXN_LAST_OP];
-#ifdef XXX_MDD_CHANGELOG
         struct mdd_changelog             mdd_cl;
-#endif
         unsigned long                    mdd_atime_diff;
         struct mdd_object               *mdd_dot_lustre;
         struct mdd_dot_lustre_objs       mdd_dot_lustre_objs;
@@ -212,6 +215,10 @@ struct mdd_tx_arg {
                         struct lu_buf               buf;
                         loff_t                      pos;
                 } write;
+                struct {
+                        struct llog_changelog_rec  *rec;
+                        struct mdd_device          *mdd;
+                } chg_log;
         } u;
 };
 
@@ -248,6 +255,8 @@ struct mdd_thread_info {
         struct lustre_mdt_attrs   mti_mdt_attrs;
         struct lu_buf             mti_mdt_attrs_buf;
         struct md_attr            mti_ma;
+        struct lu_buf             mti_cl_buf; /* changelog record buf */
+        struct lu_buf             mti_cl2_buf; /* changelog 2nd rename buf */
 };
 
 extern const char orph_index_name[];
@@ -384,6 +393,8 @@ void mdd_lprocfs_time_end(const struct lu_env *env,
 
 /* mdd_object.c */
 int mdd_get_flags(const struct lu_env *env, struct mdd_object *obj);
+struct lu_buf *__mdd_buf_alloc(const struct lu_env *env, ssize_t len,
+                               struct lu_buf *buf);
 struct lu_buf *mdd_buf_alloc(const struct lu_env *env, ssize_t len);
 int mdd_buf_grow(const struct lu_env *env, ssize_t len);
 void mdd_buf_put(struct lu_buf *buf);
@@ -486,8 +497,13 @@ void __mdd_tx_idx_insert(const struct lu_env *, struct mdd_object *,
 #define mdd_tx_idx_insert(env,obj,fid,name,th) \
         __mdd_tx_idx_insert(env,obj,fid,name,th,__FILE__,__LINE__)
 
-void mdd_tx_set_error(struct mdd_thandle *, int);
+void __mdd_tx_changelog(const struct lu_env *env, struct mdd_device *mdd,
+                        struct llog_changelog_rec *rec,
+                        struct mdd_thandle *tx, char *, int);
+#define mdd_tx_changelog(env, mdd, rec, th) \
+        __mdd_tx_changelog(env, mdd, rec, th, __FILE__, __LINE__)
 
+void mdd_tx_set_error(struct mdd_thandle *, int);
 
 /* mdd_device.c */
 struct lu_object *mdd_object_alloc(const struct lu_env *env,
@@ -498,15 +514,7 @@ struct mdd_object *mdd_open_index_internal(const struct lu_env *env,
                                            const struct lu_fid *pfid,
                                            const char *name,
                                            const struct lu_fid *fid);
-#ifdef XXX_MDD_CHANGELOG
-struct llog_changelog_rec;
-int mdd_changelog_llog_write(struct mdd_device         *mdd,
-                             struct llog_changelog_rec *rec,
-                             struct mdd_thandle        *handle);
-int mdd_changelog_llog_cancel(struct mdd_device *mdd, long long endrec);
-int mdd_changelog_write_header(struct mdd_device *mdd, int markerflags);
-int mdd_changelog_on(struct mdd_device *mdd, int on);
-#endif
+
 /* mdd_permission.c */
 #define mdd_cap_t(x) (x)
 
@@ -552,6 +560,11 @@ static inline struct mdd_device* lu2mdd_dev(struct lu_device *d)
 static inline struct lu_device *mdd2lu_dev(struct mdd_device *d)
 {
         return (&d->mdd_md_dev.md_lu_dev);
+}
+
+static inline struct obd_device *mdd2obd_dev(struct mdd_device *d)
+{
+        return (d->mdd_md_dev.md_lu_dev.ld_obd);
 }
 
 static inline struct mdd_object *lu2mdd_obj(struct lu_object *o)

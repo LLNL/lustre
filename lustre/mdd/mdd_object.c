@@ -48,17 +48,12 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
 #include <obd.h>
 #include <obd_class.h>
 #include <obd_support.h>
 #include <lprocfs_status.h>
 /* fid_be_cpu(), fid_cpu_to_be(). */
 #include <lustre_fid.h>
-
-#include <lustre_param.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
 
 #include "mdd_internal.h"
 
@@ -137,10 +132,9 @@ const struct lu_buf *mdd_buf_get_const(const struct lu_env *env,
         return buf;
 }
 
-struct lu_buf *mdd_buf_alloc(const struct lu_env *env, ssize_t len)
+struct lu_buf *__mdd_buf_alloc(const struct lu_env *env, ssize_t len,
+                               struct lu_buf *buf)
 {
-        struct lu_buf *buf = &mdd_env_info(env)->mti_big_buf;
-
         if ((len > buf->lb_len) && (buf->lb_buf != NULL)) {
                 OBD_FREE_LARGE(buf->lb_buf, buf->lb_len);
                 buf->lb_buf = NULL;
@@ -152,6 +146,13 @@ struct lu_buf *mdd_buf_alloc(const struct lu_env *env, ssize_t len)
                         buf->lb_len = 0;
         }
         return buf;
+}
+
+struct lu_buf *mdd_buf_alloc(const struct lu_env *env, ssize_t len)
+{
+        struct lu_buf *buf = &mdd_env_info(env)->mti_big_buf;
+
+        return __mdd_buf_alloc(env, len, buf);
 }
 
 /** Increase the size of the \a mti_big_buf.
@@ -416,14 +417,13 @@ static int mdd_path_current(const struct lu_env *env,
                 pli->pli_fids[pli->pli_fidcount] = *tmpfid;
         }
 
-#ifdef XXX_MDD_CHANGELOG
         /* Verify that our path hasn't changed since we started the lookup.
            Record the current index, and verify the path resolves to the
            same fid. If it does, then the path is correct as of this index. */
         cfs_spin_lock(&mdd->mdd_cl.mc_lock);
         pli->pli_currec = mdd->mdd_cl.mc_index;
         cfs_spin_unlock(&mdd->mdd_cl.mc_lock);
-#endif
+
         rc = mdd_path2fid(env, mdd, ptr, &pli->pli_fid);
         if (rc) {
                 CDEBUG(D_INFO, "mdd_path2fid(%s) failed %d\n", ptr, rc);
@@ -978,25 +978,23 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
  * \param mdd_obj - mdd_object of change
  * \param handle - transacion handle
  */
-static int mdd_changelog_data_store(const struct lu_env     *env,
-                                    struct mdd_device       *mdd,
-                                    enum changelog_rec_type type,
-                                    int                     flags,
-                                    struct mdd_object       *mdd_obj,
-                                    struct mdd_thandle      *handle)
+static void mdd_changelog_data_store(const struct lu_env     *env,
+                                     struct mdd_device       *mdd,
+                                     enum changelog_rec_type type,
+                                     int                     flags,
+                                     struct mdd_object       *mdd_obj,
+                                     struct mdd_thandle      *handle)
 {
-#ifdef XXX_MDD_CHANGELOG
-        const struct lu_fid *tfid = mdo2fid(mdd_obj);
+        const struct lu_fid       *tfid = mdo2fid(mdd_obj);
         struct llog_changelog_rec *rec;
-        struct lu_buf *buf;
-        int reclen;
-        int rc;
+        struct lu_buf             *buf = &mdd_env_info(env)->mti_cl_buf;
+        int                        reclen;
 
         /* Not recording */
         if (!(mdd->mdd_cl.mc_flags & CLM_ON))
-                RETURN(0);
+                RETURN_EXIT;
         if ((mdd->mdd_cl.mc_mask & (1 << type)) == 0)
-                RETURN(0);
+                RETURN_EXIT;
 
         LASSERT(handle != NULL);
         LASSERT(mdd_obj != NULL);
@@ -1006,14 +1004,16 @@ static int mdd_changelog_data_store(const struct lu_env     *env,
                 /* Don't need multiple updates in this log */
                 /* Don't check under lock - no big deal if we get an extra
                    entry */
-                RETURN(0);
+                RETURN_EXIT;
         }
 
         reclen = llog_data_len(sizeof(*rec));
-        buf = mdd_buf_alloc(env, reclen);
-        if (buf->lb_buf == NULL)
-                RETURN(-ENOMEM);
-        rec = (struct llog_changelog_rec *)buf->lb_buf;
+        buf = __mdd_buf_alloc(env, reclen, buf);
+        if (buf->lb_buf == NULL) {
+                mdd_tx_set_error(handle, -ENOMEM);
+                RETURN_EXIT;
+        }
+        rec = buf->lb_buf;
 
         rec->cr.cr_flags = CLF_VERSION | (CLF_FLAGMASK & flags);
         rec->cr.cr_type = (__u32)type;
@@ -1021,14 +1021,9 @@ static int mdd_changelog_data_store(const struct lu_env     *env,
         rec->cr.cr_namelen = 0;
         mdd_obj->mod_cltime = cfs_time_current_64();
 
-        rc = mdd_changelog_llog_write(mdd, rec, handle);
-        if (rc < 0) {
-                CERROR("changelog failed: rc=%d op%d t"DFID"\n",
-                       rc, type, PFID(tfid));
-                return -EFAULT;
-        }
-#endif
-        return 0;
+        mdd_tx_changelog(env, mdd, rec, handle);
+
+        RETURN_EXIT;
 }
 
 int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
@@ -1142,9 +1137,9 @@ static int mdd_lma_set_locked(const struct lu_env *env,
  * attributes change: setattr > mtime > ctime > atime
  * (ctime changes when mtime does, plus chmod/chown.
  * atime and ctime are independent.) */
-static int mdd_attr_set_changelog(const struct lu_env *env,
-                                  struct md_object *obj, struct mdd_thandle *handle,
-                                  __u64 valid)
+static void mdd_attr_set_changelog(const struct lu_env *env,
+                                   struct md_object *obj,
+                                   struct mdd_thandle *handle, __u64 valid)
 {
         struct mdd_device *mdd = mdo2mdd(obj);
         int bits, type = 0;
@@ -1153,11 +1148,9 @@ static int mdd_attr_set_changelog(const struct lu_env *env,
         bits |= (valid & LA_MTIME) ? 1 << CL_MTIME : 0;
         bits |= (valid & LA_CTIME) ? 1 << CL_CTIME : 0;
         bits |= (valid & LA_ATIME) ? 1 << CL_ATIME : 0;
-#ifdef XXX_MDD_CHANGELOG
         bits = bits & mdd->mdd_cl.mc_mask;
-#endif
         if (bits == 0)
-                return 0;
+                return;
 
         /* The record type is the lowest non-masked set bit */
         while (bits && ((bits & 1) == 0)) {
@@ -1166,8 +1159,9 @@ static int mdd_attr_set_changelog(const struct lu_env *env,
         }
 
         /* FYI we only store the first CLF_FLAGMASK bits of la_valid */
-        return mdd_changelog_data_store(env, mdd, type, (int)valid,
-                                        md2mdd_obj(obj), handle);
+        mdd_changelog_data_store(env, mdd, type, (int)valid,
+                                 md2mdd_obj(obj), handle);
+        return;
 }
 
 /* set attr and LOV EA at once, return updated attr */
@@ -1334,7 +1328,8 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
 
         /* Only record user xattr changes */
         if (strncmp("user.", name, 5) == 0)
-                mdd_changelog_data_store(env, mdd, CL_XATTR, 0, mdd_obj, handle);
+                mdd_changelog_data_store(env, mdd, CL_XATTR, 0, mdd_obj,
+                                         handle);
 
         rc = mdd_tx_end(env, handle);
 
@@ -1371,7 +1366,8 @@ int mdd_xattr_del(const struct lu_env *env, struct md_object *obj,
 
         /* Only record user xattr changes */
         if (strncmp("user.", name, 5) != 0)
-                mdd_changelog_data_store(env, mdd, CL_XATTR, 0, mdd_obj, handle);
+                mdd_changelog_data_store(env, mdd, CL_XATTR, 0, mdd_obj,
+                                         handle);
 
         rc = mdd_tx_end(env, handle);
 

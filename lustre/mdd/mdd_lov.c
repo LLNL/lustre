@@ -49,14 +49,9 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
 #include <obd_class.h>
-#include <lustre_ver.h>
 #include <obd_support.h>
-#include <lprocfs_status.h>
 #include <lustre_fid.h>
-#include <lustre/lustre_idl.h>
 
 #include "mdd_internal.h"
 
