@@ -1270,10 +1270,11 @@ static int changelog_show_cb(const struct lu_env *env,
 
 static int mdc_changelog_send_thread(void *csdata)
 {
+        struct lu_env          env;
         struct changelog_show *cs = csdata;
-        struct llog_ctxt *ctxt = NULL;
-        struct llog_handle *llh = NULL;
-        struct kuc_hdr *kuch;
+        struct llog_ctxt      *ctxt = NULL;
+        struct llog_handle    *llh = NULL;
+        struct kuc_hdr        *kuch;
         int rc;
 
         CDEBUG(D_CHANGELOG, "changelog to fp=%p start "LPU64"\n",
@@ -1288,25 +1289,30 @@ static int mdc_changelog_send_thread(void *csdata)
 
         OBD_ALLOC(cs->cs_buf, CR_MAXSIZE);
         if (cs->cs_buf == NULL)
-                GOTO(out, rc = -ENOMEM);
+                GOTO(out_daemonize, rc = -ENOMEM);
+
+        rc = lu_env_init(&env, LCT_LOCAL);
+        if (rc)
+                GOTO(out_free, rc);
 
         /* Set up the remote catalog handle */
         ctxt = llog_get_context(cs->cs_obd, LLOG_CHANGELOG_REPL_CTXT);
         if (ctxt == NULL)
-                GOTO(out, rc = -ENOENT);
+                GOTO(out_env, rc = -ENOENT);
+
         rc = llog_open(NULL, ctxt, &llh, NULL, CHANGELOG_CATALOG, LLOG_OPEN_OLD);
         if (rc) {
                 CERROR("llog_create() failed %d\n", rc);
-                GOTO(out, rc);
+                GOTO(out_put, rc);
         }
         rc = llog_init_handle(NULL, llh, LLOG_F_IS_CAT, NULL);
         if (rc) {
                 CERROR("llog_init_handle failed %d\n", rc);
-                GOTO(out, rc);
+                GOTO(out_close, rc);
         }
 
         /* We need the pipe fd open, so llog_process can't daemonize */
-        rc = __llog_cat_process(NULL, llh, changelog_show_cb, cs, 0, 0, 0);
+        rc = __llog_cat_process(&env, llh, changelog_show_cb, cs, 0, 0, 0);
 
         /* Send EOF no matter what our result */
         if ((kuch = changelog_kuc_hdr(cs->cs_buf, sizeof(*kuch),
@@ -1314,18 +1320,20 @@ static int mdc_changelog_send_thread(void *csdata)
                 kuch->kuc_msgtype = CL_EOF;
                 libcfs_kkuc_msg_put(cs->cs_fp, kuch);
         }
-
-out:
         cfs_put_file(cs->cs_fp);
-        if (llh)
-                llog_cat_close(NULL, llh);
-        if (ctxt)
-                llog_ctxt_put(ctxt);
-        if (cs->cs_buf)
-                OBD_FREE(cs->cs_buf, CR_MAXSIZE);
-        OBD_FREE_PTR(cs);
+
+out_close:
+        llog_cat_close(&env, llh);
+out_put:
+        llog_ctxt_put(ctxt);
+out_env:
+        lu_env_fini(&env);
+out_free:
+        OBD_FREE(cs->cs_buf, CR_MAXSIZE);
+out_daemonize:
         /* detach from parent process so we get cleaned up */
         cfs_daemonize("cl_send");
+        OBD_FREE_PTR(cs);
         return rc;
 }
 

@@ -24,10 +24,9 @@ CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 
 # Orion: to be fixed
-# 160 -- (bug 22448) changelogs don't work yet
 # 124a - LU-479 is not yet merged
 # 220 -- LU-748 (ORI 355)
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 160 220"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 220"
 
 # ZFS/DMU exceptions:
 # 56r -- dmu-osd doesn't return correct type in direntry
@@ -7326,7 +7325,7 @@ err17935 () {
 test_160() {
     USER=$(do_facet $SINGLEMDS lctl --device $MDT0 changelog_register -n)
     echo "Registered as changelog user $USER"
-    do_facet $SINGLEMDS lctl get_param -n mdd.$MDT0.changelog_users | \
+    do_facet $SINGLEMDS lctl get_param -n mdd.$MDT0*.changelog_users | \
 	grep -q $USER || error "User $USER not found in changelog_users"
 
     # change something
@@ -7341,9 +7340,9 @@ test_160() {
     $LFS changelog $MDT0 | tail -5
 
     echo "verifying changelog mask"
-    do_facet $SINGLEMDS lctl set_param mdd.$MDT0.changelog_mask="-mkdir"
+    do_facet $SINGLEMDS lctl set_param mdd.$MDT0*.changelog_mask="-mkdir"
     mkdir -p $DIR/$tdir/pics/2009/sofia
-    do_facet $SINGLEMDS lctl set_param mdd.$MDT0.changelog_mask="+mkdir"
+    do_facet $SINGLEMDS lctl set_param mdd.$MDT0*.changelog_mask="+mkdir"
     mkdir $DIR/$tdir/pics/2009/zachary
     DIRS=$($LFS changelog $MDT0 | tail -5 | grep -c MKDIR)
     [ $DIRS -eq 1 ] || err17935 "changelog mask count $DIRS != 1"
@@ -7363,15 +7362,15 @@ test_160() {
 	err17935 "pfid in changelog $fidc != dir fid $fidf"
 
     USER_REC1=$(do_facet $SINGLEMDS lctl get_param -n \
-	mdd.$MDT0.changelog_users | grep $USER | awk '{print $2}')
+	mdd.$MDT0*.changelog_users | grep $USER | awk '{print $2}')
     $LFS changelog_clear $MDT0 $USER $(($USER_REC1 + 5))
     USER_REC2=$(do_facet $SINGLEMDS lctl get_param -n \
-	mdd.$MDT0.changelog_users | grep $USER | awk '{print $2}')
+	mdd.$MDT0*.changelog_users | grep $USER | awk '{print $2}')
     echo "verifying user clear: $(( $USER_REC1 + 5 )) == $USER_REC2"
     [ $USER_REC2 == $(($USER_REC1 + 5)) ] || \
 	err17935 "user index should be $(($USER_REC1 + 5)); is $USER_REC2"
 
-    MIN_REC=$(do_facet $SINGLEMDS lctl get_param mdd.$MDT0.changelog_users | \
+    MIN_REC=$(do_facet $SINGLEMDS lctl get_param mdd.$MDT0*.changelog_users | \
 	awk 'min == "" || $2 < min {min = $2}; END {print min}')
     FIRST_REC=$($LFS changelog $MDT0 | head -1 | awk '{print $1}')
     echo "verifying min purge: $(( $MIN_REC + 1 )) == $FIRST_REC"
@@ -7380,17 +7379,17 @@ test_160() {
 
     echo "verifying user deregister"
     do_facet $SINGLEMDS lctl --device $MDT0 changelog_deregister $USER
-    do_facet $SINGLEMDS lctl get_param -n mdd.$MDT0.changelog_users | \
+    do_facet $SINGLEMDS lctl get_param -n mdd.$MDT0*.changelog_users | \
 	grep -q $USER && error "User $USER still found in changelog_users"
 
     USERS=$(( $(do_facet $SINGLEMDS lctl get_param -n \
-	mdd.$MDT0.changelog_users | wc -l) - 2 ))
+	mdd.$MDT0*.changelog_users | wc -l) - 2 ))
     if [ $USERS -eq 0 ]; then
 	LAST_REC1=$(do_facet $SINGLEMDS lctl get_param -n \
-	    mdd.$MDT0.changelog_users | head -1 | awk '{print $3}')
+	    mdd.$MDT0*.changelog_users | head -1 | awk '{print $3}')
 	touch $DIR/$tdir/chloe
 	LAST_REC2=$(do_facet $SINGLEMDS lctl get_param -n \
-	    mdd.$MDT0.changelog_users | head -1 | awk '{print $3}')
+	    mdd.$MDT0*.changelog_users | head -1 | awk '{print $3}')
 	echo "verify changelogs are off if we were the only user: $LAST_REC1 == $LAST_REC2"
 	[ $LAST_REC1 == $LAST_REC2 ] || error "changelogs not off"
     else
