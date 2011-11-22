@@ -47,14 +47,8 @@
 #endif
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/module.h>
-#include <obd.h>
 #include <obd_class.h>
-#include <lustre_ver.h>
 #include <obd_support.h>
-#include <lprocfs_status.h>
-#include <lustre_mds.h>
-#include <lustre/lustre_idl.h>
 #include <lustre_fid.h>
 
 #include "mdd_internal.h"
@@ -561,63 +555,70 @@ static int __mdd_index_delete(const struct lu_env *env, struct mdd_object *pobj,
         RETURN(rc);
 }
 
-int mdd_declare_llog_record(const struct lu_env *env, struct mdd_device *mdd,
-                            int reclen, struct thandle *handle)
-{
-        int rc = 0;
-
-#ifdef XXX_MDD_CHANGELOG
-        /* XXX: this is a temporary solution to declare llog changes
-         *      will be fixed in 2.3 with new llog implementation */
-
-        LASSERT(mdd->mdd_capa);
-
-        /* record itself */
-        rc = dt_declare_record_write(env, mdd->mdd_capa, reclen, 0, handle);
-        if (rc)
-                return rc;
-
-        /* header will be updated as well */
-        rc = dt_declare_record_write(env, mdd->mdd_capa, LLOG_CHUNK_SIZE,
-                                     0, handle);
-        if (rc)
-                return rc;
-
-        /* also we should be able to create new plain log */
-        rc = dt_declare_create(env, mdd->mdd_capa, NULL, NULL, NULL, handle);
-        if (rc)
-                return rc;
-
-        /* new record referencing new plain llog */
-        rc = dt_declare_record_write(env, mdd->mdd_capa,
-                                     sizeof(struct llog_logid_rec), 0, handle);
-        if (rc)
-                return rc;
-
-        /* catalog's header will be updated as well */
-        rc = dt_declare_record_write(env, mdd->mdd_capa, LLOG_CHUNK_SIZE,
-                                     0, handle);
-#endif
-        return rc;
-}
-
 int mdd_declare_changelog_store(const struct lu_env *env,
                                 struct mdd_device *mdd,
                                 const struct lu_name *fname,
                                 struct thandle *handle)
 {
-        int reclen;
+        struct obd_device         *obd = mdd2obd_dev(mdd);
+        struct llog_ctxt          *ctxt;
+        struct llog_changelog_rec *rec;
+        struct lu_buf             *buf;
+        int                        reclen;
+        int                        rc;
 
         /* Not recording */
         if (!(mdd->mdd_cl.mc_flags & CLM_ON))
                 return 0;
 
-        /* we'll be writing payload + llog header */
-        reclen = sizeof(struct llog_changelog_rec);
-        if (fname)
-                reclen += llog_data_len(fname->ln_namelen);
+        reclen = llog_data_len(sizeof(*rec) +
+                               (fname != NULL ? fname->ln_namelen : 0));
+        buf = __mdd_buf_alloc(env, reclen, &mdd_env_info(env)->mti_cl_buf);
+        if (buf->lb_buf == NULL)
+                return -ENOMEM;
 
-        return mdd_declare_llog_record(env, mdd, reclen, handle);
+        rec = buf->lb_buf;
+        rec->cr_hdr.lrh_len = reclen;
+        rec->cr_hdr.lrh_type = CHANGELOG_REC;
+
+        ctxt = llog_get_context(obd, LLOG_CHANGELOG_ORIG_CTXT);
+        LASSERT(ctxt);
+
+        rc = llog_declare_add(env, ctxt->loc_handle, &rec->cr_hdr, handle);
+        llog_ctxt_put(ctxt);
+
+        return rc;
+}
+
+int mdd_changelog_store(const struct lu_env *env, struct mdd_device *mdd,
+                        struct llog_changelog_rec *rec, struct thandle *th)
+{
+        struct obd_device *obd = mdd2obd_dev(mdd);
+        struct llog_ctxt *ctxt;
+        int rc;
+
+        rec->cr_hdr.lrh_len = llog_data_len(sizeof(*rec) + rec->cr.cr_namelen);
+        rec->cr_hdr.lrh_type = CHANGELOG_REC;
+        rec->cr.cr_time = cl_time();
+
+        cfs_spin_lock(&mdd->mdd_cl.mc_lock);
+        /* NB: I suppose it's possible llog_add adds out of order wrt cr_index,
+           but as long as the MDD transactions are ordered correctly for e.g.
+           rename conflicts, I don't think this should matter. */
+        rec->cr.cr_index = ++mdd->mdd_cl.mc_index;
+        cfs_spin_unlock(&mdd->mdd_cl.mc_lock);
+
+        ctxt = llog_get_context(obd, LLOG_CHANGELOG_ORIG_CTXT);
+        LASSERT(ctxt);
+
+        rc = llog_add(env, ctxt->loc_handle, &rec->cr_hdr,
+                      NULL, NULL, th);
+        llog_ctxt_put(ctxt);
+
+        cfs_waitq_signal(&mdd->mdd_cl.mc_waitq);
+        if (rc > 0)
+                rc = 0;
+        return rc;
 }
 
 /** Store a namespace change changelog record
@@ -630,22 +631,20 @@ int mdd_declare_changelog_store(const struct lu_env *env,
  * \param handle - transacion handle
  */
 static int mdd_changelog_ns_store(const struct lu_env  *env,
-                                  struct mdd_device    *mdd,
-                                  enum changelog_rec_type type,
-                                  int flags,
-                                  struct mdd_object    *target,
-                                  struct mdd_object    *parent,
-                                  const struct lu_fid  *tf,
+                                  struct mdd_device *mdd,
+                                  enum changelog_rec_type type, int flags,
+                                  struct mdd_object *target,
+                                  struct mdd_object *parent,
+                                  const struct lu_fid *tf,
                                   const struct lu_name *tname,
                                   struct thandle *handle)
 {
-#ifdef XXX_MDD_CHANGELOG
-        const struct lu_fid *tfid;
-        const struct lu_fid *tpfid = mdo2fid(parent);
+        const struct lu_fid       *tfid;
+        const struct lu_fid       *tpfid = mdo2fid(parent);
         struct llog_changelog_rec *rec;
-        struct lu_buf *buf;
-        int reclen;
-        int rc;
+        struct lu_buf             *buf;
+        int                        reclen;
+        int                        rc;
         ENTRY;
 
         /* Not recording */
@@ -660,10 +659,11 @@ static int mdd_changelog_ns_store(const struct lu_env  *env,
 
         /* target */
         reclen = llog_data_len(sizeof(*rec) + tname->ln_namelen);
-        buf = mdd_buf_alloc(env, reclen);
+        buf = __mdd_buf_alloc(env, reclen, &mdd_env_info(env)->mti_cl_buf);
         if (buf->lb_buf == NULL)
                 RETURN(-ENOMEM);
-        rec = (struct llog_changelog_rec *)buf->lb_buf;
+
+        rec = buf->lb_buf;
 
         rec->cr.cr_flags = CLF_VERSION | (CLF_FLAGMASK & flags);
         rec->cr.cr_type = (__u32)type;
@@ -675,14 +675,9 @@ static int mdd_changelog_ns_store(const struct lu_env  *env,
         if (likely(target))
                 target->mod_cltime = cfs_time_current_64();
 
-        rc = mdd_changelog_llog_write(mdd, rec, handle);
-        if (rc < 0) {
-                CERROR("changelog failed: rc=%d, op%d %s c"DFID" p"DFID"\n",
-                       rc, type, tname->ln_name, PFID(tfid), PFID(tpfid));
-                return -EFAULT;
-        }
-#endif
-        return 0;
+        rc = mdd_changelog_store(env, mdd, rec, handle);
+
+        RETURN(rc);
 }
 
 static int mdd_declare_link(const struct lu_env *env,
@@ -956,8 +951,7 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
         unsigned int qpids[MAXQUOTAS] = { 0, 0 };
         int quota_opc = 0;
 #endif
-        int is_dir;
-        int rc;
+        int rc, is_dir;
         ENTRY;
 
         if (mdd_object_exists(mdd_cobj) <= 0)
@@ -1055,7 +1049,7 @@ cleanup:
         if (rc == 0) {
                 int cl_flags;
 
-                cl_flags = (ma->ma_attr.la_nlink == 0) ? CLF_UNLINK_LAST : 0;
+                cl_flags = (cattr->la_nlink == 0) ? CLF_UNLINK_LAST : 0;
                 if ((ma->ma_valid & MA_HSM) &&
                     (ma->ma_hsm.mh_flags & HS_EXISTS))
                         cl_flags |= CLF_UNLINK_HSM_EXISTS;

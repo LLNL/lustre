@@ -76,23 +76,9 @@ struct mds_capa_info {
         struct lustre_capa_key *capa;
 };
 
-/* mds/mds_lov.c */
-int mds_lov_write_objids(struct obd_device *obd);
-int mds_lov_prepare_objids(struct obd_device *obd, struct lov_mds_md *lmm);
-void mds_lov_update_objids(struct obd_device *obd, struct lov_mds_md *lmm);
-int mds_log_op_unlink(struct obd_device *, struct lov_mds_md *, int,
-                      struct llog_cookie *, int);
-
-
 #define MDD_OBD_NAME     "mdd_obd"
 #define MDD_OBD_UUID     "mdd_obd_uuid"
 #define MDD_OBD_TYPE     "mds"
-
-static inline int md_should_create(__u64 flags)
-{
-       return !(flags & MDS_OPEN_DELAY_CREATE ||
-               !(flags & FMODE_WRITE));
-}
 
 /* these are local flags, used only on the client, private */
 #define M_CHECK_STALE           0200000000
