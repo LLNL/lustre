@@ -53,7 +53,7 @@ init_changelog() {
     CL_USER=$(do_facet $SINGLEMDS lctl --device $MDT0 changelog_register -n)
     echo $MDT0: Registered changelog user $CL_USER
     CL_USERS=$(( $(do_facet $SINGLEMDS lctl get_param -n \
-	mdd.$MDT0.changelog_users | wc -l) - 2 ))
+	mdd.$MDT0*.changelog_users | wc -l) - 2 ))
     [ $CL_USERS -ne 1 ] && \
 	echo "Other changelog users present ($CL_USERS)"
 }
