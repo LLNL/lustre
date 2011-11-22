@@ -58,6 +58,13 @@
 #include <lustre_net.h>
 
 #if defined(__KERNEL__) && defined(LUSTRE_LOG_SERVER)
+static int llog_origin_close(const struct lu_env *env, struct llog_handle *lgh)
+{
+        if (lgh->lgh_hdr != NULL && lgh->lgh_hdr->llh_flags & LLOG_F_IS_CAT)
+                return llog_cat_close(env, lgh);
+        else
+                return llog_close(env, lgh);
+}
 
 /* Only open is supported, no new llog can be created remotely */
 int llog_origin_handle_open(struct ptlrpc_request *req)
@@ -106,7 +113,7 @@ int llog_origin_handle_open(struct ptlrpc_request *req)
         body->lgd_logid = loghandle->lgh_id;
 
 out_close:
-        llog_close(req->rq_svc_thread->t_env, loghandle);
+        llog_origin_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         RETURN(rc);
@@ -186,7 +193,7 @@ int llog_origin_handle_next_block(struct ptlrpc_request *req)
                              repbody->lgd_index, &repbody->lgd_cur_offset,
                              ptr, LLOG_CHUNK_SIZE);
 out_close:
-        llog_close(req->rq_svc_thread->t_env, loghandle);
+        llog_origin_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;
@@ -234,7 +241,7 @@ int llog_origin_handle_prev_block(struct ptlrpc_request *req)
         rc = llog_prev_block(req->rq_svc_thread->t_env, loghandle,
                              body->lgd_index, ptr, LLOG_CHUNK_SIZE);
 out_close:
-        llog_close(req->rq_svc_thread->t_env, loghandle);
+        llog_origin_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;
@@ -283,12 +290,7 @@ int llog_origin_handle_read_header(struct ptlrpc_request *req)
         *hdr = *loghandle->lgh_hdr;
         GOTO(out_close, rc);
 out_close:
-        if (flags & LLOG_F_IS_PLAIN)
-                llog_close(req->rq_svc_thread->t_env, loghandle);
-        else if (flags & LLOG_F_IS_CAT)
-                llog_cat_close(req->rq_svc_thread->t_env, loghandle);
-        else
-                CERROR("llog type is not defined!\n");
+        llog_origin_close(req->rq_svc_thread->t_env, loghandle);
 out_pop:
         llog_ctxt_put(ctxt);
         return rc;

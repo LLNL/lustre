@@ -2031,56 +2031,50 @@ static int mdt_obd_qc_callback(struct mdt_thread_info *info)
 }
 
 
-#ifdef XXX_MDD_CHANGELOG
 /*
  * LLOG handlers.
  */
 
-/** clone llog ctxt from child (mdd)
- * This allows remote llog (replicator) access.
- * We can either pass all llog RPCs (eg mdt_llog_create) on to child where the
- * context was originally set up, or we can handle them directly.
- * I choose the latter, but that means I need any llog
- * contexts set up by child to be accessable by the mdt.  So we clone the
- * context into our context list here.
+/**
+ * Get changelog context from MDD
  */
-static int mdt_llog_ctxt_clone(const struct lu_env *env, struct mdt_device *mdt,
-                               int idx)
+static int mdt_changelog_init(const struct lu_env *env, struct mdt_device *mdt)
 {
         struct md_device  *next = mdt->mdt_child;
         struct llog_ctxt *ctxt;
         int rc;
 
-        if (!llog_ctxt_null(mdt2obd_dev(mdt), idx))
-                return 0;
+        LASSERT(llog_ctxt_null(mdt2obd_dev(mdt), LLOG_CHANGELOG_ORIG_CTXT));
 
-        rc = next->md_ops->mdo_llog_ctxt_get(env, next, idx, (void **)&ctxt);
+        rc = next->md_ops->mdo_llog_ctxt_get(env, next,
+                                             LLOG_CHANGELOG_ORIG_CTXT,
+                                             (void **)&ctxt);
         if (rc || ctxt == NULL) {
                 CERROR("Can't get mdd ctxt %d\n", rc);
                 return rc;
         }
 
-        rc = llog_group_set_ctxt(&mdt2obd_dev(mdt)->obd_olg, ctxt, idx);
+        rc = llog_group_set_ctxt(&mdt2obd_dev(mdt)->obd_olg, ctxt,
+                                 LLOG_CHANGELOG_ORIG_CTXT);
         if (rc)
                 CERROR("Can't set mdt ctxt %d\n", rc);
 
         return rc;
 }
 
-static int mdt_llog_ctxt_unclone(const struct lu_env *env,
-                                 struct mdt_device *mdt, int idx)
+static int mdt_changelog_fini(const struct lu_env *env, struct mdt_device *mdt)
 {
         struct llog_ctxt *ctxt;
 
-        ctxt = llog_get_context(mdt2obd_dev(mdt), idx);
+        ctxt = llog_get_context(mdt2obd_dev(mdt), LLOG_CHANGELOG_ORIG_CTXT);
         if (ctxt == NULL)
                 return 0;
+
         /* Put once for the get we just did, and once for the clone */
         llog_ctxt_put(ctxt);
         llog_ctxt_put(ctxt);
         return 0;
 }
-#endif
 
 static int mdt_llog_open(struct mdt_thread_info *info)
 {
@@ -4325,6 +4319,8 @@ static void mdt_stack_fini(const struct lu_env *env,
                 return;
         }
 
+        mdt_changelog_fini(env, m);
+
         top->ld_ops->ldo_process_config(env, top, lcfg);
         lustre_cfg_free(lcfg);
 
@@ -4434,9 +4430,6 @@ static void mdt_fini(const struct lu_env *env, struct mdt_device *m)
         ping_evictor_stop();
 
         mdt_stop_ptlrpc_service(m);
-#ifdef XXX_MDD_CHANGELOG
-        mdt_llog_ctxt_unclone(env, m, LLOG_CHANGELOG_ORIG_CTXT);
-#endif
         obd_exports_barrier(obd);
         obd_zombie_barrier();
 
@@ -4705,14 +4698,6 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         if (rc)
                 GOTO(err_capa, rc);
 
-#ifdef XXX_MDD_CHANGELOG
-        /* XXX: doesn't work w/o OBD yet */
-        if (obd->obd_fsops) {
-                rc = mdt_llog_ctxt_clone(env, m, LLOG_CHANGELOG_ORIG_CTXT);
-                if (rc)
-                        GOTO(err_fs_cleanup, rc);
-        }
-#endif
         mdt_adapt_sptlrpc_conf(env, obd, 1);
 
         dt_conf_get(env, m->mdt_bottom, &ddp);
@@ -4729,7 +4714,7 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         if (IS_ERR(m->mdt_identity_cache)) {
                 rc = PTR_ERR(m->mdt_identity_cache);
                 m->mdt_identity_cache = NULL;
-                GOTO(err_chlog, rc);
+                GOTO(err_fs_cleanup, rc);
         }
 
         rc = mdt_procfs_init(m, dev);
@@ -4775,10 +4760,6 @@ err_procfs:
 err_upcall:
         upcall_cache_cleanup(m->mdt_identity_cache);
         m->mdt_identity_cache = NULL;
-err_chlog:
-#ifdef XXX_MDD_CHANGELOG
-        mdt_llog_ctxt_unclone(env, m, LLOG_CHANGELOG_ORIG_CTXT);
-#endif
 err_fs_cleanup:
         mdt_fs_cleanup(env, m);
 err_capa:
@@ -4945,25 +4926,28 @@ static int mdt_start(const struct lu_env *env, struct lu_device *dev)
         child_lu_dev = &mdt->mdt_child->md_lu_dev;
 
         rc = child_lu_dev->ld_ops->ldo_start(env, child_lu_dev);
-        if (rc == 0) {
-                LASSERT(!cfs_test_bit(MDT_FL_CFGLOG, &mdt->mdt_state));
-                target_recovery_init(&mdt->mdt_lut, mdt_recovery_handle);
-                cfs_set_bit(MDT_FL_CFGLOG, &mdt->mdt_state);
-                LASSERT(obd->obd_no_conn);
-                cfs_spin_lock(&obd->obd_dev_lock);
-                obd->obd_no_conn = 0;
-                cfs_spin_unlock(&obd->obd_dev_lock);
+        if (rc)
+                GOTO(out, rc);
+
+        rc = mdt_changelog_init(env, mdt);
+        if (rc)
+                GOTO(out, rc);
+
+        LASSERT(!cfs_test_bit(MDT_FL_CFGLOG, &mdt->mdt_state));
+        target_recovery_init(&mdt->mdt_lut, mdt_recovery_handle);
+        cfs_set_bit(MDT_FL_CFGLOG, &mdt->mdt_state);
+        LASSERT(obd->obd_no_conn);
+        cfs_spin_lock(&obd->obd_dev_lock);
+        obd->obd_no_conn = 0;
+        cfs_spin_unlock(&obd->obd_dev_lock);
 
 #ifdef HAVE_QUOTA_SUPPORT
-               /* quota_type has been processed, we can now handle
-                * incoming quota requests */
-                {
-                        struct md_device *next = mdt->mdt_child;
-                        next->md_ops->mdo_quota.mqo_notify(NULL, next);
-                }
+        /* quota_type has been processed, we can now handle
+         * incoming quota requests */
+        mdt->mdt_child->md_ops->mdo_quota.mqo_notify(NULL, mdt->mdt_child);
 #endif
-        }
 
+out:
         RETURN(rc);
 }
 
