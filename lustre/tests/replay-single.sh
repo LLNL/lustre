@@ -488,10 +488,14 @@ test_22a() {
 run_test 22a "open(O_CREAT), |X| unlink, replay, close (test mds_cleanup_orphans)"
 
 test_22b() {
+    # needed to prolong recovery so setting 0x148 failoc will happen
+    # before recovery end for sure
+    mount_client $MOUNT2 || return 11
     multiop_bg_pause $DIR/$tfile O_tSc || return 3
     pid=$!
     replay_barrier $SINGLEMDS
     rm -f $DIR/$tfile
+    umount_client $MOUNT2
     facet_failover $SINGLEMDS
 #define OBD_FAIL_MDS_ORPHAN_RACE  0x148
     do_facet $SINGLEMDS "lctl set_param fail_loc=0x80000148"
