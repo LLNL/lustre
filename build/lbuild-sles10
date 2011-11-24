@@ -5,6 +5,10 @@
 # build on all distributions, update the BUILD_GEN variable in build/lbuild)
 BUILD_GEN+=".0"
 
+# This distro does not support zfs, so define ZFSNOTSUPPORTED
+# use words that make the bash log readable.
+ZFSNOTSUPPORTED="Zfs Not Supported"
+
 source ${0%/*}/lbuild-sles
 
 # the location of the ofed-devel-<version>.<arch>.rpm
