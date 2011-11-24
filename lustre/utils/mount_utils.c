@@ -48,6 +48,11 @@
 
 #include "mount_utils.h"
 
+#ifdef HAVE_ZFS_OSD
+/* indicate if the ZFS OSD has been successfully setup */
+static int osd_zfs_setup;
+#endif
+
 void fatal(void)
 {
         verbose = 0;
@@ -619,6 +624,19 @@ int loop_cleanup(struct mkfs_opts *mop)
         return ret;
 }
 
+#ifdef HAVE_ZFS_OSD
+static int osd_check_zfs_setup(void)
+{
+        if (osd_zfs_setup == 0) {
+                /* setup failed */
+                fatal();
+                fprintf(stderr, "Failed to initialize ZFS library. Are the ZFS "
+                                "packages and modules correctly installed?\n");
+        }
+        return osd_zfs_setup == 1;
+}
+#endif
+
 void osd_print_ldd(char *str, struct lustre_disk_data *ldd)
 {
         printf("\n   %s:\n", str);
@@ -669,7 +687,10 @@ int osd_write_ldd(struct mkfs_opts *mop)
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
         case LDD_MT_ZFS:
-                ret = zfs_write_ldd(mop);
+                if (osd_check_zfs_setup() == 0)
+                        ret = EINVAL;
+                else
+                        ret = zfs_write_ldd(mop);
                 break;
 #endif /* HAVE_ZFS_OSD */
         default:
@@ -698,7 +719,10 @@ int osd_read_ldd(char *dev, struct lustre_disk_data *ldd)
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
         case LDD_MT_ZFS:
-                ret = zfs_read_ldd(dev, ldd);
+                if (osd_check_zfs_setup() == 0)
+                        ret = EINVAL;
+                else
+                        ret = zfs_read_ldd(dev, ldd);
                 break;
 #endif /* HAVE_ZFS_OSD */
         default:
@@ -725,7 +749,7 @@ int osd_is_lustre(char *dev, unsigned *mount_type)
 #endif /* HAVE_LDISKFS_OSD */
 
 #ifdef HAVE_ZFS_OSD
-        if (zfs_is_lustre(dev, mount_type)) {
+        if (osd_zfs_setup && zfs_is_lustre(dev, mount_type)) {
                 vprint("found\n");
                 return 1;
         }
@@ -751,7 +775,10 @@ int osd_make_lustre(struct mkfs_opts *mop)
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
         case LDD_MT_ZFS:
-                ret = zfs_make_lustre(mop);
+                if (osd_check_zfs_setup() == 0)
+                        ret = EINVAL;
+                else
+                        ret = zfs_make_lustre(mop);
                 break;
 #endif /* HAVE_ZFS_OSD */
         default:
@@ -784,9 +811,12 @@ int osd_prepare_lustre(struct mkfs_opts *mop,
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
         case LDD_MT_ZFS:
-                ret = zfs_prepare_lustre(mop,
-                                         default_mountopts, default_len,
-                                         always_mountopts, always_len);
+                if (osd_check_zfs_setup() == 0)
+                        ret = EINVAL;
+                else
+                        ret = zfs_prepare_lustre(mop,
+                                                 default_mountopts, default_len,
+                                                 always_mountopts, always_len);
                 break;
 #endif /* HAVE_ZFS_OSD */
         default:
@@ -815,7 +845,10 @@ int osd_tune_lustre(char *dev, struct mount_opts *mop)
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
         case LDD_MT_ZFS:
-                ret = zfs_tune_lustre(dev, mop);
+                if (osd_check_zfs_setup() == 0)
+                        ret = EINVAL;
+                else
+                        ret = zfs_tune_lustre(dev, mop);
                 break;
 #endif /* HAVE_ZFS_OSD */
         default:
@@ -844,7 +877,10 @@ int osd_label_lustre(struct mount_opts *mop)
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
         case LDD_MT_ZFS:
-                ret = zfs_label_lustre(mop);
+                if (osd_check_zfs_setup() == 0)
+                        ret = EINVAL;
+                else
+                        ret = zfs_label_lustre(mop);
                 break;
 #endif /* HAVE_ZFS_OSD */
         default:
@@ -901,10 +937,16 @@ int osd_init(void)
 #ifdef HAVE_ZFS_OSD
         ret = zfs_init();
         if (ret) {
+                osd_zfs_setup = 0;
 # ifdef HAVE_LDISKFS_OSD
-                ldiskfs_fini();
-# endif /* HAVE_LDISKFS_OSD */
+                /* we want to be able to set up a ldiskfs-based filesystem w/o
+                 * the ZFS modules installed, see ORI-425 */
+                ret = 0;
+# else
                 return ret;
+# endif /* HAVE_LDISKFS_OSD */
+        } else {
+                osd_zfs_setup = 1;
         }
 #endif /* HAVE_ZFS_OSD */
 
@@ -917,6 +959,7 @@ void osd_fini(void)
         ldiskfs_fini();
 #endif /* HAVE_LDISKFS_OSD */
 #ifdef HAVE_ZFS_OSD
-        zfs_fini();
+        if (osd_zfs_setup)
+                zfs_fini();
 #endif /* HAVE_ZFS_OSD */
 }
