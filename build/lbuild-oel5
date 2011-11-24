@@ -6,3 +6,4 @@ source ${0%/*}/lbuild-rhel5
 # to build built for this distribution (only -- if you want to force a kernel
 # build on all distributions, update the BUILD_GEN variable in build/lbuild)
 BUILD_GEN+=".0"
+
