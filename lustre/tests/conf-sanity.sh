@@ -38,8 +38,6 @@ fi
 # 57  - tunefs.lustre doesn't work anymore?
 # 58  - ORI-246
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 38 49 50g 57 58"
-# ORI-358
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 24a 24b 25 26 27b 28 30b"
 
 SRCDIR=`dirname $0`
 PATH=$PWD/$SRCDIR:$SRCDIR:$SRCDIR/../utils:$PATH
