@@ -281,8 +281,9 @@ static int parse_ldd(char *source, struct mount_opts *mop, char *options)
 
         rc = osd_is_lustre(source, &ldd->ldd_mount_type);
         if (rc == 0) {
-                fprintf(stderr, "%s: %s has not been formatted "
-                        "with mkfs.lustre\n", progname, source);
+                fprintf(stderr, "%s: %s has not been formatted with mkfs.lustre"
+                        " or the backend filesystem type is not supported by "
+                        "this tool\n", progname, source);
                 return ENODEV;
         }
 
