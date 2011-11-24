@@ -535,6 +535,12 @@ int zfs_label_lustre(struct mount_opts *mop)
 
 int zfs_init(void)
 {
+        if (libzfs_load_module("zfs") != 0)
+                /* The ZFS modules are not installed, don't print an error to
+                 * avoid spamming ldiskfs users. An error message will still be
+                 * printed if someone tries to do some real work involving a
+                 * ZFS backend */
+                 return EINVAL;
         g_zfs = libzfs_init();
         if (g_zfs == NULL) {
                 fprintf(stderr, "Failed to initialize ZFS library\n");
