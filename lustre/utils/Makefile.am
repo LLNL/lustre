@@ -116,7 +116,7 @@ if ZFS_ENABLED
 mount_lustre_SOURCES += mount_utils_zfs.c
 mount_lustre_CPPFLAGS += -DHAVE_IOCTL_IN_UNISTD_H
 mount_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
-mount_lustre_LDFLAGS = -lnvpair -lzfs -pthread
+mount_lustre_LDFLAGS = -pthread -rdynamic -ldl
 endif
 
 # mkfs.lustre
@@ -133,7 +133,7 @@ if ZFS_ENABLED
 mkfs_lustre_SOURCES += mount_utils_zfs.c
 mkfs_lustre_CPPFLAGS += -DHAVE_IOCTL_IN_UNISTD_H
 mkfs_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
-mkfs_lustre_LDFLAGS = -lnvpair -lzfs -pthread
+mkfs_lustre_LDFLAGS = -pthread -rdynamic -ldl
 endif
 
 # tunefs.lustre
@@ -150,7 +150,7 @@ if ZFS_ENABLED
 tunefs_lustre_SOURCES += mount_utils_zfs.c
 tunefs_lustre_CPPFLAGS += -DHAVE_IOCTL_IN_UNISTD_H
 tunefs_lustre_CPPFLAGS += -I /usr/include/libspl -I /usr/include/libzfs
-tunefs_lustre_LDFLAGS = -lnvpair -lzfs -pthread
+tunefs_lustre_LDFLAGS = -pthread -rdynamic -ldl
 endif
 
 l_getidentity_SOURCES = l_getidentity.c
