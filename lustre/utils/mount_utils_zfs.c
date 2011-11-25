@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <libzfs/libzfs.h>
+#include <dlfcn.h>
 
 #include "mount_utils.h"
 
@@ -55,6 +56,81 @@
 #define LDD_IDENTITY_UPCALL_PROP        "lustre:identity_upcall"
 
 static libzfs_handle_t *g_zfs;
+
+/* dynamic linking handles for libzfs & libnvpair */
+static void *handle_libzfs;
+static void *handle_nvpair;
+
+/* symbol table looked up with dlsym */
+struct zfs_symbols {
+        libzfs_handle_t *(*libzfs_init)         (void);
+        void             (*libzfs_fini)         (libzfs_handle_t *);
+        int              (*libzfs_load_module)  (char *);
+        zfs_handle_t *   (*zfs_open)            (libzfs_handle_t *, const char *,
+                                                 int);
+        int              (*zfs_destroy)         (zfs_handle_t *, boolean_t);
+        void             (*zfs_close)           (zfs_handle_t *);
+        int              (*zfs_prop_set)        (zfs_handle_t *, const char *,
+                                                 const char *);
+        nvlist_t *       (*zfs_get_user_props)  (zfs_handle_t *);
+        int              (*zfs_name_valid)      (const char *, zfs_type_t);
+        zpool_handle_t * (*zpool_open)          (libzfs_handle_t *, const char *);
+        void             (*zpool_close)         (zpool_handle_t *zhp);
+        int              (*nvlist_lookup_string)(nvlist_t *, const char *,
+                                                 char **);
+        int              (*nvlist_lookup_nvlist)(nvlist_t *, const char *,
+                                                 nvlist_t **);
+};
+
+static struct zfs_symbols sym;
+
+#define DLSYM(handle, func)                                        \
+        do {                                                       \
+                sym.func = (typeof(sym.func))dlsym(handle, #func); \
+        } while(0)
+
+/* populate the symbol table after a successful call to dlopen() */
+static int zfs_populate_symbols(void)
+{
+        char *error;
+
+        dlerror(); /* Clear any existing error */
+
+        DLSYM(handle_libzfs, libzfs_init);
+#define libzfs_init (*sym.libzfs_init)
+        DLSYM(handle_libzfs, libzfs_fini);
+#define libzfs_fini (*sym.libzfs_fini)
+        DLSYM(handle_libzfs, libzfs_load_module);
+#define libzfs_load_module (*sym.libzfs_load_module)
+        DLSYM(handle_libzfs, zfs_open);
+#define zfs_open (*sym.zfs_open)
+        DLSYM(handle_libzfs, zfs_destroy);
+#define zfs_destroy (*sym.zfs_destroy)
+        DLSYM(handle_libzfs, zfs_close);
+#define zfs_close (*sym.zfs_close)
+        DLSYM(handle_libzfs, zfs_prop_set);
+#define zfs_prop_set (*sym.zfs_prop_set)
+        DLSYM(handle_libzfs, zfs_get_user_props);
+#define zfs_get_user_props (*sym.zfs_get_user_props)
+        DLSYM(handle_libzfs, zfs_name_valid);
+#define zfs_name_valid (*sym.zfs_name_valid)
+        DLSYM(handle_libzfs, zpool_open);
+#define zpool_open (*sym.zpool_open)
+        DLSYM(handle_libzfs, zpool_close);
+#define zpool_close (*sym.zpool_close)
+        DLSYM(handle_nvpair, nvlist_lookup_string);
+#define nvlist_lookup_string (*sym.nvlist_lookup_string)
+        DLSYM(handle_nvpair, nvlist_lookup_nvlist);
+#define nvlist_lookup_nvlist (*sym.nvlist_lookup_nvlist)
+
+        error = dlerror();
+        if (error != NULL) {
+                fatal();
+                fprintf(stderr, "%s\n", error);
+                return EINVAL;
+        }
+        return 0;
+}
 
 static int zfs_set_prop_int(zfs_handle_t *zhp, char *prop, __u32 val)
 {
@@ -546,22 +622,63 @@ int zfs_label_lustre(struct mount_opts *mop)
 
 int zfs_init(void)
 {
-        if (libzfs_load_module("zfs") != 0)
-                /* The ZFS modules are not installed, don't print an error to
-                 * avoid spamming ldiskfs users. An error message will still be
-                 * printed if someone tries to do some real work involving a
-                 * ZFS backend */
+        int ret = 0;
+
+        /* If the ZFS libs are not installed, don't print an error to avoid
+         * spamming ldiskfs users. An error message will still be printed if
+         * someone tries to do some real work involving a ZFS backend */
+
+        handle_libzfs = dlopen("libzfs.so", RTLD_LAZY);
+        if (handle_libzfs == NULL)
                  return EINVAL;
+
+        handle_nvpair = dlopen("libnvpair.so", RTLD_LAZY);
+        if (handle_nvpair == NULL) {
+                 ret = EINVAL;
+                 goto out;
+        }
+
+        ret = zfs_populate_symbols();
+        if (ret)
+                goto out;
+
+        if (libzfs_load_module("zfs") != 0) {
+                /* The ZFS modules are not installed */
+                ret = EINVAL;
+                goto out;
+        }
+
         g_zfs = libzfs_init();
         if (g_zfs == NULL) {
                 fprintf(stderr, "Failed to initialize ZFS library\n");
-                return EINVAL;
+                ret = EINVAL;
         }
-
-        return 0;
+out:
+        if (ret) {
+                if (handle_nvpair) {
+                        dlclose(handle_nvpair);
+                        handle_nvpair = NULL;
+                }
+                if (handle_libzfs) {
+                        dlclose(handle_libzfs);
+                        handle_libzfs = NULL;
+                }
+        }
+        return ret;
 }
 
 void zfs_fini(void)
 {
-        libzfs_fini(g_zfs);
+        if (g_zfs) {
+                libzfs_fini(g_zfs);
+                g_zfs = NULL;
+        }
+        if (handle_nvpair) {
+                dlclose(handle_nvpair);
+                handle_nvpair = NULL;
+        }
+        if (handle_libzfs) {
+                dlclose(handle_libzfs);
+                handle_libzfs = NULL;
+        }
 }
