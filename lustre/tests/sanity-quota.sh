@@ -2201,6 +2201,8 @@ cleanup_quota_test() {
         trap 0
         echo "Delete files..."
         rm -rf $DIR/$tdir
+        echo "Wait for unlink objects finished..."
+        wait_delete_completed
 }
 
 # basic usage tracking for user & group
@@ -2214,7 +2216,6 @@ test_33() {
         trap cleanup_quota_test EXIT
 
         # make sure the system is clean
-        wait_delete_completed
         USED=`getquota -u $TSTID global curspace`
         [ $USED -ne 0 ] && \
                 error "Used space ($USED) for user $TSTID isn't 0."
@@ -2249,9 +2250,6 @@ test_33() {
 
         cleanup_quota_test
 
-        echo "Wait for unlink objects finished..."
-        wait_delete_completed
-
         echo "Verify disk usage after delete"
         USED=`getquota -u $TSTID global curspace`
         [ $USED -eq 0 ] || error "Used space for user $TSTID isn't 0. $USED"
@@ -2273,7 +2271,6 @@ test_34() {
         trap cleanup_quota_test EXIT
 
         # make sure the system is clean
-        wait_delete_completed
         USED=`getquota -u $TSTID global curspace`
         [ $USED -ne 0 ] && error "Used space ($USED) for user $TSTID isn't 0."
         USED=`getquota -g $TSTID global curspace`
