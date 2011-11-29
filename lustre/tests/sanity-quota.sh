@@ -2229,6 +2229,8 @@ cleanup_quota_test() {
         trap 0
         echo "Delete files..."
         rm -rf $DIR/$tdir
+        echo "Wait for unlink objects finished..."
+        wait_delete_completed
 }
 
 # basic usage tracking for user & group
@@ -2273,9 +2275,6 @@ test_33() {
               error "Used inode for group $TSTID is $USED, expected $INODES"
 
         cleanup_quota_test
-
-        echo "Wait for unlink objects finished..."
-        wait_delete_completed
 
         echo "Verify disk usage after delete"
         wait_delete_completed
