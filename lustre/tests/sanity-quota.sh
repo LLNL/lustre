@@ -2197,6 +2197,14 @@ test_32()
 }
 run_test 32 "check lqs hash(bug 21846) =========================================="
 
+cleanup_test33() {
+        trap 0
+        echo "Delete files..."
+        rm -rf $DIR/$tdir
+        echo "Wait for unlink objects finished..."
+        wait_delete_completed
+}
+
 # basic usage tracking for user & group
 test_33() {
         mkdir -p $DIR/$tdir
@@ -2205,45 +2213,43 @@ test_33() {
         BLK_CNT=1024
         TOTAL_BLKS=$(($INODES * $BLK_CNT))
 
+        trap cleanup_test33 EXIT
+
         # make sure the system is clean
         wait_delete_completed
         USED=`getquota -u $TSTID global curspace`
         [ $USED -ne 0 ] && \
-		error "Used space ($USED) for user $TSTID isn't 0."
+                error "Used space ($USED) for user $TSTID isn't 0."
         USED=`getquota -g $TSTID global curspace`
         [ $USED -ne 0 ] &&
-		error "Used space ($USED) for group $TSTID isn't 0."
+                error "Used space ($USED) for group $TSTID isn't 0."
 
         echo "Writing files..."
-	for i in `seq 0 $INODES`; do
+        for i in `seq 0 $INODES`; do
                 $RUNAS dd if=/dev/zero of=$DIR/$tdir/$tfile-$i bs=$BLK_SZ \
-		   count=$BLK_CNT oflag=sync 2>/dev/null || error "write failed"
+                   count=$BLK_CNT oflag=sync 2>/dev/null || error "write failed"
         done
 
         echo "Verify block usage after write"
         USED=`getquota -u $TSTID global curspace`
         [ $USED -lt $TOTAL_BLKS ] && \
-		error "Used space for user $TSTID is $USED, expected $TOTAL_BLKS"
+               error "Used space for user $TSTID is $USED, expected $TOTAL_BLKS"
         USED=`getquota -g $TSTID global curspace`
         [ $USED -lt $TOTAL_BLKS ] && \
-		error "Used space for group $TSTID is $USED, expected $TOTAL_BLKS"
+              error "Used space for group $TSTID is $USED, expected $TOTAL_BLKS"
 
         echo "Verify inode usage after write"
-	# With zfs, inode usage is computed from block usage, so it cannot be
-	# accurate. As a result, we only check that inode usage is increasing
-	[ "$FSTYPE" == "zfs" ] && INODES=1
-	USED=`getquota -u $TSTID global curinodes`
-	[ $USED -lt $INODES ] && \
-		error "Used inode for user $TSTID is $USED, expected $INODES"
-	USED=`getquota -g $TSTID global curinodes`
-	[ $USED -lt $INODES ] && \
-		error "Used inode for group $TSTID is $USED, expected $INODES"
+        # With zfs, inode usage is computed from block usage, so it cannot be
+        # accurate. As a result, we only check that inode usage is increasing
+        [ "$FSTYPE" == "zfs" ] && INODES=1
+        USED=`getquota -u $TSTID global curinodes`
+        [ $USED -lt $INODES ] && \
+                error "Used inode for user $TSTID is $USED, expected $INODES"
+        USED=`getquota -g $TSTID global curinodes`
+        [ $USED -lt $INODES ] && \
+                error "Used inode for group $TSTID is $USED, expected $INODES"
 
-        echo "Delete files..."
-        rm -fr $DIR/$tdir
-
-        echo "Wait for unlink objects finished..."
-        wait_delete_completed
+        cleanup_test33
 
         echo "Verify disk usage after delete"
         USED=`getquota -u $TSTID global curspace`
@@ -2257,9 +2263,19 @@ test_33() {
 }
 run_test 33 "basic usage tracking for user & group =============================="
 
+cleanup_test34() {
+        trap 0
+        echo "Delete file..."
+        rm -rf $DIR/$tfile
+        echo "Wait for unlink objects finished..."
+        wait_delete_completed
+}
+
 # usage transfer test for user & group
 test_34() {
         BLK_CNT=1024
+
+        trap cleanup_test34 EXIT
 
         # make sure the system is clean
         wait_delete_completed
@@ -2270,7 +2286,7 @@ test_34() {
 
         echo "Write file..."
         dd if=/dev/zero of=$DIR/$tfile bs=$BLK_SZ count=$BLK_CNT oflag=sync \
-		2>/dev/null || error "write failed"
+                2>/dev/null || error "write failed"
 
         echo "chown the file to user $TSTID"
         chown $TSTID $DIR/$tfile || error "chown failed"
@@ -2281,10 +2297,10 @@ test_34() {
         echo "Verify disk usage for user $TSTID"
         USED=`getquota -u $TSTID global curspace`
         [ $USED -lt $BLK_CNT ] && \
-		error "Used space for user $TSTID is $USED, expected $BLK_CNT"
+                error "Used space for user $TSTID is $USED, expected $BLK_CNT"
         USED=`getquota -u $TSTID global curinodes`
         [ $USED -lt 1 ] && \
-		error "Used inodes for user $TSTID is $USED, expected 1"
+                error "Used inodes for user $TSTID is $USED, expected 1"
 
         echo "chgrp the file to group $TSTID"
         chgrp $TSTID $DIR/$tfile || error "chgrp failed"
@@ -2295,12 +2311,22 @@ test_34() {
         echo "Verify disk usage for group $TSTID"
         USED=`getquota -g $TSTID global curspace`
         [ $USED -ge $BLK_CNT ] || \
-		error "Used space for group $TSTID is $USED, expected $BLK_CNT"
+                error "Used space for group $TSTID is $USED, expected $BLK_CNT"
         USED=`getquota -g $TSTID global curinodes`
         [ $USED -ge 1 ] || \
-		error "Used inodes for group $TSTID is $USED, expected 1"
+                error "Used inodes for group $TSTID is $USED, expected 1"
+
+        cleanup_test34
 }
 run_test 34 "usage transfer for user & group ===================================="
+
+cleanup_test35() {
+        trap 0
+        echo "Delete files..."
+        rm -rf $DIR/$tdir
+        echo "Wait for unlink objects finished..."
+        wait_delete_completed
+}
 
 # usage is still accessible across restart
 test_35() {
@@ -2308,23 +2334,25 @@ test_35() {
         chmod 0777 $DIR/$tdir
         BLK_CNT=1024
 
+        trap cleanup_test35 EXIT
+
         echo "Write file..."
         $RUNAS dd if=/dev/zero of=$DIR/$tdir/$tfile bs=$BLK_SZ count=$BLK_CNT \
-		oflag=sync 2>/dev/null || error "write failed"
+                oflag=sync 2>/dev/null || error "write failed"
 
         echo "Save disk usage before restart"
         ORIG_USR_SPACE=`getquota -u $TSTID global curspace`
         [ $ORIG_USR_SPACE -eq 0 ] && \
-		error "Used space for user $TSTID is 0, expected $BLK_CNT"
+                error "Used space for user $TSTID is 0, expected $BLK_CNT"
         ORIG_USR_INODES=`getquota -u $TSTID global curinodes`
         [ $ORIG_USR_INODES -eq 0 ] && \
-		error "Used inodes for user $TSTID is 0, expected 1"
+                error "Used inodes for user $TSTID is 0, expected 1"
         ORIG_GRP_SPACE=`getquota -g $TSTID global curspace`
         [ $ORIG_GRP_SPACE -eq 0 ] && \
-		error "Used space for group $TSTID is 0, expected $BLK_CNT"
+                error "Used space for group $TSTID is 0, expected $BLK_CNT"
         ORIG_GRP_INODES=`getquota -g $TSTID global curinodes`
         [ $ORIG_GRP_INODES -eq 0 ] && \
-		error "Used inodes for group $TSTID is 0, expected 1"
+                error "Used inodes for group $TSTID is 0, expected 1"
 
         echo "Restart..."
         local ORIG_REFORMAT=$REFORMAT
@@ -2336,16 +2364,21 @@ test_35() {
         echo "Verify disk usage after restart"
         USED=`getquota -u $TSTID global curspace`
         [ $USED -eq $ORIG_USR_SPACE ] || \
-		error "Used space for user $TSTID changed from $ORIG_USR_SPACE to $USED"
+                error "Used space for user $TSTID changed from " \
+                      "$ORIG_USR_SPACE to $USED"
         USED=`getquota -u $TSTID global curinodes`
         [ $USED -eq $ORIG_USR_INODES ] || \
-		error "Used inodes for user $TSTID changed from $ORIG_USR_INODES to $USED"
+                error "Used inodes for user $TSTID changed from " \
+                      "$ORIG_USR_INODES to $USED"
         USED=`getquota -g $TSTID global curspace`
         [ $USED -eq $ORIG_GRP_SPACE ] || \
-		error "Used space for group $TSTID changed from $ORIG_GRP_SPACE to $USED"
+                error "Used space for group $TSTID changed from " \
+                      "$ORIG_GRP_SPACE to $USED"
         USED=`getquota -g $TSTID global curinodes`
         [ $USED -eq $ORIG_GRP_INODES ] || \
-		error "Used inodes for group $TSTID changed from $ORIG_GRP_INODES to $USED"
+                error "Used inodes for group $TSTID changed from " \
+                      "$ORIG_GRP_INODES to $USED"
+        cleanup_test35
 }
 run_test 35 "usage is still accessible across reboot ============================"
 
