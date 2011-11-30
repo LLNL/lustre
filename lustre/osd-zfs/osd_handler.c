@@ -2262,7 +2262,9 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt)
 {
         ENTRY;
 
-        /* XXX: not implemented yet, important for COS */
+        /* XXX: no other option than syncing the whole filesystem until we
+         * support ZIL */
+        osd_sync(env, lu2dt_dev(dt->do_lu.lo_dev));
 
         RETURN(0);
 }
