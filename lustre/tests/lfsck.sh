@@ -15,6 +15,9 @@ NUMDIRS=${NUMDIRS:-4}
 OSTIDX=${OSTIDX:-0} # the OST index in LOV
 OBJGRP=${OBJGRP:-0} # the OST object group
 
+[ "$OSTFSTYPE" != "ldiskfs" ] && skip "not usable with $OSTFSTYPE OST" && exit 0
+[ "$MDSFSTYPE" != "ldiskfs" ] && skip "not usable with $MDSFSTYPE MDT" && exit 0
+
 [ -d "$SHARED_DIRECTORY" ] || \
     { skip "SHARED_DIRECTORY should be specified with a shared directory \
 which can be accessable on all of the nodes" && exit 0; }
@@ -109,7 +112,7 @@ get_ost_node() {
     ost_uuid=$(ostuuid_from_index $obdidx)
 
     for node in $(osts_nodes); do
-        do_node $node "lctl get_param -n obdfilter.*.uuid" | grep -q $ost_uuid
+        do_node $node "lctl get_param -n ofd.*.uuid" | grep -q $ost_uuid
         [ ${PIPESTATUS[1]} -eq 0 ] && ost_node=$node && break
     done
     [ -z "$ost_node" ] && \
