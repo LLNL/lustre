@@ -460,7 +460,7 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
                            struct thandle *th)
 {
         struct osd_thandle *oh;
-        int rc;
+        int                 rc;
         ENTRY;
 
         oh = container_of0(th, struct osd_thandle, ot_super);
@@ -471,7 +471,7 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
         if (rc != 0)
                 RETURN(rc);
 
-        if (OBD_FAIL_CHECK(OBD_FAIL_OST_MAPBLK_ENOSPC))
+        if (oh->ot_write_commit && OBD_FAIL_CHECK(OBD_FAIL_OST_MAPBLK_ENOSPC))
                 /* Unlike ldiskfs, ZFS checks for available space and returns
                  * -ENOSPC when assigning txg */
                 RETURN(-ENOSPC);
@@ -2539,6 +2539,8 @@ static int osd_declare_write_commit(const struct lu_env *env,
                 udmu_tx_hold_write(oh->ot_tx, oid, offset, size);
 
         udmu_tx_hold_bonus(oh->ot_tx, udmu_object_get_id(obj->oo_db));
+
+        oh->ot_write_commit = 1; /* used in osd_trans_start() for fail_loc */
 
         RETURN(0);
 }
