@@ -132,7 +132,7 @@ struct osd_thandle {
         struct thandle          ot_super;
         cfs_list_t              ot_dcb_list;
         dmu_tx_t               *ot_tx;
-        __u32                   ot_sync:1,
+        __u32                   ot_write_commit:1,
                                 ot_assigned:1;
 };
 
