@@ -4788,7 +4788,7 @@ remove_mdt_files() {
     local mntpt=${MOUNT%/*}/$facet
 
     echo "removing files from $mdtdev on $facet: $files"
-    mount -t $FSTYPE $MDS_MOUNT_OPTS $mdtdev $mntpt || return $?
+    mount -t $MDSFSTYPE $MDS_MOUNT_OPTS $mdtdev $mntpt || return $?
     rc=0;
     for f in $files; do
         rm $mntpt/ROOT/$f || { rc=$?; break; }
@@ -4806,7 +4806,7 @@ duplicate_mdt_files() {
 
     echo "duplicating files on $mdtdev on $facet: $files"
     mkdir -p $mntpt || return $?
-    mount -t $FSTYPE $MDS_MOUNT_OPTS $mdtdev $mntpt || return $?
+    mount -t $MDSFSTYPE $MDS_MOUNT_OPTS $mdtdev $mntpt || return $?
 
     do_umount() {
         trap 0

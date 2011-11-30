@@ -15,6 +15,9 @@ NUMDIRS=${NUMDIRS:-4}
 OSTIDX=${OSTIDX:-0} # the OST index in LOV
 OBJGRP=${OBJGRP:-0} # the OST object group
 
+[ "$OSTFSTYPE" != "ldiskfs" ] && skip "not usable with $OSTFSTYPE OST" && exit 0
+[ "$MDSFSTYPE" != "ldiskfs" ] && skip "not usable with $MDSFSTYPE MDT" && exit 0
+
 [ -d "$SHARED_DIRECTORY" ] || \
     { skip "SHARED_DIRECTORY should be specified with a shared directory \
 which can be accessable on all of the nodes" && exit 0; }
@@ -109,7 +112,7 @@ get_ost_node() {
     ost_uuid=$($LFS osts | grep "^$obdidx: " | cut -d' ' -f2 | head -n1)
 
     for node in $(osts_nodes); do
-        do_node $node "lctl get_param -n obdfilter.*.uuid" | grep -q $ost_uuid
+        do_node $node "lctl get_param -n ofd.*.uuid" | grep -q $ost_uuid
         [ ${PIPESTATUS[1]} -eq 0 ] && ost_node=$node && break
     done
     [ -z "$ost_node" ] && \
@@ -127,7 +130,7 @@ get_ost_dev() {
     ost_name=$($LFS osts | grep "^$obdidx: " | cut -d' ' -f2 | \
                 head -n1 | sed -e 's/_UUID$//')
 
-    ost_dev=$(do_node $node "lctl get_param -n osd.$ost_name.mntdev")
+    ost_dev=$(do_node $node "lctl get_param -n osd*.$ost_name.mntdev")
     [ ${PIPESTATUS[0]} -ne 0 ] && \
         echo "failed to find the OST device with index $obdidx on $facet" && \
         return 1
