@@ -159,7 +159,7 @@ int zfs_write_ldd(struct mkfs_opts *mop)
         if (ret)
                 goto out_close;
 
-        ret = zfs_set_prop_param(zhp, ldd, PARAM_MDT PARAM_UPCALL,
+        ret = zfs_set_prop_param(zhp, ldd, PARAM_MDT PARAM_ID_UPCALL,
                                  LDD_IDENTITY_UPCALL_PROP);
         if (ret)
                 goto out_close;
@@ -288,7 +288,7 @@ int zfs_read_ldd(char *ds,  struct lustre_disk_data *ldd)
         if (ret && (ret != ENOENT))
                 goto out_close;
 
-        ret = zfs_get_prop_param(zhp, ldd, PARAM_MDT PARAM_UPCALL,
+        ret = zfs_get_prop_param(zhp, ldd, PARAM_MDT PARAM_ID_UPCALL,
                                  LDD_IDENTITY_UPCALL_PROP);
         if (ret && (ret != ENOENT))
                 goto out_close;
