@@ -83,6 +83,7 @@ int class_match_net(char *buf, char *key, __u32 net);
 #define PARAM_FAILMODE             "failover.mode="    /* initial mount only */
 #define PARAM_ACTIVE               "active="           /* activate/deactivate */
 #define PARAM_NETWORK              "network="          /* bind on nid */
+#define PARAM_ID_UPCALL            "identity_upcall="  /* identity upcall */
 
 /* Prefixes for parameters handled by obd's proc methods (XXX_process_config) */
 #define PARAM_OST                  "ost."
