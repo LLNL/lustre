@@ -531,7 +531,7 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         body->oa.o_id  = rec->lur_oid;
         body->oa.o_seq = rec->lur_oseq;
         body->oa.o_misc = rec->lur_count;
-        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_FL_COUNT;
+        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_MD_FLOBJCOUNT;
 
         rc = osp_sync_send_new_rpc(d, req);
 
@@ -558,7 +558,7 @@ static int osp_sync_new_unlink64_job(struct osp_device *d,
         rc = fid_ostid_pack(&rec->lur_fid, &body->oa.o_oi);
         LASSERT(rc == 0);
         body->oa.o_misc = rec->lur_count;
-        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_FL_COUNT;
+        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_MD_FLOBJCOUNT;
 
         rc = osp_sync_send_new_rpc(d, req);
 
