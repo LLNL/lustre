@@ -858,7 +858,7 @@ int ofd_destroy(struct obd_export *exp, struct obdo *oa,
                 oa->o_seq = 0;
 
         /* check that o_misc makes sense */
-        if (oa->o_valid & OBD_FL_COUNT)
+        if (oa->o_valid & OBD_MD_FLOBJCOUNT)
                 count = oa->o_misc;
         else
                 count = 1; /* default case - single destroy */
