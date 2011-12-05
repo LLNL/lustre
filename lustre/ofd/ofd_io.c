@@ -261,100 +261,135 @@ ofd_commitrw_read(const struct lu_env *env, struct ofd_device *ofd,
         RETURN(0);
 }
 
+/*
+ * If the object still has SUID+SGID bits set (see ofd_precreate_object()) then
+ * we will accept the UID+GID if sent by the client for initializing the
+ * ownership of this object.  We only allow this to happen once (so clear these
+ * bits) and later only allow setattr.
+ */
+int
+ofd_attr_handle_ugid(const struct lu_env *env, struct ofd_object *fo,
+                     struct lu_attr *la, int is_setattr)
+{
+        struct ofd_thread_info *info = ofd_info(env);
+        struct lu_attr         *ln = &info->fti_attr2;
+        __u32                   mask = 0;
+        int                     rc;
+        ENTRY;
+
+        if (!(la->la_valid & LA_UID) && !(la->la_valid & LA_GID))
+                RETURN(0);
+
+        rc = dt_attr_get(env, ofd_object_child(fo), ln, BYPASS_CAPA);
+        if (rc != 0)
+                RETURN(rc);
+
+        LASSERT(ln->la_valid & LA_MODE);
+
+        if (!is_setattr) {
+                if (!(ln->la_mode & S_ISUID))
+                        la->la_valid &= ~LA_UID;
+                if (!(ln->la_mode & S_ISGID))
+                        la->la_valid &= ~LA_GID;
+        }
+
+        if ((la->la_valid & LA_UID) && (ln->la_mode & S_ISUID))
+                mask |= S_ISUID;
+        if ((la->la_valid & LA_GID) && (ln->la_mode & S_ISGID))
+                mask |= S_ISGID;
+        if (mask != 0) {
+                if (!(la->la_valid & LA_MODE) || !is_setattr) {
+                        la->la_mode = ln->la_mode;
+                        la->la_valid |= LA_MODE;
+                }
+                la->la_mode &= ~mask;
+        }
+
+        RETURN(0);
+}
+
 static int
 ofd_write_attr_set(const struct lu_env *env, struct ofd_device *ofd,
                    struct ofd_object *ofd_obj, struct lu_attr *la,
                    struct filter_fid *ff)
 {
         struct ofd_thread_info *info = ofd_info(env);
-        struct lu_attr         *ln = &info->fti_attr2;
-        __u64                   valid = 0;
+        __u64                   valid = la->la_valid;
         int                     rc;
         struct thandle         *th;
         struct dt_object       *dt_obj;
+        int                     ff_needed = 0;
         ENTRY;
 
-        LASSERT(ff);
         LASSERT(la);
 
         dt_obj = ofd_object_child(ofd_obj);
         LASSERT(dt_obj != NULL);
 
-        /* fetch attributes of the object */
-        rc = dt_attr_get(env, dt_obj, ln, BYPASS_CAPA);
-        if (rc)
-                RETURN(rc);
-        LASSERT(ln->la_valid & LA_MODE);
+        la->la_valid &= LA_UID | LA_GID;
 
-        /*
-         * If the object still has SUID+SGID bits set (see
-         * ofd_precreate_object()) then we will accept the UID+GID if sent by
-         * the client for initializing the ownership of this object.  We only
-         * allow this to happen once (so clear these bits) and later only allow
-         * setattr.
-         */
-        if ((ln->la_mode & S_ISUID) && (la->la_valid & LA_UID))
-                valid |= LA_UID;
-        if ((ln->la_mode & S_ISGID) && (la->la_valid & LA_GID))
-                valid |= LA_GID;
-        la->la_valid &= ~(LA_UID | LA_GID);
+        rc = ofd_attr_handle_ugid(env, ofd_obj, la, 0 /* !is_setattr */);
+        if (rc != 0)
+                GOTO(out, rc);
 
-        if (valid == 0)
+        if (ff != NULL) {
+                rc = ofd_object_ff_check(env, ofd_obj);
+                if (rc == -ENODATA)
+                        ff_needed = 1;
+                else if (rc < 0)
+                        GOTO(out, rc);
+        }
+
+        if (!la->la_valid && !ff_needed)
                 /* no attributes to set */
-                RETURN(0);
-
-        /* This is the first write to this object, so we must set the correct
-         * uid/gid as well as the filter fid EA. It is important to set the
-         * uid/gid before calling dt_declare_write_commit() since quota
-         * enforcement is now handled in declare phases */
-
-        ln->la_valid = LA_MODE;
-        if (valid & LA_UID) {
-                ln->la_mode &= ~S_ISUID;
-                ln->la_valid |= LA_UID;
-                ln->la_uid = la->la_uid;
-        }
-        if (valid & LA_GID) {
-                ln->la_mode &= ~S_ISGID;
-                ln->la_valid |= LA_GID;
-                ln->la_gid = la->la_gid;
-        }
-
-        info->fti_buf.lb_len = sizeof(*ff);
-        info->fti_buf.lb_buf = ff;
+                GOTO(out, 0);
 
         th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
-                RETURN(PTR_ERR(th));
+                GOTO(out, PTR_ERR(th));
 
-        rc = dt_declare_attr_set(env, dt_obj, ln, th);
-        if (rc)
-                GOTO(out, rc);
+        if (la->la_valid) {
+                rc = dt_declare_attr_set(env, dt_obj, la, th);
+                if (rc)
+                        GOTO(out_tx, rc);
+        }
 
-        rc = dt_declare_xattr_set(env, dt_obj, &info->fti_buf, XATTR_NAME_FID,
-                                  0, th);
-        if (rc)
-                GOTO(out, rc);
+        if (ff_needed) {
+                info->fti_buf.lb_buf = ff;
+                info->fti_buf.lb_len = sizeof(*ff);
+                rc = dt_declare_xattr_set(env, dt_obj, &info->fti_buf,
+                                          XATTR_NAME_FID, 0, th);
+                if (rc)
+                        GOTO(out_tx, rc);
+        }
 
         /* We don't need a transno for this operation which will be re-executed
          * anyway when the OST_WRITE (with a transno assigned) is replayed */
         rc = dt_trans_start_local(env, ofd->ofd_osd , th);
         if (rc)
-                GOTO(out, rc);
+                GOTO(out_tx, rc);
 
         /* set uid/gid */
-        rc = dt_attr_set(env, dt_obj, ln, th, ofd_object_capa(env, ofd_obj));
-        if (rc)
-                GOTO(out, rc);
+        if (la->la_valid) {
+                rc = dt_attr_set(env, dt_obj, la, th,
+                                 ofd_object_capa(env, ofd_obj));
+                if (rc)
+                        GOTO(out_tx, rc);
+        }
 
         /* set filter fid EA */
-        rc = dt_xattr_set(env, dt_obj, &info->fti_buf, XATTR_NAME_FID, 0, th,
-                          BYPASS_CAPA);
-        if (rc)
-                GOTO(out, rc);
+        if (ff_needed) {
+                rc = dt_xattr_set(env, dt_obj, &info->fti_buf, XATTR_NAME_FID,
+                                  0, th, BYPASS_CAPA);
+                if (rc)
+                        GOTO(out_tx, rc);
+        }
+
         EXIT;
-out:
+out_tx:
         dt_trans_stop(env, ofd->ofd_osd, th);
+out:
+        la->la_valid = valid;
         return rc;
 }
 
@@ -388,10 +423,18 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
         if (old_rc)
                 GOTO(out, rc = old_rc);
 
-        /* the first write to each object must set some attributes */
+        /*
+         * The first write to each object must set some attributes.  It is
+         * important to set the uid/gid before calling
+         * dt_declare_write_commit() since quota enforcement is now handled in
+         * declare phases.
+         */
         rc = ofd_write_attr_set(env, ofd, fo, la, ff);
         if (rc)
                 GOTO(out, rc);
+
+        la->la_valid &= LA_ATIME | LA_MTIME | LA_CTIME;
+
 retry:
         th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
@@ -439,6 +482,7 @@ out_stop:
                        retries);
                 goto retry;
         }
+
 out:
         dt_bufs_put(env, o, lnb, niocount);
         ofd_read_unlock(env, fo);
@@ -475,6 +519,7 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
         __u64                   valid;
         struct ofd_device      *ofd = ofd_exp(exp);
         struct lu_env          *env = oti->oti_env;
+        struct filter_fid      *ff = NULL;
         int                     rc = 0;
 
         info = ofd_info(env);
@@ -495,15 +540,18 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                 fmd = ofd_fmd_find(exp, &info->fti_fid);
                 if (!fmd || fmd->fmd_mactime_xid < info->fti_xid)
                         valid |= OBD_MD_FLATIME | OBD_MD_FLMTIME |
-                                 OBD_MD_FLCTIME | OBD_MD_FLUID | OBD_MD_FLGID;
+                                 OBD_MD_FLCTIME;
                 ofd_fmd_put(exp, fmd);
                 la_from_obdo(&info->fti_attr, oa, valid);
 
-                ofd_prepare_fidea(&info->fti_mds_fid, oa);
+                if (oa->o_valid & OBD_MD_FLFID) {
+                        ff = &info->fti_mds_fid;
+                        ofd_prepare_fidea(ff, oa);
+                }
 
                 rc = ofd_commitrw_write(env, ofd, &info->fti_fid,
-                                        &info->fti_attr, &info->fti_mds_fid,
-                                        objcount, npages, lnb, oti, old_rc);
+                                        &info->fti_attr, ff, objcount, npages,
+                                        lnb, oti, old_rc);
                 if (rc == 0)
                         obdo_from_la(oa, &info->fti_attr,
                                      OFD_VALID_FLAGS | LA_GID | LA_UID);
