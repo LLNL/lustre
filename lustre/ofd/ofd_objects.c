@@ -107,6 +107,34 @@ struct ofd_object *ofd_object_find_or_create(const struct lu_env *env,
         RETURN(ofd_obj(fo_obj));
 }
 
+int ofd_object_ff_check(const struct lu_env *env, struct ofd_object *fo)
+{
+        struct ofd_thread_info *info = ofd_info(env);
+        int                     rc = 0;
+        ENTRY;
+
+        if (!fo->ofo_ff_exists) {
+                /*
+                 * This actually means that we don't know whether the object
+                 * has the "fid" EA or not.
+                 */
+                info->fti_buf.lb_buf = &info->fti_mds_fid2;
+                info->fti_buf.lb_len = sizeof(info->fti_mds_fid2);
+                rc = dt_xattr_get(env, ofd_object_child(fo), &info->fti_buf,
+                                  XATTR_NAME_FID, BYPASS_CAPA);
+                if (rc >= 0 || rc == -ENODATA) {
+                        /*
+                         * Here we assume that, if the object doesn't have the
+                         * "fid" EA, the caller will add one, unless a fatal
+                         * error (e.g., a memory or disk failure) prevents it
+                         * from doing so.
+                         */
+                        fo->ofo_ff_exists = 1;
+                }
+        }
+        RETURN(rc);
+}
+
 void ofd_object_put(const struct lu_env *env, struct ofd_object *fo)
 {
         lu_object_put(env, &fo->ofo_obj.do_lu);
@@ -219,13 +247,14 @@ out_unlock:
 }
 
 int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
-                    const struct lu_attr *la)
+                 struct lu_attr *la, struct filter_fid *ff)
 {
-        struct thandle *th;
-        struct ofd_device *ofd = ofd_obj2dev(fo);
         struct ofd_thread_info *info = ofd_info(env);
-        struct ofd_mod_data *fmd;
-        int rc;
+        struct ofd_device      *ofd = ofd_obj2dev(fo);
+        struct thandle         *th;
+        struct ofd_mod_data    *fmd;
+        int                     ff_needed = 0;
+        int                     rc;
         ENTRY;
 
         ofd_write_lock(env, fo);
@@ -244,6 +273,18 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(unlock, rc);
 
+        rc = ofd_attr_handle_ugid(env, fo, la, 1 /* is_setattr */);
+        if (rc != 0)
+                GOTO(unlock, rc);
+
+        if (ff != NULL) {
+                rc = ofd_object_ff_check(env, fo);
+                if (rc == -ENODATA)
+                        ff_needed = 1;
+                else if (rc < 0)
+                        GOTO(unlock, rc);
+        }
+
         th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
@@ -252,12 +293,29 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(stop, rc);
 
+        if (ff_needed) {
+                info->fti_buf.lb_buf = ff;
+                info->fti_buf.lb_len = sizeof(*ff);
+                rc = dt_declare_xattr_set(env, ofd_object_child(fo),
+                                          &info->fti_buf, XATTR_NAME_FID, 0,
+                                          th);
+                if (rc)
+                        GOTO(stop, rc);
+        }
+
         rc = ofd_trans_start(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
         if (rc)
                 GOTO(stop, rc);
 
         rc = dt_attr_set(env, ofd_object_child(fo), la, th,
                         ofd_object_capa(env, fo));
+        if (rc)
+                GOTO(stop, rc);
+
+        if (ff_needed)
+                rc = dt_xattr_set(env, ofd_object_child(fo), &info->fti_buf,
+                                  XATTR_NAME_FID, 0, th, BYPASS_CAPA);
+
 stop:
         ofd_trans_stop(env, ofd, th, rc);
 unlock:
@@ -266,14 +324,16 @@ unlock:
 }
 
 int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
-                        __u64 start, __u64 end, const struct lu_attr *la)
+                     __u64 start, __u64 end, struct lu_attr *la,
+                     struct filter_fid *ff)
 {
         struct ofd_thread_info *info = ofd_info(env);
         struct ofd_device      *ofd = ofd_obj2dev(fo);
         struct ofd_mod_data    *fmd;
-        struct dt_object          *dob = ofd_object_child(fo);
-        struct thandle            *th;
-        int rc;
+        struct dt_object       *dob = ofd_object_child(fo);
+        struct thandle         *th;
+        int                     ff_needed = 0;
+        int                     rc;
         ENTRY;
 
         /* we support truncate, not punch yet */
@@ -293,6 +353,18 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(unlock, rc);
 
+        rc = ofd_attr_handle_ugid(env, fo, la, 0 /* !is_setattr */);
+        if (rc != 0)
+                GOTO(unlock, rc);
+
+        if (ff != NULL) {
+                rc = ofd_object_ff_check(env, fo);
+                if (rc == -ENODATA)
+                        ff_needed = 1;
+                else if (rc < 0)
+                        GOTO(unlock, rc);
+        }
+
         th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
                 GOTO(unlock, rc = PTR_ERR(th));
@@ -305,6 +377,16 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
         if (rc)
                 GOTO(stop, rc);
 
+        if (ff_needed) {
+                info->fti_buf.lb_buf = ff;
+                info->fti_buf.lb_len = sizeof(*ff);
+                rc = dt_declare_xattr_set(env, ofd_object_child(fo),
+                                          &info->fti_buf, XATTR_NAME_FID, 0,
+                                          th);
+                if (rc)
+                        GOTO(stop, rc);
+        }
+
         rc = ofd_trans_start(env, ofd, fo, th);
         if (rc)
                 GOTO(stop, rc);
@@ -315,6 +397,12 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
                 GOTO(stop, rc);
 
         rc = dt_attr_set(env, dob, la, th, ofd_object_capa(env, fo));
+        if (rc)
+                GOTO(stop, rc);
+
+        if (ff_needed)
+                rc = dt_xattr_set(env, ofd_object_child(fo), &info->fti_buf,
+                                  XATTR_NAME_FID, 0, th, BYPASS_CAPA);
 
 stop:
         ofd_trans_stop(env, ofd, th, rc);

@@ -212,6 +212,7 @@ static inline char *ofd_name(struct ofd_device *ofd)
 struct ofd_object {
         struct lu_object_header ofo_header;
         struct dt_object        ofo_obj;
+        int                     ofo_ff_exists;
 };
 
 static inline struct ofd_object *ofd_obj(struct lu_object *o)
@@ -300,6 +301,7 @@ struct ofd_thread_info {
         struct lu_attr             fti_attr2;
         struct ldlm_res_id         fti_resid;
         struct filter_fid          fti_mds_fid;
+        struct filter_fid          fti_mds_fid2;
         struct ost_id              fti_ostid;
         struct ofd_object         *fti_obj;
         union {
@@ -387,6 +389,9 @@ int ofd_commitrw(int cmd, struct obd_export *exp, struct obdo *oa, int objcount,
                  struct obd_ioobj *obj, struct niobuf_remote *rnb, int npages,
                  struct niobuf_local *lnb, struct obd_trans_info *oti, int rc);
 void flip_into_page_cache(struct inode *inode, struct page *new_page);
+void ofd_prepare_fidea(struct filter_fid *ff, struct obdo *oa);
+int ofd_attr_handle_ugid(const struct lu_env *env, struct ofd_object *fo,
+                         struct lu_attr *la, int is_setattr);
 
 /* ofd_io_*.c */
 struct ofd_iobuf;
@@ -448,14 +453,16 @@ struct ofd_object *ofd_object_find_or_create(const struct lu_env *env,
                                              struct ofd_device *ofd,
                                              const struct lu_fid *fid,
                                              struct lu_attr *attr);
+int ofd_object_ff_check(const struct lu_env *env, struct ofd_object *fo);
 int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
                          obd_id id, obd_seq seq);
 
 void ofd_object_put(const struct lu_env *env, struct ofd_object *fo);
 int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
-                 const struct lu_attr *la);
+                 struct lu_attr *la, struct filter_fid *ff);
 int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
-                     __u64 start, __u64 end, const struct lu_attr *la);
+                     __u64 start, __u64 end, struct lu_attr *la,
+                     struct filter_fid *ff);
 int ofd_object_destroy(const struct lu_env *, struct ofd_object *, int);
 int ofd_attr_get(const struct lu_env *env, struct ofd_object *fo,
                  struct lu_attr *la);

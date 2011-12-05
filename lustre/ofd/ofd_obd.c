@@ -642,6 +642,7 @@ int ofd_setattr(struct obd_export *exp, struct obd_info *oinfo,
         struct ofd_object      *fo;
         struct obdo            *oa = oinfo->oi_oa;
         struct lu_env          *env = oti->oti_env;
+        struct filter_fid      *ff = NULL;
         int                     rc = 0;
         ENTRY;
 
@@ -690,8 +691,13 @@ int ofd_setattr(struct obd_export *exp, struct obd_info *oinfo,
         la_from_obdo(&info->fti_attr, oinfo->oi_oa, oinfo->oi_oa->o_valid);
         info->fti_attr.la_valid &= ~LA_TYPE;
 
+        if (oa->o_valid & OBD_MD_FLFID) {
+                ff = &info->fti_mds_fid;
+                ofd_prepare_fidea(ff, oa);
+        }
+
         /* setting objects attributes (including owner/group) */
-        rc = ofd_attr_set(env, fo, &info->fti_attr);
+        rc = ofd_attr_set(env, fo, &info->fti_attr, ff);
         if (rc)
                 GOTO(out_unlock, rc);
 
@@ -715,15 +721,17 @@ out:
 }
 
 static int ofd_punch(struct obd_export *exp, struct obd_info *oinfo,
-                        struct obd_trans_info *oti, struct ptlrpc_request_set *rqset)
+                     struct obd_trans_info *oti,
+                     struct ptlrpc_request_set *rqset)
 {
-        struct ofd_device *ofd = ofd_exp(exp);
-        struct lu_env *env = oti->oti_env;
         struct ofd_thread_info *info;
-        struct ldlm_namespace *ns = ofd->ofd_namespace;
-        struct ldlm_resource *res;
-        struct ofd_object *fo;
-        int rc = 0;
+        struct ofd_device      *ofd = ofd_exp(exp);
+        struct lu_env          *env = oti->oti_env;
+        struct ldlm_namespace  *ns = ofd->ofd_namespace;
+        struct ldlm_resource   *res;
+        struct ofd_object      *fo;
+        struct filter_fid      *ff = NULL;
+        int                     rc = 0;
 
         ENTRY;
 
@@ -768,8 +776,14 @@ static int ofd_punch(struct obd_export *exp, struct obd_info *oinfo,
         info->fti_attr.la_size = oinfo->oi_policy.l_extent.start;
         info->fti_attr.la_valid |= LA_SIZE;
 
+        if (oinfo->oi_oa->o_valid & OBD_MD_FLFID) {
+                ff = &info->fti_mds_fid;
+                ofd_prepare_fidea(ff, oinfo->oi_oa);
+        }
+
         rc = ofd_object_punch(env, fo, oinfo->oi_policy.l_extent.start,
-                                 oinfo->oi_policy.l_extent.end, &info->fti_attr);
+                              oinfo->oi_policy.l_extent.end, &info->fti_attr,
+                              ff);
         if (rc)
                 GOTO(out, rc);
 
