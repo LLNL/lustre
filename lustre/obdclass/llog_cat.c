@@ -219,7 +219,7 @@ int llog_cat_close(const struct lu_env *env, struct llog_handle *cathandle)
                 /* unlink open-not-created llogs */
                 cfs_list_del_init(&loghandle->u.phd.phd_entry);
                 llh = loghandle->lgh_hdr;
-                if (llh != NULL &&
+                if (loghandle->lgh_obj != NULL && llh != NULL &&
                     (llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
                     (llh->llh_count == 1)) {
                         rc = llog_destroy(env, loghandle);

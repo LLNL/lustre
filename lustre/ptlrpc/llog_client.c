@@ -167,6 +167,9 @@ static int llog_client_destroy(const struct lu_env *env, struct llog_handle *log
         body->lgd_logid = loghandle->lgh_id;
         body->lgd_llh_flags = loghandle->lgh_hdr->llh_flags;
 
+        if (!(body->lgd_llh_flags & LLOG_F_IS_PLAIN))
+                CERROR("Wrong llog flags %x\n", body->lgd_llh_flags);
+
         ptlrpc_request_set_replen(req);
         rc = ptlrpc_queue_wait(req);
 
