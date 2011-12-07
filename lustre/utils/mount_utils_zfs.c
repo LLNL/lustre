@@ -654,16 +654,8 @@ int zfs_init(void)
                 ret = EINVAL;
         }
 out:
-        if (ret) {
-                if (handle_nvpair) {
-                        dlclose(handle_nvpair);
-                        handle_nvpair = NULL;
-                }
-                if (handle_libzfs) {
-                        dlclose(handle_libzfs);
-                        handle_libzfs = NULL;
-                }
-        }
+        if (ret)
+                zfs_fini();
         return ret;
 }
 
