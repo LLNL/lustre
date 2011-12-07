@@ -2,8 +2,8 @@
 
 set -e
 
-#         bug  5494 5493 22805
-ALWAYS_EXCEPT="24   52   60    $RECOVERY_SMALL_EXCEPT"
+#         bug  5494 5493
+ALWAYS_EXCEPT="24   52  $RECOVERY_SMALL_EXCEPT"
 
 PTLDEBUG=${PTLDEBUG:--1}
 LUSTRE=${LUSTRE:-`dirname $0`/..}
@@ -1058,7 +1058,7 @@ test_60() {
 
 	do_facet $SINGLEMDS lctl --device $MDT0 changelog_deregister $USER
 	USERS=$(( $(do_facet $SINGLEMDS lctl get_param -n \
-	    mdd.$MDT0.changelog_users | wc -l) - 2 ))
+	    mdd.$MDT0*.changelog_users | wc -l) - 2 ))
 	if [ $USERS -eq 0 ]; then
 	    [ $cl_count -eq $NUM_FILES ] || \
 		err17935 "Recorded ${cl_count} unlinks out of $NUM_FILES"

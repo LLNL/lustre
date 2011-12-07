@@ -132,7 +132,9 @@ int llog_origin_handle_destroy(struct ptlrpc_request *req)
         if (body->lgd_logid.lgl_oid > 0)
                 logid = &body->lgd_logid;
 
-        LASSERT(body->lgd_llh_flags == LLOG_F_IS_PLAIN);
+        if (!(body->lgd_llh_flags & LLOG_F_IS_PLAIN))
+                CERROR("Wrong llog flags %x\n", body->lgd_llh_flags);
+
         ctxt = llog_get_context(req->rq_export->exp_obd, body->lgd_ctxt_idx);
         if (ctxt == NULL)
                 RETURN(-ENODEV);
