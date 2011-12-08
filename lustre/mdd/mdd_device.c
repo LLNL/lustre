@@ -403,14 +403,18 @@ static void mdd_changelog_fini(const struct lu_env *env, struct mdd_device *mdd)
         mdd->mdd_cl.mc_flags = 0;
 
         ctxt = llog_get_context(obd, LLOG_CHANGELOG_ORIG_CTXT);
-        llog_cat_close(env, ctxt->loc_handle);
-        lu_object_put(env, &ctxt->loc_dir->do_lu);
-        llog_cleanup(env, ctxt);
+        if (ctxt) {
+                llog_cat_close(env, ctxt->loc_handle);
+                lu_object_put(env, &ctxt->loc_dir->do_lu);
+                llog_cleanup(env, ctxt);
+        }
 
         ctxt = llog_get_context(obd, LLOG_CHANGELOG_USER_ORIG_CTXT);
-        llog_cat_close(env, ctxt->loc_handle);
-        lu_object_put(env, &ctxt->loc_dir->do_lu);
-        llog_cleanup(env, ctxt);
+        if (ctxt) {
+                llog_cat_close(env, ctxt->loc_handle);
+                lu_object_put(env, &ctxt->loc_dir->do_lu);
+                llog_cleanup(env, ctxt);
+        }
 }
 
 int mdd_changelog_write_header(const struct lu_env *env,
