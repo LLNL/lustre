@@ -75,18 +75,11 @@
 
 #include "lustre_quota_fmt.h"
 
-#ifdef EXT_INSERT_EXTENT_WITH_5ARGS
 #define fsfilt_ext3_ext_insert_extent(handle, inode, path, newext, flag) \
                ext3_ext_insert_extent(handle, inode, path, newext, flag)
-#else
-#define fsfilt_ext3_ext_insert_extent(handle, inode, path, newext, flag) \
-               ext3_ext_insert_extent(handle, inode, path, newext)
-#endif
 
-#ifdef EXT3_DISCARD_PREALLOCATIONS
 #define ext3_mb_discard_inode_preallocations(inode) \
                  ext3_discard_preallocations(inode)
-#endif
 
 
 static cfs_mem_cache_t *fcb_cache;
@@ -113,13 +106,8 @@ struct fsfilt_cb_data {
 # define fsfilt_down_truncate_sem(inode)  down(&LDISKFS_I(inode)->truncate_sem);
 #else
 # ifdef HAVE_EXT4_LDISKFS
-#  ifdef WALK_SPACE_HAS_DATA_SEM /* We only use it in fsfilt_map_nblocks() for now */
-#   define fsfilt_up_truncate_sem(inode) do{ }while(0)
-#   define fsfilt_down_truncate_sem(inode) do{ }while(0)
-#  else
-#   define fsfilt_up_truncate_sem(inode) up_write((&EXT4_I(inode)->i_data_sem))
-#   define fsfilt_down_truncate_sem(inode) down_write((&EXT4_I(inode)->i_data_sem))
-#  endif
+#  define fsfilt_up_truncate_sem(inode) do{ }while(0)
+#  define fsfilt_down_truncate_sem(inode) do{ }while(0)
 # else
 #  define fsfilt_up_truncate_sem(inode)  mutex_unlock(&EXT3_I(inode)->truncate_mutex)
 #  define fsfilt_down_truncate_sem(inode)  mutex_lock(&EXT3_I(inode)->truncate_mutex)
@@ -309,7 +297,7 @@ static int ext3_ext_new_extent_cb(struct ext3_ext_base *base,
                 return EXT_REPEAT;
         }
 
-#if defined(HAVE_EXT4_LDISKFS) && defined(WALK_SPACE_HAS_DATA_SEM)
+#if defined(HAVE_EXT4_LDISKFS)
         /* In 2.6.32 kernel, ext4_ext_walk_space()'s callback func is not
          * protected by i_data_sem as whole. so we patch it to store
          * generation to path and now verify the tree hasn't changed */
@@ -358,7 +346,7 @@ static int ext3_ext_new_extent_cb(struct ext3_ext_base *base,
         BUG_ON(le32_to_cpu(nex.ee_block) != cex->ec_block);
 
 out:
-#if defined(HAVE_EXT4_LDISKFS) && defined(WALK_SPACE_HAS_DATA_SEM)
+#if defined(HAVE_EXT4_LDISKFS)
         up_write((&EXT4_I(inode)->i_data_sem));
 #endif
         ext3_journal_stop(handle);
