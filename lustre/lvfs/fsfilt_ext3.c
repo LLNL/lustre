@@ -75,8 +75,6 @@
 #include <linux/ext3_extents.h>
 #endif
 
-#include "lustre_quota_fmt.h"
-
 #define fsfilt_ext3_ext_insert_extent(handle, inode, path, newext, flag) \
                ext3_ext_insert_extent(handle, inode, path, newext, flag)
 

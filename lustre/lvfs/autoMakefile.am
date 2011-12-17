@@ -36,13 +36,9 @@
 
 if LIBLUSTRE
 noinst_LIBRARIES = liblvfs.a
-liblvfs_a_SOURCES = lvfs_userfs.c lvfs_lib.c
+liblvfs_a_SOURCES = lvfs_lib.c
 liblvfs_a_CFLAGS = $(LLCFLAGS)
 liblvfs_a_CPPFLAGS = $(LLCPPFLAGS)
-
-#if MYSQL
-#liblvfs_a_SOURCES += lvfs_user_mysql.c
-#endif
 endif
 
 if MODULES
@@ -80,26 +76,8 @@ fsfilt_ldiskfs.c: fsfilt_ext3.c
 	if grep -q '^#define\(.*\)HAVE_EXT4_LDISKFS' @LDISKFS_DIR@/config.h ; then \
 		sed -i -e "/DEBUG_SUBSYSTEM\(.*\)S_FILTER/a\#define HAVE_EXT4_LDISKFS 1" $@ ;\
 	fi
-fsfilt_ldiskfs_quota.h: fsfilt_ext3_quota.h
-	sed $(strip $(ldiskfs_sed_flags)) $< > $@
 
 endif # LINUX
-
-if DARWIN
-
-macos_PROGRAMS := lvfs
-
-lvfs_SOURCES := lvfs_darwin.c
-
-lvfs_CFLAGS := $(EXTRA_KCFLAGS)
-lvfs_LDFLAGS := $(EXTRA_KLDFLAGS)
-lvfs_LDADD := $(EXTRA_KLIBS)
-
-plist_DATA := Info.plist
-
-install_data_hook := fix-kext-ownership
-
-endif # DARWIN
 
 else # MODULES
 
