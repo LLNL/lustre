@@ -59,8 +59,6 @@
 
 #include <ext4/ext4_extents.h>
 
-#include "lustre_quota_fmt.h"
-
 #define fsfilt_ext3_ext_insert_extent(handle, inode, path, newext, flag) \
                ext3_ext_insert_extent(handle, inode, path, newext, flag)
 
