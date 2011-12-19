@@ -1,4 +1,3 @@
-lustre_version.patch
 mpt-fusion-max-sge-rhel6.patch
 raid5-mmp-unplug-dev-rhel6.patch
 vfs_races-2.6.32-rhel6.patch
