@@ -282,7 +282,6 @@ put_old:
 }
 EXPORT_SYMBOL(lustre_rename);
 
-#ifdef LUSTRE_KERNEL_VERSION
 int __lvfs_set_rdonly(lvfs_sbdev_type dev, lvfs_sbdev_type jdev)
 {
 #ifdef HAVE_DEV_SET_RDONLY
@@ -312,8 +311,6 @@ int lvfs_check_rdonly(lvfs_sbdev_type dev)
 #endif
 }
 EXPORT_SYMBOL(lvfs_check_rdonly);
-
-#endif /* LUSTRE_KERNEL_VERSION */
 
 void obd_update_maxusage()
 {
