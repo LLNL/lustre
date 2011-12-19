@@ -49,7 +49,6 @@
 #include <obd_support.h>
 #include <lustre_lite.h>
 #include <lustre_dlm.h>
-#include <linux/lustre_version.h>
 #include "llite_internal.h"
 
 struct ll_sai_entry {
