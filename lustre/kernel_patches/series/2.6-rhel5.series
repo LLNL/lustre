@@ -1,4 +1,3 @@
-lustre_version.patch
 vfs_races-2.6-rhel5.patch
 jbd-jcberr-2.6.18-vanilla.patch
 export_symbols-2.6.12.patch
