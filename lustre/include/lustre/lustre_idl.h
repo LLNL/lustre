@@ -2318,6 +2318,13 @@ static inline int ldlm_extent_overlap(struct ldlm_extent *ex1,
         return (ex1->start <= ex2->end) && (ex2->start <= ex1->end);
 }
 
+/* check if @ex1 contains @ex2 */
+static inline int ldlm_extent_contain(struct ldlm_extent *ex1,
+                                      struct ldlm_extent *ex2)
+{
+        return (ex1->start <= ex2->start) && (ex1->end >= ex2->end);
+}
+
 struct ldlm_inodebits {
         __u64 bits;
 };
