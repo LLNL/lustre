@@ -147,7 +147,7 @@ static int osp_statfs_update(struct osp_device *d)
         aa = ptlrpc_req_async_args(req);
         aa->pointer_arg[0] = d;
 
-        ptlrpcd_add_req(req, PSCOPE_OTHER);
+        ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
 
         cfs_timer_disarm(&d->opd_statfs_timer);
 
@@ -157,7 +157,7 @@ static int osp_statfs_update(struct osp_device *d)
         d->opd_statfs_fresh_till = cfs_time_shift(obd_timeout * 1000);
         d->opd_statfs_update_in_progress = 1;
 
-        RETURN(rc);
+        RETURN(0);
 }
 
 /*

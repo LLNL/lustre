@@ -416,20 +416,12 @@ static int osp_sync_interpret(const struct lu_env *env,
  * the function walks through list of committed locally changes
  * and send them to RPC until the pipe is full
  */
-static int osp_sync_send_new_rpc(struct osp_device *d, struct ptlrpc_request *req)
+static void osp_sync_send_new_rpc(struct osp_device *d, struct ptlrpc_request *req)
 {
-        int rc;
-        ENTRY;
-
         LASSERT(d->opd_syn_rpc_in_flight <= d->opd_syn_max_rpc_in_flight);
         LASSERT(req->rq_svc_thread == (void *) OSP_JOB_MAGIC);
 
-        rc = ptlrpcd_add_req(req, PSCOPE_OTHER);
-        if (unlikely(rc != 0)) {
-                CERROR("can't send RPC: %d\n", rc);
-                ptlrpc_req_finished(req);
-        }
-        RETURN(rc);
+        ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
 }
 
 static struct ptlrpc_request *osp_sync_new_job(struct osp_device *d,
@@ -488,7 +480,7 @@ static int osp_sync_new_setattr_job(struct osp_device *d,
         struct llog_setattr64_rec *rec = (struct llog_setattr64_rec *)h;
         struct ptlrpc_request     *req;
         struct ost_body           *body;
-        int                        rc;
+        ENTRY;
 
         LASSERT(h->lrh_type == MDS_SETATTR64_REC);
 
@@ -505,9 +497,8 @@ static int osp_sync_new_setattr_job(struct osp_device *d,
         body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID |
                            OBD_MD_FLUID | OBD_MD_FLGID;
 
-        rc = osp_sync_send_new_rpc(d, req);
-
-        RETURN(rc);
+        osp_sync_send_new_rpc(d, req);
+        RETURN(0);
 }
 
 /* Old records may be in old format, so we handle that too */
@@ -518,7 +509,7 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         struct llog_unlink_rec *rec = (struct llog_unlink_rec *)h;
         struct ptlrpc_request    *req;
         struct ost_body          *body;
-        int                       rc;
+        ENTRY;
 
         LASSERT(h->lrh_type == MDS_UNLINK_REC);
 
@@ -533,9 +524,8 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         body->oa.o_misc = rec->lur_count;
         body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_MD_FLOBJCOUNT;
 
-        rc = osp_sync_send_new_rpc(d, req);
-
-        RETURN(rc);
+        osp_sync_send_new_rpc(d, req);
+        RETURN(0);
 }
 
 static int osp_sync_new_unlink64_job(struct osp_device *d,
@@ -546,6 +536,7 @@ static int osp_sync_new_unlink64_job(struct osp_device *d,
         struct ptlrpc_request    *req;
         struct ost_body          *body;
         int                       rc;
+        ENTRY;
 
         LASSERT(h->lrh_type == MDS_UNLINK64_REC);
 
@@ -560,9 +551,8 @@ static int osp_sync_new_unlink64_job(struct osp_device *d,
         body->oa.o_misc = rec->lur_count;
         body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_MD_FLOBJCOUNT;
 
-        rc = osp_sync_send_new_rpc(d, req);
-
-        RETURN(rc);
+        osp_sync_send_new_rpc(d, req);
+        RETURN(0);
 }
 
 static int osp_sync_process_record(const struct lu_env *env,
