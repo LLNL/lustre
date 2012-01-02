@@ -356,10 +356,6 @@ int main(int argc, char *const argv[])
         if (ret)
                 return ret;
 
-        ret = parse_opts(argc, argv, &mop, &mountopts);
-        if (ret)
-                goto out;
-
         /* Check whether the disk has already been formatted by mkfs.lustre */
         ret = osd_is_lustre(mop.mo_device, &mount_type);
         if (ret == 0) {
@@ -383,6 +379,10 @@ int main(int argc, char *const argv[])
 
         if (verbose > 0)
                 osd_print_ldd("Read previous values", ldd);
+
+        ret = parse_opts(argc, argv, &mop, &mountopts);
+        if (ret)
+                goto out;
 
         if (!(IS_MDT(ldd) || IS_OST(ldd) || IS_MGS(ldd))) {
                 fatal();
