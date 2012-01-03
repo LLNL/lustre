@@ -1215,7 +1215,7 @@ static int ofd_health_check(const struct lu_env *env, struct obd_device *obd)
 #endif
         int rc = 0;
 
-        info = ofd_info(env);
+        info = ofd_info_init(env, NULL);
         rc = dt_statfs(env, ofd->ofd_osd, &info->fti_u.osfs);
         if (unlikely(rc))
                 GOTO(out, rc);
