@@ -90,20 +90,11 @@ cycle=30
 
 build_test_filter
 
-if [ "$USE_OFD" = "yes" ]; then
-	for num in `seq $OSTCOUNT`; do
-		if [ $(facet_fstype ost$num) = ldiskfs ]; then
-			# not the most efficient way to enable the quota feature
-			# on ost, but it still allows us to test ofd accounting
-			# for now
-			device=$(ostdevname $num)
-			stop ost$num
-			do_facet ost$num "$TUNE2FS -O quota $device"
-			[ ${PIPESTATUS[0]} -ne 0] && \
-			      error "failed to enable quota feature for ost$num"
-			start ost$num $device $OST_MOUNT_OPTS
-		fi
-	done
+# if e2fsprogs support quota feature?
+e2fsprogs_support_quota=true
+if [ $FSTYPE == 'ldiskfs' ] && ! $DEBUGFS -c -R supported_features |
+                               grep -q 'quota'; then
+        e2fsprogs_support_quota=false
 fi
 
 # set_blk_tunables(btune_sz)
@@ -2235,6 +2226,11 @@ cleanup_quota_test() {
 
 # basic usage tracking for user & group
 test_33() {
+        if [ $FSTYPE == 'ldiskfs' -a $e2fsprogs_support_quota == false ]; then
+                skip_env "e2fsprogs doesn't support quota"
+                return 0;
+        fi
+
         mkdir -p $DIR/$tdir
         chmod 0777 $DIR/$tdir
         INODES=10
@@ -2291,6 +2287,11 @@ run_test 33 "basic usage tracking for user & group =============================
 
 # usage transfer test for user & group
 test_34() {
+        if [ $FSTYPE == 'ldiskfs' -a $e2fsprogs_support_quota == false ]; then
+                skip_env "e2fsprogs doesn't support quota"
+                return 0;
+        fi
+
         BLK_CNT=1024
         mkdir -p $DIR/$tdir
         chmod 0777 $DIR/$tdir
@@ -2342,6 +2343,11 @@ run_test 34 "usage transfer for user & group ===================================
 
 # usage is still accessible across restart
 test_35() {
+        if [ $FSTYPE == 'ldiskfs' -a $e2fsprogs_support_quota == false ]; then
+                skip_env "e2fsprogs doesn't support quota"
+                return 0;
+        fi
+
         mkdir -p $DIR/$tdir
         chmod 0777 $DIR/$tdir
         BLK_CNT=1024
