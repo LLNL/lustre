@@ -96,6 +96,13 @@ cycle=30
 
 build_test_filter
 
+# if e2fsprogs support quota feature?
+e2fsprogs_support_quota=true
+if [ $FSTYPE == 'ldiskfs' ] && ! $DEBUGFS -c -R supported_features |
+                               grep -q 'quota'; then
+        e2fsprogs_support_quota=false
+fi
+
 # set_blk_tunables(btune_sz)
 set_blk_tunesz() {
 	local btune=$(($1 * BLK_SZ))
@@ -2207,6 +2214,11 @@ cleanup_quota_test() {
 
 # basic usage tracking for user & group
 test_33() {
+        if [ $FSTYPE == 'ldiskfs' -a $e2fsprogs_support_quota == false ]; then
+                skip_env "e2fsprogs doesn't support quota"
+                return 0;
+        fi
+
         mkdir -p $DIR/$tdir
         chmod 0777 $DIR/$tdir
         INODES=10
@@ -2264,6 +2276,11 @@ run_test 33 "basic usage tracking for user & group =============================
 
 # usage transfer test for user & group
 test_34() {
+        if [ $FSTYPE == 'ldiskfs' -a $e2fsprogs_support_quota == false ]; then
+                skip_env "e2fsprogs doesn't support quota"
+                return 0;
+        fi
+
         BLK_CNT=1024
         mkdir -p $DIR/$tdir
         chmod 0777 $DIR/$tdir
@@ -2314,6 +2331,11 @@ run_test 34 "usage transfer for user & group ===================================
 
 # usage is still accessible across restart
 test_35() {
+        if [ $FSTYPE == 'ldiskfs' -a $e2fsprogs_support_quota == false ]; then
+                skip_env "e2fsprogs doesn't support quota"
+                return 0;
+        fi
+
         mkdir -p $DIR/$tdir
         chmod 0777 $DIR/$tdir
         BLK_CNT=1024
