@@ -480,7 +480,7 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
         if (unlikely(rc != 0)) {
                 struct osd_device *osd = osd_dt_dev(d);
                 /* dmu will call commit callback with error code during abort */
-                if (rc == ENOSPC)
+                if (!lu_device_is_md(&d->dd_lu_dev) && rc == ENOSPC)
                         CERROR("%s: failed to start transaction due to ENOSPC. "
                                "Metadata overhead is underestimated or "
                                "grant_ratio is too low.\n",
