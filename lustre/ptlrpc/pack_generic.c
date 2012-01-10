@@ -2272,7 +2272,14 @@ void _debug_req(struct ptlrpc_request *req,
                 struct libcfs_debug_msg_data *msgdata,
                 const char *fmt, ... )
 {
+        struct obd_uuid *uuid = NULL;
         va_list args;
+
+        if (req->rq_import && req->rq_import->imp_connection)
+                uuid = &req->rq_import->imp_connection->c_remote_uuid;
+        else if (req->rq_export && req->rq_export->exp_connection)
+                uuid = &req->rq_export->exp_connection->c_remote_uuid;
+
         va_start(args, fmt);
         libcfs_debug_vmsg2(msgdata, fmt, args,
                            " req@%p x"LPU64"/t"LPD64"("LPD64") o%d->%s@%s:%d/%d"
@@ -2285,10 +2292,7 @@ void _debug_req(struct ptlrpc_request *req,
                            req->rq_import ? obd2cli_tgt(req->rq_import->imp_obd) :
                            req->rq_export ?
                            (char*)req->rq_export->exp_client_uuid.uuid : "<?>",
-                           req->rq_import ?
-                           (char *)req->rq_import->imp_connection->c_remote_uuid.uuid :
-                           req->rq_export ?
-                           (char *)req->rq_export->exp_connection->c_remote_uuid.uuid : "<?>",
+                           uuid != NULL ? uuid->uuid : "<?>",
                            req->rq_request_portal, req->rq_reply_portal,
                            req->rq_reqlen, req->rq_replen,
                            req->rq_early_count, req->rq_timedout,
