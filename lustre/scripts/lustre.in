@@ -586,11 +586,11 @@ health_check ()
 		fi
 
                 # check for either a server or a client filesystem
-                MDS="`ls /proc/fs/lustre/mds/*/recovery_status 2> /dev/null`"
+                MDT="`ls /proc/fs/lustre/mdt/*/recovery_status 2> /dev/null`"
                 OST="`ls /proc/fs/lustre/obdfilter/*/recovery_status \
 			2> /dev/null`"
                 LLITE="`ls /proc/fs/lustre/llite/fs* 2> /dev/null`"
-                if [ "$MDS" -o "$OST" -o "$LLITE" ]; then
+                if [ "$MDT" -o "$OST" -o "$LLITE" ]; then
 			STATE="running"
 			RETVAL=0
 		fi
@@ -614,7 +614,7 @@ health_check ()
 	fi
 
         # check for servers in recovery
-        if [ -n "$MDS$OST" ] && grep -q RECOV $MDS $OST ; then
+        if [ -n "$MDT$OST" ] && grep -q RECOV $MDT $OST ; then
 		STATE="recovery"
 		RETVAL=0
 	fi
