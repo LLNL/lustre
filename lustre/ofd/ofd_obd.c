@@ -1098,6 +1098,7 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
         }
         if (diff > 0) {
                 obd_id next_id = ofd_last_id(ofd, oa->o_seq) + 1;
+                cfs_time_t enough_time = cfs_time_shift(DISK_TIMEOUT/2);
                 int i;
 
                 if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
@@ -1118,6 +1119,13 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
                        "%s: reserve %d objects in group "LPU64" at "LPU64"\n",
                        ofd_obd(ofd)->obd_name, diff, oa->o_seq, next_id);
                 for (i = 0; i < diff; i++) {
+                        if (cfs_time_after(jiffies, enough_time)) {
+                                CDEBUG(D_RPCTRACE | D_ERROR,
+                                       "%s: precreate slow - want %d got %d \n",
+                                       ofd_obd(ofd)->obd_name, diff, i);
+                                break;
+                        }
+
                         rc = ofd_precreate_object(env, ofd, next_id + i,
                                                   oa->o_seq);
                         if (rc)
