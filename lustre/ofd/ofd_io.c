@@ -275,8 +275,8 @@ ofd_commitrw_read(const struct lu_env *env, struct ofd_device *ofd,
 }
 
 /*
- * If the object still has SUID+SGID bits set (see ofd_precreate_object()) then
- * we will accept the UID+GID if sent by the client for initializing the
+ * If the object still has SUID+SGID bits set (see ofd_precreate_objects())
+ * then we will accept the UID+GID if sent by the client for initializing the
  * ownership of this object.  We only allow this to happen once (so clear these
  * bits) and later only allow setattr.
  */
