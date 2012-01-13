@@ -25,6 +25,8 @@
 
 #define OFD_RECOVERY_TIMEOUT (obd_timeout * 5 * CFS_HZ / 2) /* *waves hands* */
 
+#define OFD_PRECREATE_BATCH_DEFAULT 32
+
 extern struct file_operations ofd_per_export_stats_fops;
 
 /* Limit the returned fields marked valid to those that we actually might set */
@@ -124,6 +126,7 @@ struct ofd_device {
         struct dt_object        *ofd_lastid_obj[OFD_MAX_GROUPS];
         cfs_spinlock_t           ofd_objid_lock;
         unsigned long            ofd_destroys_in_progress;
+        int                      ofd_precreate_batch;
 
         /* protect all statfs-related counters */
         cfs_spinlock_t           ofd_osfs_lock;
@@ -444,6 +447,7 @@ int ofd_group_load(const struct lu_env *env, struct ofd_device *ofd, int);
 void ofd_group_fini(const struct lu_env *env, struct ofd_device *ofd, int);
 int ofd_record_write(const struct lu_env *env, struct ofd_device *ofd,
                      struct dt_object *dt, struct lu_buf *buf, loff_t *off);
+int ofd_precreate_batch(struct ofd_device *ofd, int batch);
 
 /* ofd_objects.c */
 struct ofd_object *ofd_object_find(const struct lu_env *env,
@@ -455,7 +459,7 @@ struct ofd_object *ofd_object_find_or_create(const struct lu_env *env,
                                              struct lu_attr *attr);
 int ofd_object_ff_check(const struct lu_env *env, struct ofd_object *fo);
 int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
-                         obd_id id, obd_seq seq);
+                         obd_id id, obd_seq group, int nr);
 
 void ofd_object_put(const struct lu_env *env, struct ofd_object *fo);
 int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
