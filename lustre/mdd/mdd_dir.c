@@ -1008,9 +1008,7 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
         if (rc)
                 GOTO(cleanup, rc);
 
-        /* compare nlink with 1 because updates to the
-         * object aren't applied till mdd_tx_end() */
-        if (cattr->la_nlink > 1 || mdd_cobj->mod_count > 0) {
+        if (cattr->la_nlink > 0 || mdd_cobj->mod_count > 0) {
                 /* update ctime of an unlinked file only if it is still
                  * opened or a link still exists */
                 la->la_valid = LA_CTIME;
@@ -1042,6 +1040,11 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
                 mdd_links_rename(env, mdd_cobj, mdo2fid(mdd_pobj),
                                  lname, NULL, NULL, handle);
 
+        /* if object is removed then we can't get its attrs, use last get */
+        if (cattr->la_nlink == 0) {
+                ma->ma_attr = *cattr;
+                ma->ma_valid = MA_INODE;
+        }
         EXIT;
 cleanup:
         mdd_write_unlock(env, mdd_cobj);
