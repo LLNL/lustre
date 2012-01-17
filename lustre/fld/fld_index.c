@@ -329,6 +329,7 @@ int fld_index_init(struct lu_server_fld *fld,
         lu_local_obj_fid(&fid, FLD_INDEX_OID);
 
         memset(&attr, 0, sizeof(attr));
+        attr.la_valid = LA_MODE;
         attr.la_mode = S_IFREG | 0666;
         dof.dof_type = DFT_INDEX;
         dof.u.dof_idx.di_feat = &fld_index_features;

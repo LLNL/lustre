@@ -557,7 +557,7 @@ int zfs_make_lustre(struct mkfs_opts *mop)
          */
         memset(mkfs_cmd, 0, PATH_MAX);
         snprintf(mkfs_cmd, PATH_MAX,
-                 "zfs create -o canmount=off -o version=4%s%s %s",
+                 "zfs create -o canmount=off -o xattr=sa%s%s %s",
                  zfs_refquota_opts(mop, mkfs_tmp, PATH_MAX),
                  zfs_mkfs_opts(mop, mkfs_tmp, PATH_MAX),
                  ds);
