@@ -61,18 +61,11 @@
 
 #include "udmu.h"
 
-static void udmu_gethrestime(struct timespec *tp)
-{
-        struct timeval time;
-        cfs_gettimeofday(&time);
-        tp->tv_nsec = 0;
-        tp->tv_sec = time.tv_sec;
-}
-
 int udmu_objset_open(char *osname, udmu_objset_t *uos)
 {
         uint64_t refdbytes, availbytes, usedobjs, availobjs;
         uint64_t version = ZPL_VERSION;
+        uint64_t sa_obj;
         int      error;
 
         memset(uos, 0, sizeof(udmu_objset_t));
@@ -96,8 +89,18 @@ int udmu_objset_open(char *osname, udmu_objset_t *uos)
                 goto out;
         }
 
-        error = zap_lookup(uos->os, MASTER_NODE_OBJ, ZFS_ROOT_OBJ,
-                           8, 1, &uos->root);
+        error = zap_lookup(uos->os, MASTER_NODE_OBJ, ZFS_SA_ATTRS, 8, 1,
+                           &sa_obj);
+        if (error)
+                goto out;
+
+        error = sa_setup(uos->os, sa_obj, zfs_attr_table, ZPL_END,
+                         &uos->z_attr_table);
+        if (error)
+                goto out;
+
+        error = zap_lookup(uos->os, MASTER_NODE_OBJ, ZFS_ROOT_OBJ, 8, 1,
+                           &uos->root);
         if (error) {
                 CERROR("Error looking up ZFS root object.\n");
                 error = EIO;
@@ -451,121 +454,6 @@ int udmu_zap_lookup(udmu_objset_t *uos, dmu_buf_t *zap_db, const char *name,
 
 /*
  * The transaction passed to this routine must have
- * dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT) called and then assigned
- * to a transaction group.
- */
-static void udmu_object_create_impl(objset_t *os, dmu_buf_t **dbp, dmu_tx_t *tx,
-                                    void *tag)
-{
-        znode_phys_t    *zp;
-        uint64_t        oid;
-        uint64_t        gen;
-        timestruc_t     now;
-
-        ASSERT(tag);
-
-        /* Assert that the transaction has been assigned to a
-           transaction group. */
-        ASSERT(tx->tx_txg != 0);
-
-        udmu_gethrestime(&now);
-        gen = dmu_tx_get_txg(tx);
-
-        /* Create a new DMU object. */
-        oid = dmu_object_alloc(os, DMU_OT_PLAIN_FILE_CONTENTS, 0, DMU_OT_ZNODE,
-                               sizeof (znode_phys_t), tx);
-
-#if 0
-        /* XXX: do we really need 128K blocksize by default? even on OSS? */
-        dmu_object_set_blocksize(os, oid, 128ULL << 10, 0, tx);
-#endif
-
-        VERIFY(0 == dmu_bonus_hold(os, oid, tag, dbp));
-
-        dmu_buf_will_dirty(*dbp, tx);
-
-        /* Initialize the znode physical data to zero. */
-        ASSERT((*dbp)->db_size >= sizeof (znode_phys_t));
-        bzero((*dbp)->db_data, (*dbp)->db_size);
-        zp = (*dbp)->db_data;
-        zp->zp_gen = gen;
-        zp->zp_links = 1;
-        ZFS_TIME_ENCODE(&now, zp->zp_crtime);
-        ZFS_TIME_ENCODE(&now, zp->zp_ctime);
-        ZFS_TIME_ENCODE(&now, zp->zp_atime);
-        ZFS_TIME_ENCODE(&now, zp->zp_mtime);
-        zp->zp_mode = MAKEIMODE(VREG, 0007);
-}
-
-void udmu_object_create(udmu_objset_t *uos, dmu_buf_t **dbp, dmu_tx_t *tx,
-                        void *tag)
-{
-        cfs_spin_lock(&uos->lock);
-        uos->objects++;
-        cfs_spin_unlock(&uos->lock);
-        udmu_object_create_impl(uos->os, dbp, tx, tag);
-}
-
-/*
- * The transaction passed to this routine must have
- * dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, ...) called and then assigned
- * to a transaction group.
- *
- * Using ZAP_FLAG_HASH64 will force the ZAP to always be a FAT ZAP.
- * This is fine for directories today, because storing the FID in the dirent
- * will also require a FAT ZAP.  If there is a new type of micro ZAP created
- * then we might need to re-evaluate the use of this flag and instead do
- * a conversion from the different internal ZAP hash formats being used. */
-static void udmu_zap_create_impl(objset_t *os, dmu_buf_t **zap_dbp,
-                                 dmu_tx_t *tx, void *tag)
-{
-        znode_phys_t *zp;
-        uint64_t      oid;
-        timestruc_t   now;
-        uint64_t      gen;
-        zap_flags_t   flags = ZAP_FLAG_HASH64;
-
-        ASSERT(tag);
-
-        /* Assert that the transaction has been assigned to a
-           transaction group. */
-        ASSERT(tx->tx_txg != 0);
-
-        oid = 0;
-        udmu_gethrestime(&now);
-        gen = dmu_tx_get_txg(tx);
-
-        oid = zap_create_flags(os, 0, flags, DMU_OT_DIRECTORY_CONTENTS, 9, 12,
-                               DMU_OT_ZNODE, sizeof(znode_phys_t), tx);
-
-        VERIFY(0 == dmu_bonus_hold(os, oid, tag, zap_dbp));
-
-        dmu_buf_will_dirty(*zap_dbp, tx);
-
-        bzero((*zap_dbp)->db_data, (*zap_dbp)->db_size);
-        zp = (*zap_dbp)->db_data;
-        zp->zp_size = 2;
-        zp->zp_links = 1;
-        zp->zp_gen = gen;
-        zp->zp_mode = MAKEIMODE(VDIR, 0007);
-
-        ZFS_TIME_ENCODE(&now, zp->zp_crtime);
-        ZFS_TIME_ENCODE(&now, zp->zp_ctime);
-        ZFS_TIME_ENCODE(&now, zp->zp_atime);
-        ZFS_TIME_ENCODE(&now, zp->zp_mtime);
-}
-
-void udmu_zap_create(udmu_objset_t *uos, dmu_buf_t **zap_dbp, dmu_tx_t *tx,
-                     void *tag)
-{
-        cfs_spin_lock(&uos->lock);
-        uos->objects++;
-        cfs_spin_unlock(&uos->lock);
-        udmu_zap_create_impl(uos->os, zap_dbp, tx, tag);
-}
-
-/*
- * The transaction passed to this routine must have
  * dmu_tx_hold_bonus(tx, oid) and
  * dmu_tx_hold_zap(tx, oid, ...)
  * called and then assigned to a transaction group.
@@ -647,104 +535,6 @@ void udmu_zap_cursor_fini(zap_cursor_t *zc)
 }
 
 /*
- * Retrieve the attributes of a DMU object
- */
-void udmu_object_getattr(dmu_buf_t *db, vattr_t *vap)
-{
-        dmu_buf_impl_t *dbi = (dmu_buf_impl_t *) db;
-        dnode_t *dn;
-
-        znode_phys_t *zp = db->db_data;
-
-        vap->va_mask = DMU_AT_ATIME | DMU_AT_MTIME | DMU_AT_CTIME | DMU_AT_MODE
-                       | DMU_AT_SIZE | DMU_AT_UID | DMU_AT_GID | DMU_AT_TYPE
-                       | DMU_AT_NLINK | DMU_AT_RDEV;
-
-        vap->va_atime.tv_sec    = zp->zp_atime[0];
-        vap->va_atime.tv_nsec   = 0;
-        vap->va_mtime.tv_sec    = zp->zp_mtime[0];
-        vap->va_mtime.tv_nsec   = 0;
-        vap->va_ctime.tv_sec    = zp->zp_ctime[0];
-        vap->va_ctime.tv_nsec   = 0;
-        vap->va_mode     = zp->zp_mode & MODEMASK;;
-        vap->va_size     = zp->zp_size;
-        vap->va_uid      = zp->zp_uid;
-        vap->va_gid      = zp->zp_gid;
-        vap->va_type     = IFTOVT((mode_t)zp->zp_mode);
-        vap->va_nlink    = zp->zp_links;
-        vap->va_rdev     = zp->zp_rdev;
-
-        DB_DNODE_ENTER(dbi);
-        dn = DB_DNODE(dbi);
-
-        vap->va_blksize = dn->dn_datablksz;
-        /* vap->va_blkbits = dn->dn_datablkshift; */
-        /* in 512-bytes units*/
-        vap->va_nblocks = DN_USED_BYTES(dn->dn_phys) >> SPA_MINBLOCKSHIFT;
-        vap->va_mask |= DMU_AT_NBLOCKS | DMU_AT_BLKSIZE;
-
-        DB_DNODE_EXIT(dbi);
-}
-
-/*
- * Set the attributes of an object
- *
- * The transaction passed to this routine must have
- * dmu_tx_hold_bonus(tx, oid) called and then assigned
- * to a transaction group.
- */
-void udmu_object_setattr(dmu_buf_t *db, dmu_tx_t *tx, vattr_t *vap)
-{
-        znode_phys_t *zp = db->db_data;
-        uint_t mask = vap->va_mask;
-
-        /* Assert that the transaction has been assigned to a
-           transaction group. */
-        ASSERT(tx->tx_txg != 0);
-
-        if (mask == 0) {
-                return;
-        }
-
-        dmu_buf_will_dirty(db, tx);
-
-        /*
-         * Set each attribute requested.
-         * We group settings according to the locks they need to acquire.
-         *
-         * Note: you cannot set ctime directly, although it will be
-         * updated as a side-effect of calling this function.
-         */
-
-        if (mask & DMU_AT_MODE)
-                zp->zp_mode = MAKEIMODE(vap->va_type, vap->va_mode);
-
-        if (mask & DMU_AT_UID)
-                zp->zp_uid = (uint64_t)vap->va_uid;
-
-        if (mask & DMU_AT_GID)
-                zp->zp_gid = (uint64_t)vap->va_gid;
-
-        if (mask & DMU_AT_SIZE)
-                zp->zp_size = vap->va_size;
-
-        if (mask & DMU_AT_ATIME)
-                ZFS_TIME_ENCODE(&vap->va_atime, zp->zp_atime);
-
-        if (mask & DMU_AT_MTIME)
-                ZFS_TIME_ENCODE(&vap->va_mtime, zp->zp_mtime);
-
-        if (mask & DMU_AT_CTIME)
-                ZFS_TIME_ENCODE(&vap->va_ctime, zp->zp_ctime);
-
-        if (mask & DMU_AT_NLINK)
-                zp->zp_links = vap->va_nlink;
-
-        if (mask & DMU_AT_RDEV)
-                zp->zp_rdev = vap->va_rdev;
-}
-
-/*
  * Get the object id from dmu_buf_t
  */
 int udmu_object_is_zap(dmu_buf_t *db)
@@ -762,87 +552,6 @@ int udmu_object_is_zap(dmu_buf_t *db)
         DB_DNODE_EXIT(dbi);
 
         return rc;
-}
-
-void udmu_xattr_declare_set(udmu_objset_t *uos, dmu_buf_t *db,
-                            int vallen, const char *name, dmu_tx_t *tx)
-{
-        znode_phys_t *zp = NULL;
-        uint64_t      xa_data_obj;
-        int           error;
-
-        if (db)
-                zp = db->db_data;
-
-        if (db == NULL || zp->zp_xattr == 0) {
-                /* we'll be updating zp_xattr */
-                if (db)
-                        dmu_tx_hold_bonus(tx, db->db_object);
-                /* xattr zap + entry */
-                dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, TRUE, (char *) name);
-                /* xattr value obj */
-                dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
-                dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0, vallen);
-                return;
-        }
-
-        error = zap_lookup(uos->os, zp->zp_xattr, name, sizeof(uint64_t), 1,
-                           &xa_data_obj);
-        if (error == 0) {
-                /*
-                 * Entry already exists.
-                 * We'll truncate the existing object.
-                 */
-                dmu_tx_hold_bonus(tx, xa_data_obj);
-                dmu_tx_hold_free(tx, xa_data_obj, vallen, DMU_OBJECT_END);
-                dmu_tx_hold_write(tx, xa_data_obj, 0, vallen);
-                return;
-        } else if (error == ENOENT) {
-                /*
-                 * Entry doesn't exist, we need to create a new one and a new
-                 * object to store the value.
-                 */
-                dmu_tx_hold_bonus(tx, zp->zp_xattr);
-                dmu_tx_hold_zap(tx, zp->zp_xattr, TRUE, (char *) name);
-                dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
-                dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0, vallen);
-                return;
-        }
-
-        /* An error happened */
-        tx->tx_err = error;
-}
-
-void udmu_xattr_declare_del(udmu_objset_t *uos, dmu_buf_t *db,
-                            const char *name, dmu_tx_t *tx)
-{
-        znode_phys_t *zp = db->db_data;
-        int error;
-        uint64_t xa_data_obj;
-
-        if (zp->zp_xattr == 0)
-                return;
-
-        error = zap_lookup(uos->os, zp->zp_xattr, name, sizeof(uint64_t), 1,
-                           &xa_data_obj);
-        if (error == 0) {
-                /*
-                 * Entry exists.
-                 * We'll delete the existing object and ZAP entry.
-                 */
-                dmu_tx_hold_bonus(tx, xa_data_obj);
-                dmu_tx_hold_free(tx, xa_data_obj, 0, DMU_OBJECT_END);
-                dmu_tx_hold_zap(tx, zp->zp_xattr, FALSE, (char *) name);
-                return;
-        } else if (error == ENOENT) {
-                /*
-                 * Entry doesn't exist, nothing to be changed.
-                 */
-                return;
-        }
-
-        /* An error happened */
-        tx->tx_err = error;
 }
 
 /*

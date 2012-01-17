@@ -44,6 +44,8 @@
 
 #include <dt_object.h>
 
+#include <sys/nvpair.h>
+
 #include "udmu.h"
 
 #define LUSTRE_ROOT_FID_SEQ     0
@@ -116,9 +118,8 @@ struct osd_thread_info {
         char                   oti_str[64];
         char                   oti_key[MAXNAMELEN + 1];
 
-        vattr_t                oti_vap;
+        struct lu_attr         oti_la;
         zap_attribute_t        oti_za;
-        struct obd_statfs      oti_osfs;
         dmu_object_info_t      oti_doi;
 };
 
@@ -170,7 +171,7 @@ struct osd_device {
 };
 
 struct osd_object {
-        struct dt_object       oo_dt;
+        struct dt_object     oo_dt;
         /*
          * Inode for file system object represented by this osd_object. This
          * inode is pinned for the whole duration of lu_object life.
@@ -178,14 +179,14 @@ struct osd_object {
          * Not modified concurrently (either setup early during object
          * creation, or assigned by osd_object_create() under write lock).
          */
-        dmu_buf_t               *oo_db;
+        dmu_buf_t           *oo_db;
+        sa_handle_t         *oo_sa_hdl;
+        uint64_t             oo_xattr;
+        /* protects attributes. */
+        cfs_semaphore_t      oo_guard;
+        cfs_rw_semaphore_t   oo_sem;
 
-        /* protects inode attributes. */
-        cfs_semaphore_t         oo_guard;
-        cfs_rw_semaphore_t      oo_sem;
-
-        uint64_t                oo_mode;
-        uint64_t                oo_type;
+        uint64_t             oo_mode;
 };
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);

@@ -1190,7 +1190,7 @@ struct mdd_object *mdd_open_index_internal(const struct lu_env *env,
         la->la_mode = S_IFDIR | S_IXUGO;
         la->la_mode |= S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
         la->la_uid = la->la_gid = 0;
-        la->la_valid = LA_MODE | LA_UID | LA_GID;
+        la->la_valid = LA_MODE | LA_TYPE| LA_UID | LA_GID;
 
         rc = mdo_create(env, dir, &lname, mdo, &spec, ma);
 

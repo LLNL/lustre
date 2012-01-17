@@ -50,6 +50,7 @@ extern "C" {
 #include <sys/zap.h>
 #include <sys/vnode.h>
 #include <sys/mode.h>
+#include <sys/sa.h>
 
 #include <lustre/lustre_user.h>
 
@@ -79,10 +80,13 @@ extern "C" {
 #define S_IFPORT        0xE000  /* event port */
 
 typedef struct udmu_objset {
-        struct objset *os;
-        uint64_t root;  /* id of root znode */
+        struct objset  *os;
+        uint64_t        root;  /* id of root znode */
         cfs_spinlock_t  lock;
-        uint64_t objects; /* in-core counter of objects, protected by lock */
+        uint64_t        objects; /* in-core counter of objects, protected by lock */
+        /* SA attr mapping->id,
+         * name is the same as in ZFS to use defines SA_ZPL_...*/
+        sa_attr_type_t *z_attr_table;
 } udmu_objset_t;
 
 #ifndef _SYS_TXG_H
@@ -128,7 +132,7 @@ int udmu_zap_lookup(udmu_objset_t *uos, dmu_buf_t *zap_db, const char *name,
                     void *value, int value_size, int intsize);
 
 void udmu_zap_create(udmu_objset_t *uos, dmu_buf_t **zap_dbp, dmu_tx_t *tx,
-                     void *tag);
+                     vattr_t *va, void *tag);
 
 int udmu_zap_insert(objset_t *os, dmu_buf_t *zap_db, dmu_tx_t *tx,
                     const char *name, void *value, int len);
@@ -151,7 +155,7 @@ int udmu_zap_cursor_move_to_key(zap_cursor_t *zc, const char *name);
 
 /* udmu object API */
 void udmu_object_create(udmu_objset_t *uos, dmu_buf_t **dbp, dmu_tx_t *tx,
-                        void *tag);
+                        vattr_t *va, void *tag);
 
 int udmu_object_get_dmu_buf(udmu_objset_t *uos, uint64_t object,
                             dmu_buf_t **dbp, void *tag);
@@ -164,9 +168,10 @@ int udmu_object_read(udmu_objset_t *uos, dmu_buf_t *db, uint64_t offset,
 void udmu_object_write(udmu_objset_t *uos, dmu_buf_t *db, struct dmu_tx *tx,
                       uint64_t offset, uint64_t size, void *buf);
 
-void udmu_object_getattr(dmu_buf_t *db, vattr_t *vap);
+void udmu_object_getattr(udmu_objset_t *uos, dmu_buf_t *db, vattr_t *vap);
 
-void udmu_object_setattr(dmu_buf_t *db, dmu_tx_t *tx, vattr_t *vap);
+void udmu_object_setattr(udmu_objset_t *uos, dmu_buf_t *db, dmu_tx_t *tx,
+                         vattr_t *vap);
 
 int udmu_object_set_blocksize(udmu_objset_t *os, uint64_t oid,
                               unsigned bsize, dmu_tx_t *tx);
