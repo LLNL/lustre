@@ -758,7 +758,7 @@ static int mdt_reint_unlink(struct mdt_thread_info *info,
         mdt_set_capainfo(info, 1, child_fid, BYPASS_CAPA);
         rc = mdo_unlink(info->mti_env, mdt_object_child(mp),
                         mdt_object_child(mc), lname, ma);
-        if (rc == 0)
+        if (rc == 0 && !lu_object_is_dying(&mc->mot_header))
                 rc = mdt_attr_get_complex(info, mc, ma);
         if (rc == 0)
                 mdt_handle_last_unlink(info, mc, ma);

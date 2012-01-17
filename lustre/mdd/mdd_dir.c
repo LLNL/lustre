@@ -767,7 +767,7 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
         unsigned int qpids[MAXQUOTAS] = { 0, 0 };
         int quota_opc = 0;
 #endif
-        int rc, is_dir, nlink;
+        int rc, is_dir, nlink, last_link;
         int cl_flags;
         ENTRY;
 
@@ -785,6 +785,10 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
                 GOTO(cleanup, rc);
         is_dir = S_ISDIR(cattr->la_mode);
         nlink = cattr->la_nlink;
+        /* until mdd_tx_end call the changes is not applied, so
+         * last unlink is determined by comparing nlink count with 1
+         * or 2 for directories, due to '.' */
+        last_link = is_dir ? (nlink == 2) : (nlink == 1);
 
         rc = mdd_unlink_sanity_check(env, mdd_pobj, mdd_cobj, cattr);
         if (rc)
@@ -805,9 +809,7 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
         la->la_valid = LA_CTIME | LA_MTIME;
         mdd_attr_check_set_internal_locked(env, mdd_pobj, la, handle, 0);
 
-        /* compare nlink with 1 because updates to the
-         * object aren't applied till mdd_tx_end() */
-        if (cattr->la_nlink > 1 || mdd_cobj->mod_count > 0) {
+        if (!last_link || mdd_cobj->mod_count > 0) {
                 /* update ctime of an unlinked file only if it is still
                  * opened or a link still exists */
                 la->la_valid = LA_CTIME;
@@ -838,7 +840,7 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
                                  lname, NULL, NULL, handle);
 
 
-        cl_flags = (ma->ma_attr.la_nlink == 0) ? CLF_UNLINK_LAST : 0;
+        cl_flags = last_link ? CLF_UNLINK_LAST : 0;
         if ((ma->ma_valid & MA_HSM) &&
             (ma->ma_hsm.mh_flags & HS_EXISTS))
                 cl_flags |= CLF_UNLINK_HSM_EXISTS;
@@ -847,6 +849,13 @@ static int mdd_unlink(const struct lu_env *env, struct md_object *pobj,
                                handle);
 
         rc = mdd_tx_end(env, handle);
+        /* if object is removed then we can't get its attrs, use last get
+         * but set nlink to 0 */
+        if (last_link) {
+                ma->ma_attr = *cattr;
+                ma->ma_attr.la_nlink = 0;
+                ma->ma_valid = MA_INODE;
+        }
         EXIT;
 cleanup:
         mdd_write_unlock(env, mdd_cobj);
