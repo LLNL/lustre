@@ -876,6 +876,10 @@ run_test 23b "Simulate -EINTR during mount"
 fs2mds_HOST=$mds_HOST
 fs2ost_HOST=$ost_HOST
 
+MDSDEV1_2=$fs2mds_DEV
+OSTDEV1_2=$fs2ost_DEV
+OSTDEV2_2=$fs3ost_DEV
+
 cleanup_24a() {
 	trap 0
 	echo "umount $MOUNT2 ..."
@@ -896,10 +900,10 @@ test_24a() {
 
 	[ -n "$ost1_HOST" ] && fs2ost_HOST=$ost1_HOST
 
-	local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
-	local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1_2)}
-	local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
-	local fs2ostvdev=${fs2ost_VDEV:-$(ostvdevname 1_2)}
+	local fs2mdsdev=$(mdsdevname 1_2)
+	local fs2ostdev=$(ostdevname 1_2)
+	local fs2mdsvdev=$(mdsvdevname 1_2)
+	local fs2ostvdev=$(ostvdevname 1_2)
 	local fs2mdsmkfs=$(mkfs_opts mds)
 
 	# test 8-char fsname as well, and strip the --mgs option because
@@ -954,8 +958,8 @@ test_24b() {
 		skip_env "mixed loopback and real device not working" && return
 	fi
 
-	local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
-	local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
+	local fs2mdsdev=$(mdsdevname 1_2)
+	local fs2mdsvdev=$(mdsvdevname 1_2)
 
 	add fs2mds $(mkfs_opts mds) --backfstype $MDSFSTYPE --fsname=${FSNAME}2 \
 		--mgs --index=0 --reformat $fs2mdsdev $fs2mdsvdev || exit 10
@@ -1390,10 +1394,10 @@ test_33a() { # bug 12333, was test_33
                 skip_env "mixed loopback and real device not working" && return
         fi
 
-        local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
-        local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1_2)}
-        local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
-        local fs2ostvdev=${fs2ost_VDEV:-$(ostvdevname 1_2)}
+        local fs2mdsdev=$(mdsdevname 1_2)
+        local fs2ostdev=$(ostdevname 1_2)
+        local fs2mdsvdev=$(mdsvdevname 1_2)
+        local fs2ostvdev=$(ostvdevname 1_2)
         local fs2mdsmkfs=$(mkfs_opts mds)
 
         combined_mgs_mds || fs2mdsmkfs=${fs2mdsmkfs/--mgs/}
@@ -1418,7 +1422,6 @@ test_33a() { # bug 12333, was test_33
         umount -d $MOUNT2
         stop fs2ost -f
         stop fs2mds -f
-        rm -rf $MOUNT2 $fs2mdsdev $fs2ostdev
         cleanup_nocli || rc=6
         return $rc
 }
@@ -1638,12 +1641,12 @@ test_36() { # 12743
 		skip_env "mixed loopback and real device not working" && return
         fi
 
-        local fs2mdsdev=${fs2mds_DEV:-$(mdsdevname 1_2)}
-        local fs2ostdev=${fs2ost_DEV:-$(ostdevname 1_2)}
-        local fs3ostdev=${fs3ost_DEV:-$(ostdevname 2_2)}
-        local fs2mdsvdev=${fs2mds_VDEV:-$(mdsvdevname 1_2)}
-        local fs2ostvdev=${fs2ost_VDEV:-$(ostvdevname 1_2)}
-        local fs3ostvdev=${fs3ost_VDEV:-$(ostvdevname 2_2)}
+        local fs2mdsdev=$(mdsdevname 1_2)
+        local fs2ostdev=$(ostdevname 1_2)
+        local fs3ostdev=$(ostdevname 2_2)
+        local fs2mdsvdev=$(mdsvdevname 1_2)
+        local fs2ostvdev=$(ostvdevname 1_2)
+        local fs3ostvdev=$(ostvdevname 2_2)
 
         add fs2mds $(mkfs_opts mds)  --backfstype $MDSFSTYPE \
 			--fsname=${FSNAME2} --reformat --index=0 \
@@ -1698,7 +1701,6 @@ test_36() { # 12743
         stop fs3ost -f || return 200
         stop fs2ost -f || return 201
         stop fs2mds -f || return 202
-        rm -rf $MOUNT2 $fs2mdsdev $fs2ostdev $fs3ostdev
         unload_modules_conf || return 203
         return $rc
 }
