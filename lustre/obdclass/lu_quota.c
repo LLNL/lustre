@@ -87,7 +87,6 @@ static struct dt_object *acct_init(const struct lu_env *env,
         }
         RETURN(obj);
 }
-EXPORT_SYMBOL(acct_init);
 
 /*
  * Initialize lu_quota structure to be used to collect usage/quota
