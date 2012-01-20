@@ -2000,7 +2000,6 @@ out:
 EXPORT_SYMBOL(lustre_common_umount);
 EXPORT_SYMBOL(lustre_log_process);
 EXPORT_SYMBOL(lustre_log_end);
-EXPORT_SYMBOL(server_find_mount_locked);
 EXPORT_SYMBOL(server_get_mount);
 EXPORT_SYMBOL(server_name2index);
 EXPORT_SYMBOL(server_mti_print);
