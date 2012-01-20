@@ -281,7 +281,7 @@ static int osp_precreate_send(struct osp_device *d)
         CDEBUG(D_HA, "new last_created %lu\n", (unsigned long) body->oa.o_id);
         LASSERTF(body->oa.o_id > d->opd_pre_next,
                  "last %Lu, next %Lu, id %Lu, grow %d\n",
-                 d->opd_pre_last_created, body->oa.o_id, grow);
+                 d->opd_pre_last_created, d->opd_pre_next, body->oa.o_id, grow);
 
         diff = body->oa.o_id - d->opd_pre_last_created;
 
