@@ -110,9 +110,6 @@ int udmu_userprop_get_str(udmu_objset_t *uos, const char *prop_name, char *buf,
                       size_t buf_size);
 
 /* udmu ZAP API */
-int udmu_zap_lookup(udmu_objset_t *uos, dmu_buf_t *zap_db, const char *name,
-                    void *value, int value_size, int intsize);
-
 int udmu_zap_insert(objset_t *os, dmu_buf_t *zap_db, dmu_tx_t *tx,
                     const char *name, void *value, int len);
 
