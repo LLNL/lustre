@@ -560,7 +560,10 @@ int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
         struct l_wait_info lwi;
         cfs_time_t         expire = cfs_time_shift(obd_timeout);
         int                precreated, rc;
-        int                count = 0;
+        /* Need to remove because of -Wunused-variable and -Werror
+         *
+         * int                count = 0;
+         */
         ENTRY;
 
         LASSERT(d->opd_pre_last_created >= d->opd_pre_next);
