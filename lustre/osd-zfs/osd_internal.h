@@ -81,15 +81,23 @@ struct osd_zap_it {
 };
 #define DT_IT2DT(it) (&((struct osd_zap_it *)it)->ozi_obj->oo_dt)
 
-/**
- * Storage representation for fids.
- *
- * Variable size, first byte contains the length of the whole record.
+/*
+ * regular ZFS direntry
  */
-struct osd_fid_pack {
-        unsigned char fp_len;
-        char fp_area[sizeof(struct lu_fid)];
-};
+struct zpl_direntry {
+        uint64_t        zde_dnode:48,
+                        zde_pad:12,
+                        zde_type:4;
+} __attribute__((packed));
+
+/*
+ * lustre direntry adds a fid to regular ZFS direntry
+ */
+struct luz_direntry {
+        struct zpl_direntry     lzd_reg;
+        struct lu_fid           lzd_fid;
+} __attribute__((packed));
+
 
 /* cached SA attributes */
 struct osa_attr {
@@ -119,9 +127,9 @@ struct osd_thread_info {
         struct lustre_capa_key oti_capa_key;
         struct lustre_capa     oti_capa;
 
-        struct osd_fid_pack    oti_fid_pack;
+        struct ost_id          oti_ostid;
 
-        char                   oti_buf[32];
+        char                   oti_buf[64];
 
         /** osd iterator context used for iterator session */
         union {
@@ -136,6 +144,7 @@ struct osd_thread_info {
         struct osa_attr        oti_osa;
         zap_attribute_t        oti_za;
         dmu_object_info_t      oti_doi;
+        struct luz_direntry    oti_zde;
 };
 
 extern struct lu_context_key osd_key;
@@ -152,6 +161,8 @@ struct osd_thandle {
         __u32                   ot_write_commit:1,
                                 ot_assigned:1;
 };
+
+#define OSD_OST_MAP_SIZE        32
 
 /*
  * osd device.
@@ -174,8 +185,11 @@ struct osd_device {
         cfs_proc_dir_entry_t     *od_proc_entry;
         struct lprocfs_stats     *od_stats;
 
-        dmu_buf_t                *od_root_db;
-        dmu_buf_t                *od_objdir_db;
+        uint64_t                  od_root;
+        uint64_t                  od_objdir;
+
+        uint64_t                  od_ost_compat_dirs[OSD_OST_MAP_SIZE];
+        uint64_t                  od_ost_compat_grp0;
 
         unsigned int              od_rdonly:1;
         char                      od_mntdev[128];
