@@ -580,10 +580,14 @@ int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
                                 break;
                 }
 
-                LASSERTF(count++ < 100,
-                         "status %d, rc %d, last %Lu, next %Lu\n",
-                         d->opd_pre_status, rc, d->opd_pre_last_created,
-                         d->opd_pre_next);
+                /* Yes, things are slow, but still limp along the best we can.
+                 *
+                 * LASSERTF(count++ < 100,
+                 *          "status %d, rc %d, last %Lu, next %Lu\n",
+                 *          d->opd_pre_status, rc, d->opd_pre_last_created,
+                 *          d->opd_pre_next);
+                 */
+
                 /*
                  * increase number of precreations
                  */
