@@ -454,51 +454,6 @@ out:
         return rc;
 }
 
-int udmu_zap_lookup(udmu_objset_t *uos, dmu_buf_t *zap_db, const char *name,
-                    void *value, int value_size, int intsize)
-{
-        uint64_t oid;
-        oid = zap_db->db_object;
-
-        if (strlen(name) >= MAXNAMELEN)
-                return EOVERFLOW;
-        /*
-         * value_size should be a multiple of intsize.
-         * intsize is 8 for micro ZAP and 1, 2, 4 or 8 for a fat ZAP.
-         */
-        ASSERT(value_size % intsize == 0);
-        return (zap_lookup(uos->os, oid, name, intsize,
-                           value_size / intsize, value));
-}
-
-/*
- * The transaction passed to this routine must have
- * dmu_tx_hold_bonus(tx, oid) and
- * dmu_tx_hold_zap(tx, oid, ...)
- * called and then assigned to a transaction group.
- */
-int udmu_zap_insert(objset_t *os, dmu_buf_t *zap_db, dmu_tx_t *tx,
-                    const char *name, void *value, int len)
-{
-        int num_int = 1, int_size = 8;
-
-        /* fid record is byte stream*/
-        if (len == 17) {
-                int_size = 1;
-                num_int = len;
-        } else if (len == 6) {
-                int_size = 1;
-                num_int = len;
-        }
-
-        /* Assert that the transaction has been assigned to a
-           transaction group. */
-        ASSERT(tx->tx_txg != 0);
-
-        dmu_buf_will_dirty(zap_db, tx);
-        return (zap_add(os, zap_db->db_object, name, int_size, num_int, value, tx));
-}
-
 /* We don't actually have direct access to the zap_hashbits() function
  * so just pretend like we do for now.  If this ever breaks we can look at
  * it at that time. */
