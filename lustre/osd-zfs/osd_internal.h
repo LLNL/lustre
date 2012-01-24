@@ -43,6 +43,7 @@
 #define _OSD_INTERNAL_H
 
 #include <dt_object.h>
+#include <sys/arc.h>
 
 #include <sys/nvpair.h>
 
@@ -223,6 +224,8 @@ struct osd_device {
         cfs_atomic_t              od_zerocopy_alloc;
         cfs_atomic_t              od_zerocopy_loan;
         cfs_atomic_t              od_zerocopy_pin;
+
+        arc_prune_t              *arc_prune_cb;
 };
 
 struct osd_object {

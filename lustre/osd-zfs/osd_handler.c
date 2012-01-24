@@ -100,6 +100,24 @@ static struct lu_kmem_descr osd_caches[] = {
         }
 };
 
+static void arc_prune_func(int64_t bytes, void *private)
+{
+        struct osd_device *od = private;
+        struct lu_site    *site = &od->od_site;
+        struct lu_env      env;
+        int rc;
+
+        rc = lu_env_init(&env, LCT_SHRINKER);
+        if (rc) {
+                CERROR("Can't initialize shrinker env, %d\n", rc);
+                return;
+        }
+
+        lu_site_purge(&env, site, (bytes >> 10));
+
+        lu_env_fini(&env);
+}
+
 static void
 osd_object_sa_fini(struct osd_object *obj)
 {
@@ -4573,6 +4591,8 @@ static int osd_device_init0(const struct lu_env *env,
         if (rc)
                 GOTO(out_oi, rc);
 
+        o->arc_prune_cb = arc_add_prune_callback(arc_prune_func, o);
+
         GOTO(out, rc);
 
 out_oi:
@@ -4632,6 +4652,9 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
         struct osd_device *o = osd_dev(d);
         int rc;
         ENTRY;
+
+        arc_remove_prune_callback(o->arc_prune_cb);
+        o->arc_prune_cb = NULL;
 
         osd_oi_fini(env, o);
 
