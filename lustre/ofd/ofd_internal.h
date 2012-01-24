@@ -281,6 +281,8 @@ static inline void ofd_write_unlock(const struct lu_env *env,
         next->do_ops->do_write_unlock(env, next);
 }
 
+#define OFD_PRECREATE_BATCH     32
+
 /*
  * Common data shared by obdofd-level handlers. This is allocated per-thread
  * to reduce stack consumption.
@@ -318,6 +320,8 @@ struct ofd_thread_info {
 
         /* Space used by the I/O, used by grant code */
         unsigned long              fti_used;
+
+        struct ofd_object         *fti_precreate_batch[OFD_PRECREATE_BATCH];
 };
 
 extern struct lu_context_key ofd_txn_thread_key;
@@ -455,7 +459,7 @@ struct ofd_object *ofd_object_find_or_create(const struct lu_env *env,
                                              struct lu_attr *attr);
 int ofd_object_ff_check(const struct lu_env *env, struct ofd_object *fo);
 int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
-                         obd_id id, obd_seq seq);
+                         obd_id id, obd_seq group, int nr);
 
 void ofd_object_put(const struct lu_env *env, struct ofd_object *fo);
 int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
