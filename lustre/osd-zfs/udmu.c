@@ -435,23 +435,6 @@ out:
         return rc;
 }
 
-int udmu_zap_lookup(udmu_objset_t *uos, dmu_buf_t *zap_db, const char *name,
-                    void *value, int value_size, int intsize)
-{
-        uint64_t oid;
-        oid = zap_db->db_object;
-
-        if (strlen(name) >= MAXNAMELEN)
-                return EOVERFLOW;
-        /*
-         * value_size should be a multiple of intsize.
-         * intsize is 8 for micro ZAP and 1, 2, 4 or 8 for a fat ZAP.
-         */
-        ASSERT(value_size % intsize == 0);
-        return (zap_lookup(uos->os, oid, name, intsize,
-                           value_size / intsize, value));
-}
-
 /*
  * The transaction passed to this routine must have
  * dmu_tx_hold_bonus(tx, oid) and
