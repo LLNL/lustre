@@ -1281,12 +1281,21 @@ static int osd_declare_punch(const struct lu_env *env, struct dt_object *dt,
 {
         struct osd_object  *obj = osd_dt_obj(dt);
         struct osd_thandle *oh;
+        __u64               len;
         ENTRY;
 
         oh = container_of0(handle, struct osd_thandle, ot_super);
 
+        cfs_read_lock(&obj->oo_attr_lock);
+        if (end == OBD_OBJECT_EOF || end >= obj->oo_attr.la_size)
+                len = DMU_OBJECT_END;
+        else
+                len = end - start;
+
         /* declare we'll free some blocks ... */
-        dmu_tx_hold_free(oh->ot_tx, obj->oo_db->db_object, start, end);
+        if (start < obj->oo_attr.la_size)
+                dmu_tx_hold_free(oh->ot_tx, obj->oo_db->db_object, start, len);
+        cfs_read_unlock(&obj->oo_attr_lock);
 
         /* ... and we'll modify size attribute */
         dmu_tx_hold_sa(oh->ot_tx, obj->oo_sa_hdl, 0);
@@ -1297,9 +1306,9 @@ static int osd_declare_punch(const struct lu_env *env, struct dt_object *dt,
 /*
  * Punch/truncate an object
  *
- *      IN:     db      - dmu_buf of the object to free data in.
- *              off     - start of section to free.
- *              len     - length of section to free (0 => to EOF).
+ *      IN:     db  - dmu_buf of the object to free data in.
+ *              off - start of section to free.
+ *              len - length of section to free (DMU_OBJECT_END => to EOF).
  *
  *      RETURN: 0 if success
  *              error code if failure
@@ -1311,8 +1320,7 @@ static int osd_declare_punch(const struct lu_env *env, struct dt_object *dt,
 static int __osd_object_punch(objset_t *os, dmu_buf_t *db, dmu_tx_t *tx,
                               uint64_t size, uint64_t off, uint64_t len)
 {
-        uint64_t end = off + len;
-        int      rc = 0;
+        int rc = 0;
 
         /* Assert that the transaction has been assigned to a
            transaction group. */
@@ -1320,20 +1328,12 @@ static int __osd_object_punch(objset_t *os, dmu_buf_t *db, dmu_tx_t *tx,
         /*
          * Nothing to do if file already at desired length.
          */
-        if (len == 0 && size == off) {
+        if (len == DMU_OBJECT_END && size == off)
                 return 0;
-        }
 
-        if (off < size) {
-                uint64_t rlen = len;
+        if (off < size)
+                rc = -dmu_free_range(os, db->db_object, off, len, tx);
 
-                if (len == 0)
-                        rlen = -1;
-                else if (end > size)
-                        rlen = size - off;
-
-                rc = -dmu_free_range(os, db->db_object, off, rlen, tx);
-        }
         return rc;
 }
 
@@ -1345,7 +1345,7 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
         struct osd_device  *osd = osd_obj2dev(obj);
         udmu_objset_t      *uos = &osd->od_objset;
         struct osd_thandle *oh;
-        __u64               len = start - end;
+        __u64               len;
         int                 rc = 0;
         ENTRY;
 
@@ -1355,15 +1355,17 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
         LASSERT(th != NULL);
         oh = container_of0(th, struct osd_thandle, ot_super);
 
-        /* truncate */
-        if (end == OBD_OBJECT_EOF)
-                len = 0;
-
         cfs_write_lock(&obj->oo_attr_lock);
+        /* truncate */
+        if (end == OBD_OBJECT_EOF || end >= obj->oo_attr.la_size)
+                len = DMU_OBJECT_END;
+        else
+                len = end - start;
+
         rc = __osd_object_punch(osd->od_objset.os, obj->oo_db, oh->ot_tx,
                                 obj->oo_attr.la_size, start, len);
         /* set new size */
-        if ((end == OBD_OBJECT_EOF) || (start + end > obj->oo_attr.la_size)) {
+        if (len == DMU_OBJECT_END) {
                 obj->oo_attr.la_size = start;
                 rc = -sa_update(obj->oo_sa_hdl, SA_ZPL_SIZE(uos),
                                 &obj->oo_attr.la_size, 8, oh->ot_tx);
@@ -2823,7 +2825,7 @@ int __osd_xattr_set(const struct lu_env *env, struct osd_object *obj,
                         goto out_sa;
 
                 rc = __osd_object_punch(uos->os, xa_data_db, tx, size,
-                                        buf->lb_len, 0);
+                                        0, DMU_OBJECT_END);
                 if (rc)
                         goto out_sa;
         } else if (rc == -ENOENT) {
