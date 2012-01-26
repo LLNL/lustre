@@ -69,7 +69,7 @@ static inline obd_size ofd_grant_to_cli(struct obd_export *exp,
 static inline obd_size ofd_grant_chunk(struct obd_export *exp,
                                        struct ofd_device *ofd)
 {
-        if (ofd_grant_compat(exp, ofd))
+        if (exp && ofd_grant_compat(exp, ofd))
                 /* Try to grant enough space to send a full-size RPC */
                 return PTLRPC_MAX_BRW_SIZE <<
                                       (ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT);
@@ -482,6 +482,7 @@ static void ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
                                 continue;
                         }
 
+                        /* inflate consumed space if needed */
                         bytes = ofd_grant_rnb_size(exp, ofd, &rnb[i]);
                         if (fed->fed_grant < granted + bytes) {
                                 CDEBUG(D_CACHE, "%s: cli %s/%p claims %ld+%d "
@@ -496,6 +497,11 @@ static void ofd_grant_check(const struct lu_env *env, struct obd_export *exp,
                         }
                 }
 
+                /* Consume grant space on the server.
+                 * Unlike above, ofd_grant_rnb_size() is called with exp = NULL
+                 * so that the required grant space isn't inflated. This is
+                 * done on purpose since the server can deal with large block
+                 * size, unlike some clients */
                 bytes = ofd_grant_rnb_size(NULL, ofd, &rnb[i]);
                 if (*left > ungranted + bytes) {
                         /* if enough space, pretend it was granted */
@@ -841,17 +847,28 @@ refresh:
 
         /* When close to free space exhaustion, trigger a sync to force
          * writeback cache to consume required space immediately and release as
-         * much space as possible.
-         * That said, it is worth running a sync only if some pages did not
-         * consume grant space on the client and could thus fail with ENOSPC
-         * later in ofd_grant_check() */
+         * much space as possible. */
         if (!obd->obd_recovering && force != 2 &&
-            left < ofd_grant_chunk(exp, ofd)) {
-                cfs_spin_unlock(&ofd->ofd_grant_lock);
-                /* discard errors, at least we tried ... */
-                rc = dt_sync(env, ofd->ofd_osd);
-                force = 2;
-                goto refresh;
+            left < ofd_grant_chunk(NULL, ofd)) {
+                bool from_grant = true;
+                int  i;
+
+                /* That said, it is worth running a sync only if some pages did
+                 * not consume grant space on the client and could thus fail
+                 * with ENOSPC later in ofd_grant_check() */
+                for (i = 0; i < niocount; i++)
+                        if (!(rnb[i].rnb_flags & OBD_BRW_FROM_GRANT))
+                                from_grant = false;
+
+                if (!from_grant) {
+                        /* at least one network buffer requires acquiring grant
+                         * space on the server */
+                        cfs_spin_unlock(&ofd->ofd_grant_lock);
+                        /* discard errors, at least we tried ... */
+                        rc = dt_sync(env, ofd->ofd_osd);
+                        force = 2;
+                        goto refresh;
+                }
         }
 
         /* extract incoming grant information provided by the client */
