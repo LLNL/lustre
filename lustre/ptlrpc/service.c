@@ -1221,14 +1221,16 @@ static int ptlrpc_hpreq_init(struct ptlrpc_service *svc,
                         RETURN(rc);
         }
         if (req->rq_export && req->rq_ops) {
+                /* Perform request specific check. We should do this check
+                 * before the request is added into exp_hp_rpcs list otherwise
+                 * it may hit swab race at LU-1044. */
+                if (req->rq_ops->hpreq_check)
+                        rc = req->rq_ops->hpreq_check(req);
+
                 cfs_spin_lock_bh(&req->rq_export->exp_rpc_lock);
                 cfs_list_add(&req->rq_exp_list,
                              &req->rq_export->exp_hp_rpcs);
                 cfs_spin_unlock_bh(&req->rq_export->exp_rpc_lock);
-
-                /* Perform request specific check. */
-                if (req->rq_ops->hpreq_check)
-                        rc = req->rq_ops->hpreq_check(req);
         }
 
         RETURN(rc);
