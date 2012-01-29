@@ -54,24 +54,6 @@ extern "C" {
 
 #include <lustre/lustre_user.h>
 
-#ifndef DMU_AT_TYPE
-#define DMU_AT_TYPE    0x0001
-#define DMU_AT_MODE    0x0002
-#define DMU_AT_UID     0x0004
-#define DMU_AT_GID     0x0008
-#define DMU_AT_FSID    0x0010
-#define DMU_AT_NODEID  0x0020
-#define DMU_AT_NLINK   0x0040
-#define DMU_AT_SIZE    0x0080
-#define DMU_AT_ATIME   0x0100
-#define DMU_AT_MTIME   0x0200
-#define DMU_AT_CTIME   0x0400
-#define DMU_AT_RDEV    0x0800
-#define DMU_AT_BLKSIZE 0x1000
-#define DMU_AT_NBLOCKS 0x2000
-#define DMU_AT_SEQ     0x8000
-#endif
-
 #define LOOKUP_DIR              0x01    /* want parent dir vp */
 #define LOOKUP_XATTR            0x02    /* lookup up extended attr dir */
 #define CREATE_XATTR_DIR        0x04    /* Create extended attr dir */
@@ -131,9 +113,6 @@ int udmu_userprop_get_str(udmu_objset_t *uos, const char *prop_name, char *buf,
 int udmu_zap_lookup(udmu_objset_t *uos, dmu_buf_t *zap_db, const char *name,
                     void *value, int value_size, int intsize);
 
-void udmu_zap_create(udmu_objset_t *uos, dmu_buf_t **zap_dbp, dmu_tx_t *tx,
-                     vattr_t *va, void *tag);
-
 int udmu_zap_insert(objset_t *os, dmu_buf_t *zap_db, dmu_tx_t *tx,
                     const char *name, void *value, int len);
 
@@ -152,65 +131,8 @@ uint64_t udmu_zap_cursor_serialize(zap_cursor_t *zc);
 
 int udmu_zap_cursor_move_to_key(zap_cursor_t *zc, const char *name);
 
-
-/* udmu object API */
-void udmu_object_create(udmu_objset_t *uos, dmu_buf_t **dbp, dmu_tx_t *tx,
-                        vattr_t *va, void *tag);
-
-int udmu_object_get_dmu_buf(udmu_objset_t *uos, uint64_t object,
-                            dmu_buf_t **dbp, void *tag);
-
-void udmu_object_put_dmu_buf(dmu_buf_t *db, void *tag);
-
-int udmu_object_read(udmu_objset_t *uos, dmu_buf_t *db, uint64_t offset,
-                     uint64_t size, void *buf);
-
-void udmu_object_write(udmu_objset_t *uos, dmu_buf_t *db, struct dmu_tx *tx,
-                      uint64_t offset, uint64_t size, void *buf);
-
-void udmu_object_getattr(udmu_objset_t *uos, dmu_buf_t *db, vattr_t *vap);
-
-void udmu_object_setattr(udmu_objset_t *uos, dmu_buf_t *db, dmu_tx_t *tx,
-                         vattr_t *vap);
-
-int udmu_object_set_blocksize(udmu_objset_t *os, uint64_t oid,
-                              unsigned bsize, dmu_tx_t *tx);
-
-/*udmu transaction API */
-
-dmu_tx_t *udmu_tx_create(udmu_objset_t *uos);
-
-void udmu_tx_hold_write(dmu_tx_t *tx, uint64_t object, uint64_t off, int len);
-
-void udmu_tx_hold_free(dmu_tx_t *tx, uint64_t object, uint64_t off,
-    uint64_t len);
-
-void udmu_tx_hold_zap(dmu_tx_t *tx, uint64_t object, int add, char *name);
-
-void udmu_tx_hold_bonus(dmu_tx_t *tx, uint64_t object);
-
 /* Commit callbacks */
-typedef void udmu_tx_callback_func_t(void *dcb_data, int error);
-void udmu_tx_cb_register(dmu_tx_t *tx, udmu_tx_callback_func_t *func,
-                         void *data);
-void udmu_wait_callbacks(udmu_objset_t *uos);
-
 int udmu_object_is_zap(dmu_buf_t *);
-
-uint64_t udmu_object_get_links(dmu_buf_t *db);
-void udmu_object_links_inc(dmu_buf_t *db, dmu_tx_t *tx);
-void udmu_object_links_dec(dmu_buf_t *db, dmu_tx_t *tx);
-
-/* Extended attributes */
-int udmu_xattr_list(udmu_objset_t *uos, dmu_buf_t *db, void *val, int vallen);
-
-void udmu_xattr_declare_set(udmu_objset_t *uos, dmu_buf_t *db, int vallen,
-                            const char *name, dmu_tx_t *tx);
-
-void udmu_xattr_declare_del(udmu_objset_t *uos, dmu_buf_t *db,
-                            const char *name, dmu_tx_t *tx);
-
-void udmu_freeze(udmu_objset_t *uos);
 
 #ifdef  __cplusplus
 }
