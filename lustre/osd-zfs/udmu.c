@@ -554,12 +554,3 @@ int udmu_object_is_zap(dmu_buf_t *db)
         return rc;
 }
 
-/*
- * Delete an extended attribute.
- * This transaction must have called udmu_xattr_declare_del() first.
- *
- * Returns 0 on success or a positive error number on failure.
- *
- * No locking is done here.
- */
-

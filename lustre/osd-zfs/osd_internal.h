@@ -91,6 +91,20 @@ struct osd_fid_pack {
         char fp_area[sizeof(struct lu_fid)];
 };
 
+/* cached SA attributes */
+struct osa_attr {
+        uint64_t  mode;
+        uint64_t  gid;
+        uint64_t  uid;
+        uint64_t  nlink;
+        uint64_t  rdev;
+        uint64_t  flags;
+        uint64_t  size;
+        uint64_t  atime[2];
+        uint64_t  mtime[2];
+        uint64_t  ctime[2];
+};
+
 struct osd_thread_info {
         const struct lu_env   *oti_env;
 
@@ -119,6 +133,7 @@ struct osd_thread_info {
         char                   oti_key[MAXNAMELEN + 1];
 
         struct lu_attr         oti_la;
+        struct osa_attr        oti_osa;
         zap_attribute_t        oti_za;
         dmu_object_info_t      oti_doi;
 };
@@ -181,12 +196,16 @@ struct osd_object {
          */
         dmu_buf_t           *oo_db;
         sa_handle_t         *oo_sa_hdl;
-        uint64_t             oo_xattr;
-        /* protects attributes. */
-        cfs_semaphore_t      oo_guard;
+
         cfs_rw_semaphore_t   oo_sem;
 
-        uint64_t             oo_mode;
+        /* cached attributes */
+        cfs_rwlock_t         oo_attr_lock;
+        struct lu_attr       oo_attr;
+
+        /* protects extended attributes */
+        cfs_semaphore_t      oo_guard;
+        uint64_t             oo_xattr;
 };
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
