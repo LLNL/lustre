@@ -112,7 +112,7 @@ get_ost_node() {
     ost_uuid=$(ostuuid_from_index $obdidx)
 
     for node in $(osts_nodes); do
-        do_node $node "lctl get_param -n ofd.*.uuid" | grep -q $ost_uuid
+        do_node $node "lctl get_param -n obdfilter.*.uuid" | grep -q $ost_uuid
         [ ${PIPESTATUS[1]} -eq 0 ] && ost_node=$node && break
     done
     [ -z "$ost_node" ] && \
