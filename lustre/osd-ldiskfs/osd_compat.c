@@ -602,7 +602,6 @@ cleanup:
         RETURN(rc);
 }
 
-
 int osd_compat_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
                            const struct lu_fid *fid, const struct osd_inode_id *id,
                            struct thandle *th)
