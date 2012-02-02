@@ -121,6 +121,8 @@ enum local_oid {
         LLOG_CATALOGS_OID       = 4118UL,
         MGS_CONFIGS_OID         = 4119UL,
         OFD_HEALTH_CHECK_OID    = 4120UL,
+        /* all OID after this one are dynamic */
+        OSD_GENERATED_OID       = 4200UL,
 };
 
 static inline void lu_local_obj_fid(struct lu_fid *fid, __u32 oid)

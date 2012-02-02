@@ -456,7 +456,8 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
                 id->oii_ino = inode->i_ino;
                 id->oii_gen = inode->i_generation;
         } else {
-                if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE)) {
+                if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE) &&
+                    (fid_oid(fid) < OSD_GENERATED_OID)) {
                         rc = osd_compat_spec_lookup(info, osd, fid, id);
                         if (rc == 0 || rc != -ERESTART)
                                 goto out;
@@ -542,7 +543,8 @@ int osd_oi_insert(struct osd_thread_info *info, struct osd_device *osd,
                 return osd_compat_objid_insert(info, osd, fid, id0, th);
 
         /* notice we don't return immediately, but continue to get into OI */
-        if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE))
+        if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE) &&
+            (fid_oid(fid) < OSD_GENERATED_OID))
                 osd_compat_spec_insert(info, osd, fid, id0, th);
 
         fid_cpu_to_be(oi_fid, fid);
@@ -592,7 +594,8 @@ int osd_oi_delete(struct osd_thread_info *info,
         if (fid_is_igif(fid))
                 return 0;
 
-        LASSERT(fid_seq(fid) != FID_SEQ_LOCAL_FILE);
+        LASSERT(ergo(fid_seq(fid) == FID_SEQ_LOCAL_FILE,
+                     fid_oid(fid) >= OSD_GENERATED_OID));
 
         if (fid_is_idif(fid) || fid_seq(fid) == FID_SEQ_LLOG)
                 return osd_compat_objid_delete(info, osd, fid, th);
