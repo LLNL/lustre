@@ -122,7 +122,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
         }
 
         if (IS_ERR(fo))
-                RETURN(PTR_ERR(fo));
+                GOTO(out, rc = PTR_ERR(fo));
         LASSERT(fo != NULL);
 
         ofd_read_lock(env, fo);
@@ -130,6 +130,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                 CERROR("%s: BRW to missing obj "LPU64"/"LPU64"\n",
                        exp->exp_obd->obd_name, obj->ioo_id, obj->ioo_seq);
                 ofd_read_unlock(env, fo);
+                ofd_object_put(env, fo);
                 GOTO(out, rc = -ENOENT);
         }
 
@@ -168,10 +169,17 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
         if (unlikely(rc != 0)) {
                 dt_bufs_put(env, ofd_object_child(fo), lnb, *nr_local);
                 ofd_read_unlock(env, fo);
+                /* ofd_grant_prepare_write() was called, so we must commit */
+                ofd_grant_commit(env, exp, rc);
         }
 
-out:
         ofd_object_put(env, fo);
+        RETURN(rc);
+out:
+        /* let's still process incoming grant information packed in the oa,
+         * but without enforcing grant since we won't proceed with the write.
+         * Just like a read request actually. */
+        ofd_grant_prepare_read(env, exp, oa);
         RETURN(rc);
 }
 
@@ -369,7 +377,7 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
 
         fo = ofd_object_find(env, ofd, fid);
         if (IS_ERR(fo))
-                RETURN(PTR_ERR(fo));
+                GOTO(out_nofo, rc = PTR_ERR(fo));
 
         LASSERT(fo != NULL);
         LASSERT(ofd_object_exists(fo));
@@ -432,11 +440,11 @@ out_stop:
                 goto retry;
         }
 out:
-        ofd_grant_commit(env, info->fti_exp, old_rc);
         dt_bufs_put(env, o, lnb, niocount);
         ofd_read_unlock(env, fo);
         ofd_object_put(env, fo);
-
+out_nofo:
+        ofd_grant_commit(env, info->fti_exp, old_rc);
         RETURN(rc);
 }
 
