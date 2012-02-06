@@ -389,22 +389,63 @@ static const struct dt_device_operations lod_dt_ops = {
 };
 
 static int lod_connect_to_osd(const struct lu_env *env, struct lod_device *m,
-                               const char *nextdev)
+                              struct lustre_cfg *cfg)
 {
         struct obd_connect_data *data = NULL;
         struct obd_device       *obd;
-        int                      rc;
+        char                    *nextdev = NULL, *p, *s;
+        int                      rc, len = 0;
         ENTRY;
 
+        LASSERT(cfg);
         LASSERT(m->lod_child_exp == NULL);
+
+        /* compatibility hack: we still use old config logs
+         * which specify LOV, but we need to learn underlying
+         * OSD device, which is supposed to be:
+         *  <fsname>-MDTxxxx-osd
+         *
+         * 2.x MGS generates lines like the following:
+         *   #03 (176)lov_setup 0:lustre-MDT0000-mdtlov  1:(struct lov_desc)
+         * 1.8 MGS generates lines like the following:
+         *   #03 (168)lov_setup 0:lustre-mdtlov  1:(struct lov_desc)
+         *
+         * we use "-MDT" to differentiate 2.x from 1.8 */
+
+        if ((p = lustre_cfg_string(cfg, 0)) && strstr(p, "-mdtlov")) {
+                len = strlen(p) + 1;
+                OBD_ALLOC(nextdev, len);
+                if (nextdev == NULL)
+                        GOTO(out, rc = -ENOMEM);
+
+                strcpy(nextdev, p);
+                s = strstr(nextdev, "-mdtlov");
+                if (unlikely(s == NULL)) {
+                        CERROR("unable to parse device name %s\n",
+                               lustre_cfg_string(cfg, 0));
+                        GOTO(out, rc = -EINVAL);
+                }
+
+                if (strstr(nextdev, "-MDT")) {
+                        /* 2.x config */
+                        strcpy(s, "-osd");
+                } else {
+                        /* 1.8 config */
+                        strcpy(s, "-MDT0000-osd");
+                }
+        } else {
+                CERROR("unable to parse device name %s\n",
+                       lustre_cfg_string(cfg, 0));
+                GOTO(out, rc = -EINVAL);
+        }
 
         OBD_ALLOC_PTR(data);
         if (data == NULL)
-                RETURN(-ENOMEM);
+                GOTO(out, rc = -ENOMEM);
 
         obd = class_name2obd(nextdev);
         if (obd == NULL) {
-                CERROR("can't locate next device: %s\n", nextdev);
+                CERROR("can not locate next device: %s\n", nextdev);
                 GOTO(out, rc = -ENOTCONN);
         }
 
@@ -424,7 +465,10 @@ static int lod_connect_to_osd(const struct lu_env *env, struct lod_device *m,
         m->lod_child = lu2dt_dev(m->lod_child_exp->exp_obd->obd_lu_dev);
 
 out:
-        OBD_FREE_PTR(data);
+        if (data)
+                OBD_FREE_PTR(data);
+        if (nextdev)
+                OBD_FREE(nextdev, len);
         RETURN(rc);
 }
 
@@ -447,7 +491,7 @@ static int lod_init0(const struct lu_env *env, struct lod_device *m,
         m->lod_dt_dev.dd_lu_dev.ld_ops = &lod_lu_ops;
         m->lod_dt_dev.dd_ops = &lod_dt_ops;
 
-        rc = lod_connect_to_osd(env, m, lustre_cfg_string(cfg, 3));
+        rc = lod_connect_to_osd(env, m, cfg);
         if (rc)
                 RETURN(rc);
 
@@ -463,18 +507,15 @@ static int lod_init0(const struct lu_env *env, struct lod_device *m,
         lov_proc_dir = lprocfs_srch(proc_lustre_root, "lov");
         if (lov_proc_dir) {
                 cfs_proc_dir_entry_t *symlink = NULL;
-                char *name, *p;
+                char *name;
                 OBD_ALLOC(name, strlen(obd->obd_name) + 1);
                 if (name) {
                         strcpy(name, obd->obd_name);
-                        p = strstr(name, "lod");
-                        if (p) {
-                                p[2] = 'v';
+                        if (strstr(name, "lov"))
                                 symlink = lprocfs_add_symlink(name,
                                                 lov_proc_dir,
                                                 "../lod/%s",
                                                 obd->obd_name);
-                        }
                         OBD_FREE(name, strlen(obd->obd_name) + 1);
                         m->lod_symlink = symlink;
                 }

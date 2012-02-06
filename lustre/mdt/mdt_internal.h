@@ -184,6 +184,9 @@ struct mdt_device {
 
         /* space accounting and quota related data */
         struct lu_quota            mdt_lu_quota;
+
+        /* name of the next device - MDD */
+        char                       mdt_nextdev[MAX_OBD_NAME];
 };
 
 #define MDT_SERVICE_WATCHDOG_FACTOR     (2)
