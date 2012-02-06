@@ -1407,72 +1407,6 @@ out_free:
         return rc;
 }
 
-/* lod is the first thing in the mdt */
-static int mgs_write_log_lod(const struct lu_env *env, struct mgs_device *mgs,
-                             struct fs_db *fsdb, struct mgs_target_info *mti,
-                             char *logname, char *lovname)
-{
-        struct llog_handle *llh = NULL;
-        struct lov_desc *lovdesc;
-        char *uuid, *osdname;
-        int rc = 0;
-        ENTRY;
-
-        CDEBUG(D_MGS, "Writing lod(%s) log for %s\n", lovname, logname);
-
-        /*
-        #01 L attach   0:lov_mdsA  1:lov  2:71ccb_lov_mdsA_19f961a9e1
-        #02 L lov_setup 0:lov_mdsA 1:(struct lov_desc)
-              uuid=lov1_UUID, stripe count=1, size=1048576, offset=0, pattern=0
-        */
-
-        /* FIXME just make lov_setup accept empty desc (put uuid in buf 2) */
-        OBD_ALLOC_PTR(lovdesc);
-        if (lovdesc == NULL)
-                RETURN(-ENOMEM);
-        lovdesc->ld_magic = LOV_DESC_MAGIC;
-        lovdesc->ld_tgt_count = 0;
-        /* Defaults.  Can be changed later by lcfg config_param */
-        lovdesc->ld_default_stripe_count = 1;
-        lovdesc->ld_pattern = LOV_PATTERN_RAID0;
-        lovdesc->ld_default_stripe_size = 1024 * 1024;
-        lovdesc->ld_default_stripe_offset = -1;
-        lovdesc->ld_qos_maxage = QOS_DEFAULT_MAXAGE;
-        sprintf((char*)lovdesc->ld_uuid.uuid, "%s_UUID", lovname);
-        /* can these be the same? */
-        uuid = (char *)lovdesc->ld_uuid.uuid;
-
-        rc = name_create(&osdname, logname, "-osd");
-        if (rc)
-                GOTO(out_free, rc);
-        /* This should always be the first entry in a log.
-        rc = mgs_clear_log(obd, logname); */
-        rc = record_start_log(env, mgs, &llh, logname);
-        if (rc)
-                GOTO(out_name, rc);
-        /* FIXME these should be a single journal transaction */
-        rc = record_marker(env, llh, fsdb, CM_START, lovname, "lod setup");
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_attach(env, llh, lovname, "lod", uuid);
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_lov_setup(env, llh, lovname, lovdesc, osdname);
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_marker(env, llh, fsdb, CM_END, lovname, "lod setup");
-        if (rc)
-                GOTO(out_end, rc);
-        EXIT;
-out_end:
-        record_end_log(env, &llh);
-out_name:
-        name_destroy(&osdname);
-out_free:
-        OBD_FREE_PTR(lovdesc);
-        return rc;
-}
-
 /* add failnids to open log */
 static int mgs_write_log_failnids(const struct lu_env *env,
                                   struct mgs_target_info *mti,
@@ -1704,14 +1638,14 @@ static int mgs_write_log_mdt0(const struct lu_env *env,
         if (class_find_param(ptr, PARAM_FAILMODE, &ptr) == 0)
                 failout = (strncmp(ptr, "failout", 7) == 0);
 
-        rc = name_create(&lovname, log, "-lod");
+        rc = name_create(&lovname, log, "-mdtlov");
         if (rc)
                 GOTO(out_free, rc);
         rc = name_create(&mddname, log, "-mdd");
         if (rc)
                 GOTO(out_lod, rc);
         if (mgs_log_is_empty(env, mgs, log)) {
-                rc = mgs_write_log_lod(env, mgs, fsdb, mti, log, lovname);
+                rc = mgs_write_log_lov(env, mgs, fsdb, mti, log, lovname);
                 if (rc)
                         GOTO(out_mdd, rc);
         }
@@ -1721,27 +1655,6 @@ static int mgs_write_log_mdt0(const struct lu_env *env,
         rc = record_start_log(env, mgs, &llh, log);
         if (rc)
                 GOTO(out_mdd, rc);
-
-        /* add MDD */
-
-        /* FIXME this whole fn should be a single journal transaction */
-        sprintf(uuid, "%s_UUID", mddname);
-        rc = record_marker(env, llh, fsdb, CM_START, mddname, "add mdd");
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_attach(env, llh, mddname, LUSTRE_MDD_NAME, uuid);
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_mount_opt(env, llh, log, lovname, NULL);
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_setup(env, llh, mddname, uuid, mdt_index, lovname,
-                        failout ? "n" : "f");
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_marker(env, llh, fsdb, CM_END, mddname, "add mdd");
-        if (rc)
-                GOTO(out_end, rc);
 
         /* add MDT itself */
 
@@ -1753,10 +1666,10 @@ static int mgs_write_log_mdt0(const struct lu_env *env,
         rc = record_attach(env, llh, log, LUSTRE_MDT_NAME, uuid);
         if (rc)
                 GOTO(out_end, rc);
-        rc = record_mount_opt(env, llh, log, mddname, NULL);
+        rc = record_mount_opt(env, llh, log, lovname, NULL);
         if (rc)
                 GOTO(out_end, rc);
-        rc = record_setup(env, llh, log, uuid, mdt_index, mddname,
+        rc = record_setup(env, llh, log, uuid, mdt_index, lovname,
                         failout ? "n" : "f");
         if (rc)
                 GOTO(out_end, rc);
@@ -1792,9 +1705,9 @@ static int name_create_mdt_and_lov(char **logname, char **lovname,
                 return rc;
         /* COMPAT_180 */
         if (i == 0 && cfs_test_bit(FSDB_OSCNAME18, &fsdb->fsdb_flags))
-                rc = name_create(lovname, fsdb->fsdb_name, "-lod");
+                rc = name_create(lovname, fsdb->fsdb_name, "-mdtlov");
         else
-                rc = name_create(lovname, *logname, "-lod");
+                rc = name_create(lovname, *logname, "-mdtlov");
         if (rc) {
                 name_destroy(logname);
                 *logname = NULL;
@@ -2010,112 +1923,6 @@ out_nodeuuid:
         RETURN(rc);
 }
 
-/* Add the osp info to the mdt lov */
-static int mgs_write_log_osp_to_lod(const struct lu_env *env,
-                                    struct mgs_device *mgs,
-                                    struct fs_db *fsdb,
-                                    struct mgs_target_info *mti,
-                                    char *logname, char *suffix, char *lodname,
-                                    enum lustre_sec_part sec_part, int flags)
-{
-        struct llog_handle *llh = NULL;
-        char *nodeuuid, *ospname, *ospuuid, *loduuid, *svname;
-        char *osdname;
-        char index[7];
-        int i, rc;
-
-        ENTRY;
-        CDEBUG(D_INFO, "adding osp for %s to log %s\n",
-               mti->mti_svname, logname);
-
-        if (mgs_log_is_empty(env, mgs, logname)) {
-                /* The first item in the log must be the lov, so we have
-                   somewhere to add our osc. */
-                rc = mgs_write_log_lod(env, mgs, fsdb, mti, logname, lodname);
-                if (rc)
-                        RETURN(rc);
-        }
-
-        rc = name_create(&nodeuuid, libcfs_nid2str(mti->mti_nids[0]), "");
-        if (rc)
-                RETURN(rc);
-        rc = name_create(&svname, mti->mti_svname, "-osp");
-        if (rc)
-                GOTO(out_nodeuuid, rc);
-        rc = name_create(&ospname, svname, suffix);
-        if (rc)
-                GOTO(out_svname, rc);
-        rc = name_create(&ospuuid, ospname, "_UUID");
-        if (rc)
-                GOTO(out_ospname, rc);
-        rc = name_create(&loduuid, lodname, "_UUID");
-        if (rc)
-                GOTO(out_ospuuid, rc);
-        rc = name_create(&osdname, logname, "-osd");
-        if (rc)
-                GOTO(out_loduuid, rc);
-
-        /*
-        #03 L add_uuid nid=uml1@tcp(0x20000c0a80201) 0:  1:uml1_UUID
-        multihomed (#4)
-        #04 L add_uuid  nid=1@elan(0x1000000000001)  nal=90 0:  1:uml1_UUID
-        #04 L attach   0:OSC_uml1_ost1_MNT_client  1:osc  2:89070_lov1_a41dff51a
-        #05 L setup    0:OSC_uml1_ost1_MNT_client  1:ost1_UUID  2:uml1_UUID
-        failover (#6,7)
-        #06 L add_uuid nid=uml2@tcp(0x20000c0a80202) 0:  1:uml2_UUID
-        #07 L add_conn 0:OSC_uml1_ost1_MNT_client  1:uml2_UUID
-        #08 L lov_modify_tgts add 0:lov1  1:ost1_UUID  2(index):0  3(gen):1
-        */
-
-        rc = record_start_log(env, mgs, &llh, logname);
-        if (rc)
-                GOTO(out_free, rc);
-        /* FIXME these should be a single journal transaction */
-        rc = record_marker(env, llh, fsdb, CM_START | flags, mti->mti_svname,
-                           "add osp");
-        if (rc)
-                GOTO(out_end, rc);
-        for (i = 0; i < mti->mti_nid_count; i++) {
-                CDEBUG(D_MGS, "add nid %s\n", libcfs_nid2str(mti->mti_nids[i]));
-                rc = record_add_uuid(env, llh, mti->mti_nids[i], nodeuuid);
-                if (rc)
-                        GOTO(out_end, rc);
-        }
-        snprintf(index, sizeof(index), "%d", mti->mti_stripe_index);
-        rc = record_attach(env, llh, ospname, LUSTRE_OSP_NAME, loduuid);
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_setup(env, llh, ospname, mti->mti_uuid, nodeuuid,
-                          osdname, index);
-        if (rc)
-                GOTO(out_end, rc);
-        rc = mgs_write_log_failnids(env, mti, llh, ospname);
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_lov_add(env, llh, lodname, ospname, index, "1");
-        if (rc)
-                GOTO(out_end, rc);
-        rc = record_marker(env, llh, fsdb, CM_END | flags, mti->mti_svname,
-                           "add osp");
-        if (rc)
-                GOTO(out_end, rc);
-out_end:
-        record_end_log(env, &llh);
-out_free:
-        name_destroy(&osdname);
-out_loduuid:
-        name_destroy(&loduuid);
-out_ospuuid:
-        name_destroy(&ospuuid);
-out_ospname:
-        name_destroy(&ospname);
-out_svname:
-        name_destroy(&svname);
-out_nodeuuid:
-        name_destroy(&nodeuuid);
-        RETURN(rc);
-}
-
 static int mgs_write_log_ost(const struct lu_env *env,
                              struct mgs_device *mgs, struct fs_db *fsdb,
                              struct mgs_target_info *mti)
@@ -2202,9 +2009,10 @@ out_end:
                         if (rc)
                                 RETURN(rc);
                         sprintf(mdt_index, "-MDT%04x", i);
-                        rc = mgs_write_log_osp_to_lod(env, mgs, fsdb, mti, logname,
-                                                  mdt_index, lovname,
-                                                  LUSTRE_SP_MDT, flags);
+                        rc = mgs_write_log_osc_to_lov(env, mgs, fsdb, mti,
+                                                      logname, mdt_index,
+                                                      lovname, LUSTRE_SP_MDT,
+                                                      flags);
                         name_destroy(&logname);
                         name_destroy(&lovname);
                         if (rc)

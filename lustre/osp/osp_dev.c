@@ -364,7 +364,8 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
         struct proc_dir_entry      *osc_proc_dir;
         struct obd_import          *imp;
         class_uuid_t                uuid;
-        int                         rc;
+        char                       *src, *ost, *mdt, *osdname = NULL;
+        int                         rc, idx;
         ENTRY;
 
         m->opd_obd = class_name2obd(lustre_cfg_string(cfg, 0));
@@ -374,16 +375,61 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
                 RETURN(-ENODEV);
         }
 
-        if (sscanf(lustre_cfg_buf(cfg, 4), "%d", &m->opd_index) != 1) {
-                CERROR("can't find index in configuration\n");
+        /* There is no record in the MDT configuration for the local disk
+         * device, so we have to extract this from elsewhere in the profile.
+         * The only information we get at setup is from the OSC records:
+         * setup 0:{fsname}-OSTxxxx-osc[-MDTxxxx] 1:lustre-OST0000_UUID 2:NID
+         * Note that 1.8 generated configs are missing the -MDTxxxx part.
+         * We need to reconstruct the name of the underlying OSD from this:
+         * {fsname}-{svname}-osd, for example "lustre-MDT0000-osd".  We
+         * also need to determine the OST index from this - will be used
+         * to calculate the offset in shared lov_objids file later */
+
+        src = lustre_cfg_string(cfg, 0);
+        if (src == NULL)
                 RETURN(-EINVAL);
+
+        ost = strstr(src, "-OST");
+        if (ost == NULL)
+                RETURN(-EINVAL);
+
+        idx = simple_strtol(ost + 4, &mdt, 16);
+        if (mdt[0] != '-' || idx > INT_MAX || idx < 0) {
+                CERROR("%s: invalid OST index in '%s'\n",
+                       m->opd_obd->obd_name, src);
+                GOTO(out_fini, rc = -EINVAL);
         }
+        m->opd_index = idx;
+
+        idx = ost - src;
+        /* check the fsname length, and after this everything else will fit */
+        if (idx > MTI_NAME_MAXLEN) {
+                CERROR("%s: fsname too long in '%s'\n",
+                       m->opd_obd->obd_name, src);
+                GOTO(out_fini, rc = -EINVAL);
+        }
+
+        OBD_ALLOC(osdname, MAX_OBD_NAME);
+        if (osdname == NULL)
+                GOTO(out_fini, rc = -ENOMEM);
+
+        memcpy(osdname, src, idx); /* copy just the fsname part */
+        osdname[idx] = '\0';
+
+        mdt = strstr(mdt, "-MDT");
+        if (mdt == NULL) /* 1.8 configs don't have "-MDT0000" at the end */
+                strcat(osdname, "-MDT0000");
+        else
+                strcat(osdname, mdt);
+        strcat(osdname, "-osd");
+        CDEBUG(D_HA, "%s: connect to %s (%s)\n",
+               m->opd_obd->obd_name, osdname, src);
 
         m->opd_dt_dev.dd_lu_dev.ld_ops = &osp_lu_ops;
         m->opd_dt_dev.dd_ops = &osp_dt_ops;
         m->opd_obd->obd_lu_dev = &m->opd_dt_dev.dd_lu_dev;
 
-        rc = osp_connect_to_osd(env, m, lustre_cfg_string(cfg, 3));
+        rc = osp_connect_to_osd(env, m, osdname);
         if (rc)
                 GOTO(out_fini, rc);
 
@@ -393,7 +439,7 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
 
         rc = client_obd_setup(m->opd_obd, cfg);
         if (rc) {
-                CERROR("can't setup obd: %d\n", rc);
+                CERROR("%s: can't setup obd: %d\n", m->opd_obd->obd_name, rc);
                 GOTO(out_ref, rc);
         }
 
@@ -405,18 +451,15 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
         osc_proc_dir = lprocfs_srch(proc_lustre_root, "osc");
         if (osc_proc_dir) {
                 cfs_proc_dir_entry_t *symlink = NULL;
-                char *name, *p;
+                char *name;
                 OBD_ALLOC(name, strlen(m->opd_obd->obd_name) + 1);
                 if (name) {
                         strcpy(name, m->opd_obd->obd_name);
-                        p = strstr(name, "osp");
-                        if (p) {
-                                p[2] = 'c';
+                        if (strstr(name, "osc"))
                                 symlink = lprocfs_add_symlink(name,
                                                 osc_proc_dir,
                                                 "../osp/%s",
                                                 m->opd_obd->obd_name);
-                        }
                         OBD_FREE(name, strlen(m->opd_obd->obd_name) + 1);
                         m->opd_symlink = symlink;
                 }
@@ -455,6 +498,8 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
         rc = ptlrpc_init_import(imp);
         if (rc)
                 GOTO(out, rc);
+        if (osdname)
+                OBD_FREE(osdname, MAX_OBD_NAME);
         RETURN(0);
 
 out:
@@ -475,6 +520,9 @@ out_ref:
 out_disconnect:
         obd_disconnect(m->opd_storage_exp);
 out_fini:
+        if (osdname)
+                OBD_FREE(osdname, MAX_OBD_NAME);
+
         RETURN(rc);
 }
 
