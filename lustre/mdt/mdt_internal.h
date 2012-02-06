@@ -177,6 +177,9 @@ struct mdt_device {
         struct lprocfs_stats      *mdt_stats;
         int                        mdt_sec_level;
         struct rename_stats        mdt_rename_stats;
+
+        /* name of the next device - MDD */
+        char                       mdt_nextdev[MAX_OBD_NAME];
 };
 
 #define MDT_SERVICE_WATCHDOG_FACTOR     (2)
