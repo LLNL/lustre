@@ -185,6 +185,7 @@ int lod_add_device(const struct lu_env *env, struct lod_device *lod,
         struct dt_device        *d;
         int                      rc;
         struct lod_ost_desc     *ost_desc;
+        struct obd_uuid          obd_uuid;
 
         ENTRY;
 
@@ -196,7 +197,10 @@ int lod_add_device(const struct lu_env *env, struct lod_device *lod,
                 RETURN(-EINVAL);
         }
 
-        obd = class_name2obd(osp);
+        obd_str2uuid(&obd_uuid, osp);
+
+        obd = class_find_client_obd(&obd_uuid, LUSTRE_OSP_NAME,
+                                   &lod->lod_dt_dev.dd_lu_dev.ld_obd->obd_uuid);
         if (obd == NULL) {
                 CERROR("can't find %s device\n", osp);
                 RETURN(-EINVAL);

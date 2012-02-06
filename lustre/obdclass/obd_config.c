@@ -1290,6 +1290,32 @@ static int class_config_llog_handler(const struct lu_env *env,
                         }
                 }
 
+#ifdef __KERNEL__
+                /* newer MDS replaces LOV/OSC with LOD/OSP */
+                {
+                        char *typename = lustre_cfg_string(lcfg, 1);
+
+                        if ((lcfg->lcfg_command == LCFG_ATTACH && typename &&
+                             strcmp(typename, LUSTRE_LOV_NAME) == 0) &&
+                             IS_MDT(clli->cfg_lsi)) {
+                                CDEBUG(D_CONFIG,
+                                       "For 2.x interoperability, rename obd "
+                                       "type from lov to lod (%s)\n",
+                                       clli->cfg_lsi->lsi_svname);
+                                strcpy(typename, LUSTRE_LOD_NAME);
+                        }
+                        if ((lcfg->lcfg_command == LCFG_ATTACH && typename &&
+                             strcmp(typename, LUSTRE_OSC_NAME) == 0) &&
+                             IS_MDT(clli->cfg_lsi)) {
+                                CDEBUG(D_CONFIG,
+                                       "For 2.x interoperability, rename obd "
+                                       "type from osc to osp (%s)\n",
+                                       clli->cfg_lsi->lsi_svname);
+                                strcpy(typename, LUSTRE_OSP_NAME);
+                        }
+                }
+#endif
+
                 if ((clli->cfg_flags & CFG_F_EXCLUDE) &&
                     (lcfg->lcfg_command == LCFG_LOV_ADD_OBD))
                         /* Add inactive instead */
