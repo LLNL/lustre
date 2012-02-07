@@ -62,6 +62,21 @@ static int ofd_parse_connect_data(const struct lu_env *env,
                data->ocd_connect_flags, data->ocd_version,
                data->ocd_grant, data->ocd_index);
 
+        /* Due to few changes in the protocol, OFD can't work with old MDS */
+        if (data->ocd_connect_flags & OBD_CONNECT_MDS) {
+                if (OBD_OCD_VERSION_MAJOR(data->ocd_version) < 2 ||
+                    OBD_OCD_VERSION_MINOR(data->ocd_version) < 2 ||
+                    OBD_OCD_VERSION_PATCH(data->ocd_version) < 49) {
+                        CERROR("Newer version of MDS is required. "
+                               "Current one is %d.%d.%d.%d\n",
+                               OBD_OCD_VERSION_MAJOR(data->ocd_version),
+                               OBD_OCD_VERSION_MINOR(data->ocd_version),
+                               OBD_OCD_VERSION_PATCH(data->ocd_version),
+                               OBD_OCD_VERSION_FIX(data->ocd_version));
+                        RETURN(-ENOTSUPP);
+                }
+        }
+
         data->ocd_connect_flags &= OST_CONNECT_SUPPORTED;
         exp->exp_connect_flags = data->ocd_connect_flags;
         data->ocd_version = LUSTRE_VERSION_CODE;
