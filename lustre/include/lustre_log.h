@@ -97,9 +97,18 @@ struct cat_handle_data {
 
 static inline void logid_to_fid(struct llog_logid *id, struct lu_fid *fid)
 {
-        fid->f_seq = id->lgl_oseq;
-        fid->f_oid = id->lgl_oid;
-        fid->f_ver = 0;
+        /* For compatibility purposes we identify old (pre-osd) logid's
+         * by non-zero ogen (inode generation) and convert them into IGIF */
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2,2,52,0)
+        LASSERT(id->lgl_oseq == 0 || FID_SEQ_LLOG);
+#endif
+        if (id->lgl_ogen == 0) {
+                fid->f_seq = id->lgl_oseq;
+                fid->f_oid = id->lgl_oid;
+                fid->f_ver = 0;
+        } else {
+                lu_igif_build(fid, id->lgl_oid, id->lgl_ogen);
+        }
 }
 
 static inline void fid_to_logid(struct lu_fid *fid, struct llog_logid *id)
