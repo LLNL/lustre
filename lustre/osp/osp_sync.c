@@ -522,7 +522,9 @@ static int osp_sync_new_unlink_job(struct osp_device *d,
         body->oa.o_id  = rec->lur_oid;
         body->oa.o_seq = rec->lur_oseq;
         body->oa.o_misc = rec->lur_count;
-        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID | OBD_MD_FLOBJCOUNT;
+        body->oa.o_valid = OBD_MD_FLGROUP | OBD_MD_FLID;
+        if (rec->lur_count)
+                body->oa.o_valid |= OBD_MD_FLOBJCOUNT;
 
         osp_sync_send_new_rpc(d, req);
         RETURN(0);
