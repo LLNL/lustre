@@ -52,6 +52,8 @@
 #define DMU_OSD_SVNAME          "svname"
 #define DMU_OSD_OI_NAME         "OBJECTS"
 
+#define OSD_GFP_IO              (GFP_NOFS | __GFP_HIGHMEM)
+
 /**
  * Iterator's in-memory data structure for quota file.
  */
@@ -280,6 +282,9 @@ enum {
         LPROC_OSD_CACHE_ACCESS = 4,
         LPROC_OSD_CACHE_HIT = 5,
         LPROC_OSD_CACHE_MISS = 6,
+        LPROC_OSD_COPY_IO = 7,
+        LPROC_OSD_0COPY_IO = 8,
+        LPROC_OSD_TAIL_IO = 9,
         LPROC_OSD_LAST,
 };
 

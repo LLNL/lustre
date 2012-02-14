@@ -79,6 +79,15 @@ static int osd_stats_init(struct osd_device *osd)
                 lprocfs_counter_init(osd->od_stats, LPROC_OSD_CACHE_MISS,
                                      LPROCFS_CNTR_AVGMINMAX,
                                      "cache_miss", "pages");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_COPY_IO,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "copy", "pages");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_0COPY_IO,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "zerocopy", "pages");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_TAIL_IO,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "tail", "pages");
 #ifdef OSD_THANDLE_STATS
                 lprocfs_counter_init(osd->od_stats, LPROC_OSD_THANDLE_STARTING,
                                      LPROCFS_CNTR_AVGMINMAX,

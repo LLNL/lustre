@@ -78,6 +78,7 @@ static struct dt_object_operations  osd_obj_ops;
 static struct dt_body_operations    osd_body_ops;
 
 static char *osd_object_tag = "osd_object";
+static char *osd_zerocopy_tag = "0copy";
 static char *root_tag = "osd_mount, rootdb";
 static char *objdir_tag = "osd_mount, objdb";
 
@@ -3230,82 +3231,236 @@ static ssize_t osd_write(const struct lu_env *env, struct dt_object *dt,
         RETURN(rc);
 }
 
-static int osd_map_remote_to_local(struct dt_object *dt, loff_t offset,
-                                   ssize_t len, struct niobuf_local *lnb)
-{
-        int plen;
-        int nrpages = 0;
-
-        while (len > 0) {
-                plen = len;
-                if (plen > CFS_PAGE_SIZE)
-                        plen = CFS_PAGE_SIZE;
-
-                lnb->lnb_file_offset = offset;
-                lnb->lnb_page_offset = 0;
-                lnb->lnb_len = plen;
-                lnb->lnb_page = NULL;
-                lnb->lnb_rc = 0;
-                lnb->lnb_obj = dt;
-
-                offset += plen;
-                len -= plen;
-                lnb++;
-                nrpages++;
-        }
-        return nrpages;
-}
-
-static int osd_bufs_get(const struct lu_env *env, struct dt_object *dt,
-                        loff_t offset, ssize_t len, struct niobuf_local *lnb,
-                        int rw, struct lustre_capa *capa)
-{
-        struct osd_object   *obj     = osd_dt_obj(dt);
-        int                  rc, i, npages;
-        ENTRY;
-
-        LASSERT(dt_object_exists(dt));
-        LASSERT(obj->oo_db);
-
-        npages = osd_map_remote_to_local(dt, offset, len, lnb);
-
-        for (i = 0; i < npages; i++) {
-                lnb[i].lnb_page = alloc_page(GFP_NOFS | __GFP_HIGHMEM);
-                if (lnb[i].lnb_page == NULL)
-                        GOTO(out_err, rc = -ENOMEM);
-                lu_object_get(&dt->do_lu);
-        }
-
-        RETURN(npages);
-out_err:
-        while (--i >= 0) {
-                LASSERT(lnb[i].lnb_page);
-                lu_object_put(env, &dt->do_lu);
-                __free_page(lnb[i].lnb_page);
-                lnb[i].lnb_page = NULL;
-        }
-        RETURN(rc);
-}
-
 static int osd_bufs_put(const struct lu_env *env, struct dt_object *dt,
                         struct niobuf_local *lnb, int npages)
 {
         struct osd_object *obj  = osd_dt_obj(dt);
+        unsigned long      ptr;
         int                i;
 
         LASSERT(dt_object_exists(dt));
         LASSERT(obj->oo_db);
 
         for (i = 0; i < npages; i++) {
-                LASSERT(lnb[i].lnb_obj == dt);
                 if (lnb[i].lnb_page == NULL)
                         continue;
-                lu_object_put(env, &dt->do_lu);
-                __free_page(lnb[i].lnb_page);
+                if (lnb[i].lnb_page->mapping == (void *)obj) {
+                        /* this is anonymous page allocated for copy-write */
+                        lnb[i].lnb_page->mapping = NULL;
+                        __free_page(lnb[i].lnb_page);
+                } else if ((ptr = (unsigned long)lnb[i].lnb_obj)) {
+                        /* see comment in osd_get_bufs_read() */
+                        if (ptr & 1UL) {
+                                ptr &= ~1UL;
+                                dmu_buf_rele((void *)ptr, osd_zerocopy_tag);
+                        } else {
+                                dmu_return_arcbuf(lnb[i].lnb_obj);
+                        }
+                }
                 lnb[i].lnb_page = NULL;
+                lnb[i].lnb_obj = NULL;
         }
 
         return 0;
+}
+
+static struct page *kmem_to_page(void *addr)
+{
+        struct page *page;
+
+        if (kmem_virt(addr))
+                page = vmalloc_to_page(addr);
+        else
+                page = virt_to_page(addr);
+
+        return page;
+}
+
+static int osd_bufs_get_read(const struct lu_env *env, struct osd_object *obj,
+                             loff_t off, ssize_t len, struct niobuf_local *lnb)
+{
+        dmu_buf_t  **dbp;
+        int          rc, i, numbufs, npages = 0;
+        ENTRY;
+
+        /* grab buffers for read
+         * OSD API let us to grab buffers first, then initiate IO(s)
+         * so that all required IOs will be in parallel, but at the
+         * moment DMU doesn't provide us with a method to grab buffers.
+         * If we discover this is a vital for good performance we
+         * can get own replacement for dmu_buf_hold_array_by_bonus()
+         */
+        while (len > 0) {
+                rc = -dmu_buf_hold_array_by_bonus(obj->oo_db, off, len, TRUE,
+                                                  osd_zerocopy_tag, &numbufs,
+                                                  &dbp);
+                LASSERT(rc == 0);
+
+                for (i = 0; i < numbufs; i++) {
+                        int bufoff, tocpy, thispage;
+                        void *dbf = dbp[i];
+
+                        LASSERT(len > 0);
+
+                        bufoff = off - dbp[i]->db_offset;
+                        tocpy = min((int)dbp[i]->db_size - bufoff, (int)len);
+
+                        /* kind of trick to differentiate dbuf vs. arcbuf */
+                        LASSERT(((unsigned long)dbp[i] & 1) == 0);
+                        dbf = (void *) dbp[i] + 1;
+
+                        while (tocpy > 0) {
+                                thispage = CFS_PAGE_SIZE;
+                                thispage -= bufoff & (CFS_PAGE_SIZE-1);
+                                thispage = min(tocpy, thispage);
+
+                                lnb->lnb_rc = 0;
+                                lnb->lnb_file_offset = off;
+                                lnb->lnb_page_offset = bufoff & ~CFS_PAGE_MASK;
+                                lnb->lnb_len = thispage;
+                                lnb->lnb_page = kmem_to_page(dbp[i]->db_data +
+                                                                 bufoff);
+                                /* mark just a single slot: we need this
+                                 * reference to dbuf to be release once */
+                                lnb->lnb_obj = dbf;
+                                dbf = NULL;
+
+                                tocpy -= thispage;
+                                len -= thispage;
+                                bufoff += thispage;
+                                off += thispage;
+
+                                npages++;
+                                lnb++;
+                        }
+
+                        /* steal dbuf so dmu_buf_rele_array() cant release it */
+                        dbp[i] = NULL;
+                }
+
+                dmu_buf_rele_array(dbp, numbufs, osd_zerocopy_tag);
+        }
+
+        RETURN(npages);
+}
+
+static int osd_bufs_get_write(const struct lu_env *env, struct osd_object *obj,
+                              loff_t off, ssize_t len, struct niobuf_local *lnb)
+{
+        struct osd_device *osd = osd_obj2dev(obj);
+        int                plen, off_in_block, sz_in_block;
+        int                i = 0, npages = 0;
+        arc_buf_t         *abuf;
+        uint32_t           bs;
+        uint64_t           dummy;
+        ENTRY;
+
+        dmu_object_size_from_db(obj->oo_db, &bs, &dummy);
+
+        /*
+         * currently only full blocks are subject to 0-copy approach:
+         * so that we're sure nobody is trying to update the same block
+         */
+        while (len > 0) {
+                LASSERT(npages < PTLRPC_MAX_BRW_PAGES);
+
+                off_in_block = off & (bs - 1);
+                sz_in_block = min((int)bs - off_in_block, (int)len);
+
+                if (sz_in_block == bs) {
+                        /* full block, try to use 0-copy */
+
+                        abuf = dmu_request_arcbuf(obj->oo_db, bs);
+                        if (unlikely(abuf == NULL))
+                                GOTO(out_err, -ENOMEM);
+
+                        /* go over pages arcbuf contains, put them as
+                         * local niobufs for ptlrpc's bulks */
+                        while (sz_in_block > 0) {
+                                plen = min(sz_in_block, (int)CFS_PAGE_SIZE);
+
+                                lnb[i].lnb_file_offset = off;
+                                lnb[i].lnb_page_offset = 0;
+                                lnb[i].lnb_len = plen;
+                                lnb[i].lnb_rc = 0;
+                                if (sz_in_block == bs)
+                                        lnb[i].lnb_obj = abuf;
+                                else
+                                        lnb[i].lnb_obj = NULL;
+
+                                /* this one is not supposed to fail */
+                                lnb[i].lnb_page = kmem_to_page(abuf->b_data +
+                                                               off_in_block);
+                                LASSERT(lnb[i].lnb_page);
+
+                                lprocfs_counter_add(osd->od_stats,
+                                                    LPROC_OSD_0COPY_IO, 1);
+
+                                sz_in_block -= plen;
+                                len -= plen;
+                                off += plen;
+                                off_in_block += plen;
+                                i++;
+                                npages++;
+                        }
+                } else {
+                        if (off_in_block == 0 && len < bs &&
+                            off + len >= obj->oo_attr.la_size)
+                                lprocfs_counter_add(osd->od_stats,
+                                                    LPROC_OSD_TAIL_IO, 1);
+
+                        /* can't use 0-copy, allocate temp. buffers */
+                        while (sz_in_block > 0) {
+                                plen = min(sz_in_block, (int)CFS_PAGE_SIZE);
+
+                                lnb[i].lnb_file_offset = off;
+                                lnb[i].lnb_page_offset = 0;
+                                lnb[i].lnb_len = plen;
+                                lnb[i].lnb_rc = 0;
+                                lnb[i].lnb_obj = NULL;
+
+                                lnb[i].lnb_page = alloc_page(OSD_GFP_IO);
+                                if (unlikely(lnb[i].lnb_page == NULL))
+                                        GOTO(out_err, -ENOMEM);
+
+                                LASSERT(lnb[i].lnb_page->mapping == NULL);
+                                lnb[i].lnb_page->mapping = (void *)obj;
+
+                                lprocfs_counter_add(osd->od_stats,
+                                                    LPROC_OSD_COPY_IO, 1);
+
+                                sz_in_block -= plen;
+                                len -= plen;
+                                off += plen;
+                                i++;
+                                npages++;
+                        }
+                }
+        }
+
+        RETURN(npages);
+
+out_err:
+        osd_bufs_put(env, &obj->oo_dt, lnb, npages);
+        RETURN(-ENOMEM);
+}
+
+static int osd_bufs_get(const struct lu_env *env, struct dt_object *dt,
+                        loff_t offset, ssize_t len, struct niobuf_local *lnb,
+                        int rw, struct lustre_capa *capa)
+{
+        struct osd_object *obj  = osd_dt_obj(dt);
+        int                rc;
+
+        LASSERT(dt_object_exists(dt));
+        LASSERT(obj->oo_db);
+
+        if (rw == 0)
+                rc = osd_bufs_get_read(env, obj, offset, len, lnb);
+        else
+                rc = osd_bufs_get_write(env, obj, offset, len, lnb);
+
+        return rc;
 }
 
 static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
@@ -3336,7 +3491,6 @@ static int osd_declare_write_commit(const struct lu_env *env,
 
         LASSERT(lnb);
         LASSERT(npages > 0);
-        LASSERT(lnb->lnb_obj == dt);
 
         oh = container_of0(th, struct osd_thandle, ot_super);
 
@@ -3402,14 +3556,30 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                         /* ENOSPC, network RPC error, etc.
                          * Unlike ldiskfs, zfs allocates new blocks on rewrite,
                          * so we skip this page if lnb_rc is set to -ENOSPC */
-                        CDEBUG(D_INODE, "Skipping [%d] == %d\n", i, lnb[i].lnb_rc);
+                        CDEBUG(D_INODE, "obj "DFID": skipping lnb[%u]: rc=%d\n",
+                               PFID(lu_object_fid(&dt->do_lu)), i,
+                               lnb[i].lnb_rc);
                         continue;
                 }
 
-                dmu_write(osd->od_objset.os, obj->oo_db->db_object,
-                          lnb[i].lnb_file_offset, lnb[i].lnb_len,
-                          kmap(lnb[i].lnb_page), oh->ot_tx);
-                kunmap(lnb[i].lnb_page);
+                if (lnb[i].lnb_page->mapping == (void *)obj) {
+                        dmu_write(osd->od_objset.os, obj->oo_db->db_object,
+                                  lnb[i].lnb_file_offset, lnb[i].lnb_len,
+                                  kmap(lnb[i].lnb_page), oh->ot_tx);
+                        kunmap(lnb[i].lnb_page);
+                } else if (lnb[i].lnb_obj) {
+                        LASSERT(((unsigned long)lnb[i].lnb_obj & 1) == 0);
+                        /* buffer loaned for 0-copy, try to use it.
+                         * notice that dmu_assign_arcbuf() is smart
+                         * enough to recognize changed blocksize
+                         * in this case it fallbacks to dmu_write() */
+                        dmu_assign_arcbuf(obj->oo_db, lnb[i].lnb_file_offset,
+                                          lnb[i].lnb_obj, oh->ot_tx);
+                        /* drop the reference, otherwise osd_put_bufs()
+                         * will be releasing it - bad! */
+                        lnb[i].lnb_obj = NULL;
+                }
+
                 if (new_size < lnb[i].lnb_file_offset + lnb[i].lnb_len)
                         new_size = lnb[i].lnb_file_offset + lnb[i].lnb_len;
         }
