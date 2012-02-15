@@ -50,7 +50,7 @@
 
 #define LUSTRE_ROOT_FID_SEQ     0
 #define DMU_OSD_SVNAME          "svname"
-#define DMU_OSD_OI_NAME         "OBJECTS"
+#define DMU_OSD_OI_NAME_BASE    "oi"
 
 /**
  * Iterator's in-memory data structure for quota file.
@@ -162,6 +162,16 @@ struct osd_thandle {
                                 ot_assigned:1;
 };
 
+#define OSD_OI_NAME_SIZE        16
+
+/*
+ * Object Index (OI) instance.
+ */
+struct osd_oi {
+        char                    oi_name[OSD_OI_NAME_SIZE];
+        dmu_buf_t              *oi_zap;
+};
+
 #define OSD_OST_MAP_SIZE        32
 
 /*
@@ -186,8 +196,8 @@ struct osd_device {
         struct lprocfs_stats     *od_stats;
 
         uint64_t                  od_root;
-        uint64_t                  od_objdir;
-
+        struct osd_oi           **od_oi_table;
+        unsigned int              od_oi_count;
         uint64_t                  od_ost_compat_dirs[OSD_OST_MAP_SIZE];
 
         unsigned int              od_rdonly:1;
