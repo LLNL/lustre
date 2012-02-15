@@ -80,7 +80,11 @@ static struct dt_body_operations    osd_body_ops;
 static char *osd_obj_tag = "osd_object";
 static char *osd_zerocopy_tag = "zerocopy";
 static char *root_tag = "osd_mount, rootdb";
-static char *objdir_tag = "osd_mount, objdb";
+static char *oi_tag = "osd_mount, oi";
+
+#define OSD_OI_FID_NR         (1UL << 7)
+#define OSD_OI_FID_NR_MAX     (1UL << OSD_OI_FID_OID_BITS_MAX)
+static unsigned int osd_oi_count = OSD_OI_FID_NR;
 
 /* Slab for OSD object allocation */
 static cfs_mem_cache_t *osd_object_kmem;
@@ -227,6 +231,25 @@ static void osd_fid2str(char *buf, const struct lu_fid *fid)
         sprintf(buf, DFID_NOBRACE, PFID(fid));
 }
 
+/*
+ * Determine the zap object id which is being used as the OI for the
+ * given fid.  The lowest N bits in the sequence ID are used as the
+ * index key.  On failure 0 is returned which zfs treats internally
+ * as an invalid object id.
+ */
+static uint64_t
+osd_get_idx_for_fid(struct osd_device *osd, const struct lu_fid *fid,
+                    char *buf)
+{
+        struct osd_oi *oi;
+
+        LASSERT(osd->od_oi_table != NULL);
+        oi = osd->od_oi_table[fid_seq(fid) & (osd->od_oi_count - 1)];
+        osd_fid2str(buf, fid);
+
+        return oi->oi_zapid;
+}
+
 static uint64_t osd_get_name_n_idx(const struct lu_env *env,
                                    struct osd_device *osd,
                                    const struct lu_fid *fid,
@@ -248,13 +271,10 @@ static uint64_t osd_get_name_n_idx(const struct lu_env *env,
                         if (fid_oid(fid) == OFD_GROUP0_LAST_OID)
                                 zapid = osd->od_ost_compat_grp0;
                 } else {
-                        CERROR("unknown object with fid "DFID"\n", PFID(fid));
-                        osd_fid2str(buf, fid);
-                        zapid = osd->od_objdir;
+                        zapid = osd_get_idx_for_fid(osd, fid, buf);
                 }
         } else {
-                osd_fid2str(buf, fid);
-                zapid = osd->od_objdir;
+                zapid = osd_get_idx_for_fid(osd, fid, buf);
         }
 
         return zapid;
@@ -1698,7 +1718,6 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 
         ENTRY;
 
-        LASSERT(osd->od_objdir);
         LASSERT(osd_invariant(obj));
         LASSERT(!dt_object_exists(dt));
         LASSERT(dof != NULL);
@@ -3902,103 +3921,314 @@ static int osd_shutdown(const struct lu_env *env, struct osd_device *o)
         RETURN(0);
 }
 
-static int osd_oi_find_or_create(const struct lu_env *env, struct osd_device *o,
-                                 uint64_t parent, const char *name,
-                                 uint64_t *child)
+/**
+ * Lookup an existing OI by the given name.
+ */
+static int
+osd_oi_lookup(const struct lu_env *env, struct osd_device *o,
+              uint64_t parent, const char *name, struct osd_oi *oi)
 {
         struct zpl_direntry *zde = &osd_oti_get(env)->oti_zde.lzd_reg;
-        dmu_buf_t *db;
         int rc;
 
         rc = -zap_lookup(o->od_objset.os, parent, name, 8, 1, (void *)zde);
+        if (rc)
+                return rc;
+
+        strncpy(oi->oi_name, name, OSD_OI_NAME_SIZE - 1);
+        oi->oi_zapid = zde->zde_dnode;
+
+        return rc;
+}
+
+/**
+ * Create a new OI with the given name.
+ */
+static int
+osd_oi_create(const struct lu_env *env, struct osd_device *o,
+              uint64_t parent, const char *name, uint64_t *child)
+{
+        struct zpl_direntry *zde = &osd_oti_get(env)->oti_zde.lzd_reg;
+        struct lu_attr *la = &osd_oti_get(env)->oti_la;
+        dmu_buf_t *db;
+        dmu_tx_t *tx;
+        int rc;
+
+        /* verify it doesn't already exist */
+        rc = -zap_lookup(o->od_objset.os, parent, name, 8, 1, (void *)zde);
+        if (rc == 0)
+                return -EEXIST;
+
+        /* create fid-to-dnode index */
+        tx = dmu_tx_create(o->od_objset.os);
+        if (tx == NULL)
+                return -ENOMEM;
+
+        dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, 1, NULL);
+        dmu_tx_hold_bonus(tx, parent);
+        dmu_tx_hold_zap(tx, parent, TRUE, name);
+        LASSERT(tx->tx_objset->os_sa);
+        dmu_tx_hold_sa_create(tx, ZFS_SA_BASE_ATTR_SIZE);
+
+        rc = -dmu_tx_assign(tx, TXG_WAIT);
+        if (rc) {
+                dmu_tx_abort(tx);
+                return rc;
+        }
+
+        la->la_valid = LA_MODE | LA_UID | LA_GID;
+        la->la_mode = S_IFDIR | S_IRUGO | S_IWUSR | S_IXUGO;
+        la->la_uid = la->la_gid = 0;
+        __osd_zap_create(env, &o->od_objset, &db, tx, la, oi_tag);
+
+        zde->zde_dnode = db->db_object;
+        zde->zde_pad = 0;
+        zde->zde_type = IFTODT(S_IFDIR);
+
+        rc = -zap_add(o->od_objset.os, parent, name, 8, 1, (void *)zde, tx);
+
+        dmu_tx_commit(tx);
+
+        *child = db->db_object;
+        sa_buf_rele(db, oi_tag);
+
+        return rc;
+}
+
+static int
+osd_oi_find_or_create(const struct lu_env *env, struct osd_device *o,
+                      uint64_t parent, const char *name, uint64_t *child)
+{
+        struct osd_oi oi;
+        int rc;
+
+        rc = osd_oi_lookup(env, o, parent, name, &oi);
         if (rc == 0) {
-                rc = __osd_obj2dbuf(env, o->od_objset.os, zde->zde_dnode,
-                                    &db, objdir_tag);
-                if (rc)
-                        return rc;
-                *child = db->db_object;
-                sa_buf_rele(db, objdir_tag);
-        } else {
-                struct lu_attr *la = &osd_oti_get(env)->oti_la;
-
-                /* create fid-to-dnode index */
-                dmu_tx_t *tx = dmu_tx_create(o->od_objset.os);
-                if (tx == NULL)
-                        return -ENOMEM;
-
-                dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, 1, NULL);
-                dmu_tx_hold_bonus(tx, parent);
-                dmu_tx_hold_zap(tx, parent, TRUE, name);
-                LASSERT(tx->tx_objset->os_sa);
-                dmu_tx_hold_sa_create(tx, ZFS_SA_BASE_ATTR_SIZE);
-
-                rc = -dmu_tx_assign(tx, TXG_WAIT);
-                if (rc) {
-                        dmu_tx_abort(tx);
-                        RETURN(rc);
-                }
-
-                la->la_valid = LA_MODE | LA_UID | LA_GID;
-                la->la_mode = S_IFDIR | S_IRUGO | S_IWUSR | S_IXUGO;
-                la->la_uid = la->la_gid = 0;
-                __osd_zap_create(env, &o->od_objset, &db, tx, la, osd_obj_tag);
-
-                memset(zde, sizeof(*zde), 0);
-                zde->zde_dnode = db->db_object;
-                zde->zde_type = IFTODT(S_IFDIR);
-
-                rc = -zap_add(o->od_objset.os, parent, name,
-                              8, 1, (void*)zde, tx);
-
-                dmu_tx_commit(tx);
-
-                *child = db->db_object;
-                sa_buf_rele(db, objdir_tag);
+                *child = oi.oi_zapid;
+        } else if (rc == -ENOENT) {
+                rc = osd_oi_create(env, o, parent, name, child);
         }
 
         return rc;
 }
 
-static int osd_oi_init(const struct lu_env *env, struct osd_device *o)
+/**
+ * Close an entry in a specific slot.
+ */
+static void
+osd_oi_remove_table(const struct lu_env *env, struct osd_device *o, int key)
 {
-        char      *name = osd_oti_get(env)->oti_buf;
+        struct osd_oi *oi;
+
+        LASSERT(key < o->od_oi_count);
+
+        oi = o->od_oi_table[key];
+        if (oi) {
+                OBD_FREE_PTR(oi);
+                o->od_oi_table[key] = NULL;
+        }
+}
+
+/**
+ * Allocate and open a new entry in the specified unused slot.
+ */
+static int
+osd_oi_add_table(const struct lu_env *env, struct osd_device *o,
+                char *name, int key)
+{
+        struct osd_oi *oi;
+        int rc;
+
+        LASSERT(key < o->od_oi_count);
+        LASSERT(o->od_oi_table[key] == NULL);
+
+        OBD_ALLOC_PTR(oi);
+        if (oi == NULL)
+                return -ENOMEM;
+
+        rc = osd_oi_lookup(env, o, o->od_root, name, oi);
+        if (rc) {
+                OBD_FREE_PTR(oi);
+                return rc;
+        }
+
+        o->od_oi_table[key] = oi;
+
+        return rc;
+}
+
+/**
+ * Depopulate the OI table.
+ */
+static void
+osd_oi_close_table(const struct lu_env *env, struct osd_device *o)
+{
+        int i;
+
+        for (i = 0; i < o->od_oi_count; i++)
+                osd_oi_remove_table(env, o, i);
+}
+
+/**
+ * Populate the OI table based.
+ */
+static int
+osd_oi_open_table(const struct lu_env *env, struct osd_device *o, int count)
+{
+        char name[16];
+        int i, rc;
+        ENTRY;
+
+        for (i = 0; i < count; i++) {
+                sprintf(name, "%s.%d", DMU_OSD_OI_NAME_BASE, i);
+                rc = osd_oi_add_table(env, o, name, i);
+                if (rc) {
+                        osd_oi_close_table(env, o);
+                        break;
+                }
+        }
+
+        RETURN(rc);
+}
+
+/**
+ * Determine if the type and number of OIs used by this file system.
+ */
+static int
+osd_oi_probe(const struct lu_env *env, struct osd_device *o, int *count)
+{
+        uint64_t      root_oid = o->od_root;
+        struct osd_oi oi;
+        char          name[16];
+        int           i, rc;
+        ENTRY;
+
+        /*
+         * Check for multiple OIs and determine the count.  There is no
+         * gap handling, if an OI is missing the wrong size can be returned.
+         * The only safeguard is that we know the number of OIs must be a
+         * power of two and this is checked for basic sanity.
+         */
+        for (*count = 0; *count < OSD_OI_FID_NR_MAX; (*count)++) {
+                sprintf(name, "%s.%d", DMU_OSD_OI_NAME_BASE, i);
+                rc = osd_oi_lookup(env, o, root_oid, name, &oi);
+                if (rc == 0)
+                        continue;
+
+                if (rc == -ENOENT) {
+                        if (*count == 0)
+                                break;
+
+                        if ((*count & (*count - 1)) != 0)
+                                RETURN(-EDOM);
+
+                        RETURN(0);
+                }
+
+                RETURN(rc);
+        }
+
+        /*
+         * No OIs exist, this must be a new filesystem.
+         */
+        *count = 0;
+
+        RETURN(0);
+}
+
+/**
+ * Create /O subdirectory to map legacy OST objects for compatibility.
+ */
+static int
+osd_oi_init_compat(const struct lu_env *env, struct osd_device *o)
+{
+        char      *key = osd_oti_get(env)->oti_buf;
         uint64_t   odb, sdb;
-        dmu_buf_t *db;
         int        i, rc;
         ENTRY;
 
-        rc = osd_oi_find_or_create(env, o, o->od_root, DMU_OSD_OI_NAME, &odb);
-        if (rc)
-                GOTO(out, rc);
-
-        rc = __osd_obj2dbuf(env, o->od_objset.os, odb, &db, objdir_tag);
-        if (rc)
-                GOTO(out, rc);
-        o->od_objdir = odb;
-        sa_buf_rele(db, objdir_tag);
-
-        /* create /O subdirectory to map legacy OST objects */
         rc = osd_oi_find_or_create(env, o, o->od_root, "O", &sdb);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         /* create /O/0 subdirectory to map legacy OST objects */
         rc = osd_oi_find_or_create(env, o, sdb, "0", &odb);
         if (rc)
-                GOTO(out, rc);
+                RETURN(rc);
 
         o->od_ost_compat_grp0 = odb;
 
         for (i = 0; i < OSD_OST_MAP_SIZE; i++) {
-                sprintf(name, "d%d", i);
-                rc = osd_oi_find_or_create(env, o, odb, name, &sdb);
+                sprintf(key, "d%d", i);
+                rc = osd_oi_find_or_create(env, o, odb, key, &sdb);
                 if (rc)
-                        break;
+                        RETURN(rc);
+
                 o->od_ost_compat_dirs[i] = sdb;
         }
 
-out:
         RETURN(rc);
+}
+
+/**
+ * Initialize the OIs by either opening or creating them as needed.
+ */
+static int
+osd_oi_init(const struct lu_env *env, struct osd_device *o)
+{
+        char             *key = osd_oti_get(env)->oti_buf;
+        int               i, rc, count = 0;
+        ENTRY;
+
+        rc = osd_oi_probe(env, o, &count);
+        if (rc)
+                RETURN(rc);
+
+        if (count == 0) {
+                uint64_t odb, sdb;
+
+                count = osd_oi_count;
+                odb = o->od_root;
+
+                for (i = 0; i < count; i++) {
+                        sprintf(key, "%s.%d", DMU_OSD_OI_NAME_BASE, i);
+                        rc = osd_oi_find_or_create(env, o, odb, key, &sdb);
+                        if (rc)
+                                RETURN(rc);
+                }
+        }
+
+        rc = osd_oi_init_compat(env, o);
+        if (rc)
+                RETURN(rc);
+
+        LASSERT((count & (count - 1)) == 0);
+        o->od_oi_count = count;
+        OBD_ALLOC(o->od_oi_table, sizeof(struct osd_oi *) * count);
+        if (o->od_oi_table == NULL)
+                RETURN(-ENOMEM);
+
+        rc = osd_oi_open_table(env, o, count);
+        if (rc) {
+                OBD_FREE(o->od_oi_table, sizeof(struct osd_oi *) * count);
+                o->od_oi_table = NULL;
+        }
+
+        RETURN(rc);
+}
+
+static void
+osd_oi_fini(const struct lu_env *env, struct osd_device *o)
+{
+        ENTRY;
+
+        LASSERT(o->od_oi_table != NULL);
+        (void) osd_oi_close_table(env, o);
+        OBD_FREE(o->od_oi_table, sizeof(struct osd_oi *) * o->od_oi_count);
+        o->od_oi_table = NULL;
+        o->od_oi_count = 0;
+
+        EXIT;
 }
 
 static int osd_mount(const struct lu_env *env,
@@ -4086,7 +4316,7 @@ static int osd_device_init0(const struct lu_env *env,
         /* 1. initialize oi before any file create or file open */
         rc = osd_oi_init(env, o);
         if (rc)
-                GOTO(out_oi, rc);
+                GOTO(out_mnt, rc);
 
         rc = lu_site_init(&o->od_site, l);
         if (rc)
@@ -4108,6 +4338,8 @@ static int osd_device_init0(const struct lu_env *env,
         GOTO(out, rc);
 
 out_oi:
+        osd_oi_fini(env, o);
+out_mnt:
         osd_umount(env, o);
 out_capa:
         cleanup_capa_hash(o->od_capa_hash);
@@ -4162,6 +4394,8 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
         struct osd_device *o = osd_dev(d);
         int rc;
         ENTRY;
+
+        osd_oi_fini(env, o);
 
         if (o->od_objset.os) {
                 osd_sync(env, lu2dt_dev(d));
@@ -4318,9 +4552,29 @@ static struct obd_ops osd_obd_device_ops = {
         .o_disconnect  = osd_obd_disconnect,
 };
 
+static int
+osd_options_init(void)
+{
+        /* osd_oi_count - Default number of OIs, 128 works well for ZFS */
+        if (osd_oi_count == 0 || osd_oi_count > OSD_OI_FID_NR_MAX)
+                osd_oi_count = OSD_OI_FID_NR;
+
+        if ((osd_oi_count & (osd_oi_count - 1)) != 0) {
+                LCONSOLE_WARN("Round up osd_oi_count %d to power2 %d\n",
+                              osd_oi_count, size_roundup_power2(osd_oi_count));
+                osd_oi_count = size_roundup_power2(osd_oi_count);
+        }
+
+        return 0;
+}
+
 int __init osd_init(void)
 {
         int rc;
+
+        rc = osd_options_init();
+        if (rc)
+                return rc;
 
         rc = lu_kmem_init(osd_caches);
         if (rc)
@@ -4339,6 +4593,10 @@ void __exit osd_exit(void)
         class_unregister_type(LUSTRE_OSD_ZFS_NAME);
         lu_kmem_fini(osd_caches);
 }
+
+CFS_MODULE_PARM(osd_oi_count, "i", int, 0444,
+                "Number of Object Index containers to be created, "
+                "it's only valid for new filesystem.");
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Object Storage Device ("LUSTRE_OSD_ZFS_NAME")");
