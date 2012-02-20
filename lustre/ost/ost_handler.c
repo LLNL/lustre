@@ -535,17 +535,39 @@ static __u32 ost_checksum_bulk(struct ptlrpc_bulk_desc *desc, int opc,
 
                 /* corrupt the data before we compute the checksum, to
                  * simulate a client->OST data error */
-                if (i == 0 && opc == OST_WRITE &&
-                    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_RECEIVE))
-                        memcpy(ptr, "bad3", min(4, len));
+
+                /* as pages can be from internal fs cache, we don't
+                 * really want to modify them, instead we allocate
+                 * a new one - it will be released by ptlrpc_free_bulk() */
+
+                if (unlikely(i == 0 && opc == OST_WRITE &&
+                    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_RECEIVE))) {
+                        struct page *np = cfs_alloc_page(CFS_ALLOC_STD);
+                        if (np) {
+                                char *ptr2 = kmap(np) + off;
+                                memcpy(ptr2, ptr, len);
+                                memcpy(ptr2, "bad3", min(4, len));
+                                kunmap(np);
+                                cfs_page_unpin(desc->bd_iov[i].kiov_page);
+                                desc->bd_iov[i].kiov_page = np;
+                        } else
+                                CERROR("can't alloc page for corruption\n");
+                }
                 cksum = compute_checksum(cksum, ptr, len, cksum_type);
                 /* corrupt the data after we compute the checksum, to
                  * simulate an OST->client data error */
-                if (i == 0 && opc == OST_READ &&
-                    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_SEND)) {
-                        memcpy(ptr, "bad4", min(4, len));
-                        /* nobody should use corrupted page again */
-                        ClearPageUptodate(page);
+                if (unlikely(i == 0 && opc == OST_READ &&
+                    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_SEND))) {
+                        struct page *np = cfs_alloc_page(CFS_ALLOC_STD);
+                        if (np) {
+                                char *ptr2 = kmap(np) + off;
+                                memcpy(ptr2, ptr, len);
+                                memcpy(ptr2, "bad4", min(4, len));
+                                kunmap(np);
+                                cfs_page_unpin(desc->bd_iov[i].kiov_page);
+                                desc->bd_iov[i].kiov_page = np;
+                        } else
+                                CERROR("can't alloc page for corruption\n");
                 }
                 kunmap(page);
         }
