@@ -583,7 +583,7 @@ static long ofd_grant(struct obd_export *exp, obd_size curgrant,
         obd_size                   grant;
         ENTRY;
 
-        if (ofd_grant_prohibit(exp, ofd) || left == 0)
+        if (ofd_grant_prohibit(exp, ofd) || left == 0 || exp->exp_failed)
                 RETURN(0);
 
         if (want > 0x7fffffff) {
