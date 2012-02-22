@@ -255,20 +255,7 @@ static int ofd_obd_disconnect(struct obd_export *exp)
 
         rc = server_disconnect_export(exp);
 
-        /*
-         * discard grants once we're sure no more
-         * interaction with the client is possible
-         */
         ofd_grant_discard(exp);
-        ofd_fmd_cleanup(exp);
-
-        if (exp->exp_connect_flags & OBD_CONNECT_GRANT_SHRINK) {
-                if (ofd->ofd_tot_granted_clients > 0)
-                        ofd->ofd_tot_granted_clients --;
-        }
-
-        if (!(exp->exp_flags & OBD_OPT_FORCE))
-                ofd_grant_sanity_check(exp->exp_obd, __FUNCTION__);
 
         rc = lu_env_init(&env, LCT_DT_THREAD);
         if (rc)
@@ -298,6 +285,7 @@ static int ofd_init_export(struct obd_export *exp)
 
 static int ofd_destroy_export(struct obd_export *exp)
 {
+        struct ofd_device *ofd = ofd_exp(exp);
         ENTRY;
 
         if (exp->exp_filter_data.fed_pending)
@@ -308,6 +296,21 @@ static int ofd_destroy_export(struct obd_export *exp)
         target_destroy_export(exp);
         ldlm_destroy_export(exp);
         lut_client_free(exp);
+
+        /*
+         * discard grants once we're sure no more
+         * interaction with the client is possible
+         */
+        ofd_grant_discard(exp);
+        ofd_fmd_cleanup(exp);
+
+        if (exp->exp_connect_flags & OBD_CONNECT_GRANT_SHRINK) {
+                if (ofd->ofd_tot_granted_clients > 0)
+                        ofd->ofd_tot_granted_clients --;
+        }
+
+        if (!(exp->exp_flags & OBD_OPT_FORCE))
+                ofd_grant_sanity_check(exp->exp_obd, __FUNCTION__);
 
         LASSERT(cfs_list_empty(&exp->exp_filter_data.fed_mod_list));
         RETURN(0);
