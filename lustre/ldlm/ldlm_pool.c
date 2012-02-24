@@ -406,6 +406,8 @@ static int ldlm_srv_pool_shrink(struct ldlm_pool *pl,
         if (cfs_atomic_read(&pl->pl_granted) == 0)
                 RETURN(0);
 
+        nr = cfs_atomic_read(&pl->pl_granted);
+
         cfs_spin_lock(&pl->pl_lock);
 
         /*
@@ -420,12 +422,14 @@ static int ldlm_srv_pool_shrink(struct ldlm_pool *pl,
          * decreased SLV will affect next recalc intervals and this way will
          * make locking load lower.
          */
+        CDEBUG(D_DLMTRACE, "before SLV:"LPU64"\n", pl->pl_server_lock_volume);
         if (nr < pl->pl_server_lock_volume) {
                 pl->pl_server_lock_volume = pl->pl_server_lock_volume - nr;
         } else {
                 limit = ldlm_pool_get_limit(pl);
                 pl->pl_server_lock_volume = ldlm_pool_slv_min(limit);
         }
+        CDEBUG(D_DLMTRACE, "after SLV:"LPU64"\n", pl->pl_server_lock_volume);
 
         /*
          * Make sure that pool informed obd of last SLV changes.
@@ -1151,7 +1155,7 @@ static int ldlm_pools_shrink(ldlm_side_t client, int nr,
                 ldlm_namespace_put(ns);
         }
         cl_env_reexit(cookie);
-        return cached;
+        return (client == LDLM_NAMESPACE_SERVER) ? -1 : cached;
 }
 
 static int ldlm_pools_srv_shrink(SHRINKER_FIRST_ARG int nr_to_scan,
