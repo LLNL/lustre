@@ -134,7 +134,6 @@ int mgs_fs_setup(const struct lu_env *env, struct mgs_device *mgs)
         mgs->mgs_dt_dev.dd_lu_dev.ld_site->ls_top_dev = &mgs->mgs_dt_dev.dd_lu_dev;
 
         /* Setup the configs dir */
-
         fid.f_seq = FID_SEQ_LOCAL_FILE;
         fid.f_oid = OSD_GENERATED_OID;
         fid.f_ver = 0;
