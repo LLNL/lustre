@@ -6,7 +6,7 @@ AM_CFLAGS = $(LLCFLAGS)
 
 DIST_SUBDIRS := mpi
 
-noinst_DATA = disk1_8.tar.bz2
+noinst_DATA = disk1_8-ldiskfs.tar.bz2 disk2_1-ldiskfs.tar.bz2
 noinst_SCRIPTS = leak_finder.pl llmount.sh llmountcleanup.sh functions.sh
 noinst_SCRIPTS += test-framework.sh runvmstat runiozone runtests
 noinst_SCRIPTS += sanity.sh rundbench acceptance-small.sh compile.sh
