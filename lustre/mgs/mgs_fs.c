@@ -137,7 +137,7 @@ int mgs_fs_setup(const struct lu_env *env, struct mgs_device *mgs)
         lu_local_obj_fid(&fid, MGS_CONFIGS_OID);
         memset(&attr, 0, sizeof(attr));
         attr.la_valid = LA_MODE;
-        attr.la_mode = S_IFDIR | 0666;
+        attr.la_mode = S_IFDIR | 0777;
         dof.dof_type = dt_mode_to_dft(S_IFDIR);
         o = dt_find_or_create(env, mgs->mgs_bottom, &fid, &dof, &attr);
         if (IS_ERR(o))

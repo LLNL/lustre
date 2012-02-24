@@ -1047,9 +1047,6 @@ out:
         return rc;
 }
 
-/*
- *
- */
 static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
                          struct llog_logid *logid, char *name,
                          enum llog_open_flag flags)
@@ -1083,15 +1080,15 @@ static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
                 dt_read_unlock(env, ctxt->loc_dir);
                 if (rc == -ENOENT && flags & LLOG_OPEN_NEW) {
                         /* generate fid for new llog */
-                        OBD_ALLOC(handle->lgh_name, strlen(name) + 1);
-                        if (handle->lgh_name)
-                                strcpy(handle->lgh_name, name);
-                        else
-                                GOTO(out, rc = -ENOMEM);
                         rc = llog_osd_generate_fid(env, lsb, &lgi->lgi_fid);
                 }
                 if (rc < 0)
                         GOTO(out, rc);
+                OBD_ALLOC(handle->lgh_name, strlen(name) + 1);
+                if (handle->lgh_name)
+                        strcpy(handle->lgh_name, name);
+                else
+                        GOTO(out, rc = -ENOMEM);
         } else {
                 LASSERTF(flags & LLOG_OPEN_NEW, "%#x\n", flags);
                 /* generate fid for new llog */
@@ -1102,7 +1099,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
 
         o = llog_osd_locate(env, lsb, &lgi->lgi_fid);
         if (IS_ERR(o))
-                GOTO(out, rc = PTR_ERR(o));
+                GOTO(out_name, rc = PTR_ERR(o));
 
         /* No new llog is expected but doesn't exist */
         if (!(flags & LLOG_OPEN_NEW) && !dt_object_exists(o))
@@ -1118,6 +1115,9 @@ static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
 
 out_put:
         lu_object_put(env, &o->do_lu);
+out_name:
+        if (handle->lgh_name != NULL)
+                OBD_FREE(handle->lgh_name, strlen(name) + 1);
 out:
         llog_osd_put_sb(env, lsb);
         RETURN(rc);
