@@ -1737,7 +1737,7 @@ static int target_recovery_thread(void *arg)
         env.le_ctx.lc_thread = thread;
         thread->t_data = NULL;
 
-        CERROR("%s: started recovery thread pid %d\n", obd->obd_name,
+        CDEBUG(D_HA, "%s: started recovery thread pid %d\n", obd->obd_name,
                cfs_curproc_pid());
         trd->trd_processing_task = cfs_curproc_pid();
 
