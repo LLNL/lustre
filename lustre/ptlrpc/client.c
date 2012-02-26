@@ -1087,8 +1087,15 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
  */
 static int ptlrpc_console_allow(struct ptlrpc_request *req)
 {
-        __u32 opc = lustre_msg_get_opc(req->rq_reqmsg);
+        __u32 opc;
         int err;
+
+        /* Fake requests include no rq_reqmsg */
+        if (req->rq_fake)
+                return 0;
+
+        LASSERT(req->rq_reqmsg != NULL);
+        opc = lustre_msg_get_opc(req->rq_reqmsg);
 
         /* Suppress particular reconnect errors which are to be expected.  No
          * errors are suppressed for the initial connection on an import */
@@ -1765,7 +1772,7 @@ int ptlrpc_expire_one_request(struct ptlrpc_request *req, int async_unlink)
         req->rq_timedout = 1;
         cfs_spin_unlock(&req->rq_lock);
 
-        DEBUG_REQ(req->rq_fake ? D_INFO : D_WARNING, req, "Request x"LPU64
+        DEBUG_REQ(req->rq_fake ? D_INFO : D_NETERROR, req, "Request x"LPU64
                   " sent from %s to NID %s has %s: [sent "CFS_DURATION_T"] "
                   "[real_sent "CFS_DURATION_T"] [current "CFS_DURATION_T"] "
                   "[deadline "CFS_DURATION_T"s] [delay "CFS_DURATION_T"s]",
