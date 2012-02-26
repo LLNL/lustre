@@ -1237,8 +1237,8 @@ static int filter_prep_groups(struct obd_device *obd)
         if (off == 0)
                 last_group = FID_SEQ_OST_MDT0;
 
-        CWARN("%s: initialize groups [%u,%u]\n", obd->obd_name,
-              FID_SEQ_OST_MDT0, last_group);
+        CDEBUG(D_INODE, "%s: initialize groups [%u,%u]\n", obd->obd_name,
+               FID_SEQ_OST_MDT0, last_group);
         filter->fo_committed_group = last_group;
         rc = filter_read_groups(obd, last_group, 1);
         if (rc)
@@ -2548,9 +2548,9 @@ static int filter_llog_connect(struct obd_export *exp,
         LASSERTF(ctxt != NULL, "ctxt is not null, ctxt idx %d \n",
                  body->lgdc_ctxt_idx);
 
-        CWARN("%s: Recovery from log "LPX64"/"LPX64":%x\n",
-              obd->obd_name, body->lgdc_logid.lgl_oid,
-              body->lgdc_logid.lgl_oseq, body->lgdc_logid.lgl_ogen);
+        CDEBUG(D_HA, "%s: Recovery from log "LPX64"/"LPX64":%x\n",
+               obd->obd_name, body->lgdc_logid.lgl_oid,
+               body->lgdc_logid.lgl_oseq, body->lgdc_logid.lgl_ogen);
 
         cfs_spin_lock(&obd->u.filter.fo_flags_lock);
         obd->u.filter.fo_mds_ost_sync = 1;
@@ -2693,8 +2693,8 @@ static int filter_connect_internal(struct obd_export *exp,
 
         /* Kindly make sure the SKIP_ORPHAN flag is from MDS. */
         if (data->ocd_connect_flags & OBD_CONNECT_MDS)
-                CWARN("%s: Received MDS connection for group %u\n",
-                      exp->exp_obd->obd_name, data->ocd_group);
+                CDEBUG(D_HA, "%s: Received MDS connection for group %u\n",
+                       exp->exp_obd->obd_name, data->ocd_group);
         else if (data->ocd_connect_flags & OBD_CONNECT_SKIP_ORPHAN)
                 RETURN(-EPROTO);
 
