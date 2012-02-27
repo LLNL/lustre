@@ -78,13 +78,13 @@ CFS_MODULE_PARM(libcfs_console_ratelimit, "i", uint, 0644,
                 "Lustre kernel debug console ratelimit (0 to disable)");
 EXPORT_SYMBOL(libcfs_console_ratelimit);
 
-cfs_duration_t libcfs_console_max_delay;
-CFS_MODULE_PARM(libcfs_console_max_delay, "l", ulong, 0644,
+unsigned int libcfs_console_max_delay;
+CFS_MODULE_PARM(libcfs_console_max_delay, "l", uint, 0644,
                 "Lustre kernel debug console max delay (jiffies)");
 EXPORT_SYMBOL(libcfs_console_max_delay);
 
-cfs_duration_t libcfs_console_min_delay;
-CFS_MODULE_PARM(libcfs_console_min_delay, "l", ulong, 0644,
+unsigned int libcfs_console_min_delay;
+CFS_MODULE_PARM(libcfs_console_min_delay, "l", uint, 0644,
                 "Lustre kernel debug console min delay (jiffies)");
 EXPORT_SYMBOL(libcfs_console_min_delay);
 
@@ -386,6 +386,7 @@ void libcfs_debug_dumplog(void)
         cfs_waitq_del(&debug_ctlwq, &wait);
         cfs_set_current_state(CFS_TASK_RUNNING);
 }
+EXPORT_SYMBOL(libcfs_debug_dumplog);
 
 int libcfs_debug_init(unsigned long bufsize)
 {
@@ -457,6 +458,28 @@ void libcfs_debug_set_level(unsigned int debug_level)
                debug_level);
         libcfs_debug = debug_level;
 }
-
-EXPORT_SYMBOL(libcfs_debug_dumplog);
 EXPORT_SYMBOL(libcfs_debug_set_level);
+
+/*
+ * a helper function for RETURN(): the sole purpose is to save 8-16 bytes
+ * on the stack - function calling RETURN() doesn't need to allocate two
+ * additional 'rc' on the stack
+ */
+void libcfs_log_return(struct libcfs_debug_msg_data *m, long rc)
+{
+        libcfs_debug_vmsg1(m, "Process leaving (rc=%lu : %ld : %lx)\n", rc, rc,
+                           rc);
+}
+EXPORT_SYMBOL(libcfs_log_return);
+
+/*
+ * a helper function for GOTO(): the sole purpose is to save 8-16 bytes
+ * on the stack - function calling GOTO() doesn't need to allocate two
+ * additional 'rc' on the stack
+ */
+void libcfs_log_goto(struct libcfs_debug_msg_data *m, const char *l, long_ptr_t ret)
+{
+        libcfs_debug_vmsg1(m, "Process leaving via %s (rc=" LPLU " : " LPLD " :"
+                           " " LPLX ")\n", l, (ulong_ptr_t) ret, ret, ret);
+}
+EXPORT_SYMBOL(libcfs_log_goto);

@@ -1950,18 +1950,16 @@ void ldlm_lock_dump_handle(int level, struct lustre_handle *lockh)
         LDLM_LOCK_PUT(lock);
 }
 
-void _ldlm_lock_debug(struct ldlm_lock *lock, __u32 level,
-                      struct libcfs_debug_msg_data *data, const char *fmt,
-                      ...)
+void _ldlm_lock_debug(struct ldlm_lock *lock,
+                      struct libcfs_debug_msg_data *msgdata,
+                      const char *fmt, ...)
 {
         va_list args;
-        cfs_debug_limit_state_t *cdls = data->msg_cdls;
 
         va_start(args, fmt);
 
         if (lock->l_resource == NULL) {
-                libcfs_debug_vmsg2(cdls, data->msg_subsys, level,data->msg_file,
-                                   data->msg_fn, data->msg_line, fmt, args,
+                libcfs_debug_vmsg2(msgdata, fmt, args,
                        " ns: \?\? lock: %p/"LPX64" lrc: %d/%d,%d mode: %s/%s "
                        "res: \?\? rrc=\?\? type: \?\?\? flags: "LPX64" remote: "
                        LPX64" expref: %d pid: %u timeout: %lu\n", lock,
@@ -1979,8 +1977,7 @@ void _ldlm_lock_debug(struct ldlm_lock *lock, __u32 level,
 
         switch (lock->l_resource->lr_type) {
         case LDLM_EXTENT:
-                libcfs_debug_vmsg2(cdls, data->msg_subsys, level,data->msg_file,
-                                   data->msg_fn, data->msg_line, fmt, args,
+                libcfs_debug_vmsg2(msgdata, fmt, args,
                        " ns: %s lock: %p/"LPX64" lrc: %d/%d,%d mode: %s/%s "
                        "res: "LPU64"/"LPU64" rrc: %d type: %s ["LPU64"->"LPU64
                        "] (req "LPU64"->"LPU64") flags: "LPX64" remote: "LPX64
@@ -2004,8 +2001,7 @@ void _ldlm_lock_debug(struct ldlm_lock *lock, __u32 level,
                 break;
 
         case LDLM_FLOCK:
-                libcfs_debug_vmsg2(cdls, data->msg_subsys, level,data->msg_file,
-                                   data->msg_fn, data->msg_line, fmt, args,
+                libcfs_debug_vmsg2(msgdata, fmt, args,
                        " ns: %s lock: %p/"LPX64" lrc: %d/%d,%d mode: %s/%s "
                        "res: "LPU64"/"LPU64" rrc: %d type: %s pid: %d "
                        "["LPU64"->"LPU64"] flags: "LPX64" remote: "LPX64
@@ -2029,8 +2025,7 @@ void _ldlm_lock_debug(struct ldlm_lock *lock, __u32 level,
                 break;
 
         case LDLM_IBITS:
-                libcfs_debug_vmsg2(cdls, data->msg_subsys, level,data->msg_file,
-                                   data->msg_fn, data->msg_line, fmt, args,
+                libcfs_debug_vmsg2(msgdata, fmt, args,
                        " ns: %s lock: %p/"LPX64" lrc: %d/%d,%d mode: %s/%s "
                        "res: "LPU64"/"LPU64" bits "LPX64" rrc: %d type: %s "
                        "flags: "LPX64" remote: "LPX64" expref: %d "
@@ -2053,8 +2048,7 @@ void _ldlm_lock_debug(struct ldlm_lock *lock, __u32 level,
                 break;
 
         default:
-                libcfs_debug_vmsg2(cdls, data->msg_subsys, level,data->msg_file,
-                                   data->msg_fn, data->msg_line, fmt, args,
+                libcfs_debug_vmsg2(msgdata, fmt, args,
                        " ns: %s lock: %p/"LPX64" lrc: %d/%d,%d mode: %s/%s "
                        "res: "LPU64"/"LPU64" rrc: %d type: %s flags: "LPX64" "
                        "remote: "LPX64" expref: %d pid: %u timeout %lu\n",
