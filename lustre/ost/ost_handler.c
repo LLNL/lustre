@@ -842,12 +842,11 @@ out:
         } else {
                 /* reply out callback would free */
                 ptlrpc_req_drop_rs(req);
-                CWARN("%s: ignoring bulk IO comm error with %s@%s id %s - "
-                      "client will retry\n",
-                      exp->exp_obd->obd_name,
-                      exp->exp_client_uuid.uuid,
-                      exp->exp_connection->c_remote_uuid.uuid,
-                      libcfs_id2str(req->rq_peer));
+                LCONSOLE_WARN("%s: Bulk IO read error with %s (at %s), "
+                              "client will retry: rc %d\n",
+                              exp->exp_obd->obd_name,
+                              obd_uuid2str(&exp->exp_client_uuid),
+                              obd_export_nid2str(exp), rc);
         }
         /* send a bulk after reply to simulate a network delay or reordering
          * by a router */
@@ -1148,12 +1147,11 @@ out:
         } else {
                 /* reply out callback would free */
                 ptlrpc_req_drop_rs(req);
-                CWARN("%s: ignoring bulk IO comm error with %s@%s id %s - "
-                      "client will retry\n",
-                      exp->exp_obd->obd_name,
-                      exp->exp_client_uuid.uuid,
-                      exp->exp_connection->c_remote_uuid.uuid,
-                      libcfs_id2str(req->rq_peer));
+                LCONSOLE_WARN("%s: Bulk IO write error with %s (at %s), "
+                              "client will retry: rc %d\n",
+                              exp->exp_obd->obd_name,
+                              obd_uuid2str(&exp->exp_client_uuid),
+                              obd_export_nid2str(exp), rc);
         }
         cfs_memory_pressure_clr();
         RETURN(rc);
@@ -1596,7 +1594,7 @@ static int ost_filter_recovery_request(struct ptlrpc_request *req,
                 RETURN(0);
 
         default:
-                DEBUG_REQ(D_ERROR, req, "not permitted during recovery");
+                DEBUG_REQ(D_RPCTRACE, req, "not permitted during recovery");
                 *process = -EAGAIN;
                 RETURN(0);
         }
