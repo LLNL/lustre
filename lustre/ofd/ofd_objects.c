@@ -131,6 +131,8 @@ int ofd_object_ff_check(const struct lu_env *env, struct ofd_object *fo)
                          */
                         fo->ofo_ff_exists = 1;
                 }
+                if (rc > 0)
+                        rc = 0;
         }
         RETURN(rc);
 }
