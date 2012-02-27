@@ -342,11 +342,11 @@ ofd_write_attr_set(const struct lu_env *env, struct ofd_device *ofd,
 
         if (!la->la_valid && !ff_needed)
                 /* no attributes to set */
-                GOTO(out, 0);
+                GOTO(out, rc = 0);
 
         th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
-                GOTO(out, PTR_ERR(th));
+                GOTO(out, rc = PTR_ERR(th));
 
         if (la->la_valid) {
                 rc = dt_declare_attr_set(env, dt_obj, la, th);
