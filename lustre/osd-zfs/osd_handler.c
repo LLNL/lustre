@@ -327,35 +327,37 @@ int osd_object_init0(const struct lu_env *env, struct osd_object *obj)
         udmu_objset_t       *uos = &osd->od_objset;
         const struct lu_fid *fid  = lu_object_fid(&obj->oo_dt.do_lu);
         int                  rc = 0;
-
         ENTRY;
 
-        if (obj->oo_db != NULL) {
-                /* object exist */
+        if (obj->oo_db == NULL)
+                RETURN(0);
 
-                rc = osd_object_sa_init(obj, uos);
-                if (rc)
-                        RETURN(rc);
+        /* object exist */
 
-                /* cache attrs in object */
-                rc = __osd_object_attr_get(env, &osd->od_objset,
-                                           obj->oo_sa_hdl, &obj->oo_attr);
-                if (rc)
-                        RETURN(rc);
+        if (unlikely(fid_is_acct(fid)))
+                GOTO(out, rc = 0);
 
-                obj->oo_dt.do_body_ops = &osd_body_ops;
-                /* add type infor to attr */
-                obj->oo_dt.do_lu.lo_header->loh_attr |= obj->oo_attr.la_mode &
-                                                        S_IFMT;
-                /*
-                 * initialize object before marking it existing
-                 */
-                cfs_mb();
-                obj->oo_dt.do_lu.lo_header->loh_attr |= LOHA_EXISTS;
-        } else {
-                CDEBUG(D_OTHER, "object %llu:%lu does not exist\n",
-                        fid->f_seq, (unsigned long) fid->f_oid);
-        }
+        rc = osd_object_sa_init(obj, uos);
+        if (rc)
+                RETURN(rc);
+
+        /* cache attrs in object */
+        rc = __osd_object_attr_get(env, &osd->od_objset,
+                                   obj->oo_sa_hdl, &obj->oo_attr);
+        if (rc)
+                RETURN(rc);
+
+        obj->oo_dt.do_body_ops = &osd_body_ops;
+
+out:
+        /*
+         * initialize object before marking it existing
+         */
+        obj->oo_dt.do_lu.lo_header->loh_attr |= obj->oo_attr.la_mode & S_IFMT;
+
+        cfs_mb();
+        obj->oo_dt.do_lu.lo_header->loh_attr |= LOHA_EXISTS;
+
         RETURN(0);
 }
 
@@ -740,7 +742,8 @@ static void osd_object_delete(const struct lu_env *env, struct lu_object *l)
         struct osd_object *obj = osd_obj(l);
 
         if (obj->oo_db != NULL) {
-                osd_object_sa_fini(obj);
+                if (likely(!fid_is_acct(lu_object_fid(l))))
+                        osd_object_sa_fini(obj);
                 if (obj->oo_sa_xattr) {
                         nvlist_free(obj->oo_sa_xattr);
                         obj->oo_sa_xattr = NULL;
@@ -1011,6 +1014,12 @@ static int osd_attr_get(const struct lu_env *env,
         LASSERT(dt_object_exists(dt));
         LASSERT(osd_invariant(obj));
         LASSERT(obj->oo_db);
+
+        if (unlikely(fid_is_acct(lu_object_fid(&dt->do_lu)))) {
+                /* XXX: at some point quota objects will get own methods */
+                memset(attr, 0, sizeof(*attr));
+                return 0;
+        }
 
         cfs_read_lock(&obj->oo_attr_lock);
         sa_object_size(obj->oo_sa_hdl, &obj->oo_attr.la_blksize, &blocks);
