@@ -246,6 +246,19 @@ osd_get_idx_for_fid(struct osd_device *osd, const struct lu_fid *fid, char *buf)
         return oi->oi_zap->db_object;
 }
 
+static uint64_t osd_get_idx(const struct lu_env *env, struct osd_device *osd,
+                            const struct lu_fid *fid, char *buf)
+{
+        if (unlikely(fid_is_idif(fid))) {
+                /* for legacy OST objects (objid) we don't use OI
+                 * instead we use special hashed O/ mapping */
+                return osd_get_idx_for_ost_obj(env, osd, fid, buf);
+        } else {
+                /* regular objects are indexed by OI */
+                return osd_get_idx_for_fid(osd, fid, buf);
+        }
+}
+
 static uint64_t
 osd_get_idx_for_root(struct osd_device *osd)
 {
@@ -826,11 +839,7 @@ static int osd_object_destroy(const struct lu_env *env,
         LASSERT(oh->ot_tx != NULL);
 
         /* remove obj ref from main obj. dir */
-        if (unlikely(fid_is_idif(fid))) {
-                zapid = osd_get_idx_for_ost_obj(env, osd, fid, buf);
-        } else {
-                zapid = osd_get_idx_for_fid(osd, fid, buf);
-        }
+        zapid = osd_get_idx(env, osd, fid, buf);
 
         LASSERT(zapid);
         rc = -zap_remove(osd->od_objset.os, zapid, buf, oh->ot_tx);
@@ -1438,14 +1447,7 @@ static int osd_declare_object_create(const struct lu_env *env,
         }
 
         /* and we'll add it to some mapping */
-        if (unlikely(fid_is_idif(fid))) {
-                /* for legacy OST objects (objid) we don't use OI
-                 * instead we use special hashed O/ mapping */
-                zapid = osd_get_idx_for_ost_obj(env, osd, fid, buf);
-        } else {
-                /* regular objects are indexed by OI */
-                zapid = osd_get_idx_for_fid(osd, fid, buf);
-        }
+        zapid = osd_get_idx(env, osd, fid, buf);
 
         dmu_tx_hold_bonus(oh->ot_tx, zapid);
         dmu_tx_hold_zap(oh->ot_tx, zapid, TRUE, buf);
@@ -1751,7 +1753,8 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
         zde->zde_dnode = db->db_object;
         zde->zde_type = IFTODT(attr->la_mode & S_IFMT);
 
-        zapid = osd_get_idx_for_fid(osd, fid, buf);
+        zapid = osd_get_idx(env, osd, fid, buf);
+
         rc = -zap_add(osd->od_objset.os, zapid, buf, 8, 1, zde, oh->ot_tx);
         if (rc)
                 RETURN(rc);
