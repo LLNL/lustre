@@ -991,6 +991,7 @@ static int llog_osd_declare_create(const struct lu_env *env,
 
         if (res->lgh_name) {
                 LASSERT(res->lgh_ctxt->loc_dir);
+                dt_declare_ref_add(env, o, th);
                 logid_to_fid(&res->lgh_id, &lgi->lgi_fid);
                 rc = dt_declare_insert(env, res->lgh_ctxt->loc_dir,
                                        (struct dt_rec *) &lgi->lgi_fid,
@@ -1022,10 +1023,11 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
 
         dt_write_lock(env, o, 0);
         if (!dt_object_exists(o))
-
                 rc = llog_osd_create_new_object(env, o, th);
         else
                 rc = -EEXIST;
+        if (res->lgh_name)
+                dt_ref_add(env, o, th);
         dt_write_unlock(env, o);
         if (rc)
                 RETURN(rc);
@@ -1091,14 +1093,9 @@ static int llog_osd_destroy(const struct lu_env *env,
         if (IS_ERR(th))
                 RETURN(PTR_ERR(th));
 
-        dt_declare_ref_del(env, o, th);
-
-        rc = dt_declare_destroy(env, o, th);
-        if (rc)
-                GOTO(out_trans, rc);
-
         if (loghandle->lgh_name) {
                 LASSERT(ctxt->loc_dir);
+                dt_declare_ref_del(env, o, th);
                 name = loghandle->lgh_name;
                 rc = dt_declare_delete(env, ctxt->loc_dir,
                                        (struct dt_key *) name, th);
@@ -1106,17 +1103,20 @@ static int llog_osd_destroy(const struct lu_env *env,
                         GOTO(out_trans, rc);
         }
 
+        dt_declare_ref_del(env, o, th);
+
+        rc = dt_declare_destroy(env, o, th);
+        if (rc)
+                GOTO(out_trans, rc);
+
         rc = dt_trans_start_local(env, d, th);
         if (rc)
                 GOTO(out_trans, rc);
 
         dt_write_lock(env, o, 0);
         if (dt_object_exists(o)) {
-                dt_ref_del(env, o, th);
-                rc = dt_destroy(env, o, th);
-                if (rc)
-                        GOTO(out_unlock, rc);
                 if (name) {
+                        dt_ref_del(env, o, th);
                         dt_read_lock(env, ctxt->loc_dir, 0);
                         rc = dt_delete(env, ctxt->loc_dir,
                                        (struct dt_key *) name,
@@ -1125,6 +1125,10 @@ static int llog_osd_destroy(const struct lu_env *env,
                         if (rc)
                                 CERROR("can't remove llog %s: %d\n", name, rc);
                 }
+                dt_ref_del(env, o, th);
+                rc = dt_destroy(env, o, th);
+                if (rc)
+                        GOTO(out_unlock, rc);
         }
 out_unlock:
         dt_write_unlock(env, o);
