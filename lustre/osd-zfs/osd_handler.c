@@ -2742,6 +2742,9 @@ int __osd_sa_xattr_set(const struct lu_env *env, struct osd_object *obj,
         int     nv_size;
         int     rc;
 
+        /* Disable SA xattrs by always returing an error */
+        return -EFBIG;
+
         LASSERT(obj->oo_sa_hdl);
         if (obj->oo_sa_xattr == NULL) {
                 rc = __osd_xattr_cache(env, obj);
