@@ -159,6 +159,8 @@ static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
 struct osd_thandle {
         struct thandle          ot_super;
         cfs_list_t              ot_dcb_list;
+        cfs_list_t              ot_sa_list;
+        cfs_semaphore_t         ot_sa_lock;
         dmu_tx_t               *ot_tx;
         __u32                   ot_write_commit:1,
                                 ot_assigned:1;
@@ -223,6 +225,7 @@ struct osd_object {
         dmu_buf_t           *oo_db;
         sa_handle_t         *oo_sa_hdl;
         nvlist_t            *oo_sa_xattr;
+        cfs_list_t           oo_sa_linkage;
 
         cfs_rw_semaphore_t   oo_sem;
 
