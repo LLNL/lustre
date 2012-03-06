@@ -1207,7 +1207,10 @@ static int mgc_apply_recover_logs(struct obd_device *mgc,
                 pos += sprintf(obdname + pos, "-%s%04x",
                                   is_ost ? "OST" : "MDT", entry->mne_index);
 
-                cname = is_ost ? "osp" : "mdc",
+                if (!(IS_MDT(cfg->cfg_lsi)))
+                        cname = is_ost ? "osc" : "mdc";
+                else
+                        cname = "osp"; /* MDTs */
                 pos += sprintf(obdname + pos, "-%s-%s", cname, inst);
                 lustre_cfg_bufs_reset(&bufs, obdname);
 
