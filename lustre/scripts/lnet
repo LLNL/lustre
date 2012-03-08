@@ -3,7 +3,7 @@
 # lnet	This shell script takes care of starting and stopping
 #       the lnet (Lustre networking) services.
 #
-# chkconfig: - 59 21
+# chkconfig: - 59 76
 # description:  Part of the lustre file system.
 # probe: true
 # config: /etc/sysconfig/lustre
