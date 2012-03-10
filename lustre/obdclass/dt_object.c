@@ -488,13 +488,6 @@ int local_object_fid_generate(const struct lu_env *env,
         struct thandle        *th;
         int rc;
 
-        /* take next OID */
-        cfs_spin_lock(&los->los_id_lock);
-        fid->f_seq = los->los_seq;
-        fid->f_oid = los->los_last_oid++;
-        cfs_spin_unlock(&los->los_id_lock);
-        fid->f_ver = 0;
-
         LASSERT(los->los_dev);
         LASSERT(los->los_obj);
 
@@ -511,15 +504,22 @@ int local_object_fid_generate(const struct lu_env *env,
         if (rc)
                 GOTO(out_stop, rc);
 
+        /* take next OID */
+        cfs_mutex_lock(&los->los_id_lock);
+        fid->f_seq = los->los_seq;
+        fid->f_oid = los->los_last_oid++;
+        fid->f_ver = 0;
+
         /* update local oid number on disk */
-        losd.magic = 0xdecafbee;
-        losd.next_id = cpu_to_le32(los->los_last_oid);
+        losd.lso_magic = cpu_to_le32(0xdecafbee);
+        losd.lso_next_oid = cpu_to_le32(los->los_last_oid);
 
         dti->dti_off = 0;
         dti->dti_lb.lb_buf = &losd;
         dti->dti_lb.lb_len = sizeof(losd);
         rc = dt_record_write(env, los->los_obj, &dti->dti_lb, &dti->dti_off,
                              th);
+        cfs_mutex_unlock(&los->los_id_lock);
 out_stop:
         dt_trans_stop(env, los->los_dev, th);
 out:
@@ -734,7 +734,7 @@ int local_oid_storage_init(const struct lu_env *env,
                 GOTO(out, rc = -ENOMEM);
 
         cfs_atomic_set(&(*los)->los_refcount, 1);
-        cfs_spin_lock_init(&(*los)->los_id_lock);
+        cfs_mutex_init(&(*los)->los_id_lock);
         (*los)->los_dev = dev;
         (*los)->los_top = top;
         cfs_list_add(&(*los)->los_list, &los_list_head);
@@ -775,8 +775,8 @@ int local_oid_storage_init(const struct lu_env *env,
                         GOTO(out_trans, rc);
                 LASSERT(dt_object_exists(o));
 
-                losd.magic   = 0xdecafbee;
-                losd.next_id = cpu_to_le32(fid_oid(first_fid) + 1);
+                losd.lso_magic = cpu_to_le32(0xdecafbee);
+                losd.lso_next_oid = cpu_to_le32(fid_oid(first_fid) + 1);
 
                 dti->dti_off = 0;
                 dti->dti_lb.lb_buf = &losd;
@@ -791,7 +791,11 @@ out_trans:
                 dti->dti_lb.lb_buf = &losd;
                 dti->dti_lb.lb_len = sizeof(losd);
                 rc = dt_record_read(env, o, &dti->dti_lb, &dti->dti_off);
-                LASSERT(ergo(rc == 0, losd.magic == 0xdecafbee));
+                if (rc == 0 && le32_to_cpu(losd.lso_magic) != 0xdecafbee) {
+                        CERROR("local storage file "DFID" is corrupted\n",
+                               PFID(first_fid));
+                        rc = -EINVAL;
+                }
         }
 out_lock:
         dt_write_unlock(env, o);
@@ -807,7 +811,7 @@ out_los:
                 }
         } else {
                 (*los)->los_seq = fid_seq(first_fid);
-                (*los)->los_last_oid = le32_to_cpu(losd.next_id);
+                (*los)->los_last_oid = le32_to_cpu(losd.lso_next_oid);
                 (*los)->los_obj = o;
         }
 out:

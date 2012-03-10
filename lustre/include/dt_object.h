@@ -648,8 +648,8 @@ struct dt_object {
  * on-disk structure describing local object OIDs storage
  */
 struct los_ondisk {
-        __u32   magic;
-        __u32   next_id;
+        __u32 lso_magic;
+        __u32 lso_next_oid;
 };
 
 /*
@@ -666,7 +666,7 @@ struct local_oid_storage {
         struct dt_object *los_obj;
 
         /* data used to generate new fids */
-        cfs_spinlock_t    los_id_lock;
+        cfs_mutex_t       los_id_lock;
         __u64             los_seq;
         __u32             los_last_oid;
 };
