@@ -900,7 +900,7 @@ static void osd_conf_get(const struct lu_env *env,
         param->ddp_block_shift   = 12; /* XXX */
         param->ddp_mount_type    = LDD_MT_ZFS;
 
-        param->ddp_mntopts        = 0;
+        param->ddp_mntopts        = MNTOPT_USERXATTR | MNTOPT_ACL;
         param->ddp_max_ea_size    = DXATTR_MAX_ENTRY_SIZE;
 
         /* for maxbytes, report same value as ZPL */
