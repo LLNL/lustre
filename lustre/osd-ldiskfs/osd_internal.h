@@ -689,7 +689,9 @@ static inline struct osd_oi *osd_fid2oi(struct osd_device *osd,
         LASSERT(!fid_is_idif(fid));
         LASSERT(!fid_is_igif(fid));
         LASSERT(osd->od_oi_table != NULL && osd->od_oi_count >= 1);
-        return &osd->od_oi_table[fid->f_seq % osd->od_oi_count];
+        /* It can work even od_oi_count equals to 1 although it's unexpected,
+         * the only reason we set it to 1 is for performance measurement */
+        return &osd->od_oi_table[fid->f_seq & (osd->od_oi_count - 1)];
 }
 
 /**
