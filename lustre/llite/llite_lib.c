@@ -970,7 +970,7 @@ int ll_fill_super(struct super_block *sb, struct vfsmount *mnt)
         /* Generate a string unique to this super, in case some joker tries
            to mount the same fs at two mount points.
            Use the address of the super itself.*/
-        cfg->cfg_instance = lsi;
+        cfg->cfg_instance = sb;
         cfg->cfg_uuid = lsi->lsi_llsbi->ll_sb_uuid;
 
         /* set up client obds */
@@ -1035,7 +1035,7 @@ void ll_put_super(struct super_block *sb)
 
         ll_print_capa_stat(sbi);
 
-        cfg.cfg_instance = lsi;
+        cfg.cfg_instance = sb;
         lustre_log_end(lsi, profilenm, &cfg);
 
         if (sbi->ll_md_exp) {
