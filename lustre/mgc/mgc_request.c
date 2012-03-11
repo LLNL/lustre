@@ -253,10 +253,10 @@ struct config_llog_data *do_config_log_add(struct obd_device *obd,
         RETURN(cld);
 }
 
-static struct config_llog_data *config_recover_log_add(struct obd_device *obd,
-        char *fsname,
-        struct config_llog_instance *cfg,
-        struct lustre_sb_info *lsi)
+static struct config_llog_data *
+config_recover_log_add(struct obd_device *obd, char *fsname,
+                       struct config_llog_instance *cfg,
+                       struct lustre_sb_info *lsi)
 {
         struct config_llog_instance lcfg = *cfg;
         struct config_llog_data *cld;
@@ -1112,7 +1112,6 @@ static int mgc_apply_recover_logs(struct obd_device *mgc,
         ENTRY;
 
         LASSERT(cfg->cfg_instance != NULL);
-        LASSERT(cfg->cfg_lsi == cfg->cfg_instance);
 
         OBD_ALLOC(inst, CFS_PAGE_SIZE);
         if (inst == NULL)
@@ -1124,6 +1123,7 @@ static int mgc_apply_recover_logs(struct obd_device *mgc,
                 __u32 idx;
 
                 LASSERT(IS_MDT(cfg->cfg_lsi));
+                LASSERT(cfg->cfg_lsi == cfg->cfg_instance);
                 rc = server_name2index(cfg->cfg_lsi->lsi_svname, &idx, NULL);
                 pos = sprintf(inst, "MDT%04x", idx);
         }
