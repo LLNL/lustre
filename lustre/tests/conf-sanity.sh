@@ -2863,14 +2863,19 @@ run_test 60 "check mkfs.lustre --mkfsoptions -E -O options setting"
 test_61() { # LU-80
     local reformat=false
 
+    [ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
+
     if ! large_xattr_enabled; then
         reformat=true
-        local mds_dev=$(mdsdevname ${SINGLEMDS//mds/})
-        add $SINGLEMDS $MDS_MKFS_OPTS --mkfsoptions='\"-O large_xattr\"' \
-            --reformat $mds_dev || error "reformatting $mds_dev failed"
+
+        writeconf
+        add mds1 $(mkfs_opts mds) --backfstype $MDSFSTYPE --index 0 \
+        --mkfsoptions='\"-O large_xattr\"' \
+        --reformat $(mdsdevname 1) $(mdsvdevname 1) || exit 10
     fi
 
     setup_noconfig || error "setting up the filesystem failed"
+    check_mount || return 1
     client_up || error "starting client failed"
 
     local file=$DIR/$tfile
