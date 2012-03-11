@@ -2876,6 +2876,8 @@ test_61() { # LU-80
 	if [ $(facet_fstype $SINGLEMDS) == ldiskfs ] &&
 	   ! large_xattr_enabled; then
 		reformat=true
+
+		writeconf
 		local mds_dev=$(mdsdevname ${SINGLEMDS//mds/})
 		LDISKFS_MKFS_OPTS+=" -O large_xattr"
 		add $SINGLEMDS $(mkfs_opts $SINGLEMDS) --reformat $mds_dev ||
@@ -2883,6 +2885,7 @@ test_61() { # LU-80
 	fi
 
     setup_noconfig || error "setting up the filesystem failed"
+    check_mount || return 1
     client_up || error "starting client failed"
 
     local file=$DIR/$tfile
