@@ -4326,7 +4326,7 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
 
         osd_compat_fini(osd);
 
-        osd_oi_fini(info, &osd->od_oi_table, osd->od_oi_count);
+        osd_oi_fini(info, osd);
 
         if (osd->od_mnt) {
                 shrink_dcache_sb(osd_sb(osd));
@@ -4384,12 +4384,9 @@ static int osd_device_init0(const struct lu_env *env,
                 GOTO(out_capa, rc);
 
         /* 1. initialize oi before any file create or file open */
-        rc = osd_oi_init(info, &o->od_oi_table, o);
+        rc = osd_oi_init(info, o);
         if (rc < 0)
                 GOTO(out_mnt, rc);
-
-        LASSERT(rc > 0);
-        o->od_oi_count = rc;
 
         rc = osd_compat_init(o);
         if (rc != 0)
@@ -4419,7 +4416,7 @@ out_site:
 out_compat:
         osd_compat_fini(o);
 out_oi:
-        osd_oi_fini(info, &o->od_oi_table, o->od_oi_count);
+        osd_oi_fini(info, o);
 out_mnt:
         osd_shutdown(env, o);
         mntput(o->od_mnt);

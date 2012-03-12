@@ -79,11 +79,8 @@ struct osd_inode_id {
 };
 
 int osd_oi_mod_init(void);
-int osd_oi_init(struct osd_thread_info *info,
-                struct osd_oi **oi_table,
-                struct osd_device *dev);
-void osd_oi_fini(struct osd_thread_info *info,
-                 struct osd_oi **oi_table, unsigned oi_count);
+int osd_oi_init(struct osd_thread_info *info, struct osd_device *dev);
+void osd_oi_fini(struct osd_thread_info *info, struct osd_device *dev);
 int  osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
                    const struct lu_fid *fid, struct osd_inode_id *id);
 int  osd_oi_insert(struct osd_thread_info *info, struct osd_device *osd,

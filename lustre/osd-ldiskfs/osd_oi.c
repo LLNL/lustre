@@ -94,21 +94,21 @@ static struct dt_index_features oi_feat = {
 
 #define OSD_OI_NAME_BASE        "oi.16"
 
-static void
-osd_oi_table_put(struct osd_thread_info *info,
-                 struct osd_oi *oi_table, unsigned oi_count)
+static void osd_oi_table_put(struct osd_thread_info *info,
+                             struct osd_oi **oi_table, unsigned oi_count)
 {
         struct iam_container *bag;
         int i;
 
         for (i = 0; i < oi_count; i++) {
-                LASSERT(oi_table[i].oi_inode != NULL);
+                LASSERT(oi_table[i] != NULL);
+                LASSERT(oi_table[i]->oi_inode != NULL);
 
-                bag = &(oi_table[i].oi_dir.od_container);
-                if (bag->ic_object == oi_table[i].oi_inode)
+                bag = &(oi_table[i]->oi_dir.od_container);
+                if (bag->ic_object == oi_table[i]->oi_inode)
                         iam_container_fini(bag);
-                iput(oi_table[i].oi_inode);
-                oi_table[i].oi_inode = NULL;
+                iput(oi_table[i]->oi_inode);
+                OBD_FREE_PTR(oi_table[i]);
         }
 }
 
@@ -219,6 +219,7 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
         }
         return ERR_PTR(-ENOENT);
 }
+
 /**
  * Open an OI(Ojbect Index) container.
  *
@@ -228,21 +229,26 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
  * \retval      -ve     failure
  */
 static int osd_oi_open(struct osd_thread_info *info, struct osd_device *osd,
-                       const char *name, struct osd_oi *oi, bool create)
+                       const char *name, struct osd_oi **oi_slot, bool create)
 {
         struct osd_directory *dir;
         struct iam_container *bag;
-        struct inode *inode;
+        struct inode         *inode;
+        struct osd_oi        *oi;
         int rc;
+
+        ENTRY;
 
         oi_feat.dif_keysize_min = sizeof(struct lu_fid);
         oi_feat.dif_keysize_max = sizeof(struct lu_fid);
 
         inode = osd_oi_index_open(info, osd, name, &oi_feat, create);
-        if (IS_ERR(inode)) {
-                rc = PTR_ERR(inode);
-                return rc;
-        }
+        if (IS_ERR(inode))
+                RETURN(PTR_ERR(inode));
+
+        OBD_ALLOC_PTR(oi);
+        if (oi == NULL)
+                GOTO(out_inode, rc = -ENOMEM);
 
         oi->oi_inode = inode;
         dir = &oi->oi_dir;
@@ -250,18 +256,24 @@ static int osd_oi_open(struct osd_thread_info *info, struct osd_device *osd,
         bag = &dir->od_container;
         rc = iam_container_init(bag, &dir->od_descr, inode);
         if (rc)
-                goto out_inode;
+                GOTO(out_free, rc);
 
         rc = iam_container_setup(bag);
-        if (rc == 0)
-                return 0;
+        if (rc)
+                GOTO(out_container, rc);
 
+        *oi_slot = oi;
+        return 0;
+
+out_container:
         iam_container_fini(bag);
+out_free:
+        OBD_FREE_PTR(oi);
 out_inode:
         iput(inode);
-        oi->oi_inode = NULL;
         return rc;
 }
+
 /**
  * Open OI(Object Index) table.
  * If \a oi_count is zero, which means caller doesn't know how many OIs there
@@ -281,7 +293,7 @@ out_inode:
  */
 static int
 osd_oi_table_open(struct osd_thread_info *info, struct osd_device *osd,
-                  struct osd_oi *oi_table, unsigned oi_count, bool create)
+                  struct osd_oi **oi_table, unsigned oi_count, bool create)
 {
         struct dt_device *dev = &osd->od_dt_dev;
         int               count = 0;
@@ -322,12 +334,10 @@ osd_oi_table_open(struct osd_thread_info *info, struct osd_device *osd,
         return count;
 }
 
-int osd_oi_init(struct osd_thread_info *info,
-                struct osd_oi **oi_table,
-                struct osd_device *osd)
+int osd_oi_init(struct osd_thread_info *info, struct osd_device *osd)
 {
         struct dt_device *dev = &osd->od_dt_dev;
-        struct osd_oi *oi;
+        struct osd_oi **oi;
         int rc;
 
         OBD_ALLOC(oi, sizeof(*oi) * OSD_OI_FID_NR_MAX);
@@ -345,9 +355,7 @@ int osd_oi_init(struct osd_thread_info *info,
         if (rc == 0) {
                 rc = 1;
                 goto out;
-        }
-
-        if (rc != -ENOENT) {
+        } else if (rc != -ENOENT) {
                 CERROR("%s: can't open %s: rc = %d\n",
                        dev->dd_lu_dev.ld_obd->obd_name, OSD_OI_NAME_BASE, rc);
                 goto out;
@@ -361,22 +369,22 @@ out:
                 OBD_FREE(oi, sizeof(*oi) * OSD_OI_FID_NR_MAX);
         } else {
                 LASSERT((rc & (rc - 1)) == 0);
-                *oi_table = oi;
+                osd->od_oi_table = oi;
+                osd->od_oi_count = rc;
+                rc = 0;
         }
 
         cfs_mutex_unlock(&oi_init_lock);
         return rc;
 }
 
-void osd_oi_fini(struct osd_thread_info *info,
-                 struct osd_oi **oi_table, unsigned oi_count)
+void osd_oi_fini(struct osd_thread_info *info, struct osd_device *osd)
 {
-        struct osd_oi *oi = *oi_table;
+        osd_oi_table_put(info, osd->od_oi_table, osd->od_oi_count);
 
-        osd_oi_table_put(info, oi, oi_count);
-
-        OBD_FREE(oi, sizeof(*oi) * OSD_OI_FID_NR_MAX);
-        *oi_table = NULL;
+        OBD_FREE(osd->od_oi_table,
+                 sizeof(*(osd->od_oi_table)) * OSD_OI_FID_NR_MAX);
+        osd->od_oi_table = NULL;
 }
 
 static inline int fid_is_fs_root(const struct lu_fid *fid)
