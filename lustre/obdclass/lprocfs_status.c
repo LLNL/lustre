@@ -861,6 +861,8 @@ static const char *obd_connect_names[] = {
         "object_max_bytes",
         "imp_recov",
         "jobstats",
+        "umask",
+        "einprogress",
         "grant_param",
         NULL
 };
