@@ -4095,7 +4095,7 @@ static int
 osd_oi_open_table(const struct lu_env *env, struct osd_device *o, int count)
 {
         char name[16];
-        int i, rc;
+        int  i, rc = 0;
         ENTRY;
 
         for (i = 0; i < count; i++) {
@@ -4119,7 +4119,7 @@ osd_oi_probe(const struct lu_env *env, struct osd_device *o, int *count)
         uint64_t      root_oid = o->od_root;
         struct osd_oi oi;
         char          name[16];
-        int           i, rc;
+        int           rc;
         ENTRY;
 
         /*
@@ -4129,7 +4129,7 @@ osd_oi_probe(const struct lu_env *env, struct osd_device *o, int *count)
          * power of two and this is checked for basic sanity.
          */
         for (*count = 0; *count < OSD_OI_FID_NR_MAX; (*count)++) {
-                sprintf(name, "%s.%d", DMU_OSD_OI_NAME_BASE, i);
+                sprintf(name, "%s.%d", DMU_OSD_OI_NAME_BASE, *count);
                 rc = osd_oi_lookup(env, o, root_oid, name, &oi);
                 if (rc == 0)
                         continue;
