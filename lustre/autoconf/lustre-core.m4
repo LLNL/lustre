@@ -1529,10 +1529,9 @@ LB_LINUX_TRY_COMPILE([
         #include <linux/fs_struct.h>
 ],[
         struct path path;
-        struct fs_struct fs;
+        struct fs_struct fs __attribute__ ((unused));
 
         fs.pwd = path;
-        memset(&fs, 0, sizeof(fs));
 ], [
         AC_MSG_RESULT([yes])
         AC_DEFINE(HAVE_FS_STRUCT_USE_PATH, 1,
