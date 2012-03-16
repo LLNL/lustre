@@ -232,6 +232,16 @@ static int osp_process_config(const struct lu_env *env,
                                                       lcfg, d->opd_obd);
                         if (rc > 0)
                                 rc = 0;
+                        if (rc == -ENOSYS) {
+                                /* class_process_proc_param() haven't found
+                                 * matching parameter and returned ENOSYS so
+                                 * that layer(s) below could use that. but
+                                 * OSP is the bottom, so just ignore it */
+                                CERROR("%s: unknown param %s\n",
+                                       (char *)lustre_cfg_string(lcfg, 0),
+                                       (char *)lustre_cfg_string(lcfg, 1));
+                                rc = 0;
+                        }
                         break;
                 }
 
