@@ -79,15 +79,15 @@ import_zpool ()
 	local result=1
 	local label=$1
 	local pool=`$LDEV -z $label`
-	local args=
+	local args="-N"
 	local cache=`$LDEV -r $label`
 	# -c is incompatible with -d
 	if [ -n "$cache" ] ; then
-		args="-c $cache"
+		args="$args -c $cache"
 	elif [ -n "$ZPOOLDEVDIR" ] ; then
-		args="-d $ZPOOLDEVDIR"
+		args="$args -d $ZPOOLDEVDIR"
 	elif [ -d "/dev/disk/zpool" ] ; then
-		args="-d /dev/disk/zpool"
+		args="$args -d /dev/disk/zpool"
 	fi
 
 	if zpool status $pool >/dev/null 2>&1 ; then
