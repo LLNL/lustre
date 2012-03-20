@@ -863,7 +863,7 @@ test_41() {
     do_facet client dd if=/dev/zero of=$f bs=4k count=1 || return 3
     cancel_lru_locks osc
     # fail ost2 and read from ost1
-    local mdtosc=$(get_mdtosp_proc_path $SINGLEMDS $ost2_svc)
+    local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS $ost2_svc)
     local osc2dev=$(do_facet $SINGLEMDS "lctl get_param -n devices" | \
         grep $mdtosc | awk '{print $1}')
     [ -z "$osc2dev" ] && echo "OST: $ost2_svc" && lctl get_param -n devices && return 4
@@ -1052,7 +1052,7 @@ test_48() {
 run_test 48 "MDS->OSC failure during precreate cleanup (2824)"
 
 test_50() {
-    local mdtosc=$(get_mdtosp_proc_path $SINGLEMDS $ost1_svc)
+    local mdtosc=$(get_mdtosc_proc_path $SINGLEMDS $ost1_svc)
     local oscdev=$(do_facet $SINGLEMDS "lctl get_param -n devices" | \
         grep $mdtosc | awk '{print $1}')
     [ "$oscdev" ] || return 1
