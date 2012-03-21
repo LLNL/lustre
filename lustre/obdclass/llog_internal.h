@@ -50,6 +50,9 @@ struct llog_process_info {
         const struct lu_env *lpi_env;
 };
 
+#define LLOG_DEBUG
+#define LLOG_DEBUG_MAXFID       200
+
 struct llog_thread_info {
         struct lu_attr           lgi_attr;
         struct lu_fid            lgi_fid;
@@ -64,6 +67,12 @@ struct llog_thread_info {
         struct llog_rec_hdr      lgi_lrh;
         struct llog_rec_tail     lgi_tail;
         struct llog_logid_rec    lgi_lid;
+
+#ifdef LLOG_DEBUG
+        struct thandle          *lgi_th;
+        struct lu_fid            lgi_fids[LLOG_DEBUG_MAXFID];/* objects declared */
+        int                      lgi_fidnr;     /* number of objects declared */
+#endif
 };
 
 extern struct lu_context_key llog_thread_key;

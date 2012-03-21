@@ -470,6 +470,22 @@ static int llog_osd_declare_write_rec(const struct lu_env *env,
         o = loghandle->lgh_obj;
         LASSERT(o);
 
+#ifdef LLOG_DEBUG
+        if (th != lgi->lgi_th) {
+                /* new transaction */
+                lgi->lgi_th = th;
+                lgi->lgi_fidnr = 0;
+        }
+        for (rc = 0; rc < lgi->lgi_fidnr; rc++) {
+                if (lu_fid_eq(&lgi->lgi_fids[rc], lu_object_fid(&o->do_lu)))
+                        break;
+        }
+        if (rc >= lgi->lgi_fidnr && lgi->lgi_fidnr < LLOG_DEBUG_MAXFID) {
+                lgi->lgi_fids[lgi->lgi_fidnr] = *lu_object_fid(&o->do_lu);
+                lgi->lgi_fidnr++;
+        }
+#endif
+
         /* each time we update header */
         rc = dt_declare_record_write(env, o, sizeof(struct llog_log_hdr),
                                      0, th);
@@ -519,6 +535,18 @@ static int llog_osd_write_rec(const struct lu_env *env,
         CDEBUG(D_OTHER, "new record %x to "DFID"\n",
                (unsigned) rec->lrh_type, PFID(lu_object_fid(&o->do_lu)));
 
+#ifdef LLOG_DEBUG
+        LASSERT(th == lgi->lgi_th);
+        for (rc = 0; rc < lgi->lgi_fidnr; rc++) {
+                if (lu_fid_eq(&lgi->lgi_fids[rc], lu_object_fid(&o->do_lu)))
+                        break;
+        }
+        if (rc == lgi->lgi_fidnr && lgi->lgi_fidnr < LLOG_DEBUG_MAXFID) {
+                CERROR("write to undeclared object "DFID"\n",
+                       PFID(lu_object_fid(&o->do_lu)));
+                LBUG();
+        }
+#endif
         /* record length should not bigger than LLOG_CHUNK_SIZE */
         if (buf)
                 rc = (reclen > LLOG_CHUNK_SIZE - sizeof(struct llog_rec_hdr) -
