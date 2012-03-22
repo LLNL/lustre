@@ -232,6 +232,7 @@ struct osd_object {
         dmu_buf_t           *oo_db;
         sa_handle_t         *oo_sa_hdl;
         nvlist_t            *oo_sa_xattr;
+        cfs_semaphore_t      oo_sa_lock;
         cfs_list_t           oo_sa_linkage;
 
         cfs_rw_semaphore_t   oo_sem;

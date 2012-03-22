@@ -144,8 +144,10 @@ osd_object_sa_dirty_add(struct osd_object *obj, struct osd_thandle *oh)
                 return;
 
         cfs_mutex_down(&oh->ot_sa_lock);
+        cfs_mutex_down(&obj->oo_sa_lock);
         if (likely(cfs_list_empty(&obj->oo_sa_linkage)))
                 cfs_list_add(&obj->oo_sa_linkage, &oh->ot_sa_list);
+        cfs_mutex_up(&obj->oo_sa_lock);
         cfs_mutex_up(&oh->ot_sa_lock);
 }
 
@@ -162,7 +164,9 @@ osd_object_sa_dirty_rele(struct osd_thandle *oh)
                 obj = cfs_list_entry(oh->ot_sa_list.next,
                                     struct osd_object, oo_sa_linkage);
                 sa_spill_rele(obj->oo_sa_hdl);
+                cfs_mutex_down(&obj->oo_sa_lock);
                 cfs_list_del_init(&obj->oo_sa_linkage);
+                cfs_mutex_up(&obj->oo_sa_lock);
         }
         cfs_mutex_up(&oh->ot_sa_lock);
 }
@@ -512,6 +516,7 @@ static struct lu_object *osd_object_alloc(const struct lu_env *env,
                 dt_object_init(&mo->oo_dt, NULL, d);
                 mo->oo_dt.do_ops = &osd_obj_ops;
                 l->lo_ops = &osd_lu_obj_ops;
+                cfs_sema_init(&mo->oo_sa_lock, 1);
                 CFS_INIT_LIST_HEAD(&mo->oo_sa_linkage);
                 cfs_init_rwsem(&mo->oo_sem);
                 cfs_sema_init(&mo->oo_guard, 1);
