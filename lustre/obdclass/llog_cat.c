@@ -276,9 +276,12 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
         cfs_down_read_nested(&cathandle->lgh_lock, LLOGH_CAT);
         loghandle = cathandle->u.chd.chd_current_log;
         if (loghandle) {
-                struct llog_log_hdr *llh = loghandle->lgh_hdr;
+                struct llog_log_hdr *llh;
+
                 cfs_down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
-                if (!llh || loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
+                llh = loghandle->lgh_hdr;
+                if (llh == NULL ||
+                    loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
                         cfs_up_read(&cathandle->lgh_lock);
                         RETURN(loghandle);
                 } else {
@@ -293,8 +296,11 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
         cfs_down_write_nested(&cathandle->lgh_lock, LLOGH_CAT);
         loghandle = cathandle->u.chd.chd_current_log;
         if (loghandle) {
-                struct llog_log_hdr *llh = loghandle->lgh_hdr;
+                struct llog_log_hdr *llh;
+
                 cfs_down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
+                llh = loghandle->lgh_hdr;
+                LASSERT(llh);
                 if (loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
                         cfs_up_write(&cathandle->lgh_lock);
                         RETURN(loghandle);
@@ -717,6 +723,7 @@ int llog_cat_reverse_process(const struct lu_env *env,
         int rc;
         ENTRY;
 
+        LASSERT(llh);
         LASSERT(llh->llh_flags & LLOG_F_IS_CAT);
         lgi->lgi_lpd.lpd_data = data;
         lgi->lgi_lpd.lpd_cb = cb;
@@ -752,6 +759,7 @@ int llog_cat_set_first_idx(struct llog_handle *cathandle, int index)
         int i, bitmap_size, idx;
         ENTRY;
 
+        LASSERT(llh);
         bitmap_size = LLOG_BITMAP_SIZE(llh);
         if (llh->llh_cat_idx == (index - 1)) {
                 idx = llh->llh_cat_idx + 1;
@@ -808,6 +816,7 @@ int cat_cancel_cb(const struct lu_env *env, struct llog_handle *cathandle,
         }
 
         llh = loghandle->lgh_hdr;
+        LASSERT(llh);
         if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
             (llh->llh_count == 1)) {
                 rc = llog_destroy(env, loghandle);
