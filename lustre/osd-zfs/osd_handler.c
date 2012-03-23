@@ -1893,6 +1893,11 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 
         ENTRY;
 
+        /* concurrent create declarations should not see
+         * the object inconsistent (db, attr, etc).
+         * in regular cases acquisition should be cheap */
+        cfs_down(&obj->oo_guard);
+
         LASSERT(osd_invariant(obj));
         LASSERT(!dt_object_exists(dt));
         LASSERT(dof != NULL);
@@ -1908,7 +1913,7 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 
         db = osd_create_type_f(dof->dof_type)(env, osd, attr, oh);
         if (IS_ERR(db))
-                RETURN(PTR_ERR(th));
+                GOTO(out, rc = PTR_ERR(th));
 
         zde->zde_pad = 0;
         zde->zde_dnode = db->db_object;
@@ -1941,6 +1946,8 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
         LASSERT(ergo(rc == 0, dt_object_exists(dt)));
         LASSERT(osd_invariant(obj));
 
+out:
+        cfs_up(&obj->oo_guard);
         RETURN(rc);
 }
 
@@ -2802,9 +2809,14 @@ void __osd_xattr_declare_set(const struct lu_env *env, struct osd_object *obj,
         dmu_tx_t          *tx = oh->ot_tx;
         uint64_t           xa_data_obj;
         int                rc = 0;
+        int                here;
+
+        here = dt_object_exists(&obj->oo_dt);
 
         /* object may be not yet created */
-        if (db != NULL) {
+        if (here) {
+                LASSERT(db);
+                LASSERT(obj->oo_sa_hdl);
                 /* we might just update SA_ZPL_DXATTR */
                 dmu_tx_hold_sa(tx, obj->oo_sa_hdl, 1);
 
@@ -2812,10 +2824,12 @@ void __osd_xattr_declare_set(const struct lu_env *env, struct osd_object *obj,
                         rc = -ENOENT;
         }
 
-        if (db == NULL || rc == -ENOENT) {
+        if (!here || rc == -ENOENT) {
                 /* we'll be updating SA_ZPL_XATTR */
-                if (db)
+                if (here) {
+                        LASSERT(obj->oo_sa_hdl);
                         dmu_tx_hold_sa(tx, obj->oo_sa_hdl, 1);
+                }
                 /* xattr zap + entry */
                 dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, TRUE, (char *) name);
                 /* xattr value obj */
@@ -3554,20 +3568,22 @@ static ssize_t osd_declare_write(const struct lu_env *env, struct dt_object *dt,
 
         oh = container_of0(th, struct osd_thandle, ot_super);
 
-        if (obj->oo_db) {
-                LASSERT(dt_object_exists(dt));
+        /* in some cases declare can race with creation (e.g. llog)
+         * and we need to wait till object is initialized. notice
+         * LOHA_EXISTs is supposed to be the last step in the
+         * initialization */
 
+        /* declare possible size change. notice we can't check
+         * current size here as another thread can change it */
+
+        if (dt_object_exists(dt)) {
+                LASSERT(obj->oo_db);
                 oid = obj->oo_db->db_object;
 
-                /*
-                 * declare possible size change. notice we can't check current
-                 * size here as another thread can change it
-                 */
                 dmu_tx_hold_sa(oh->ot_tx, obj->oo_sa_hdl, 0);
         } else {
-                LASSERT(!dt_object_exists(dt));
-
                 oid = DMU_NEW_OBJECT;
+                dmu_tx_hold_sa_create(oh->ot_tx, ZFS_SA_BASE_ATTR_SIZE);
         }
 
         dmu_tx_hold_write(oh->ot_tx, oid, pos, size);
