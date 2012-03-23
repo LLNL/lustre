@@ -162,8 +162,10 @@ osd_object_sa_dirty_add(struct osd_object *obj, struct osd_thandle *oh)
                 return;
 
         cfs_mutex_down(&oh->ot_sa_lock);
+        cfs_write_lock(&obj->oo_attr_lock);
         if (likely(cfs_list_empty(&obj->oo_sa_linkage)))
                 cfs_list_add(&obj->oo_sa_linkage, &oh->ot_sa_list);
+        cfs_write_unlock(&obj->oo_attr_lock);
         cfs_mutex_up(&oh->ot_sa_lock);
 }
 
@@ -180,7 +182,9 @@ osd_object_sa_dirty_rele(struct osd_thandle *oh)
                 obj = cfs_list_entry(oh->ot_sa_list.next,
                                     struct osd_object, oo_sa_linkage);
                 sa_spill_rele(obj->oo_sa_hdl);
+                cfs_write_lock(&obj->oo_attr_lock);
                 cfs_list_del_init(&obj->oo_sa_linkage);
+                cfs_write_unlock(&obj->oo_attr_lock);
         }
         cfs_mutex_up(&oh->ot_sa_lock);
 }
