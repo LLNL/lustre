@@ -1939,6 +1939,11 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
         LASSERT(osd_write_locked(env, obj));
         LASSERT(th != NULL);
 
+        if (unlikely(fid_is_acct(fid)))
+                /* Quota files can't be created from the kernel any more,
+                 * 'tune2fs -O quota' will take care of creating them */
+               RETURN(-EPERM);
+
         OSD_EXEC_OP(th, create);
 
         result = __osd_object_create(info, obj, attr, hint, dof, th);
@@ -1995,6 +2000,9 @@ static int osd_object_destroy(const struct lu_env *env,
         LASSERT(oh->ot_handle);
         LASSERT(inode);
         LASSERT(!lu_object_is_dying(dt->do_lu.lo_header));
+
+        if (unlikely(fid_is_acct(fid)))
+               RETURN(-EPERM);
 
         if (S_ISDIR(inode->i_mode)) {
                 LASSERT(osd_inode_unlinked(inode) ||
@@ -2194,6 +2202,11 @@ static int osd_object_ea_create(const struct lu_env *env, struct dt_object *dt,
         LASSERT(!dt_object_exists(dt));
         LASSERT(osd_write_locked(env, obj));
         LASSERT(th != NULL);
+
+        if (unlikely(fid_is_acct(fid)))
+                /* Quota files can't be created from the kernel any more,
+                 * 'tune2fs -O quota' will take care of creating them */
+               RETURN(-EPERM);
 
         OSD_EXEC_OP(th, create);
 

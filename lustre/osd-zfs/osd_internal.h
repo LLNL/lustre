@@ -205,12 +205,17 @@ struct osd_device {
         uint64_t                  od_ost_compat_dirs[OSD_OST_MAP_SIZE];
         uint64_t                  od_ost_compat_grp0;
 
-        unsigned int              od_rdonly:1;
+        unsigned int              od_rdonly:1,
+                                  od_quota_iused_est:1;
         char                      od_mntdev[128];
         char                      od_svname[128];
 
         int                       od_connects;
         struct lu_site            od_site;
+
+        /* object IDs of the inode accounting indexes */
+        uint64_t                  od_iusr_oid;
+        uint64_t                  od_igrp_oid;
 
         /* used to debug zerocopy logic: the fields track all
          * allocated, loaned and referenced buffers in use.

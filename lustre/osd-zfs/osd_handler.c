@@ -291,7 +291,9 @@ static const struct named_oid oids[] = {
         { MDD_LOV_OBJ_OID,              LOV_OBJID },
         { MDT_LAST_RECV_OID,            LAST_RCVD },
         { OFD_HEALTH_CHECK_OID,         HEALTH_CHECK },
-        { OFD_GROUP0_LAST_OID,           "LAST_ID" },
+        { OFD_GROUP0_LAST_OID,          "LAST_ID" },
+        { ACCT_USER_OID,                "acct_usr_inode" },
+        { ACCT_GROUP_OID,               "acct_grp_inode" },
         { MDD_ROOT_INDEX_OID,           NULL },
         { MDD_ORPHAN_OID,               NULL },
         { 0,                            NULL }
@@ -443,17 +445,12 @@ static int osd_fid_lookup(const struct lu_env *env,
         LASSERT(obj->oo_db == NULL);
 
         if (unlikely(fid_is_acct(fid))) {
-                /* DMU_USERUSED_OBJECT & DMU_GROUPUSED_OBJECT are special
-                 * objects which have no d_buf_t structure.
-                 * As a consequence, udmu_object_get_dmu_buf() gets a fake
-                 * buffer which is good enough to pass all the checks done
-                 * during object creation, but this buffer should really not
-                 * be used by osd_quota.c */
-                oid = osd_quota_fid2dmu(fid);
-
+                if (fid_oid(fid) == ACCT_USER_OID)
+                        oid = dev->od_iusr_oid;
+                else
+                        oid = dev->od_igrp_oid;
         } else if (unlikely(fid_is_fs_root(fid))) {
                 oid = dev->od_root;
-
         } else {
                 zapid = osd_get_name_n_idx(env, dev, fid, buf);
 
@@ -537,9 +534,6 @@ int osd_object_init0(const struct lu_env *env, struct osd_object *obj)
 
         /* object exist */
 
-        if (unlikely(fid_is_acct(fid)))
-                GOTO(out, rc = 0);
-
         rc = osd_object_sa_init(obj, uos);
         if (rc)
                 RETURN(rc);
@@ -550,9 +544,10 @@ int osd_object_init0(const struct lu_env *env, struct osd_object *obj)
         if (rc)
                 RETURN(rc);
 
-        obj->oo_dt.do_body_ops = &osd_body_ops;
+        if (likely(!fid_is_acct(fid)))
+                /* no body operations for accounting objects */
+                obj->oo_dt.do_body_ops = &osd_body_ops;
 
-out:
         /*
          * initialize object before marking it existing
          */
@@ -832,6 +827,12 @@ static int osd_declare_object_destroy(const struct lu_env *env,
         dmu_tx_hold_bonus(oh->ot_tx, zapid);
         dmu_tx_hold_zap(oh->ot_tx, zapid, 0, buf);
 
+        /* declare that we'll remove object from inode accounting ZAPs */
+        dmu_tx_hold_bonus(oh->ot_tx, osd->od_iusr_oid);
+        dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, 0, buf);
+        dmu_tx_hold_bonus(oh->ot_tx, osd->od_igrp_oid);
+        dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, 0, buf);
+
         RETURN(0);
 }
 
@@ -931,6 +932,22 @@ static int osd_object_destroy(const struct lu_env *env,
                 GOTO(out, rc);
         }
 
+        /* Remove object from inode accounting. It is not fatal for the destroy
+         * operation if something goes wrong while updating accounting, but we
+         * still log an error message to notify the administrator */
+        rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
+                                obj->oo_attr.la_uid, -1, oh->ot_tx);
+        if (rc)
+                CERROR("%s: failed to remove "DFID" from accounting ZAP for usr"
+                       " %d (%d)\n", osd->od_svname, PFID(fid),
+                        obj->oo_attr.la_uid, rc);
+        rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
+                                obj->oo_attr.la_gid, -1, oh->ot_tx);
+        if (rc)
+                CERROR("%s: failed to remove "DFID" from accounting ZAP for grp"
+                       " %d (%d)\n", osd->od_svname, PFID(fid),
+                       obj->oo_attr.la_gid, rc);
+
         /* kill object */
         rc = __osd_object_destroy(env, obj, oh->ot_tx, osd_obj_tag);
         if (rc) {
@@ -950,8 +967,7 @@ static void osd_object_delete(const struct lu_env *env, struct lu_object *l)
         struct osd_object *obj = osd_obj(l);
 
         if (obj->oo_db != NULL) {
-                if (likely(!fid_is_acct(lu_object_fid(l))))
-                        osd_object_sa_fini(obj);
+                osd_object_sa_fini(obj);
                 if (obj->oo_sa_xattr) {
                         nvlist_free(obj->oo_sa_xattr);
                         obj->oo_sa_xattr = NULL;
@@ -1225,12 +1241,6 @@ static int osd_attr_get(const struct lu_env *env,
         LASSERT(osd_invariant(obj));
         LASSERT(obj->oo_db);
 
-        if (unlikely(fid_is_acct(lu_object_fid(&dt->do_lu)))) {
-                /* XXX: at some point quota objects will get own methods */
-                memset(attr, 0, sizeof(*attr));
-                return 0;
-        }
-
         cfs_read_lock(&obj->oo_attr_lock);
         *attr = obj->oo_attr;
         cfs_read_unlock(&obj->oo_attr_lock);
@@ -1255,7 +1265,9 @@ static int osd_declare_attr_set(const struct lu_env *env,
                                 const struct lu_attr *attr,
                                 struct thandle *handle)
 {
+        char               *buf = osd_oti_get(env)->oti_str;
         struct osd_object  *obj = osd_dt_obj(dt);
+        struct osd_device  *osd = osd_obj2dev(obj);
         struct osd_thandle *oh;
         ENTRY;
 
@@ -1271,6 +1283,17 @@ static int osd_declare_attr_set(const struct lu_env *env,
 
         LASSERT(obj->oo_sa_hdl != NULL);
         dmu_tx_hold_sa(oh->ot_tx, obj->oo_sa_hdl, 0);
+
+        if (attr && attr->la_valid & LA_UID) {
+                /* account for user inode tracking ZAP update */
+                dmu_tx_hold_bonus(oh->ot_tx, osd->od_iusr_oid);
+                dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, TRUE, buf);
+        }
+        if (attr && attr->la_valid & LA_GID) {
+                /* account for user inode tracking ZAP update */
+                dmu_tx_hold_bonus(oh->ot_tx, osd->od_igrp_oid);
+                dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, TRUE, buf);
+        }
 
         RETURN(0);
 }
@@ -1359,11 +1382,39 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
                                  &osa->flags, 8);
         }
         if (la->la_valid & LA_UID) {
+                /* Update user accounting. Failure isn't fatal, but we still
+                 * log an error message */
+                rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
+                                        la->la_uid, 1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname, la->la_uid, rc);
+                rc =- zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
+                                        obj->oo_attr.la_uid, -1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname,
+                               obj->oo_attr.la_uid, rc);
+
                 osa->uid = obj->oo_attr.la_uid = la->la_uid;
                 SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_UID(uos), NULL,
                                  &osa->uid, 8);
         }
         if (la->la_valid & LA_GID) {
+                /* Update group accounting. Failure isn't fatal, but we still
+                 * log an error message */
+                rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
+                                        la->la_gid, 1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname, la->la_gid, rc);
+                rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
+                                        obj->oo_attr.la_gid, -1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname,
+                               obj->oo_attr.la_gid, rc);
+
                 osa->gid = obj->oo_attr.la_gid = la->la_gid;
                 SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_GID(uos), NULL,
                                  &osa->gid, 8);
@@ -1548,6 +1599,12 @@ static int osd_declare_object_create(const struct lu_env *env,
         zapid = osd_get_name_n_idx(env, osd, fid, buf);
         dmu_tx_hold_bonus(oh->ot_tx, zapid);
         dmu_tx_hold_zap(oh->ot_tx, zapid, TRUE, buf);
+
+        /* we will also update inode accounting ZAPs */
+        dmu_tx_hold_bonus(oh->ot_tx, osd->od_iusr_oid);
+        dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, TRUE, buf);
+        dmu_tx_hold_bonus(oh->ot_tx, osd->od_igrp_oid);
+        dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, TRUE, buf);
 
         dmu_tx_hold_sa_create(oh->ot_tx, ZFS_SA_BASE_ATTR_SIZE);
 
@@ -1847,13 +1904,29 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
         zapid = osd_get_name_n_idx(env, osd, fid, buf);
 
         rc = -zap_add(osd->od_objset.os, zapid, buf, 8, 1, zde, oh->ot_tx);
-        if (likely(rc == 0)) {
-                obj->oo_db = db;
-                rc = osd_object_init0(env, obj);
+        if (rc)
+                RETURN(rc);
 
-                LASSERT(ergo(rc == 0, dt_object_exists(dt)));
-                LASSERT(osd_invariant(obj));
-        }
+        /* Add new object to inode accounting.
+         * Errors are not considered as fatal */
+        rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
+                                (attr->la_valid & LA_UID) ? attr->la_uid : 0, 1,
+                                oh->ot_tx);
+        if (rc)
+                CERROR("%s: failed to add "DFID" to accounting ZAP for usr %d "
+                       "(%d)\n", osd->od_svname, PFID(fid), attr->la_uid, rc);
+        rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
+                                (attr->la_valid & LA_GID) ? attr->la_gid : 0, 1,
+                                oh->ot_tx);
+        if (rc)
+                CERROR("%s: failed to add "DFID" to accounting ZAP for grp %d "
+                       "(%d)\n", osd->od_svname, PFID(fid), attr->la_gid, rc);
+
+        /* configure new osd object */
+        obj->oo_db = db;
+        rc = osd_object_init0(env, obj);
+        LASSERT(ergo(rc == 0, dt_object_exists(dt)));
+        LASSERT(osd_invariant(obj));
 
         RETURN(rc);
 }
@@ -4276,6 +4349,19 @@ osd_oi_init_compat(const struct lu_env *env, struct osd_device *o)
                 o->od_ost_compat_dirs[i] = sdb;
         }
 
+        /* Create on-disk indexes to maintain per-UID/GID inode usage */
+        rc = osd_oi_find_or_create(env, o, o->od_root, oid2name(ACCT_USER_OID),
+                                   &odb);
+        if (rc)
+                RETURN(rc);
+        o->od_iusr_oid = odb;
+
+        rc = osd_oi_find_or_create(env, o, o->od_root, oid2name(ACCT_GROUP_OID),
+                                   &odb);
+        if (rc)
+                RETURN(rc);
+        o->od_igrp_oid = odb;
+
         RETURN(rc);
 }
 
@@ -4439,6 +4525,10 @@ static int osd_device_init0(const struct lu_env *env,
         label = osd_label_get(env, &o->od_dt_dev);
         if (label == NULL)
                 GOTO(out_oi, rc = -ENODEV);
+
+        /* Use our own ZAP for inode accounting by default, this can be changed
+         * via procfs to estimate the inode usage from the block usage */
+        o->od_quota_iused_est = 0;
 
         rc = osd_procfs_init(o, label);
         if (rc)
