@@ -74,38 +74,53 @@ static int osd_acct_index_lookup(const struct lu_env *env,
         struct osd_thread_info *info = osd_oti_get(env);
         char                   *buf  = info->oti_buf;
         struct acct_rec        *rec  = (struct acct_rec *)dtrec;
-        struct lu_object       *lo   = &dtobj->do_lu;
-        struct osd_device      *osd  = osd_dev(lo->lo_dev);
+        struct osd_object      *obj = osd_dt_obj(dtobj);
+        struct osd_device      *osd = osd_obj2dev(obj);
         int                     rc;
         uint64_t                oid;
         ENTRY;
+
+        rec->bspace = rec->ispace = 0;
 
         /* convert the 64-bit uid/gid into a string */
         sprintf(buf, "%llx", *((__u64 *)dtkey));
         /* fetch DMU object ID (DMU_USERUSED_OBJECT/DMU_GROUPUSED_OBJECT) to be
          * used */
-        oid = osd_quota_fid2dmu(lu_object_fid(lo));
+        oid = osd_quota_fid2dmu(lu_object_fid(&dtobj->do_lu));
 
         /* disk usage (in bytes) is maintained by DMU.
          * DMU_USERUSED_OBJECT/DMU_GROUPUSED_OBJECT are special objects which
          * not associated with any dmu_but_t (see dnode_special_open()).
          * As a consequence, we cannot use udmu_zap_lookup() here since it
          * requires a valid oo_db. */
-        rc = zap_lookup(osd->od_objset.os, oid, buf, sizeof(uint64_t), 1,
-                        &rec->bspace);
-        if (rc == ENOENT) {
+        rc = -zap_lookup(osd->od_objset.os, oid, buf, sizeof(uint64_t), 1,
+                         &rec->bspace);
+        if (rc == -ENOENT)
                 /* user/group has not created anything yet */
-                CDEBUG(D_QUOTA, "%s: id %s not found, assuming 0\n",
+                CDEBUG(D_QUOTA, "%s: id %s not found in DMU accounting ZAP\n",
                        osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name, buf);
-                rec->ispace = rec->bspace = 0;
+        else if (rc)
+                RETURN(rc);
+
+        if (osd->od_quota_iused_est) {
+                if (rec->bspace != 0)
+                        /* estimate #inodes in use */
+                        rec->ispace = udmu_objset_user_iused(&osd->od_objset,
+                                                             rec->bspace);
                 RETURN(+1);
         }
-        if (rc)
-                RETURN(-rc);
 
         /* as for inode accounting, it is not maintained by DMU, so we just
-         * estimate inode usage from the block usage & statfs information */
-        rec->ispace = udmu_objset_user_iused(&osd->od_objset, rec->bspace);
+         * use our own ZAP to track inode usage */
+        rc = -zap_lookup(osd->od_objset.os, obj->oo_db->db_object,
+                         buf, sizeof(uint64_t), 1, &rec->ispace);
+        if (rc == -ENOENT)
+                /* user/group has not created any file yet */
+                CDEBUG(D_QUOTA, "%s: id %s not found in accounting ZAP\n",
+                       osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name, buf);
+        else if (rc)
+                RETURN(rc);
+
         RETURN(+1);
 }
 
@@ -138,9 +153,10 @@ static struct dt_it *osd_it_acct_init(const struct lu_env *env,
         it->oiq_oid = osd_quota_fid2dmu(lu_object_fid(lo));
 
         /* initialize zap cursor */
-        rc = udmu_zap_cursor_init(&it->oiq_zc, &osd->od_objset, it->oiq_oid, 0);
+        rc = -udmu_zap_cursor_init(&it->oiq_zc, &osd->od_objset, it->oiq_oid,
+                                   0);
         if (rc)
-                RETURN(ERR_PTR(-rc));
+                RETURN(ERR_PTR(rc));
 
         /* take object reference */
         lu_object_get(lo);
@@ -188,9 +204,9 @@ static int osd_it_acct_get(const struct lu_env *env, struct dt_it *di,
         LASSERT(*((__u64 *)key) == 0);
 
         /* create new cursor pointing to the new key */
-        rc = udmu_zap_cursor_init(&zc, &osd->od_objset, it->oiq_oid, 0);
+        rc = -udmu_zap_cursor_init(&zc, &osd->od_objset, it->oiq_oid, 0);
         if (rc)
-                RETURN(-rc);
+                RETURN(rc);
 
         /* kill old zap cursor and replace with the new one */
         udmu_zap_cursor_fini(it->oiq_zc);
@@ -228,10 +244,10 @@ static int osd_it_acct_next(const struct lu_env *env, struct dt_it *di)
         if (it->oiq_reset == 0)
                 zap_cursor_advance(it->oiq_zc);
         it->oiq_reset = 0;
-        rc = udmu_zap_cursor_retrieve_key(env, it->oiq_zc, NULL, 32);
-        if (rc == ENOENT) /* reached the end */
+        rc = -udmu_zap_cursor_retrieve_key(env, it->oiq_zc, NULL, 32);
+        if (rc == -ENOENT) /* reached the end */
                 RETURN(+1);
-        RETURN(-rc);
+        RETURN(rc);
 }
 
 /**
@@ -250,9 +266,9 @@ static struct dt_key *osd_it_acct_key(const struct lu_env *env,
         ENTRY;
 
         it->oiq_reset = 0;
-        rc = udmu_zap_cursor_retrieve_key(env, it->oiq_zc, buf, 32);
+        rc = -udmu_zap_cursor_retrieve_key(env, it->oiq_zc, buf, 32);
         if (rc)
-                RETURN(ERR_PTR(-rc));
+                RETURN(ERR_PTR(rc));
         it->oiq_id = simple_strtoull(buf, &p, 10);
         RETURN((struct dt_key *) &it->oiq_id);
 }
@@ -279,21 +295,52 @@ static int osd_it_acct_rec(const struct lu_env *env,
                            const struct dt_it *di,
                            struct dt_rec *dtrec, __u32 attr)
 {
-        struct osd_it_quota *it = (struct osd_it_quota *)di;
-        struct acct_rec     *rec  = (struct acct_rec *)dtrec;
-        struct osd_device   *osd = osd_obj2dev(it->oiq_obj);
-        int                  bytes_read;
-        int                  rc;
+        struct osd_thread_info *info = osd_oti_get(env);
+        char                   *buf  = info->oti_buf;
+        struct osd_it_quota    *it = (struct osd_it_quota *)di;
+        struct acct_rec        *rec  = (struct acct_rec *)dtrec;
+        struct osd_object      *obj = it->oiq_obj;
+        struct osd_device      *osd = osd_obj2dev(obj);
+        int                     bytes_read;
+        int                     rc;
         ENTRY;
 
         it->oiq_reset = 0;
-        rc = udmu_zap_cursor_retrieve_value(env, it->oiq_zc, (char *)&rec->bspace,
-                                            sizeof(uint64_t), &bytes_read);
-        if (rc)
-                RETURN(-rc);
+        rec->ispace = rec->bspace = 0;
 
-        /* estimate #inodes in use */
-        rec->ispace = udmu_objset_user_iused(&osd->od_objset, rec->bspace);
+        /* retrieve block usage from the DMU accounting object */
+        rc = -udmu_zap_cursor_retrieve_value(env, it->oiq_zc,
+                                             (char *)&rec->bspace,
+                                             sizeof(uint64_t), &bytes_read);
+        if (rc)
+                RETURN(rc);
+
+        if (osd->od_quota_iused_est) {
+                if (rec->ispace != 0)
+                        /* estimate #inodes in use */
+                        rec->ispace = udmu_objset_user_iused(&osd->od_objset,
+                                                             rec->bspace);
+                RETURN(0);
+        }
+
+        /* retrieve key associated with the current cursor */
+        rc = -udmu_zap_cursor_retrieve_key(env, it->oiq_zc, buf, 32);
+        if (rc)
+                RETURN(rc);
+
+        /* inode accounting is not maintained by DMU, so we use our own ZAP to
+         * track inode usage */
+        rc = -zap_lookup(osd->od_objset.os, it->oiq_obj->oo_db->db_object,
+                         buf, sizeof(uint64_t), 1, &rec->ispace);
+        if (rc == -ENOENT) {
+                /* user/group has not created any file yet */
+                CDEBUG(D_QUOTA, "%s: id %s not found in accounting ZAP\n",
+                       osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name, buf);
+                rec->ispace = 0;
+        } else if (rc) {
+                RETURN(rc);
+        }
+
         RETURN(0);
 }
 
@@ -332,16 +379,16 @@ static int osd_it_acct_load(const struct lu_env *env,
         ENTRY;
 
         /* create new cursor pointing to the new hash */
-        rc = udmu_zap_cursor_init(&zc, &osd->od_objset, it->oiq_oid, hash);
+        rc = -udmu_zap_cursor_init(&zc, &osd->od_objset, it->oiq_oid, hash);
         if (rc)
-                RETURN(-rc);
+                RETURN(rc);
         udmu_zap_cursor_fini(it->oiq_zc);
         it->oiq_zc = zc;
         it->oiq_reset = 0;
 
-        rc = udmu_zap_cursor_retrieve_key(env, it->oiq_zc, NULL, 32);
+        rc = -udmu_zap_cursor_retrieve_key(env, it->oiq_zc, NULL, 32);
         if (rc > 0)
-                RETURN(-rc);
+                RETURN(rc);
         /* compare hash and return 0 for exact match */
         if (hash == udmu_zap_cursor_serialize(it->oiq_zc))
                 RETURN(0);

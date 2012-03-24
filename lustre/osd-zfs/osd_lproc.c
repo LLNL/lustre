@@ -244,6 +244,32 @@ static int lprocfs_osd_wr_force_sync(struct file *file, const char *buffer,
         return rc == 0 ? count : rc;
 }
 
+static int lprocfs_osd_rd_iused_est(char *page, char **start, off_t off, int count,
+                                    int *eof, void *data)
+{
+        struct osd_device *osd = data;
+        LASSERT(osd != NULL);
+
+        return snprintf(page, count, "%d\n", osd->od_quota_iused_est);
+}
+
+static int lprocfs_osd_wr_iused_est(struct file *file, const char *buffer,
+                                    unsigned long count, void *data)
+{
+        struct osd_device *osd = data;
+        int                rc, val;
+
+        LASSERT(osd != NULL);
+
+        rc = lprocfs_write_helper(buffer, count, &val);
+        if (rc)
+                return rc;
+
+        osd->od_quota_iused_est = !!val;
+
+        return count;
+}
+
 struct lprocfs_vars lprocfs_osd_obd_vars[] = {
         { "blocksize",       lprocfs_osd_rd_blksize,     0, 0 },
         { "kbytestotal",     lprocfs_osd_rd_kbytestotal, 0, 0 },
@@ -254,6 +280,8 @@ struct lprocfs_vars lprocfs_osd_obd_vars[] = {
         { "fstype",          lprocfs_osd_rd_fstype,      0, 0 },
         { "mntdev",          lprocfs_osd_rd_mntdev,      0, 0 },
         { "force_sync",      0, lprocfs_osd_wr_force_sync     },
+        { "iused_estimate",  lprocfs_osd_rd_iused_est,
+                             lprocfs_osd_wr_iused_est,   0, 0 },
         { 0 }
 };
 

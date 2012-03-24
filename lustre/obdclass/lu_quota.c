@@ -47,6 +47,11 @@ const struct dt_index_features dt_acct_features = {
 };
 EXPORT_SYMBOL(dt_acct_features);
 
+static struct dt_object_format dt_acct_format = {
+        .dof_type            = DFT_INDEX,
+        .u.dof_idx.di_feat   = &dt_acct_features
+};
+
 /**
  * Initialize accounting objects to collect space usage information for user
  * or group.
@@ -61,20 +66,19 @@ static struct dt_object *acct_init(const struct lu_env *env,
 {
         struct dt_object *obj = NULL;
         struct lu_fid     fid;
+        struct lu_attr    attr;
         int               rc;
         ENTRY;
 
-        /* look up the accounting object */
+        memset(&attr, 0, sizeof(attr));
+        attr.la_valid = LA_MODE;
+        attr.la_mode = S_IFREG | 0666;
         lu_local_obj_fid(&fid, oid);
-        obj = dt_locate(env, dev, &fid);
+
+        /* lookup/create the accounting object */
+        obj = dt_find_or_create(env, dev, &fid, &dt_acct_format, &attr);
         if (IS_ERR(obj))
                 RETURN(NULL);
-
-        /* if the object doesn't exist on-disk, then accounting can't be used */
-        if (dt_object_exists(obj) <= 0) {
-                lu_object_put(env, &obj->do_lu);
-                RETURN(NULL);
-        }
 
         /* set up indexing operations */
         rc = obj->do_ops->do_index_try(env, obj, &dt_acct_features);
