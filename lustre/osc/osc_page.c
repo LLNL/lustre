@@ -290,7 +290,11 @@ static void osc_page_putref_lock(const struct lu_env *env,
          * it is, then all the lock_put do is at most just freeing some memory,
          * so it would be OK that caller is holding spinlocks.
          */
-        LASSERT(cfs_atomic_read(&lock->cll_ref) > 1 || olock->ols_hold == 0);
+        if (!(cfs_atomic_read(&lock->cll_ref) > 1 || olock->ols_hold == 0)) {
+                CL_LOCK_DEBUG(D_ERROR, env, lock, "olock: %p, hold: %d.\n",
+                              olock, olock->ols_hold);
+                LASSERT(0);
+        }
         cl_lock_put(env, lock);
 }
 
