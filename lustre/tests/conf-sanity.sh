@@ -1276,6 +1276,10 @@ test_32newtarball() {
 }
 run_test 32newtarball "Create a new test_32 disk image tarball for this version"
 
+#
+# The list of applicable tarballs is returned via the caller's
+# variable "tarballs".
+#
 t32_check() {
 	local node=$(facet_active_host $SINGLEMDS)
 	local r="do_node $node"
@@ -1287,6 +1291,13 @@ t32_check() {
 
 	if ! $r which $TUNEFS; then
 		skip_env "tunefs.lustre required on $node"
+		exit 0
+	fi
+
+	tarballs=$($r find $RLUSTRE/tests -maxdepth 1							\
+					   -name \'disk*-$MDSFSTYPE.tar.bz2\')
+	if [ -z "$tarballs" ]; then
+		skip "No applicable tarballs found"
 		exit 0
 	fi
 }
@@ -1547,12 +1558,13 @@ t32_test() {
 }
 
 test_32a() {
+	local tarballs
 	local tarball
 	local rc=0
 
 	t32_check
-	for tarball in $LUSTRE/tests/disk*-$MDSFSTYPE.tar.bz2; do
-		if [ $tarball == $LUSTRE/tests/disk1_8-ldiskfs.tar.bz2 ]; then
+	for tarball in $tarballs; do
+		if [ $tarball == $RLUSTRE/tests/disk1_8-ldiskfs.tar.bz2 ]; then
 			echo "Skip b1_8 images before we have 1.8 compatibility"
 			continue
 		fi
@@ -1563,12 +1575,13 @@ test_32a() {
 run_test 32a "Upgrade (not live)"
 
 test_32b() {
+	local tarballs
 	local tarball
 	local rc=0
 
 	t32_check
-	for tarball in $LUSTRE/tests/disk*-$MDSFSTYPE.tar.bz2; do
-		if [ $tarball == $LUSTRE/tests/disk1_8-ldiskfs.tar.bz2 ]; then
+	for tarball in $tarballs; do
+		if [ $tarball == $RLUSTRE/tests/disk1_8-ldiskfs.tar.bz2 ]; then
 			echo "Skip b1_8 images before we have 1.8 compatibility"
 			continue
 		fi
