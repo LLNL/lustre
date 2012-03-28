@@ -255,6 +255,11 @@ struct osd_object {
 
         /* record size for index file */
         int                  oo_recsize;
+
+        /* object debug accounting */
+        const struct lu_env *oo_owner;
+        cfs_atomic_t         oo_r_locks;
+        cfs_atomic_t         oo_w_locks;
 };
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
