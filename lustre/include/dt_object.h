@@ -795,12 +795,16 @@ void local_oid_storage_fini(const struct lu_env *env,
                             struct local_oid_storage *los);
 int local_object_fid_generate(const struct lu_env *env,
                               struct local_oid_storage *los,
-                              struct lu_fid *fid, int sync);
-int local_object_declare_create(const struct lu_env *env, struct dt_object *o,
+                              struct lu_fid *fid);
+int local_object_declare_create(const struct lu_env *env,
+                                struct local_oid_storage *los,
+                                struct dt_object *o,
                                 struct lu_attr *attr,
                                 struct dt_object_format *dof,
                                 struct thandle *th);
-int local_object_create(const struct lu_env *env, struct dt_object *o,
+int local_object_create(const struct lu_env *env,
+                        struct local_oid_storage *los,
+                        struct dt_object *o,
                         struct lu_attr *attr, struct dt_object_format *dof,
                         struct thandle *th);
 struct dt_object *local_file_find_or_create(const struct lu_env *env,
