@@ -482,52 +482,31 @@ EXPORT_SYMBOL(dt_find_or_create);
  */
 int local_object_fid_generate(const struct lu_env *env,
                               struct local_oid_storage *los,
-                              struct lu_fid *fid, int sync)
+                              struct lu_fid *fid)
 {
-        struct dt_thread_info *dti = dt_info(env);
-        struct los_ondisk      losd;
-        struct thandle        *th;
-        int rc;
-
         LASSERT(los->los_dev);
         LASSERT(los->los_obj);
 
-        th = dt_trans_create(env, los->los_dev);
-        if (IS_ERR(th))
-                GOTO(out, rc = PTR_ERR(th));
-
-        th->th_sync = sync; /* update table synchronously */
-        rc = dt_declare_record_write(env, los->los_obj, sizeof(losd), 0, th);
-        if (rc)
-                GOTO(out_stop, rc);
-
-        rc = dt_trans_start_local(env, los->los_dev, th);
-        if (rc)
-                GOTO(out_stop, rc);
-
         /* take next OID */
+
+        /* to make it unique after reboot we store
+         * the latest * generated fid atomically with
+         * object creation * see local_object_create() */
+
         cfs_mutex_lock(&los->los_id_lock);
+
         fid->f_seq = los->los_seq;
         fid->f_oid = los->los_last_oid++;
         fid->f_ver = 0;
 
-        /* update local oid number on disk */
-        losd.lso_magic = cpu_to_le32(0xdecafbee);
-        losd.lso_next_oid = cpu_to_le32(los->los_last_oid);
-
-        dti->dti_off = 0;
-        dti->dti_lb.lb_buf = &losd;
-        dti->dti_lb.lb_len = sizeof(losd);
-        rc = dt_record_write(env, los->los_obj, &dti->dti_lb, &dti->dti_off,
-                             th);
         cfs_mutex_unlock(&los->los_id_lock);
-out_stop:
-        dt_trans_stop(env, los->los_dev, th);
-out:
-        return rc;
+
+        return 0;
 }
 
-int local_object_declare_create(const struct lu_env *env, struct dt_object *o,
+int local_object_declare_create(const struct lu_env *env,
+                                struct local_oid_storage *los,
+                                struct dt_object *o,
                                 struct lu_attr *attr,
                                 struct dt_object_format *dof,
                                 struct thandle *th)
@@ -536,6 +515,14 @@ int local_object_declare_create(const struct lu_env *env, struct dt_object *o,
         int                    rc;
 
         ENTRY;
+
+        LASSERT(los->los_obj);
+        LASSERT(dt_object_exists(los->los_obj));
+
+        rc = dt_declare_record_write(env, los->los_obj,
+                                     sizeof(struct los_ondisk), 0, th);
+        if (rc)
+                RETURN(rc);
 
         rc = dt_declare_create(env, o, attr, NULL, dof, th);
         if (rc)
@@ -548,14 +535,18 @@ int local_object_declare_create(const struct lu_env *env, struct dt_object *o,
         RETURN(rc);
 }
 
-int local_object_create(const struct lu_env *env, struct dt_object *o,
-                        struct lu_attr *attr, struct dt_object_format *dof,
-                        struct thandle *th)
+int local_object_create(const struct lu_env *env, struct local_oid_storage *los,
+                        struct dt_object *o, struct lu_attr *attr,
+                        struct dt_object_format *dof, struct thandle *th)
 {
-        struct dt_thread_info   *dti = dt_info(env);
-        int                      rc;
+        struct dt_thread_info *dti = dt_info(env);
+        struct los_ondisk      losd;
+        int                    rc;
 
         ENTRY;
+
+        LASSERT(los->los_obj);
+        LASSERT(dt_object_exists(los->los_obj));
 
         rc = dt_create(env, o, attr, NULL, dof, th);
         if (rc)
@@ -566,6 +557,22 @@ int local_object_create(const struct lu_env *env, struct dt_object *o,
         dti->dti_lb.lb_buf = &dti->dti_lma;
         dti->dti_lb.lb_len = sizeof(dti->dti_lma);
         rc = dt_xattr_set(env, o, &dti->dti_lb, XATTR_NAME_LMA, 0, th, BYPASS_CAPA);
+
+        /* many threads can be updated this, serialize
+         * them here to avoid the race where one thread
+         * takes the value first, but writes it last */
+        cfs_mutex_lock(&los->los_id_lock);
+
+        /* update local oid number on disk so that
+         * we know the last one used after reboot */
+        losd.lso_magic = cpu_to_le32(0xdecafbee);
+        losd.lso_next_oid = cpu_to_le32(los->los_last_oid);
+
+        dti->dti_off = 0;
+        dti->dti_lb.lb_buf = &losd;
+        dti->dti_lb.lb_len = sizeof(losd);
+        rc = dt_record_write(env, los->los_obj, &dti->dti_lb, &dti->dti_off, th);
+        cfs_mutex_unlock(&los->los_id_lock);
 
         RETURN(rc);
 }
@@ -593,7 +600,7 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
                                    los->los_top);
                 RETURN(dto);
         } else if (rc == -ENOENT) {
-                rc = local_object_fid_generate(env, los, &dti->dti_fid, 1);
+                rc = local_object_fid_generate(env, los, &dti->dti_fid);
         }
         if (rc < 0)
                 RETURN(ERR_PTR(rc));
@@ -614,7 +621,7 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
         dti->dti_attr.la_mode = mode;
         dti->dti_dof.dof_type = dt_mode_to_dft(mode & S_IFMT);
 
-        rc = local_object_declare_create(env, dto, &dti->dti_attr,
+        rc = local_object_declare_create(env, los, dto, &dti->dti_attr,
                                          &dti->dti_dof, th);
         if (rc)
                 GOTO(trans_stop, rc);
@@ -638,7 +645,7 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
         CDEBUG(D_OTHER, "create new object %lu:0x"LPX64"\n",
                (unsigned long) dti->dti_fid.f_oid, dti->dti_fid.f_seq);
 
-        rc = local_object_create(env, dto, &dti->dti_attr, &dti->dti_dof, th);
+        rc = local_object_create(env, los, dto, &dti->dti_attr, &dti->dti_dof, th);
         if (rc)
                 GOTO(unlock, rc);
         LASSERT(dt_object_exists(dto));
@@ -756,8 +763,15 @@ int local_oid_storage_init(const struct lu_env *env,
                 dti->dti_attr.la_mode = S_IFREG | S_IRUGO | S_IWUSR;
                 dti->dti_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
-                rc = local_object_declare_create(env, o, &dti->dti_attr,
-                                                 &dti->dti_dof, th);
+                rc = dt_declare_create(env, o, &dti->dti_attr, NULL,
+                                       &dti->dti_dof, th);
+                if (rc)
+                        GOTO(out_trans, rc);
+
+                dti->dti_lb.lb_buf = NULL;
+                dti->dti_lb.lb_len = sizeof(dti->dti_lma);
+                rc = dt_declare_xattr_set(env, o, &dti->dti_lb, XATTR_NAME_LMA,
+                                          0, th);
                 if (rc)
                         GOTO(out_trans, rc);
 
@@ -770,11 +784,19 @@ int local_oid_storage_init(const struct lu_env *env,
                         GOTO(out_trans, rc);
 
                 LASSERT(!dt_object_exists(o));
-                rc = local_object_create(env, o,  &dti->dti_attr,
-                                         &dti->dti_dof, th);
+                rc = dt_create(env, o, &dti->dti_attr, NULL, &dti->dti_dof, th);
                 if (rc)
                         GOTO(out_trans, rc);
                 LASSERT(dt_object_exists(o));
+
+                lustre_lma_init(&dti->dti_lma, lu_object_fid(&o->do_lu));
+                lustre_lma_swab(&dti->dti_lma);
+                dti->dti_lb.lb_buf = &dti->dti_lma;
+                dti->dti_lb.lb_len = sizeof(dti->dti_lma);
+                rc = dt_xattr_set(env, o, &dti->dti_lb, XATTR_NAME_LMA, 0,
+                                  th, BYPASS_CAPA);
+                if (rc)
+                        GOTO(out_trans, rc);
 
                 losd.lso_magic = cpu_to_le32(0xdecafbee);
                 losd.lso_next_oid = cpu_to_le32(fid_oid(first_fid) + 1);
