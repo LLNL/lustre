@@ -251,6 +251,10 @@ struct osd_object {
         /* protects extended attributes */
         cfs_semaphore_t      oo_guard;
         uint64_t             oo_xattr;
+
+        const struct lu_env *oo_owner;
+        cfs_atomic_t         oo_r_locks;
+        cfs_atomic_t         oo_w_locks;
 };
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
