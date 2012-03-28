@@ -143,18 +143,15 @@ void ofd_object_put(const struct lu_env *env, struct ofd_object *fo)
 }
 
 int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
-                         obd_id id, obd_seq group, int nr)
+                         obd_id id, obd_seq group)
 {
         struct ofd_thread_info *info = ofd_info(env);
         struct ofd_object      *fo;
         struct dt_object       *next;
         struct thandle         *th;
         obd_id                  tmp;
-        int                     i, rc, created = 0;
+        int                     rc;
         ENTRY;
-
-        if (nr > OFD_PRECREATE_BATCH)
-                nr = OFD_PRECREATE_BATCH;
 
         /* Don't create objects beyond the valid range for this SEQ */
         if (unlikely(fid_seq_is_mdt0(group) && id >= IDIF_MAX_OID)) {
@@ -166,8 +163,13 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
                        ofd_name(ofd), id, group);
                 RETURN(rc = -ENOSPC);
         }
+        info->fti_ostid.oi_id = id;
+        info->fti_ostid.oi_seq = group;
+        fid_ostid_unpack(&info->fti_fid, &info->fti_ostid, 0);
 
-        memset(info->fti_precreate_batch, 0, sizeof(info->fti_precreate_batch));
+        fo = ofd_object_find(env, ofd, &info->fti_fid);
+        if (IS_ERR(fo))
+                RETURN(PTR_ERR(fo));
 
         info->fti_attr.la_valid = LA_TYPE | LA_MODE;
         /*
@@ -186,60 +188,36 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
         info->fti_attr.la_mtime = 0;
         info->fti_attr.la_ctime = 0;
 
-        /* prepare objects */
-        for (i = 0; i < nr; i++) {
-                info->fti_ostid.oi_id = id + i;
-                info->fti_ostid.oi_seq = group;
-                fid_ostid_unpack(&info->fti_fid, &info->fti_ostid, 0);
-
-                fo = ofd_object_find(env, ofd, &info->fti_fid);
-                if (IS_ERR(fo)) {
-                        CERROR("can't allocate object: %ld (%d)\n", PTR_ERR(fo), i);
-                        if (i > 0) {
-                                /* let's try to create few objs at least */
-                                nr = i;
-                                break;
-                        }
-                        GOTO(out, rc = PTR_ERR(fo));
-                }
-
-                info->fti_precreate_batch[i] = fo;
-        }
+        next = ofd_object_child(fo);
+        LASSERT(next != NULL);
 
         info->fti_buf.lb_buf = &tmp;
         info->fti_buf.lb_len = sizeof(tmp);
         info->fti_off = 0;
 
+        ofd_write_lock(env, fo);
         th = ofd_trans_create(env, ofd);
         if (IS_ERR(th))
-                GOTO(out, rc = PTR_ERR(th));
+                GOTO(out_unlock, rc = PTR_ERR(th));
 
         rc = dt_declare_record_write(env, ofd->ofd_lastid_obj[group],
                                      sizeof(tmp), info->fti_off, th);
         if (rc)
                 GOTO(trans_stop, rc);
 
-        for (i = 0; i < nr; i++) {
-                fo = info->fti_precreate_batch[i];
-                LASSERT(fo);
-
-                if (unlikely(ofd_object_exists(fo))) {
-                        /* object may exist being re-created by write replay */
-                        CDEBUG(D_INODE, "object %u/"LPD64" exists: "DFID"\n",
-                                        (unsigned) group, id, PFID(&info->fti_fid));
-                        continue;
-                }
-
-                next = ofd_object_child(fo);
-                LASSERT(next != NULL);
-
-                rc = dt_declare_create(env, next, &info->fti_attr, NULL,
-                                       &info->fti_dof, th);
-                if (rc) {
-                        nr = i;
-                        break;
-                }
+        if (unlikely(ofd_object_exists(fo))) {
+                /* object may exist being re-created by write replay */
+                CDEBUG(D_INODE, "object %u/"LPD64" exists: "DFID"\n",
+                       (unsigned) group, id, PFID(&info->fti_fid));
+                rc = dt_trans_start_local(env, ofd->ofd_osd, th);
+                if (rc)
+                        GOTO(trans_stop, rc);
+                GOTO(last_id_write, rc);
         }
+        rc = dt_declare_create(env, next, &info->fti_attr, NULL,
+                               &info->fti_dof, th);
+        if (rc)
+                GOTO(trans_stop, rc);
 
         rc = dt_trans_start_local(env, ofd->ofd_osd, th);
         if (rc)
@@ -248,42 +226,23 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
         CDEBUG(D_OTHER, "create new object %lu:%llu\n",
                (unsigned long) info->fti_fid.f_oid, info->fti_fid.f_seq);
 
-        for (i = 0; i < nr; i++) {
-                fo = info->fti_precreate_batch[i];
-                LASSERT(fo);
+        rc = dt_create(env, next, &info->fti_attr, NULL, &info->fti_dof, th);
+        if (rc)
+                GOTO(trans_stop, rc);
+        LASSERT(ofd_object_exists(fo));
 
-                if (unlikely(ofd_object_exists(fo)))
-                        continue;
+last_id_write:
+        ofd_last_id_set(ofd, id, group);
 
-                next = ofd_object_child(fo);
-                LASSERT(next != NULL);
-
-                rc = dt_create(env, next, &info->fti_attr, NULL, &info->fti_dof, th);
-                if (rc)
-                        break;
-                LASSERT(ofd_object_exists(fo));
-
-                created++;
-                ofd_last_id_set(ofd, id++, group);
-        }
-
-        if (created) {
-                tmp = cpu_to_le64(ofd_last_id(ofd, group));
-                rc = dt_record_write(env, ofd->ofd_lastid_obj[group], &info->fti_buf,
-                                &info->fti_off, th);
-        }
+        tmp = cpu_to_le64(ofd_last_id(ofd, group));
+        rc = dt_record_write(env, ofd->ofd_lastid_obj[group], &info->fti_buf,
+                             &info->fti_off, th);
 trans_stop:
         ofd_trans_stop(env, ofd, th, rc);
-
-out:
-        for (i = 0; i < OFD_PRECREATE_BATCH; i++) {
-                if (info->fti_precreate_batch[i])
-                        ofd_object_put(env, info->fti_precreate_batch[i]);
-        }
-
-        CDEBUG(D_OTHER, "created %d objects: %d\n", created, rc);
-
-        RETURN(created > 0 ? created : rc);
+out_unlock:
+        ofd_write_unlock(env, fo);
+        ofd_object_put(env, fo);
+        RETURN(rc);
 }
 
 int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
