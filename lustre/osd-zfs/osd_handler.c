@@ -483,6 +483,16 @@ static int osd_fid_lookup(const struct lu_env *env,
         RETURN(rc);
 }
 
+static int osd_read_locked(const struct lu_env *env, struct osd_object *obj)
+{
+        return (obj->oo_r_locks > 0);
+}
+
+static int osd_write_locked(const struct lu_env *env, struct osd_object *obj)
+{
+        return (obj->oo_w_locks > 0 && obj->oo_owner == env);
+}
+
 /*
  * Concurrency: doesn't access mutable data
  */
@@ -519,6 +529,9 @@ static struct lu_object *osd_object_alloc(const struct lu_env *env,
                 cfs_init_rwsem(&mo->oo_sem);
                 cfs_sema_init(&mo->oo_guard, 1);
                 cfs_rwlock_init(&mo->oo_attr_lock);
+                mo->oo_owner = NULL;
+                mo->oo_r_locks = 0;
+                mo->oo_w_locks = 0;
                 return l;
         } else
                 return NULL;
@@ -596,6 +609,9 @@ static void osd_object_free(const struct lu_env *env, struct lu_object *l)
         struct osd_object *obj = osd_obj(l);
 
         LASSERT(osd_invariant(obj));
+        LASSERT(obj->oo_owner == NULL);
+        LASSERT(obj->oo_r_locks == 0);
+        LASSERT(obj->oo_w_locks == 0);
 
         dt_object_fini(&obj->oo_dt);
         OBD_SLAB_FREE_PTR(obj, osd_object_kmem);
@@ -1192,6 +1208,7 @@ static void osd_object_read_lock(const struct lu_env *env,
         cfs_down_read_nested(&obj->oo_sem, role);
 
         LASSERT(obj->oo_owner == NULL);
+        obj->oo_r_locks++;
 }
 
 static void osd_object_write_lock(const struct lu_env *env,
@@ -1206,6 +1223,7 @@ static void osd_object_write_lock(const struct lu_env *env,
 
         LASSERT(obj->oo_owner == NULL);
         obj->oo_owner = env;
+        obj->oo_w_locks++;
 }
 
 static void osd_object_read_unlock(const struct lu_env *env,
@@ -1214,6 +1232,8 @@ static void osd_object_read_unlock(const struct lu_env *env,
         struct osd_object *obj = osd_dt_obj(dt);
 
         LASSERT(osd_invariant(obj));
+        LASSERT(obj->oo_r_locks > 0);
+        obj->oo_r_locks--;
         cfs_up_read(&obj->oo_sem);
 }
 
@@ -1225,6 +1245,8 @@ static void osd_object_write_unlock(const struct lu_env *env,
         LASSERT(osd_invariant(obj));
 
         LASSERT(obj->oo_owner == env);
+        LASSERT(obj->oo_w_locks > 0);
+        obj->oo_w_locks--;
         obj->oo_owner = NULL;
         cfs_up_write(&obj->oo_sem);
 }
@@ -1911,6 +1933,7 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 
         LASSERT(osd_invariant(obj));
         LASSERT(!dt_object_exists(dt));
+        LASSERT(osd_write_locked(env, obj));
         LASSERT(dof != NULL);
 
         LASSERT(th != NULL);
@@ -2588,6 +2611,7 @@ static int osd_object_ref_add(const struct lu_env *env,
 
         LASSERT(osd_invariant(obj));
         LASSERT(dt_object_exists(dt));
+        LASSERT(osd_write_locked(env, obj));
         LASSERT(obj->oo_sa_hdl != NULL);
 
         oh = container_of0(handle, struct osd_thandle, ot_super);
@@ -2625,6 +2649,7 @@ static int osd_object_ref_del(const struct lu_env *env,
 
         LASSERT(osd_invariant(obj));
         LASSERT(dt_object_exists(dt));
+        LASSERT(osd_write_locked(env, obj));
         LASSERT(obj->oo_sa_hdl != NULL);
 
         oh = container_of0(handle, struct osd_thandle, ot_super);
@@ -2798,6 +2823,7 @@ static int osd_xattr_get(const struct lu_env *env, struct dt_object *dt,
         LASSERT(obj->oo_db != NULL);
         LASSERT(osd_invariant(obj));
         LASSERT(dt_object_exists(dt));
+        LASSERT(osd_read_locked(env, obj) || osd_write_locked(env, obj));
 
         cfs_mutex_down(&obj->oo_guard);
         rc = __osd_xattr_get(env, obj, buf, name, &size);
@@ -3249,6 +3275,7 @@ static int osd_xattr_del(const struct lu_env *env, struct dt_object *dt,
         LASSERT(obj->oo_db != NULL);
         LASSERT(osd_invariant(obj));
         LASSERT(dt_object_exists(dt));
+        LASSERT(osd_write_locked(env, obj));
         oh = container_of0(handle, struct osd_thandle, ot_super);
         LASSERT(oh->ot_tx != NULL);
 
@@ -3303,6 +3330,7 @@ static int osd_xattr_list(const struct lu_env *env,
         LASSERT(obj->oo_db != NULL);
         LASSERT(osd_invariant(obj));
         LASSERT(dt_object_exists(dt));
+        LASSERT(osd_read_locked(env, obj) || osd_write_locked(env, obj));
 
         cfs_mutex_down(&obj->oo_guard);
 
