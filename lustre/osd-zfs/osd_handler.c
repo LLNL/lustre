@@ -1188,7 +1188,10 @@ static void osd_object_read_lock(const struct lu_env *env,
 
         LASSERT(osd_invariant(obj));
 
-        cfs_down_read(&obj->oo_sem);
+        LASSERT(obj->oo_owner != env);
+        cfs_down_read_nested(&obj->oo_sem, role);
+
+        LASSERT(obj->oo_owner == NULL);
 }
 
 static void osd_object_write_lock(const struct lu_env *env,
@@ -1198,7 +1201,11 @@ static void osd_object_write_lock(const struct lu_env *env,
 
         LASSERT(osd_invariant(obj));
 
-        cfs_down_write(&obj->oo_sem);
+        LASSERT(obj->oo_owner != env);
+        cfs_down_write_nested(&obj->oo_sem, role);
+
+        LASSERT(obj->oo_owner == NULL);
+        obj->oo_owner = env;
 }
 
 static void osd_object_read_unlock(const struct lu_env *env,
@@ -1216,6 +1223,9 @@ static void osd_object_write_unlock(const struct lu_env *env,
         struct osd_object *obj = osd_dt_obj(dt);
 
         LASSERT(osd_invariant(obj));
+
+        LASSERT(obj->oo_owner == env);
+        obj->oo_owner = NULL;
         cfs_up_write(&obj->oo_sem);
 }
 
@@ -1223,15 +1233,10 @@ static int osd_object_write_locked(const struct lu_env *env,
                                    struct dt_object *dt)
 {
         struct osd_object *obj = osd_dt_obj(dt);
-        int rc = 1;
 
         LASSERT(osd_invariant(obj));
 
-        if (cfs_down_write_trylock(&obj->oo_sem)) {
-                rc = 0;
-                cfs_up_write(&obj->oo_sem);
-        }
-        return rc;
+        return obj->oo_owner == env;
 }
 
 static int osd_attr_get(const struct lu_env *env,
