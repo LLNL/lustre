@@ -1097,9 +1097,10 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
                 }
         }
         if (diff > 0) {
-                obd_id next_id = ofd_last_id(ofd, oa->o_seq) + 1;
                 cfs_time_t enough_time = cfs_time_shift(DISK_TIMEOUT/2);
-                int i;
+                obd_id next_id;
+                int created = 0;
+                int count;
 
                 if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
                     !(oa->o_flags & OBD_FL_DELORPHAN)) {
@@ -1115,23 +1116,31 @@ int ofd_create(struct obd_export *exp, struct obdo *oa,
                         }
                 }
 
-                CDEBUG(D_HA,
-                       "%s: reserve %d objects in group "LPU64" at "LPU64"\n",
-                       ofd_obd(ofd)->obd_name, diff, oa->o_seq, next_id);
-                for (i = 0; i < diff; i++) {
+                while (diff > 0) {
+                        next_id = ofd_last_id(ofd, oa->o_seq) + 1;
+                        count = ofd_precreate_batch(ofd, diff);
+
+                        CDEBUG(D_HA, "%s: reserve %d objects in group "LPU64
+                               " at "LPU64"\n", ofd_obd(ofd)->obd_name,
+                               count, oa->o_seq, next_id);
+
                         if (cfs_time_after(jiffies, enough_time)) {
                                 CDEBUG(D_RPCTRACE | D_ERROR,
                                        "%s: precreate slow - want %d got %d \n",
-                                       ofd_obd(ofd)->obd_name, diff, i);
+                                       ofd_obd(ofd)->obd_name, diff, created);
                                 break;
                         }
 
-                        rc = ofd_precreate_object(env, ofd, next_id + i,
-                                                  oa->o_seq);
-                        if (rc)
+                        rc = ofd_precreate_object(env, ofd, next_id,
+                                                  oa->o_seq, count);
+                        if (rc > 0) {
+                                created += rc;
+                                diff -= rc;
+                        }
+                        if (rc < 0)
                                 break;
                 }
-                if (i > 0) {
+                if (created > 0) {
                         /* some objects got created, we can return
                          * them, even if last creation failed */
                         oa->o_id = ofd_last_id(ofd, oa->o_seq);
