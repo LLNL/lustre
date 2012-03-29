@@ -134,7 +134,14 @@ static int mdd_init0(const struct lu_env *env, struct mdd_device *mdd,
         /* sync permission changes */
         mdd->mdd_sync_permission = 1;
 
-        mdd->mdd_child->dd_ops->dt_conf_get(env, mdd->mdd_child, &mdd->mdd_dt_conf);
+        dt_conf_get(env, mdd->mdd_child, &mdd->mdd_dt_conf);
+
+        /* we are using service name but not mdd obd name
+         * for compatibility reasons.
+         * It is passed from MDT in lustre_cfg[2] buffer */
+        rc = mdd_procfs_init(mdd, lustre_cfg_string(lcfg, 2));
+        if (rc < 0)
+                obd_disconnect(mdd->mdd_child_exp);
 
         RETURN(rc);
 }
@@ -1244,12 +1251,6 @@ static int mdd_start(const struct lu_env *env,
         }
 
         rc = mdd_changelog_init(env, mdd);
-        if (rc)
-                RETURN(rc);
-
-        LASSERT(cdev->ld_obd);
-        rc = mdd_procfs_init(mdd, cdev->ld_obd->obd_name);
-        LASSERT(rc == 0);
 
 out:
         RETURN(rc);
