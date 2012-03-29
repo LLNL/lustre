@@ -4402,7 +4402,7 @@ static int mdt_stack_init(const struct lu_env *env, struct mdt_device *mdd,
 
         lustre_cfg_bufs_reset(bufs, name);
         lustre_cfg_bufs_set_string(bufs, 1, LUSTRE_MDD_NAME);
-        lustre_cfg_bufs_set_string(bufs, 2, "");
+        lustre_cfg_bufs_set_string(bufs, 2, dev);
         lustre_cfg_bufs_set_string(bufs, 3, lprof->lp_dt);
 
         lcfg = lustre_cfg_new(LCFG_ATTACH, bufs);
