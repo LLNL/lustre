@@ -379,6 +379,8 @@ static uint64_t osd_get_name_n_idx(const struct lu_env *env,
                         strcpy(buf, name);
                         if (fid_oid(fid) == OFD_GROUP0_LAST_OID)
                                 zapid = osd->od_ost_compat_grp0;
+                        else if (unlikely(fid_is_acct(fid)))
+                                zapid = MASTER_NODE_OBJ;
                 } else {
                         zapid = osd_get_idx_for_fid(osd, fid, buf);
                 }
@@ -4349,15 +4351,18 @@ osd_oi_init_compat(const struct lu_env *env, struct osd_device *o)
                 o->od_ost_compat_dirs[i] = sdb;
         }
 
-        /* Create on-disk indexes to maintain per-UID/GID inode usage */
-        rc = osd_oi_find_or_create(env, o, o->od_root, oid2name(ACCT_USER_OID),
-                                   &odb);
+        /* Create on-disk indexes to maintain per-UID/GID inode usage.
+         * Those new indexes are created in the top-level ZAP outside the
+         * namespace in order not to confuse ZPL which might interpret those
+         * indexes as directories and assume the values are object IDs */
+        rc = osd_oi_find_or_create(env, o, MASTER_NODE_OBJ,
+                                   oid2name(ACCT_USER_OID), &odb);
         if (rc)
                 RETURN(rc);
         o->od_iusr_oid = odb;
 
-        rc = osd_oi_find_or_create(env, o, o->od_root, oid2name(ACCT_GROUP_OID),
-                                   &odb);
+        rc = osd_oi_find_or_create(env, o, MASTER_NODE_OBJ,
+                                   oid2name(ACCT_GROUP_OID), &odb);
         if (rc)
                 RETURN(rc);
         o->od_igrp_oid = odb;
