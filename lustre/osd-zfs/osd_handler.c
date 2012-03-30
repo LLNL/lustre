@@ -379,7 +379,7 @@ static uint64_t osd_get_name_n_idx(const struct lu_env *env,
                         strcpy(buf, name);
                         if (fid_oid(fid) == OFD_GROUP0_LAST_OID)
                                 zapid = osd->od_ost_compat_grp0;
-                        else if (unlikely(fid_is_acct(fid)))
+                        else if (fid_is_acct(fid))
                                 zapid = MASTER_NODE_OBJ;
                 } else {
                         zapid = osd_get_idx_for_fid(osd, fid, buf);
