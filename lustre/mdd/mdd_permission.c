@@ -185,7 +185,7 @@ int __mdd_acl_init(const struct lu_env *env, struct mdd_object *obj,
         posix_acl_xattr_entry   *entry;
         int                      entry_count;
         __u32                    old = *mode;
-        int                      rc;
+        int                      rc, rc2;
 
         ENTRY;
 
@@ -216,7 +216,9 @@ int __mdd_acl_init(const struct lu_env *env, struct mdd_object *obj,
                  * so we need explict ->attr_set() to update it */
                 pattr->la_valid = LA_MODE;
                 pattr->la_mode = *mode;
-                rc = mdo_attr_set(env, obj, pattr, handle, BYPASS_CAPA);
+                rc2 = mdo_attr_set(env, obj, pattr, handle, BYPASS_CAPA);
+                if (rc2 < 0)
+                        rc = rc2;
         }
 
         if (rc > 0)
