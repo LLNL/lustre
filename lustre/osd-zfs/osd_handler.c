@@ -1338,6 +1338,40 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
         if (bulk == NULL)
                 RETURN(-ENOMEM);
 
+        /* do both accounting updates outside oo_attr_lock below */
+        if (la->la_valid & LA_UID) {
+                /* Update user accounting. Failure isn't fatal, but we still
+                 * log an error message */
+                rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
+                                        la->la_uid, 1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname, la->la_uid, rc);
+                rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
+                                        obj->oo_attr.la_uid, -1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname,
+                               obj->oo_attr.la_uid, rc);
+
+        }
+        if (la->la_valid & LA_GID) {
+                /* Update group accounting. Failure isn't fatal, but we still
+                 * log an error message */
+                rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
+                                        la->la_gid, 1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname, la->la_gid, rc);
+                rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
+                                        obj->oo_attr.la_gid, -1, oh->ot_tx);
+                if (rc)
+                        CERROR("%s: failed to update accounting ZAP for user "
+                               "%d (%d)\n", osd->od_svname,
+                               obj->oo_attr.la_gid, rc);
+
+        }
+
         cfs_write_lock(&obj->oo_attr_lock);
         cnt = 0;
         if (la->la_valid & LA_ATIME) {
@@ -1384,49 +1418,19 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
                                  &osa->flags, 8);
         }
         if (la->la_valid & LA_UID) {
-                /* Update user accounting. Failure isn't fatal, but we still
-                 * log an error message */
-                rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
-                                        la->la_uid, 1, oh->ot_tx);
-                if (rc)
-                        CERROR("%s: failed to update accounting ZAP for user "
-                               "%d (%d)\n", osd->od_svname, la->la_uid, rc);
-                rc =- zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
-                                        obj->oo_attr.la_uid, -1, oh->ot_tx);
-                if (rc)
-                        CERROR("%s: failed to update accounting ZAP for user "
-                               "%d (%d)\n", osd->od_svname,
-                               obj->oo_attr.la_uid, rc);
-
                 osa->uid = obj->oo_attr.la_uid = la->la_uid;
                 SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_UID(uos), NULL,
                                  &osa->uid, 8);
         }
         if (la->la_valid & LA_GID) {
-                /* Update group accounting. Failure isn't fatal, but we still
-                 * log an error message */
-                rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
-                                        la->la_gid, 1, oh->ot_tx);
-                if (rc)
-                        CERROR("%s: failed to update accounting ZAP for user "
-                               "%d (%d)\n", osd->od_svname, la->la_gid, rc);
-                rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
-                                        obj->oo_attr.la_gid, -1, oh->ot_tx);
-                if (rc)
-                        CERROR("%s: failed to update accounting ZAP for user "
-                               "%d (%d)\n", osd->od_svname,
-                               obj->oo_attr.la_gid, rc);
-
                 osa->gid = obj->oo_attr.la_gid = la->la_gid;
                 SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_GID(uos), NULL,
                                  &osa->gid, 8);
         }
-
         obj->oo_attr.la_valid |= la->la_valid;
-        rc = osd_object_sa_bulk_update(obj, bulk, cnt, oh);
         cfs_write_unlock(&obj->oo_attr_lock);
 
-        rc = -sa_bulk_update(obj->oo_sa_hdl, bulk, cnt, oh->ot_tx);
+        rc = osd_object_sa_bulk_update(obj, bulk, cnt, oh);
 
         OBD_FREE(bulk, sizeof(sa_bulk_attr_t) * 10);
         RETURN(rc);
