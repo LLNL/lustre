@@ -1656,22 +1656,29 @@ int __osd_attr_init(const struct lu_env *env, udmu_objset_t *uos,
                 goto out;
         }
         /*
-         * we need to create all SA below upon object create
+         * we need to create all SA below upon object create.
+         *
+         * XXX The attribute order matters since the accounting callback relies
+         * on static offsets (i.e. SA_*_OFFSET, see zfs_space_delta_cb()) to
+         * look up the UID/GID attributes. Moreover, the callback does not seem
+         * to support the spill block.
+         * We define attributes in the same order as SA_*_OFFSET in order to
+         * work around the problem. See ORI-610.
          */
         cnt = 0;
-        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_CRTIME(uos), NULL, crtime, 16);
+        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_MODE(uos), NULL, &osa->mode, 8);
+        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_SIZE(uos), NULL, &osa->size, 8);
         SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_GEN(uos), NULL, &gen, 8);
+        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_UID(uos), NULL, &osa->uid, 8);
+        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_GID(uos), NULL, &osa->gid, 8);
         SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_PARENT(uos), NULL, &parent, 8);
+        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_FLAGS(uos), NULL, &osa->flags, 8);
         SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_ATIME(uos), NULL, osa->atime, 16);
         SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_MTIME(uos), NULL, osa->mtime, 16);
         SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_CTIME(uos), NULL, osa->ctime, 16);
-        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_MODE(uos), NULL, &osa->mode, 8);
-        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_SIZE(uos), NULL, &osa->size, 8);
+        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_CRTIME(uos), NULL, crtime, 16);
         SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_LINKS(uos), NULL, &osa->nlink, 8);
         SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_RDEV(uos), NULL, &osa->rdev, 8);
-        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_FLAGS(uos), NULL, &osa->flags, 8);
-        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_UID(uos), NULL, &osa->uid, 8);
-        SA_ADD_BULK_ATTR(bulk, cnt, SA_ZPL_GID(uos), NULL, &osa->gid, 8);
 
         rc = -sa_replace_all_by_template(sa_hdl, bulk, cnt, tx);
 
