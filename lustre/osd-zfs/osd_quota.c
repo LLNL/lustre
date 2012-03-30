@@ -269,7 +269,7 @@ static struct dt_key *osd_it_acct_key(const struct lu_env *env,
         rc = -udmu_zap_cursor_retrieve_key(env, it->oiq_zc, buf, 32);
         if (rc)
                 RETURN(ERR_PTR(rc));
-        it->oiq_id = simple_strtoull(buf, &p, 10);
+        it->oiq_id = simple_strtoull(buf, &p, 16);
         RETURN((struct dt_key *) &it->oiq_id);
 }
 
@@ -316,7 +316,7 @@ static int osd_it_acct_rec(const struct lu_env *env,
                 RETURN(rc);
 
         if (osd->od_quota_iused_est) {
-                if (rec->ispace != 0)
+                if (rec->bspace != 0)
                         /* estimate #inodes in use */
                         rec->ispace = udmu_objset_user_iused(&osd->od_objset,
                                                              rec->bspace);
@@ -332,14 +332,12 @@ static int osd_it_acct_rec(const struct lu_env *env,
          * track inode usage */
         rc = -zap_lookup(osd->od_objset.os, it->oiq_obj->oo_db->db_object,
                          buf, sizeof(uint64_t), 1, &rec->ispace);
-        if (rc == -ENOENT) {
+        if (rc == -ENOENT)
                 /* user/group has not created any file yet */
                 CDEBUG(D_QUOTA, "%s: id %s not found in accounting ZAP\n",
                        osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name, buf);
-                rec->ispace = 0;
-        } else if (rc) {
+        else if (rc)
                 RETURN(rc);
-        }
 
         RETURN(0);
 }
