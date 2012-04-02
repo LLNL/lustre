@@ -3018,17 +3018,19 @@ test_58() { # bug 22658
 	createmany -o $DIR/$tdir/$tfile-%d 100
 	# make sure that OSTs do not cancel llog cookies before we unmount the MDS
 #define OBD_FAIL_OBD_LOG_CANCEL_NET      0x601
-	do_facet mds "lctl set_param fail_loc=0x601"
+	do_facet $SINGLEMDS "lctl set_param fail_loc=0x601"
 	unlinkmany $DIR/$tdir/$tfile-%d 100
-	stop mds
-	local MNTDIR=$(facet_mntpt mds)
+	stop $SINGLEMDS
+	local MNTDIR=$(facet_mntpt $SINGLEMDS)
 	# remove all files from the OBJECTS dir
-	do_facet mds "mount -t ldiskfs $MDSDEV $MNTDIR"
-	do_facet mds "find $MNTDIR/OBJECTS -type f -delete"
-	do_facet mds "umount $MNTDIR"
+	do_facet $SINGLEMDS "mount -t ldiskfs $MDS_MOUNT_OPTS \
+		$(mdsdevname ${SINGLEMDS#mds}) $MNTDIR"
+	do_facet $SINGLEMDS \
+		"find $MNTDIR/O/1/d* -type f -links 1 -size +8k -delete"
+	do_facet $SINGLEMDS "umount $MNTDIR"
 	# restart MDS with missing llog files
 	start_mds
-	do_facet mds "lctl set_param fail_loc=0"
+	do_facet $SINGLEMDS "lctl set_param fail_loc=0"
 	reformat
 }
 run_test 58 "missing llog files must not prevent MDT from mounting"
