@@ -182,7 +182,7 @@ int ofd_precreate_object(const struct lu_env *env, struct ofd_device *ofd,
 
         /* Initialize a/c/m time so any client timestamp will always
          * be newer and update the inode. ctime = 0 is also handled
-         * specially in fsfilt_ext3_setattr(). See LU-221, LU-1042 */
+         * specially in osd_inode_setattr(). See LU-221, LU-1042 */
         info->fti_attr.la_valid |= LA_ATIME | LA_MTIME | LA_CTIME;
         info->fti_attr.la_atime = 0;
         info->fti_attr.la_mtime = 0;

@@ -107,14 +107,19 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
         if (unlikely(exp->exp_obd->obd_recovering)) {
                 struct ofd_thread_info *info = ofd_info(env);
 
-                /* taken from ofd_precreate_object */
+                /* copied from ofd_precreate_object */
+                /* XXX this should be consolidated to use the same code
+                 *     instead of a copy, due to the ongoing risk of bugs. */
                 memset(&info->fti_attr, 0, sizeof(info->fti_attr));
                 info->fti_attr.la_valid = LA_TYPE | LA_MODE;
                 info->fti_attr.la_mode = S_IFREG | S_ISUID | S_ISGID | 0666;
                 info->fti_attr.la_valid |= LA_ATIME | LA_MTIME | LA_CTIME;
-                info->fti_attr.la_atime = INT_MIN + 24 * 3600;
-                info->fti_attr.la_mtime = INT_MIN + 24 * 3600;
-                info->fti_attr.la_ctime = INT_MIN + 24 * 3600;
+                /* Initialize a/c/m time so any client timestamp will always
+                 * be newer and update the inode. ctime = 0 is also handled
+                 * specially in osd_inode_setattr().  See LU-221, LU-1042 */
+                info->fti_attr.la_atime = 0;
+                info->fti_attr.la_mtime = 0;
+                info->fti_attr.la_ctime = 0;
 
                 fo = ofd_object_find_or_create(env, ofd, fid, &info->fti_attr);
         } else {
