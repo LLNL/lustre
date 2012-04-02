@@ -1783,11 +1783,16 @@ static int lu_cache_shrink(SHRINKER_ARGS(sc, nr_to_scan, gfp_mask))
         int remain = shrink_param(sc, nr_to_scan);
         CFS_LIST_HEAD(splice);
 
-        if (remain != 0) {
-                if (!(shrink_param(sc, gfp_mask) & __GFP_FS))
+        if (!(shrink_param(sc, gfp_mask) & __GFP_FS)) {
+                if (remain != 0)
                         return -1;
-                CDEBUG(D_INODE, "Shrink %d objects\n", remain);
+                else
+                        /* Hack to prevent sleeping when __GFP_FS is unset */
+                        return 1;
+
         }
+
+        CDEBUG(D_INODE, "Shrink %d objects\n", remain);
 
         cfs_down(&lu_sites_guard);
         cfs_list_for_each_entry_safe(s, tmp, &lu_sites, ls_linkage) {
