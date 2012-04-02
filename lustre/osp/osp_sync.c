@@ -931,17 +931,21 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
         ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
         LASSERT(ctxt);
 
-        /* Create fresh llog */
-        if (unlikely(osi->osi_cid.lci_logid.lgl_oid == 0)) {
-                rc = llog_open_create(env, ctxt, &lgh, NULL, NULL);
-                if (rc)
-                        GOTO(out_cleanup, rc);
-                osi->osi_cid.lci_logid = lgh->lgh_id;
-        } else {
+        if (likely(osi->osi_cid.lci_logid.lgl_oid != 0)) {
                 rc = llog_open(env, ctxt, &lgh, &osi->osi_cid.lci_logid, NULL,
                                LLOG_OPEN_OLD);
-                if (rc)
+                /* re-create llog if it is missing */
+                if (rc == -ENOENT)
+                        osi->osi_cid.lci_logid.lgl_oid = 0;
+                else if (rc < 0)
                         GOTO(out_cleanup, rc);
+        }
+
+        if (unlikely(osi->osi_cid.lci_logid.lgl_oid == 0)) {
+                rc = llog_open_create(env, ctxt, &lgh, NULL, NULL);
+                if (rc < 0)
+                        GOTO(out_cleanup, rc);
+                osi->osi_cid.lci_logid = lgh->lgh_id;
         }
 
         ctxt->loc_handle = lgh;
@@ -1016,7 +1020,7 @@ int osp_sync_init(const struct lu_env *env, struct osp_device *d)
          */
         rc = osp_sync_llog_init(env, d);
         if (rc) {
-                CERROR("can't initialized llog: %d\n", rc);
+                CERROR("can't initialize llog: %d\n", rc);
                 GOTO(err_id, rc);
         }
 

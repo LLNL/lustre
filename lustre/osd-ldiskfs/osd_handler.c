@@ -2020,7 +2020,7 @@ static int osd_object_destroy(const struct lu_env *env,
         result = osd_oi_delete(osd_oti_get(env), osd, fid, th);
 
         /* XXX: add to ext3 orphan list */
-        /* rc = ext3_orphan_add(handle_t *handle, struct inode *inode) */
+        /* rc = ldiskfs_orphan_add(handle_t *handle, struct inode *inode) */
 
         /* not needed in the cache anymore */
         set_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags);
