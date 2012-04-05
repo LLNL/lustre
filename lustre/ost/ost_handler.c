@@ -1001,7 +1001,7 @@ static int ost_brw_write(struct ptlrpc_request *req, struct obd_trans_info *oti)
 
         rc = sptlrpc_svc_prep_bulk(req, desc);
         if (rc != 0)
-                GOTO(out_lock, rc);
+                GOTO(skip_transfer, rc);
 
         rc = target_bulk_io(exp, desc, &lwi);
         no_reply = rc != 0;
