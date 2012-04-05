@@ -250,8 +250,6 @@ struct osd_object {
         uint64_t             oo_xattr;
 
         const struct lu_env *oo_owner;
-        int                  oo_r_locks;
-        int                  oo_w_locks;
 };
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
