@@ -2390,7 +2390,7 @@ static int ost_setup(struct obd_device *obd, struct lustre_cfg* lcfg)
         } else {
                 /* Base min threads on memory and cpus */
                 oss_min_threads =
-                        cfs_num_possible_cpus() * CFS_NUM_CACHEPAGES >>
+                        cfs_num_present_cpus() * CFS_NUM_CACHEPAGES >>
                         (27 - CFS_PAGE_SHIFT);
                 if (oss_min_threads < OSS_THREADS_MIN)
                         oss_min_threads = OSS_THREADS_MIN;

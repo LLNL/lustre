@@ -160,9 +160,15 @@ do {                                                                          \
 # define time(a) CURRENT_TIME
 
 #ifndef num_possible_cpus
-#define cfs_num_possible_cpus() NR_CPUS
+# define cfs_num_possible_cpus() NR_CPUS
 #else
-#define cfs_num_possible_cpus() num_possible_cpus()
+# define cfs_num_possible_cpus() num_possible_cpus()
+#endif
+
+#ifndef num_present_cpus
+# define cfs_num_present_cpus() NR_CPUS
+#else
+# define cfs_num_present_cpus() num_present_cpus()
 #endif
 
 /******************************************************************************/
