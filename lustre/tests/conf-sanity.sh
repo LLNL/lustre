@@ -30,12 +30,13 @@ fi
 # 21c - ORI-245
 # 27a - ORI-245
 # 29  - ORI-15
+# 32b - ORI-577
 # 38  - ORI-237
 # 49  - obd_mount doesn't parse options in ldd anymore?
 # 50g - LU-491
 # 57  - tunefs.lustre doesn't work anymore?
 # 58  - ORI-246
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 38 49 50g 57 58"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32b 38 49 50g 57 58"
 
 SRCDIR=`dirname $0`
 PATH=$PWD/$SRCDIR:$SRCDIR:$SRCDIR/../utils:$PATH
