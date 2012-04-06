@@ -206,6 +206,7 @@ struct osd_device {
         uint64_t                  od_ost_compat_grp0;
 
         unsigned int              od_rdonly:1,
+                                  od_xattr_in_sa:1,
                                   od_quota_iused_est:1;
         char                      od_mntdev[128];
         char                      od_svname[128];
