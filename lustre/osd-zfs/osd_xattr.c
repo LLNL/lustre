@@ -553,6 +553,7 @@ int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
 		struct thandle *handle, struct lustre_capa *capa)
 {
 	struct osd_object  *obj = osd_dt_obj(dt);
+	struct osd_device  *osd  = osd_obj2dev(obj);
 	struct osd_thandle *oh;
 	int rc = 0;
 	ENTRY;
@@ -566,11 +567,15 @@ int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
 
 	cfs_down(&obj->oo_guard);
 	CDEBUG(D_INODE, "Setting xattr %s with size %d\n",
-		name, (int)buf->lb_len);
-	rc = __osd_sa_xattr_set(env, obj, buf, name, fl, oh);
-	/* place xattr in dnode if SA is full */
-	if (rc == -EFBIG)
+	       name, (int)buf->lb_len);
+	/* place xattr in dnode if xattr in SA is disabled or SA is full */
+	if (osd->od_xattr_in_sa) {
+		rc = __osd_sa_xattr_set(env, obj, buf, name, fl, oh);
+		if (rc == -EFBIG)
+			rc = __osd_xattr_set(env, obj, buf, name, fl, oh);
+	} else {
 		rc = __osd_xattr_set(env, obj, buf, name, fl, oh);
+	}
 	cfs_up(&obj->oo_guard);
 
 	RETURN(rc);
