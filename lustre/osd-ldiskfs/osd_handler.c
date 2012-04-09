@@ -2334,13 +2334,15 @@ static int osd_object_ref_del(const struct lu_env *env,
  * Get the 64-bit version for an inode.
  */
 static int osd_object_version_get(const struct lu_env *env,
-                                  struct dt_object *dt, dt_obj_version_t *ver)
+                                  struct osd_object *obj, dt_obj_version_t *ver)
 {
-        struct inode *inode = osd_dt_obj(dt)->oo_inode;
+        struct inode *inode = obj->oo_inode;
 
-        CDEBUG(D_INODE, "Get version "LPX64" for inode %lu\n",
-               LDISKFS_I(inode)->i_fs_version, inode->i_ino);
+        cfs_spin_lock(&obj->oo_guard);
         *ver = LDISKFS_I(inode)->i_fs_version;
+        cfs_spin_unlock(&obj->oo_guard);
+        CDEBUG(D_INODE, "Get version "LPX64" for inode %lu\n",
+               *ver, inode->i_ino);
         return 0;
 }
 
@@ -2361,13 +2363,12 @@ static int osd_xattr_get(const struct lu_env *env, struct dt_object *dt,
                 /* for version we are just using xattr API but change inode
                  * field instead */
                 LASSERT(buf->lb_len == sizeof(dt_obj_version_t));
-                osd_object_version_get(env, dt, buf->lb_buf);
+                osd_object_version_get(env, obj, buf->lb_buf);
                 return sizeof(dt_obj_version_t);
         }
 
         LASSERT(dt_object_exists(dt));
         LASSERT(inode->i_op != NULL && inode->i_op->getxattr != NULL);
-        LASSERT(osd_read_locked(env, obj) || osd_write_locked(env, obj));
 
         if (osd_object_auth(env, dt, capa, CAPA_OPC_META_READ))
                 return -EACCES;
@@ -2403,15 +2404,17 @@ static int osd_declare_xattr_set(const struct lu_env *env, struct dt_object *dt,
  * Set the 64-bit version.for object
  */
 static void osd_object_version_set(const struct lu_env *env,
-                                   struct dt_object *dt,
+                                   struct osd_object *obj,
                                    dt_obj_version_t *new_version)
 {
-        struct inode *inode = osd_dt_obj(dt)->oo_inode;
+        struct inode *inode = obj->oo_inode;
 
         CDEBUG(D_INODE, "Set version "LPX64" (old "LPX64") for inode %lu\n",
                *new_version, LDISKFS_I(inode)->i_fs_version, inode->i_ino);
 
+        cfs_spin_lock(&obj->oo_guard);
         LDISKFS_I(inode)->i_fs_version = *new_version;
+        cfs_spin_unlock(&obj->oo_guard);
         /** Version is set after all inode operations are finished,
          *  so we should mark it dirty here */
         inode->i_sb->s_op->dirty_inode(inode);
@@ -2431,7 +2434,7 @@ static int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
                 /* for version we are just using xattr API but change inode
                  * field instead */
                 LASSERT(buf->lb_len == sizeof(dt_obj_version_t));
-                osd_object_version_set(env, dt, buf->lb_buf);
+                osd_object_version_set(env, osd_dt_obj(dt), buf->lb_buf);
                 return sizeof(dt_obj_version_t);
         }
 
@@ -2503,7 +2506,6 @@ static int osd_xattr_del(const struct lu_env *env,
 
         LASSERT(dt_object_exists(dt));
         LASSERT(inode->i_op != NULL && inode->i_op->removexattr != NULL);
-        LASSERT(osd_write_locked(env, obj));
         LASSERT(handle != NULL);
 
         if (osd_object_auth(env, dt, capa, CAPA_OPC_META_WRITE))
