@@ -808,15 +808,11 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
                                             struct local_oid_storage *los,
                                             struct dt_object *parent,
                                             const char *name, __u32 mode);
-
-static inline int dt_object_sync(const struct lu_env *env,
-                                 struct dt_object *o)
-{
-        LASSERT(o);
-        LASSERT(o->do_ops);
-        LASSERT(o->do_ops->do_object_sync);
-        return o->do_ops->do_object_sync(env, o);
-}
+struct dt_object *local_index_find_or_create(const struct lu_env *env,
+                                             struct local_oid_storage *los,
+                                             struct dt_object *parent,
+                                             const char *name, __u32 mode,
+                                             struct dt_index_features *idx_feat);
 
 int dt_declare_version_set(const struct lu_env *env, struct dt_object *o,
                            struct thandle *th);
