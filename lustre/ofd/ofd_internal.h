@@ -300,6 +300,8 @@ struct ofd_thread_info {
                                    fti_mult_trans:1;
 
         struct lu_fid              fti_fid;
+        struct lu_fid              fti_fid_preprw;
+        struct lu_fid              fti_fid_commitrw;
         struct lu_attr             fti_attr;
         struct lu_attr             fti_attr2;
         struct ldlm_res_id         fti_resid;

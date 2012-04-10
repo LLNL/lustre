@@ -210,23 +210,24 @@ int ofd_preprw(int cmd, struct obd_export *exp, struct obdo *oa,
         LASSERT(objcount == 1);
         LASSERT(obj->ioo_bufcnt > 0);
 
-        fid_ostid_unpack(&info->fti_fid, &oa->o_oi, 0);
+        fid_ostid_unpack(&info->fti_fid_preprw, &oa->o_oi, 0);
         if (cmd == OBD_BRW_WRITE) {
-                rc = ofd_auth_capa(ofd, &info->fti_fid, oa->o_seq,
+                rc = ofd_auth_capa(ofd, &info->fti_fid_preprw, oa->o_seq,
                                       capa, CAPA_OPC_OSS_WRITE);
                 if (rc == 0) {
                         LASSERT(oa != NULL);
                         la_from_obdo(&info->fti_attr, oa, OBD_MD_FLGETATTR);
-                        rc = ofd_preprw_write(env, exp, ofd, &info->fti_fid,
-                                                 &info->fti_attr, oa, objcount,
-                                                 obj, rnb, nr_local, lnb, oti);
+                        rc = ofd_preprw_write(env, exp, ofd,
+                                              &info->fti_fid_preprw,
+                                              &info->fti_attr, oa, objcount,
+                                              obj, rnb, nr_local, lnb, oti);
                 }
         } else if (cmd == OBD_BRW_READ) {
-                rc = ofd_auth_capa(ofd, &info->fti_fid, oa->o_seq,
+                rc = ofd_auth_capa(ofd, &info->fti_fid_preprw, oa->o_seq,
                                       capa, CAPA_OPC_OSS_READ);
                 if (rc == 0) {
                         ofd_grant_prepare_read(env, exp, oa);
-                        rc = ofd_preprw_read(env, ofd, &info->fti_fid,
+                        rc = ofd_preprw_read(env, ofd, &info->fti_fid_preprw,
                                              &info->fti_attr, obj->ioo_bufcnt,
                                              rnb, nr_local, lnb);
                         obdo_from_la(oa, &info->fti_attr, LA_ATIME);
@@ -527,7 +528,11 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
 
         LASSERT(npages > 0);
 
-        fid_ostid_unpack(&info->fti_fid, &oa->o_oi, 0);
+        fid_ostid_unpack(&info->fti_fid_commitrw, &oa->o_oi, 0);
+        LASSERTF(lu_fid_eq(&info->fti_fid_preprw, &info->fti_fid_commitrw),
+                 "fti_fid_preprw="DFID" fti_fid_preprw="DFID"\n",
+                 PFID(&info->fti_fid_preprw), PFID(&info->fti_fid_commitrw));
+
         if (cmd == OBD_BRW_WRITE) {
                 /* Don't update timestamps if this write is older than a
                  * setattr which modifies the timestamps. b=10150 */
@@ -537,7 +542,7 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                  * doesn't already exist so we can store the reservation handle
                  * there. */
                 valid = OBD_MD_FLUID | OBD_MD_FLGID;
-                fmd = ofd_fmd_find(exp, &info->fti_fid);
+                fmd = ofd_fmd_find(exp, &info->fti_fid_commitrw);
                 if (!fmd || fmd->fmd_mactime_xid < info->fti_xid)
                         valid |= OBD_MD_FLATIME | OBD_MD_FLMTIME |
                                  OBD_MD_FLCTIME;
@@ -549,7 +554,7 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                         ofd_prepare_fidea(ff, oa);
                 }
 
-                rc = ofd_commitrw_write(env, ofd, &info->fti_fid,
+                rc = ofd_commitrw_write(env, ofd, &info->fti_fid_commitrw,
                                         &info->fti_attr, ff, objcount, npages,
                                         lnb, oti, old_rc);
                 if (rc == 0)
@@ -587,7 +592,8 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                 if (oa && ns && ns->ns_lvbo && ns->ns_lvbo->lvbo_update) {
                          struct ldlm_resource *rs = NULL;
 
-                        ofd_build_resid(&info->fti_fid, &info->fti_resid);
+                        ofd_build_resid(&info->fti_fid_commitrw,
+                                        &info->fti_resid);
                         rs = ldlm_resource_get(ns, NULL, &info->fti_resid,
                                                LDLM_EXTENT, 0);
                         if (rs != NULL) {
@@ -595,8 +601,8 @@ int ofd_commitrw(int cmd, struct obd_export *exp,
                                 ldlm_resource_putref(rs);
                         }
                 }
-                rc = ofd_commitrw_read(env, ofd, &info->fti_fid, objcount,
-                                          npages, lnb);
+                rc = ofd_commitrw_read(env, ofd, &info->fti_fid_commitrw,
+                                       objcount, npages, lnb);
                 if (old_rc)
                         rc = old_rc;
         } else {
