@@ -577,30 +577,21 @@ int local_object_create(const struct lu_env *env, struct local_oid_storage *los,
 }
 
 /*
- * Create local named object in parent directory.
+ * Create local named object (file, directory or index) in parent directory.
  */
-struct dt_object *local_file_find_or_create(const struct lu_env *env,
-                                            struct local_oid_storage *los,
-                                            struct dt_object *parent,
-                                            const char *name, __u32 mode)
+static struct dt_object *local_file_create(const struct lu_env *env,
+                                           struct local_oid_storage *los,
+                                           struct dt_object *parent,
+                                           const char *name,
+                                           struct lu_attr *attr,
+                                           struct dt_object_format *dof)
 {
         struct dt_thread_info *dti = dt_info(env);
         struct dt_object      *dto = NULL;
         struct thandle        *th;
         int                    rc;
-        ENTRY;
 
-        LASSERT(parent);
-
-        rc = dt_lookup_dir(env, parent, name, &dti->dti_fid);
-        if (rc == 0) {
-                /* name is found, get the object */
-                dto = dt_locate_at(env, los->los_dev, &dti->dti_fid,
-                                   los->los_top);
-                RETURN(dto);
-        } else if (rc == -ENOENT) {
-                rc = local_object_fid_generate(env, los, &dti->dti_fid);
-        }
+        rc = local_object_fid_generate(env, los, &dti->dti_fid);
         if (rc < 0)
                 RETURN(ERR_PTR(rc));
 
@@ -616,16 +607,11 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
 
-        dti->dti_attr.la_valid = LA_MODE;
-        dti->dti_attr.la_mode = mode;
-        dti->dti_dof.dof_type = dt_mode_to_dft(mode & S_IFMT);
-
-        rc = local_object_declare_create(env, los, dto, &dti->dti_attr,
-                                         &dti->dti_dof, th);
+        rc = local_object_declare_create(env, los, dto, attr, dof, th);
         if (rc)
                 GOTO(trans_stop, rc);
 
-        if (S_ISDIR(mode))
+        if (dof->dof_type == DFT_DIR)
                 dt_declare_ref_add(env, dto, th);
 
         rc = dt_declare_insert(env, parent, (void *)&dti->dti_fid,
@@ -649,7 +635,7 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
                 GOTO(unlock, rc);
         LASSERT(dt_object_exists(dto));
 
-        if (S_ISDIR(mode)) {
+        if (dof->dof_type == DFT_DIR) {
                 if (!dt_try_as_dir(env, dto))
                         GOTO(destroy, rc = -ENOTDIR);
                 /* Add "." and ".." for newly created dir */
@@ -684,7 +670,74 @@ out:
         }
         RETURN(dto);
 }
+
+/*
+ * Look up and create (if it does not exist) a local named file or directory in
+ * parent directory.
+ */
+struct dt_object *local_file_find_or_create(const struct lu_env *env,
+                                            struct local_oid_storage *los,
+                                            struct dt_object *parent,
+                                            const char *name, __u32 mode)
+{
+        struct dt_thread_info *dti = dt_info(env);
+        int                    rc;
+        ENTRY;
+
+        LASSERT(parent);
+
+        rc = dt_lookup_dir(env, parent, name, &dti->dti_fid);
+        if (rc == 0)
+                /* name is found, get the object */
+                RETURN(dt_locate_at(env, los->los_dev, &dti->dti_fid,
+                                    los->los_top));
+        else if (rc != -ENOENT)
+                RETURN(ERR_PTR(rc));
+
+        /* create the object */
+        dti->dti_attr.la_valid = LA_MODE;
+        dti->dti_attr.la_mode = mode;
+        dti->dti_dof.dof_type = dt_mode_to_dft(mode & S_IFMT);
+
+        RETURN(local_file_create(env, los, parent, name, &dti->dti_attr,
+                                 &dti->dti_dof));
+}
 EXPORT_SYMBOL(local_file_find_or_create);
+
+/*
+ * Look up and create (if it does not exist) a local named index file in parent
+ * directory.
+ */
+struct dt_object *local_index_find_or_create(const struct lu_env *env,
+                                             struct local_oid_storage *los,
+                                             struct dt_object *parent,
+                                             const char *name, __u32 mode,
+                                             struct dt_index_features *idx_feat)
+{
+        struct dt_thread_info *dti = dt_info(env);
+        int                    rc;
+        ENTRY;
+
+        LASSERT(parent);
+
+        rc = dt_lookup_dir(env, parent, name, &dti->dti_fid);
+        if (rc == 0)
+                /* name is found, get the object */
+                RETURN(dt_locate_at(env, los->los_dev, &dti->dti_fid,
+                                    los->los_top));
+        else if (rc != -ENOENT)
+                RETURN(ERR_PTR(rc));
+
+        /* create the object */
+        dti->dti_attr.la_valid = LA_MODE;
+        dti->dti_attr.la_mode = mode;
+        dti->dti_dof.dof_type = DFT_INDEX;
+        dti->dti_dof.u.dof_idx.di_feat = idx_feat;
+
+        RETURN(local_file_create(env, los, parent, name, &dti->dti_attr,
+                                 &dti->dti_dof));
+}
+EXPORT_SYMBOL(local_index_find_or_create);
 
 static struct local_oid_storage *dt_los_find(struct dt_device *dev, __u64 seq)
 {
