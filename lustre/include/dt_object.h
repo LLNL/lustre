@@ -812,6 +812,12 @@ struct dt_object *local_file_find_or_create(const struct lu_env *env,
                                             struct dt_object *parent,
                                             const char *name, __u32 mode);
 
+struct dt_object *local_index_find_or_create(const struct lu_env *env,
+                                             struct local_oid_storage *los,
+                                             struct dt_object *parent,
+                                             const char *name, __u32 mode,
+                                             struct dt_index_features *idx_feat);
+
 int dt_declare_version_set(const struct lu_env *env, struct dt_object *o,
                            struct thandle *th);
 void dt_version_set(const struct lu_env *env, struct dt_object *o,
