@@ -72,15 +72,15 @@ struct osd_it_quota {
 /**
  * Iterator's in-memory data structure for ZAPs
  */
-#define IT_REC_SIZE 256
-
 struct osd_zap_it {
         zap_cursor_t            *ozi_zc;
         struct osd_object       *ozi_obj;
         struct lustre_capa      *ozi_capa;
         unsigned                 ozi_reset:1;     /* 1 -- no need to advance */
-        char                     ozi_name[NAME_MAX + 1];
-        char                     ozi_rec[IT_REC_SIZE];
+        union {
+                char             ozi_name[NAME_MAX + 1]; /* file name for dir */
+                __u64            ozi_key; /* binary key for index files */
+        };
 };
 #define DT_IT2DT(it) (&((struct osd_zap_it *)it)->ozi_obj->oo_dt)
 
@@ -251,6 +251,9 @@ struct osd_object {
         /* protects extended attributes */
         cfs_semaphore_t      oo_guard;
         uint64_t             oo_xattr;
+
+        /* record size for index file */
+        int                  oo_recsize;
 };
 
 int osd_statfs(const struct lu_env *env, struct dt_device *d, struct obd_statfs *osfs);
