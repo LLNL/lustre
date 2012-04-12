@@ -845,6 +845,10 @@ static int mdt_getattr_internal(struct mdt_thread_info *info,
                         RETURN(rc);
                 repbody->valid |= OBD_MD_FLMDSCAPA;
         }
+
+        if (rc == 0)
+                mdt_counter_incr(req->rq_export, LPROC_MDT_GETATTR);
+
         RETURN(rc);
 }
 
@@ -882,7 +886,6 @@ static int mdt_renew_capa(struct mdt_thread_info *info)
 
 static int mdt_getattr(struct mdt_thread_info *info)
 {
-        struct ptlrpc_request   *req = mdt_info_req(info);
         struct mdt_object       *obj = info->mti_object;
         struct req_capsule      *pill = info->mti_pill;
         struct mdt_body         *reqbody;
@@ -939,8 +942,6 @@ static int mdt_getattr(struct mdt_thread_info *info)
                 mdt_exit_ucred(info);
         EXIT;
 out_shrink:
-        if (rc == 0)
-                mdt_counter_incr(req->rq_export, LPROC_MDT_GETATTR);
 
         mdt_client_compatibility(info);
         rc2 = mdt_fix_reply(info);
