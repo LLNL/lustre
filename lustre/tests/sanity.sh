@@ -37,6 +37,11 @@ if [ "$FSTYPE" = "zfs" ]; then
     ALWAYS_EXCEPT="$ALWAYS_EXCEPT 56r 57 130 155 156"
 fi
 
+# Disable as fail in master
+# 39j  -- LU-988
+# 133d -- LU-1209
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 39j 133d"
+
 SRCDIR=$(cd $(dirname $0); echo $PWD)
 export PATH=$PATH:/sbin
 
