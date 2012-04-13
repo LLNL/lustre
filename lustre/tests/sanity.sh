@@ -38,6 +38,11 @@ if [ "$FSTYPE" = "zfs" ]; then
     ALWAYS_EXCEPT="$ALWAYS_EXCEPT 56r 57 130 155 156"
 fi
 
+# Disable as fail in master
+# 39j  -- LU-988
+# 133d -- LU-1209
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 39j 133d"
+
 case `uname -r` in
 2.4*) FSTYPE=${FSTYPE:-ext3} ;;
 2.6*) FSTYPE=${FSTYPE:-ldiskfs} ;;
