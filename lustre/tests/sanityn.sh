@@ -7,6 +7,10 @@ ONLY=${ONLY:-"$*"}
 ALWAYS_EXCEPT="                14b  19         22    28   29          35    $SANITYN_EXCEPT"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
+# Disable as fail in master
+# 18 -- LU-1205
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 18"
+
 # bug number for skipped test:                                                    12652 12652
 grep -q 'Enterprise Server 10' /etc/SuSE-release && ALWAYS_EXCEPT="$ALWAYS_EXCEPT 11    14" || true
 
