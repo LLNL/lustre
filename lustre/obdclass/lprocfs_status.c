@@ -1199,7 +1199,7 @@ struct lprocfs_stats *lprocfs_alloc_stats(unsigned int num,
         if (flags & LPROCFS_STATS_FLAG_NOPERCPU)
                 num_cpu = 1;
         else
-                num_cpu = cfs_num_present_cpus();
+                num_cpu = cfs_num_possible_cpus();
 
         OBD_ALLOC(stats, offsetof(typeof(*stats), ls_percpu[num_cpu]));
         if (stats == NULL)
@@ -1251,7 +1251,7 @@ void lprocfs_free_stats(struct lprocfs_stats **statsh)
         if (stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU)
                 num_cpu = 1;
         else
-                num_cpu = cfs_num_present_cpus();
+                num_cpu = cfs_num_possible_cpus();
 
         percpusize = offsetof(struct lprocfs_percpu, lp_cntr[stats->ls_num]);
         if (num_cpu > 1)

@@ -365,7 +365,7 @@ static inline int lprocfs_stats_lock(struct lprocfs_stats *stats, int opc)
                         cfs_spin_lock(&stats->ls_lock);
                         return 1;
                 } else {
-                        return cfs_num_present_cpus();
+                        return cfs_num_possible_cpus();
                 }
         }
 }
@@ -417,7 +417,7 @@ static inline __u64 lprocfs_stats_collector(struct lprocfs_stats *stats,
         int i;
 
         LASSERT(stats != NULL);
-        for (i = 0; i < cfs_num_present_cpus(); i++)
+        for (i = 0; i < cfs_num_possible_cpus(); i++)
                 ret += lprocfs_read_helper(&(stats->ls_percpu[i]->lp_cntr[idx]),
                                            field);
         return ret;
