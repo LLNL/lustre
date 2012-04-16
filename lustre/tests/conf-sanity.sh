@@ -1334,6 +1334,26 @@ t32_bits_per_long() {
 	esac
 }
 
+t32_reload_modules() {
+	local node=$1
+	local all_removed=false
+	local i=0
+
+	while ((i < 10)); do
+		echo "Unloading modules on $node: Attempt $i"
+		do_rpc_nodes $node $LUSTRE_RMMOD $FSTYPE && all_removed=true
+		do_rpc_nodes $node check_mem_leak || return 1
+		if $all_removed; then
+			load_modules
+			return 0
+		fi
+		sleep 5
+		i=$((i + 1))
+	done
+	echo "Unloading modules on $node: Given up"
+	return 1
+}
+
 t32_test() {
 	local tarball=$1
 	local writeconf=$2
@@ -1542,6 +1562,11 @@ t32_test() {
 			return 1
 		}
 		shall_cleanup_ost=false
+
+		t32_reload_modules $node || {
+			error_noexit "Reloading modules"
+			return 1
+		}
 
 		# mount a second time to make sure we didnt leave upgrade flag on
 		$r $TUNEFS --dryrun $tmp/mdt || {
