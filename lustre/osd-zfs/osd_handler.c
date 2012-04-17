@@ -3941,6 +3941,8 @@ static int osd_bufs_get(const struct lu_env *env, struct dt_object *dt,
         else
                 rc = osd_bufs_get_write(env, obj, offset, len, lnb);
 
+        if (rc > 0)
+                lu_object_get(&dt->do_lu);
         return rc;
 }
 
