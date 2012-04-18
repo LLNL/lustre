@@ -346,7 +346,8 @@ static inline void s2dhms(struct dhms *ts, time_t secs)
 
 #ifdef LPROCFS
 
-static inline int lprocfs_stats_lock(struct lprocfs_stats *stats, int opc)
+static inline int lprocfs_stats_lock(struct lprocfs_stats *stats, int opc,
+                                     unsigned long *flags)
 {
         switch (opc) {
         default:
@@ -354,7 +355,7 @@ static inline int lprocfs_stats_lock(struct lprocfs_stats *stats, int opc)
 
         case LPROCFS_GET_SMP_ID:
                 if (stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU) {
-                        cfs_spin_lock(&stats->ls_lock);
+                        cfs_spin_lock_irqsave(&stats->ls_lock, *flags);
                         return 0;
                 } else {
                         return cfs_get_cpu();
@@ -362,7 +363,7 @@ static inline int lprocfs_stats_lock(struct lprocfs_stats *stats, int opc)
 
         case LPROCFS_GET_NUM_CPU:
                 if (stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU) {
-                        cfs_spin_lock(&stats->ls_lock);
+                        cfs_spin_lock_irqsave(&stats->ls_lock, *flags);
                         return 1;
                 } else {
                         return cfs_num_possible_cpus();
@@ -370,7 +371,8 @@ static inline int lprocfs_stats_lock(struct lprocfs_stats *stats, int opc)
         }
 }
 
-static inline void lprocfs_stats_unlock(struct lprocfs_stats *stats, int opc)
+static inline void lprocfs_stats_unlock(struct lprocfs_stats *stats, int opc,
+                                        unsigned long *flags)
 {
         switch (opc) {
         default:
@@ -378,14 +380,14 @@ static inline void lprocfs_stats_unlock(struct lprocfs_stats *stats, int opc)
 
         case LPROCFS_GET_SMP_ID:
                 if (stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU)
-                        cfs_spin_unlock(&stats->ls_lock);
+                        cfs_spin_unlock_irqrestore(&stats->ls_lock, *flags);
                 else
                         cfs_put_cpu();
                 return;
 
         case LPROCFS_GET_NUM_CPU:
                 if (stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU)
-                        cfs_spin_unlock(&stats->ls_lock);
+                        cfs_spin_unlock_irqrestore(&stats->ls_lock, *flags);
                 return;
         }
 }
@@ -416,14 +418,15 @@ static inline __u64 lprocfs_stats_collector(struct lprocfs_stats *stats,
         __u64        ret = 0;
         int          i;
         unsigned int num_cpu;
+        unsigned long flags = 0;
 
         LASSERT(stats != NULL);
 
-        num_cpu = lprocfs_stats_lock(stats, LPROCFS_GET_NUM_CPU);
+        num_cpu = lprocfs_stats_lock(stats, LPROCFS_GET_NUM_CPU, &flags);
         for (i = 0; i < num_cpu; i++)
                 ret += lprocfs_read_helper(&(stats->ls_percpu[i]->lp_cntr[idx]),
                                            field);
-        lprocfs_stats_unlock(stats, LPROCFS_GET_NUM_CPU);
+        lprocfs_stats_unlock(stats, LPROCFS_GET_NUM_CPU, &flags);
         return ret;
 }
 

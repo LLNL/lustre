@@ -76,13 +76,14 @@ void lprocfs_counter_add(struct lprocfs_stats *stats, int idx,
 {
         struct lprocfs_counter *percpu_cntr;
         int smp_id;
+        unsigned long flags = 0;
 
         if (stats == NULL)
                 return;
 
         /* With per-client stats, statistics are allocated only for
          * single CPU area, so the smp_id should be 0 always. */
-        smp_id = lprocfs_stats_lock(stats, LPROCFS_GET_SMP_ID);
+        smp_id = lprocfs_stats_lock(stats, LPROCFS_GET_SMP_ID, &flags);
 
         percpu_cntr = &(stats->ls_percpu[smp_id]->lp_cntr[idx]);
         if (!(stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU))
@@ -103,7 +104,7 @@ void lprocfs_counter_add(struct lprocfs_stats *stats, int idx,
         }
         if (!(stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU))
                 cfs_atomic_inc(&percpu_cntr->lc_cntl.la_exit);
-        lprocfs_stats_unlock(stats, LPROCFS_GET_SMP_ID);
+        lprocfs_stats_unlock(stats, LPROCFS_GET_SMP_ID, &flags);
 }
 EXPORT_SYMBOL(lprocfs_counter_add);
 
@@ -112,13 +113,14 @@ void lprocfs_counter_sub(struct lprocfs_stats *stats, int idx,
 {
         struct lprocfs_counter *percpu_cntr;
         int smp_id;
+        unsigned long flags = 0;
 
         if (stats == NULL)
                 return;
 
         /* With per-client stats, statistics are allocated only for
          * single CPU area, so the smp_id should be 0 always. */
-        smp_id = lprocfs_stats_lock(stats, LPROCFS_GET_SMP_ID);
+        smp_id = lprocfs_stats_lock(stats, LPROCFS_GET_SMP_ID, &flags);
 
         percpu_cntr = &(stats->ls_percpu[smp_id]->lp_cntr[idx]);
         if (!(stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU))
@@ -139,7 +141,7 @@ void lprocfs_counter_sub(struct lprocfs_stats *stats, int idx,
         }
         if (!(stats->ls_flags & LPROCFS_STATS_FLAG_NOPERCPU))
                 cfs_atomic_inc(&percpu_cntr->lc_cntl.la_exit);
-        lprocfs_stats_unlock(stats, LPROCFS_GET_SMP_ID);
+        lprocfs_stats_unlock(stats, LPROCFS_GET_SMP_ID, &flags);
 }
 EXPORT_SYMBOL(lprocfs_counter_sub);
 #endif  /* LPROCFS */
