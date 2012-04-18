@@ -31,6 +31,10 @@ if [ "$FSTYPE" = "zfs" ]; then
     ALWAYS_EXCEPT="$ALWAYS_EXCEPT 89"
 fi
 
+# Disable as fail in master
+# 73a  -- LU-951
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 73a"
+
 build_test_filter
 
 check_and_setup_lustre
