@@ -1257,6 +1257,7 @@ int cl_lock_enqueue_wait(const struct lu_env *env,
         LASSERT(cl_lock_nr_mutexed(env) == 0);
 
         cl_lock_mutex_get(env, conflict);
+        cl_lock_trace(D_DLMTRACE, env, "enqueue wait", conflict);
         cl_lock_cancel(env, conflict);
         cl_lock_delete(env, conflict);
 
@@ -1799,10 +1800,12 @@ void cl_lock_error(const struct lu_env *env, struct cl_lock *lock, int error)
         LINVRNT(cl_lock_invariant(env, lock));
 
         ENTRY;
-        cl_lock_trace(D_DLMTRACE, env, "set lock error", lock);
-        if (lock->cll_error == 0 && error != 0) {
+        if (lock->cll_error == 0 && error != 0 && error != -EINTR) {
+                cl_lock_trace(D_DLMTRACE, env, "set lock error", lock);
                 lock->cll_error = error;
                 cl_lock_signal(env, lock);
+        }
+        if (error != 0) {
                 cl_lock_cancel(env, lock);
                 cl_lock_delete(env, lock);
         }

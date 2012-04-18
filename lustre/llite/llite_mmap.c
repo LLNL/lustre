@@ -215,6 +215,7 @@ struct page *ll_nopage(struct vm_area_struct *vma, unsigned long address,
         unsigned long           ra_flags;
         pgoff_t                 pg_offset;
         int                     result;
+        cfs_sigset_t            set;
         ENTRY;
 
         pg_offset = ((address - vma->vm_start) >> PAGE_SHIFT) + vma->vm_pgoff;
@@ -231,7 +232,9 @@ struct page *ll_nopage(struct vm_area_struct *vma, unsigned long address,
         vio->u.fault.nopage.ft_address = address;
         vio->u.fault.nopage.ft_type    = type;
 
+        set = cfs_block_allsigs();
         result = cl_io_loop(env, io);
+        cfs_restore_sigs(set);
 
 out_err:
         if (result == 0)
@@ -303,6 +306,9 @@ int ll_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
         int count = 0;
         bool printed = false;
         int result;
+        cfs_sigset_t set;
+
+        set = cfs_block_allsigs();
 
 restart:
         result = ll_fault0(vma, vmf);
@@ -329,6 +335,7 @@ restart:
 
                 result |= VM_FAULT_LOCKED;
         }
+        cfs_restore_sigs(set);
         return result;
 }
 #endif
