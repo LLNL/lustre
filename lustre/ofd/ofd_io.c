@@ -50,6 +50,8 @@ static int ofd_preprw_read(const struct lu_env *env, struct ofd_device *ofd,
 {
         struct ofd_object *fo;
         int i, j, rc, tot_bytes = 0;
+
+        ENTRY;
         LASSERT(env != NULL);
 
         fo = ofd_object_find(env, ofd, fid);
@@ -78,16 +80,21 @@ static int ofd_preprw_read(const struct lu_env *env, struct ofd_device *ofd,
         rc = dt_attr_get(env, ofd_object_child(fo), la,
                          ofd_object_capa(env, fo));
         if (unlikely(rc))
-                GOTO(unlock, rc);
+                GOTO(buf_put, rc);
+
         rc = dt_read_prep(env, ofd_object_child(fo), lnb, *nr_local);
+        if (unlikely(rc))
+                GOTO(buf_put, rc);
         lprocfs_counter_add(ofd_obd(ofd)->obd_stats,
                             LPROC_OFD_READ_BYTES, tot_bytes);
-unlock:
-        if (unlikely(rc))
-                ofd_read_unlock(env, fo);
-        ofd_object_put(env, fo);
+        RETURN(0);
 
-        RETURN(rc);
+buf_put:
+        dt_bufs_put(env, ofd_object_child(fo), lnb, *nr_local);
+unlock:
+        ofd_read_unlock(env, fo);
+        ofd_object_put(env, fo);
+        return rc;
 }
 
 static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
@@ -178,7 +185,6 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
                 ofd_grant_commit(env, exp, rc);
         }
 
-        ofd_object_put(env, fo);
         RETURN(rc);
 out:
         /* let's still process incoming grant information packed in the oa,
@@ -261,6 +267,8 @@ ofd_commitrw_read(const struct lu_env *env, struct ofd_device *ofd,
         dt_bufs_put(env, ofd_object_child(fo), lnb, niocount);
 
         ofd_read_unlock(env, fo);
+        ofd_object_put(env, fo);
+        /* second put is pair to object_get in ofd_preprw_read */
         ofd_object_put(env, fo);
 
         RETURN(0);
@@ -416,9 +424,6 @@ ofd_commitrw_write(const struct lu_env *env, struct ofd_device *ofd,
         LASSERT(objcount == 1);
 
         fo = ofd_object_find(env, ofd, fid);
-        if (IS_ERR(fo))
-                GOTO(out_nofo, rc = PTR_ERR(fo));
-
         LASSERT(fo != NULL);
         LASSERT(ofd_object_exists(fo));
 
@@ -492,7 +497,8 @@ out:
         dt_bufs_put(env, o, lnb, niocount);
         ofd_read_unlock(env, fo);
         ofd_object_put(env, fo);
-out_nofo:
+        /* second put is pair to object_get in ofd_preprw_write */
+        ofd_object_put(env, fo);
         ofd_grant_commit(env, info->fti_exp, old_rc);
         RETURN(rc);
 }
