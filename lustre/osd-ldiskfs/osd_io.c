@@ -460,12 +460,9 @@ int osd_bufs_get(const struct lu_env *env, struct dt_object *d, loff_t pos,
         osd_map_remote_to_local(pos, len, &npages, lnb);
 
         for (i = 0; i < npages; i++, lnb++) {
-
                 /* We still set up for ungranted pages so that granted pages
                  * can be written to disk as they were promised, and portals
                  * needs to keep the pages all aligned properly. */
-                lnb->lnb_obj = obj;
-
                 lnb->lnb_page = osd_get_page(d, lnb->lnb_file_offset, rw);
                 if (lnb->lnb_page == NULL)
                         GOTO(cleanup, rc = -ENOMEM);
@@ -480,8 +477,6 @@ int osd_bufs_get(const struct lu_env *env, struct dt_object *d, loff_t pos,
                  * -bzzz */
                 wait_on_page_writeback(lnb->lnb_page);
                 BUG_ON(PageWriteback(lnb->lnb_page));
-
-                lu_object_get(&d->do_lu);
         }
         rc = i;
 
@@ -507,7 +502,6 @@ static int osd_bufs_put(const struct lu_env *env, struct dt_object *dt,
                 LASSERT(PageLocked(lnb[i].lnb_page));
                 unlock_page(lnb[i].lnb_page);
                 page_cache_release(lnb[i].lnb_page);
-                lu_object_put(env, &dt->do_lu);
                 lnb[i].lnb_page = NULL;
         }
         RETURN(0);
