@@ -8442,6 +8442,18 @@ test_221() {
 }
 run_test 221 "make sure fault and truncate race to not cause OOM"
 
+# LU-1299 Executing or running ldd on a truncated executable does not
+# cause an out-of-memory condition.
+test_222() {
+        dd if=`which date` of=$MOUNT/date bs=1k count=1
+        chmod +x $MOUNT/date
+
+        $MOUNT/date > /dev/null
+        ldd $MOUNT/date > /dev/null
+        rm -f $MOUNT/date
+}
+run_test 222 "running truncated executable does not cause OOM"
+
 #
 # tests that do cleanup/setup should be run at the end
 #
