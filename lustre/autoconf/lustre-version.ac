@@ -1,7 +1,7 @@
 m4_define([LUSTRE_MAJOR],[2])
 m4_define([LUSTRE_MINOR],[2])
 m4_define([LUSTRE_PATCH],[49])
-m4_define([LUSTRE_FIX],[51])
+m4_define([LUSTRE_FIX],[57])
 dnl # please track Orion versions via LUSTRE_FIX, so that it stays
 dnl # below the first 2.2.50 development versions on master
 
