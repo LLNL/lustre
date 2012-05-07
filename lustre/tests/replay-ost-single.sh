@@ -23,8 +23,9 @@ CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 
 # Skip these tests
 # BUG NUMBER:
+# 6 - ORI-124
 # 7 - ORI-408
-ALWAYS_EXCEPT="$REPLAY_OST_SINGLE_EXCEPT 7"
+ALWAYS_EXCEPT="$REPLAY_OST_SINGLE_EXCEPT 6 7"
 
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="5"
 FAIL_ON_ERROR=false

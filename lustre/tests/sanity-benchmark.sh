@@ -17,6 +17,11 @@ init_logging
 # bug number:
 ALWAYS_EXCEPT="$SANITY_BENCHMARK_EXCEPT"
 
+# ORI-545 - dbench
+if [ "$FSTYPE" = "zfs" ]; then
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT dbench"
+fi
+
 MAX_THREADS=${MAX_THREADS:-20}
 RAMKB=`awk '/MemTotal:/ { print $2 }' /proc/meminfo`
 if [ -z "$THREADS" ]; then

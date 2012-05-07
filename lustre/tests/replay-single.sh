@@ -23,12 +23,16 @@ require_dsh_mds || exit 0
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="12 16  44a     44b    65 66 67 68"
 FAIL_ON_ERROR=false
 
+# test 22b - ORI-486
+# test 53c - ORI-444
+# test 73b - ORI-644
 # test 74  - ORI-259
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 74"
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 22b 53c 73b 74"
 
+# 20b - ORI-462
 # 89 -- ORI-412
 if [ "$FSTYPE" = "zfs" ]; then
-    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 89"
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 20b 89"
 fi
 
 # Disable as fail in master
