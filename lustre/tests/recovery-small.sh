@@ -20,6 +20,11 @@ require_dsh_mds || exit 0
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="17  26a  26b    50   51     57"
 FAIL_ON_ERROR=false
 
+# 59 - ORI-628
+if [ "$FSTYPE" = "zfs" ]; then
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 59"
+fi
+
 build_test_filter
 
 # Allow us to override the setup if we already have a mounted system by

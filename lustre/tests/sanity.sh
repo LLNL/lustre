@@ -27,6 +27,7 @@ ALWAYS_EXCEPT="$ALWAYS_EXCEPT 76"
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 225"
 
 # ZFS/DMU exceptions:
+# 34h -- ORI-659
 # 56r -- dmu-osd doesn't return correct type in direntry
 # 57a -- (bug 22607) can't determine dnode size in ZFS yet
 # 57b -- (bug 14113) don't have large dnodes yet
@@ -34,7 +35,7 @@ ALWAYS_EXCEPT="$ALWAYS_EXCEPT 124a 225"
 # 155 -- we don't control cache via ZFS OSD yet
 # 156 -- we don't control cache via ZFS OSD yet
 if [ "$FSTYPE" = "zfs" ]; then
-    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 56r 57 130 155 156"
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 34h 56r 57 130 155 156"
 fi
 
 # Disable as fail in master

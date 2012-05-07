@@ -18,6 +18,11 @@ ALWAYS_EXCEPT="23 $OST_POOLS_EXCEPT"
 # bug number for skipped test: -
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
+# ORI-505
+if [ "$FSTYPE" = "zfs" ]; then
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 14"
+fi
+
 [ "$ALWAYS_EXCEPT$EXCEPT" ] &&
     echo "Skipping tests: $(echo $ALWAYS_EXCEPT $EXCEPT)"
 

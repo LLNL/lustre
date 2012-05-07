@@ -18,8 +18,15 @@ init_logging
 thrlo=${thrlo:-$(( thrhi / 2))}
 
 # Skip these tests
-# bug number   23791 23791
-ALWAYS_EXCEPT="1b    2b    $OBDFILTER_SURVEY_EXCEPT"
+# bz23791 - 1b, 2b
+# LU-1400 - 1c, 2a, 3a
+ALWAYS_EXCEPT="1b 2b 1c 2a 3a $OBDFILTER_SURVEY_EXCEPT"
+
+# ORI-469 - ZFS is too slow
+if [ "$FSTYPE" = "zfs" ]; then
+	skip_env "$0: skipping obfilter-survey with ZFS"
+	exit 0
+fi
 
 OBDSURVEY=${OBDSURVEY:-$(which obdfilter-survey)}
 

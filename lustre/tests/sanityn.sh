@@ -13,6 +13,11 @@ ALWAYS_EXCEPT="                14b  18c     19         22    28   29          35
 # 18 -- LU-1205
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 4 18"
 
+# ORI-592 - 36
+if [ "$FSTYPE" = "zfs" ]; then
+    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 36"
+fi
+
 # bug number for skipped test:                                                    12652 12652
 grep -q 'Enterprise Server 10' /etc/SuSE-release && ALWAYS_EXCEPT="$ALWAYS_EXCEPT 11    14" || true
 
