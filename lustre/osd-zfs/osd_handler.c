@@ -3162,7 +3162,6 @@ static int osd_xattr_set(const struct lu_env *env,
                          struct lustre_capa *capa)
 {
         struct osd_object  *obj = osd_dt_obj(dt);
-        struct osd_device  *osd  = osd_obj2dev(obj);
         struct osd_thandle *oh;
         int rc = 0;
         ENTRY;
@@ -3175,14 +3174,10 @@ static int osd_xattr_set(const struct lu_env *env,
         oh = container_of0(handle, struct osd_thandle, ot_super);
 
         cfs_down(&obj->oo_guard);
-        /* place xattr in dnode if xattr in SA is disabled or SA is full */
-        if (osd->od_xattr_in_sa) {
-                rc = __osd_sa_xattr_set(env, obj, buf, name, fl, oh);
-                if (rc == -EFBIG)
-                        rc = __osd_xattr_set(env, obj, buf, name, fl, oh);
-        } else {
+        rc = __osd_sa_xattr_set(env, obj, buf, name, fl, oh);
+        /* place xattr in dnode if SA is full */
+        if (rc == -EFBIG)
                 rc = __osd_xattr_set(env, obj, buf, name, fl, oh);
-        }
         cfs_up(&obj->oo_guard);
 
         RETURN(rc);
@@ -4592,19 +4587,11 @@ static void osd_umount(const struct lu_env *env, struct osd_device *o)
         EXIT;
 }
 
-static void osd_xattr_changed_cb(void *arg, uint64_t newval)
-{
-        struct osd_device *o = arg;
-
-        o->od_xattr_in_sa = (newval == ZFS_XATTR_SA);
-}
-
 static int osd_device_init0(const struct lu_env *env,
                             struct osd_device *o,
                             struct lustre_cfg *cfg)
 {
         struct lu_device       *l = osd2lu_dev(o);
-        struct dsl_dataset     *ds;
         char                   *label;
         int                     rc;
 
@@ -4624,15 +4611,10 @@ static int osd_device_init0(const struct lu_env *env,
         if (rc)
                 GOTO(out_capa, rc);
 
-        ds = dmu_objset_ds(o->od_objset.os);
-        rc = dsl_prop_register(ds, "xattr", osd_xattr_changed_cb, o);
-        if (rc)
-                GOTO(out_mnt, rc);
-
         /* 1. initialize oi before any file create or file open */
         rc = osd_oi_init(env, o);
         if (rc)
-                GOTO(out_unreg, rc);
+                GOTO(out_mnt, rc);
 
         rc = lu_site_init(&o->od_site, l);
         if (rc)
@@ -4661,8 +4643,6 @@ static int osd_device_init0(const struct lu_env *env,
 
 out_oi:
         osd_oi_fini(env, o);
-out_unreg:
-        dsl_prop_unregister(ds, "xattr", osd_xattr_changed_cb, o);
 out_mnt:
         osd_umount(env, o);
 out_capa:
@@ -4716,7 +4696,6 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
                                          struct lu_device *d)
 {
         struct osd_device *o = osd_dev(d);
-        struct dsl_dataset *ds;
         int rc;
         ENTRY;
 
@@ -4736,15 +4715,8 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
                 RETURN(ERR_PTR(rc));
         }
 
-        if (o->od_objset.os) {
-                ds = dmu_objset_ds(o->od_objset.os);
-                rc = dsl_prop_unregister(ds, "xattr", osd_xattr_changed_cb, o);
-                if (rc) {
-                        CERROR("dsl_prop_unregister xattr error %d\n", rc);
-                        RETURN(ERR_PTR(rc));
-                }
+        if (o->od_objset.os)
                 osd_umount(env, o);
-        }
 
         RETURN(NULL);
 }
