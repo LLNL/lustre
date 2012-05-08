@@ -1655,6 +1655,7 @@ sync_all_data() {
 }
 
 wait_delete_completed () {
+    local MAX_WAIT=${1:-20}
     local mds2sync=""
     local stime=`date +%s`
     local etime
@@ -1681,7 +1682,6 @@ wait_delete_completed () {
     # do this upon commit
 
     local WAIT=0
-    local MAX_WAIT=20
     while [ "$WAIT" -ne "$MAX_WAIT" ]; do
         changes=$(do_node $mds2sync "lctl get_param -n osp*.*.sync_*" | awk '{sum=sum+$1} END{print sum}')
         #echo "$node: $changes changes on all"
