@@ -547,6 +547,21 @@ static int osp_precreate_ready_condition(struct osp_device *d)
         return 0;
 }
 
+static int osp_precreate_timeout_condition(void *data)
+{
+        struct osp_device *d = data;
+
+        LCONSOLE_WARN("%s: slow creates, last="LPU64", next="LPU64", "
+                      "reserved="LPU64", syn_changes=%lu, "
+                      "syn_rpc_in_progress=%d, status=%d\n",
+                      d->opd_obd->obd_name, d->opd_pre_last_created,
+                      d->opd_pre_next, d->opd_pre_reserved,
+                      d->opd_syn_changes, d->opd_syn_rpc_in_progress,
+                      d->opd_pre_status);
+
+        return 0;
+}
+
 /*
  * called to reserve object in the pool
  * return codes:
@@ -559,12 +574,12 @@ int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
         struct l_wait_info lwi;
         cfs_time_t         expire = cfs_time_shift(obd_timeout);
         int                precreated, rc;
-        int                count = 0;
         ENTRY;
 
         LASSERT(d->opd_pre_last_created >= d->opd_pre_next);
 
-        lwi = LWI_TIMEOUT(cfs_time_seconds(obd_timeout), NULL, NULL);
+        lwi = LWI_TIMEOUT(cfs_time_seconds(obd_timeout),
+                          osp_precreate_timeout_condition, d);
 
         /*
          * wait till:
@@ -579,10 +594,6 @@ int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
                                 break;
                 }
 
-                LASSERTF(count++ < 100,
-                         "status %d, rc %d, last %Lu, next %Lu\n",
-                         d->opd_pre_status, rc, d->opd_pre_last_created,
-                         d->opd_pre_next);
                 /*
                  * increase number of precreations
                  */
