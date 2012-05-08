@@ -69,17 +69,6 @@ int ofd_record_write(const struct lu_env *env, struct ofd_device *ofd,
         RETURN(rc);
 }
 
-int ofd_precreate_batch(struct ofd_device *ofd, int batch)
-{
-        int count;
-
-        cfs_spin_lock(&ofd->ofd_objid_lock);
-        count = min(ofd->ofd_precreate_batch, batch);
-        cfs_spin_unlock(&ofd->ofd_objid_lock);
-
-        return count;
-}
-
 obd_id ofd_last_id(struct ofd_device *ofd, obd_seq group)
 {
         obd_id id;
@@ -230,7 +219,6 @@ int ofd_groups_init(const struct lu_env *env, struct ofd_device *ofd)
         if (rc)
                 GOTO(cleanup, rc);
 
-        ofd->ofd_precreate_batch = OFD_PRECREATE_BATCH_DEFAULT;
         groups_size = (unsigned long)info->fti_attr.la_size;
 
         if (groups_size == sizeof(last_group)) {
@@ -470,3 +458,4 @@ err_fsd:
         class_disconnect_exports(obd);
         RETURN(rc);
 }
+
