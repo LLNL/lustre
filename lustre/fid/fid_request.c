@@ -71,6 +71,7 @@ static int seq_client_rpc(struct lu_client_seq *seq,
         struct ptlrpc_request *req;
         struct lu_seq_range   *out, *in;
         __u32                 *op;
+	unsigned int           debug_mask;
         int                    rc;
         ENTRY;
 
@@ -104,7 +105,9 @@ static int seq_client_rpc(struct lu_client_seq *seq,
                  * FLD update on super sequence allocator node. */
                 in->lsr_index = seq->lcs_space.lsr_index;
                 req->rq_request_portal = SEQ_CONTROLLER_PORTAL;
+		debug_mask = D_WARNING;
         } else {
+		debug_mask = D_INFO;
                 LASSERTF(opc == SEQ_ALLOC_META,
                          "unknown opcode %u\n, opc", opc);
         }
@@ -133,8 +136,8 @@ static int seq_client_rpc(struct lu_client_seq *seq,
                 GOTO(out_req, rc = -EINVAL);
         }
 
-        CDEBUG(D_INFO, "%s: Allocated %s-sequence "DRANGE"]\n",
-               seq->lcs_name, opcname, PRANGE(output));
+	CDEBUG_LIMIT(debug_mask, "%s: Allocated %s-sequence "DRANGE"]\n",
+			seq->lcs_name, opcname, PRANGE(output));
 
         EXIT;
 out_req:
