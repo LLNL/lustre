@@ -1291,17 +1291,24 @@ static int lustre_server_mount(struct lustre_sb_info *lsi, unsigned long mflags)
                 OBD_ALLOC(logname, MGS_PARAM_MAXLEN);
                 if (logname == NULL)
                         GOTO(out_mnt, rc = -ENOMEM);
-                server_name2fsname(lsi->lsi_svname, logname, NULL);
-                strcat(logname, "-params");
 
-                memset(&cfg, 0, sizeof(cfg));
-                rc = lustre_log_process(lsi, logname, &cfg);
-                OBD_FREE(logname, MGS_PARAM_MAXLEN);
+                rc = server_name2fsname(lsi->lsi_svname, logname, NULL);
                 if (rc) {
-                        CERROR("failed to process parameters %s: %d\n",
-                               logname, rc);
-                        GOTO(out_mnt, rc);
+                        LCONSOLE_WARN("%s: Skipping parameter processing due "
+                                      "to non-standard service name '%s'\n",
+                                      lsi->lsi_svname, lsi->lsi_svname);
+                } else {
+                        strcat(logname, "-params");
+                        memset(&cfg, 0, sizeof(cfg));
+
+                        rc = lustre_log_process(lsi, logname, &cfg);
+                        if (rc)
+                                LCONSOLE_WARN("%s: Skipping parameter "
+                                              "processing for log %s: %d\n",
+                                              lsi->lsi_svname, logname, rc);
                 }
+
+                OBD_FREE(logname, MGS_PARAM_MAXLEN);
         }
 
         rc = lustre_osvfs_mount(lsi->lsi_vfsp);
@@ -1869,17 +1876,31 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
         /* if MDS start with --nomgs, don't stop MGS then */
         if (IS_MGS(lsi) && !(lsi->lsi_lmd->lmd_flags & LMD_FLG_NOMGS)) {
                 char *logname;
+                int rc;
 
                 OBD_ALLOC(logname, MGS_PARAM_MAXLEN);
                 if (!logname) {
-                        LCONSOLE_WARN("Stopping mgs failed %d, please "
-                                      "try again.", -ENOMEM);
-                        return;
+                        LCONSOLE_WARN("%s: Warning updated parameters have "
+                                      "not been saved: %d\n",
+                                      lsi->lsi_svname, -ENOMEM);
+                } else {
+                        rc = server_name2fsname(lsi->lsi_svname, logname, NULL);
+                        if (rc) {
+                                LCONSOLE_WARN("%s: Warning updated parameters "
+                                              "were not saved due to a non-"
+                                              "standard service name '%s'\n",
+                                              lsi->lsi_svname, lsi->lsi_svname);
+                        } else {
+                                strcat(logname, "-params");
+
+                                /* tell the mgc to drop parameter config log */
+                                rc = lustre_log_end(lsi, logname, NULL);
+                                if (rc)
+                                        LCONSOLE_WARN("%s: Warning failed to "
+                                                      "drop parameter log %d\n",
+                                                      lsi->lsi_svname, rc);
+                        }
                 }
-                server_name2fsname(lsi->lsi_svname, logname, NULL);
-                strcat(logname, "-params");
-                /* tell the mgc to drop parameter config log */
-                lustre_log_end(lsi, logname, NULL);
                 OBD_FREE(logname, MGS_PARAM_MAXLEN);
 
                 server_stop_mgs(lsi);
