@@ -305,6 +305,7 @@ static int osp_precreate_send(struct osp_device *d)
         /* now we can wakeup all users awaiting for objects */
         /* XXX: how do we do if rc != 0 ? */
         osp_pre_update_status(d, rc);
+        cfs_waitq_signal(&d->opd_pre_user_waitq);
 
 out_req:
         ptlrpc_req_finished(req);
@@ -426,8 +427,7 @@ void osp_pre_update_status(struct osp_device *d, int rc)
         }
 
 out:
-        if (old != rc)
-                cfs_waitq_signal(&d->opd_pre_user_waitq);
+        cfs_waitq_signal(&d->opd_pre_user_waitq);
 }
 
 static int osp_precreate_thread(void *_arg)
@@ -491,6 +491,7 @@ static int osp_precreate_thread(void *_arg)
                 if (osp_precreate_running(d) && !d->opd_got_disconnected) {
                         /* now we can wakeup all users awaiting for objects */
                         osp_pre_update_status(d, 0);
+                        cfs_waitq_signal(&d->opd_pre_user_waitq);
                 }
 
                 /*
