@@ -862,10 +862,12 @@ static int server_register_target(struct lustre_sb_info *lsi)
                                 " on the MGS node.\n", lsi->lsi_svname);
                 } else if (writeconf) {
                         LCONSOLE_ERROR_MSG(0x15f,
-                                "Communication to the MGS return error %d. "
-                                "Is the MGS running?\n", rc);
+                                "Error communicating with the MGS (%d), "
+                                "is the MGS running?\n", rc);
                 } else {
-                        CERROR("Cannot talk to the MGS: %d, not fatal\n", rc);
+                        LCONSOLE_WARN(
+                                "Error communicating with the MGS (%d), "
+                                "is the MGS running?\n", rc);
                         /* reset the error code for non-fatal error. */
                         rc = 0;
                 }
@@ -968,7 +970,8 @@ static int server_start_targets(struct lustre_sb_info *lsi)
                                                  0, 0, 0, 0);
                         if (rc) {
                                 cfs_mutex_unlock(&server_start_lock);
-                                CERROR("failed to start OSS: %d\n", rc);
+                                CDEBUG(D_MOUNT, "failed to start server %s: "
+                                       "%d\n", lsi->lsi_svname, rc);
                                 RETURN(rc);
                         }
                 }
@@ -979,14 +982,14 @@ static int server_start_targets(struct lustre_sb_info *lsi)
         memset(&cfg, 0, sizeof(cfg));
         rc = lustre_log_process(lsi, lsi->lsi_svname, &cfg);
         if (rc) {
-                CERROR("failed to start server %s: %d\n",
+                CDEBUG(D_MOUNT, "failed to start server %s: %d\n",
                        lsi->lsi_svname, rc);
                 RETURN(rc);
         }
 
         obd = class_name2obd(lsi->lsi_svname);
         if (!obd) {
-                CERROR("no server named %s was started\n",
+                CDEBUG(D_MOUNT, "no server named %s was started\n",
                        lsi->lsi_svname);
                 RETURN(-ENXIO);
         }
@@ -1233,8 +1236,8 @@ static int lustre_server_mount(struct lustre_sb_info *lsi, unsigned long mflags)
 
         rc = lsi_prepare(lsi);
         if (rc) {
-                CERROR("Unable to mount device %s: %d\n",
-                       lsi->lsi_lmd->lmd_dev, rc);
+                LCONSOLE_WARN("%s: Unable to prepare device: %d\n",
+                              lsi->lsi_lmd->lmd_dev, rc);
                 GOTO(out_lsi, rc);
         }
 
@@ -1251,8 +1254,8 @@ static int lustre_server_mount(struct lustre_sb_info *lsi, unsigned long mflags)
         /* Start low level OSD */
         rc = osd_start(lsi, mflags);
         if (rc) {
-                CERROR("Unable to start osd on %s: %d\n",
-                       lsi->lsi_lmd->lmd_dev, rc);
+                LCONSOLE_WARN("%s: Unable to start osd: %d\n",
+                              lsi->lsi_svname, rc);
                 GOTO(out_lsi, rc);
         }
 
@@ -1276,7 +1279,8 @@ static int lustre_server_mount(struct lustre_sb_info *lsi, unsigned long mflags)
             (IS_OST(lsi) || IS_MDT(lsi))) {
                 rc = server_start_targets(lsi);
                 if (rc < 0) {
-                        CERROR("Unable to start targets: %d\n", rc);
+                        LCONSOLE_WARN("%s: Unable to start target: %d\n",
+                                      lsi->lsi_svname, rc);
                         GOTO(out_mnt, rc);
                 }
         /* FIXME overmount client here,
@@ -1483,7 +1487,7 @@ static int lmd_parse_exclusion(struct lustre_mount_data *lmd, char *ptr)
                 s1++;
                 rc = server_name2index(s1, &index, &s2);
                 if (rc < 0) {
-                        CERROR("Can't parse server name '%s'\n", s1);
+                        LCONSOLE_WARN("Can't parse server name '%s'\n", s1);
                         break;
                 }
                 if (rc == LDD_F_SV_TYPE_OST)
@@ -1767,7 +1771,7 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
         RETURN(rc);
 
 invalid:
-        CERROR("Bad mount options %s\n", options);
+        LCONSOLE_WARN("Bad mount options %s\n", options);
         RETURN(-EINVAL);
 }
 
@@ -1847,7 +1851,7 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
                         /* Normal cleanup should stop osd */
                         lsi->lsi_dt_dev = NULL;
                 } else {
-                        CERROR("no obd %s\n", lsi->lsi_svname);
+                        CDEBUG(D_MOUNT, "no obd %s\n", lsi->lsi_svname);
                 }
         }
 
@@ -1952,10 +1956,9 @@ int lustre_mount(void *osvfsp, void *osmnt, void *data, unsigned long mflags)
 
 out:
         if (rc) {
-                CERROR("Unable to mount (%d)\n", rc);
+                CDEBUG(D_MOUNT, "Mount %s failed: %d\n", lmd->lmd_dev, rc);
         } else {
-                CDEBUG(D_SUPER, "Mount %s complete\n",
-                       lmd->lmd_dev);
+                CDEBUG(D_MOUNT, "Mount %s complete\n", lmd->lmd_dev);
         }
         cfs_lockdep_on();
         return rc;
