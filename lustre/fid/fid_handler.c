@@ -141,8 +141,8 @@ static int __seq_server_alloc_super(struct lu_server_seq *seq,
 
         rc = seq_store_update(env, seq, out, 1 /* sync */);
 
-        CDEBUG(D_INFO, "%s: super-sequence allocation rc = %d "
-               DRANGE"\n", seq->lss_name, rc, PRANGE(out));
+	CWARN("%s: super-sequence allocation rc = %d "
+		DRANGE"\n", seq->lss_name, rc, PRANGE(out));
 
         RETURN(rc);
 }
@@ -277,12 +277,16 @@ static int __seq_server_alloc_meta(struct lu_server_seq *seq,
         }
 
         rc = range_alloc_set(env, out, seq);
-        if (rc == 0) {
-                CDEBUG(D_INFO, "%s: Allocated meta-sequence "
-                       DRANGE"\n", seq->lss_name, PRANGE(out));
-        }
+	if (rc != 0) {
+		CERROR("%s: Allocated meta-sequence failed: rc = %d\n",
+			seq->lss_name, rc);
+		RETURN(rc);
+	}
 
-        RETURN(rc);
+	CDEBUG(D_INFO, "%s: Allocated meta-sequence " DRANGE"\n",
+		seq->lss_name, PRANGE(out));
+
+	RETURN(rc);
 }
 
 int seq_server_alloc_meta(struct lu_server_seq *seq,
