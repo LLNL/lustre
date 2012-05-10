@@ -1294,24 +1294,6 @@ static int lustre_server_mount(struct lustre_sb_info *lsi, unsigned long mflags)
            Client will not finish until all servers are connected.
            Note - MGS-only server does NOT get a client, since there is no
            lustre fs associated - the MGS is for all lustre fs's */
-        } else if (IS_MGS(lsi) && !(lsi->lsi_lmd->lmd_flags & LMD_FLG_NOMGS)) {
-                struct config_llog_instance cfg;
-                char *logname;
-
-                OBD_ALLOC(logname, MGS_PARAM_MAXLEN);
-                if (logname == NULL)
-                        GOTO(out_mnt, rc = -ENOMEM);
-                server_name2fsname(lsi->lsi_svname, logname, NULL);
-                strcat(logname, "-params");
-
-                memset(&cfg, 0, sizeof(cfg));
-                rc = lustre_log_process(lsi, logname, &cfg);
-                OBD_FREE(logname, MGS_PARAM_MAXLEN);
-                if (rc) {
-                        CERROR("failed to process parameters %s: %d\n",
-                               logname, rc);
-                        GOTO(out_mnt, rc);
-                }
         }
 
         rc = lustre_osvfs_mount(lsi->lsi_vfsp);
@@ -1870,25 +1852,12 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
                 }
         }
 
-        /* if MDS start with --nomgs, don't stop MGS then */
-        if (IS_MGS(lsi) && !(lsi->lsi_lmd->lmd_flags & LMD_FLG_NOMGS)) {
-                char *logname;
-
-                OBD_ALLOC(logname, MGS_PARAM_MAXLEN);
-                if (!logname) {
-                        LCONSOLE_WARN("Stopping mgs failed %d, please "
-                                      "try again.", -ENOMEM);
-                        return;
+        if (IS_MGS(lsi)) {
+                /* if MDS start with --nomgs, don't stop MGS then */
+                if (!(lsi->lsi_lmd->lmd_flags & LMD_FLG_NOMGS)) {
+                        server_stop_mgs(lsi);
+                        lsi->lsi_dt_dev = NULL;
                 }
-                server_name2fsname(lsi->lsi_svname, logname, NULL);
-                strcat(logname, "-params");
-                /* tell the mgc to drop parameter config log */
-                lustre_log_end(lsi, logname, NULL);
-                OBD_FREE(logname, MGS_PARAM_MAXLEN);
-
-                server_stop_mgs(lsi);
-                /* XXX: when OSD is working with MGS, uncomment this line:
-                lsi->lsi_dt_dev = NULL; */
         }
 
         /* Clean the mgc and lsi */
