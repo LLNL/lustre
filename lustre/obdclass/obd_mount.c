@@ -1927,7 +1927,7 @@ void lustre_server_umount(struct lustre_sb_info *lsi)
                 OBD_FREE(extraname, strlen(extraname) + 1);
         }
 
-        LCONSOLE_WARN("server umount %s complete\n", tmpname);
+        LCONSOLE_INFO("%s: Unmounted\n", tmpname);
         OBD_FREE(tmpname, tmpname_sz);
         EXIT;
 }
@@ -1998,12 +1998,12 @@ int lustre_mount(void *osvfsp, void *osmnt, void *data, unsigned long mflags)
         } else {
                 CDEBUG(D_MOUNT, "Mounting server from %s\n", lmd->lmd_dev);
                 rc = lustre_server_mount(lsi, mflags);
+                if (!rc)
+                        LCONSOLE_INFO("%s: Mounted %s\n",
+                                      lsi->lsi_svname, lmd->lmd_dev);
         }
 
 out:
-        if (!rc)
-                LCONSOLE_INFO("%s: Mounted\n", lmd->lmd_dev);
-
         cfs_lockdep_on();
         return rc;
 }
