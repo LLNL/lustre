@@ -346,7 +346,7 @@ struct ldlm_pool {
          */
         cfs_atomic_t           pl_lock_volume_factor;
         /**
-         * Time when last slv from server was obtained.
+         * Time when last slv from server was obtained. WRONG
          */
         time_t                 pl_recalc_time;
         /**
