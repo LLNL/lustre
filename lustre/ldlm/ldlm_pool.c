@@ -114,6 +114,14 @@
 
 #ifdef HAVE_LRU_RESIZE_SUPPORT
 
+int ldlm_poold_enabled = 1;
+CFS_MODULE_PARM(ldlm_poold_enabled, "i", int, 0444,
+                "enable or disable the ldlm_poold_thread");
+
+int ldlm_poold_period = LDLM_POOLS_THREAD_PERIOD;
+CFS_MODULE_PARM(ldlm_poold_period, "i", int, 0644,
+                "ldlm_poold recalc period");
+
 /*
  * 50 ldlm locks for 1MB of RAM.
  */
@@ -1319,7 +1327,7 @@ static int ldlm_pools_thread_main(void *arg)
                  * Wait until the next check time, or until we're
                  * stopped.
                  */
-                lwi = LWI_TIMEOUT(cfs_time_seconds(LDLM_POOLS_THREAD_PERIOD),
+                lwi = LWI_TIMEOUT(cfs_time_seconds(ldlm_poold_period),
                                   NULL, NULL);
                 l_wait_event(thread->t_ctl_waitq, (thread->t_flags &
                                                    (SVC_STOPPING|SVC_EVENT)),
@@ -1401,10 +1409,11 @@ static void ldlm_pools_thread_stop(void)
 
 int ldlm_pools_init(void)
 {
-        int rc;
+        int rc = 0;
         ENTRY;
 
-        rc = ldlm_pools_thread_start();
+        if (ldlm_poold_enabled)
+                rc = ldlm_pools_thread_start();
         if (rc == 0) {
                 ldlm_pools_srv_shrinker =
                         cfs_set_shrinker(CFS_DEFAULT_SEEKS,
