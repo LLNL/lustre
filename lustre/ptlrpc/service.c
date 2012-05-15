@@ -83,12 +83,15 @@ ptlrpc_alloc_rqbd (struct ptlrpc_service *svc)
         rqbd->rqbd_cbid.cbid_fn = request_in_callback;
         rqbd->rqbd_cbid.cbid_arg = rqbd;
         CFS_INIT_LIST_HEAD(&rqbd->rqbd_reqs);
-        OBD_ALLOC_LARGE(rqbd->rqbd_buffer, svc->srv_buf_size);
+
+        rqbd->rqbd_buffer = cfs_mem_cache_alloc(svc->rqbd_cache, OBD_ALLOC_MASK);
 
         if (rqbd->rqbd_buffer == NULL) {
                 OBD_FREE_PTR(rqbd);
                 return (NULL);
         }
+
+        memset(rqbd->rqbd_buffer, 0, svc->srv_buf_size);
 
         cfs_spin_lock(&svc->srv_lock);
         cfs_list_add(&rqbd->rqbd_list, &svc->srv_idle_rqbds);
@@ -111,7 +114,8 @@ ptlrpc_free_rqbd (struct ptlrpc_request_buffer_desc *rqbd)
         svc->srv_nbufs--;
         cfs_spin_unlock(&svc->srv_lock);
 
-        OBD_FREE_LARGE(rqbd->rqbd_buffer, svc->srv_buf_size);
+        cfs_mem_cache_free(svc->rqbd_cache, rqbd->rqbd_buffer);
+
         OBD_FREE_PTR(rqbd);
 }
 
@@ -582,6 +586,22 @@ ptlrpc_init_svc(int nbufs, int bufsize, int max_req_size, int max_reply_size,
         cfs_spin_lock (&ptlrpc_all_services_lock);
         cfs_list_add (&service->srv_list, &ptlrpc_all_services);
         cfs_spin_unlock (&ptlrpc_all_services_lock);
+
+        /* Plus two for separator and null terminator characters */
+        service->rqbd_cache_name_len = strlen("ptlrpc_svc") +
+                                       strlen(service->srv_name) + 2;
+
+        OBD_ALLOC(service->rqbd_cache_name, service->rqbd_cache_name_len);
+        if (service->rqbd_cache_name == NULL)
+                GOTO(failed, NULL);
+
+        snprintf(service->rqbd_cache_name, service->rqbd_cache_name_len,
+                 "%s-%s", "ptlrpc_svc", service->srv_name);
+
+        service->rqbd_cache = cfs_mem_cache_create(service->rqbd_cache_name,
+                                                   service->srv_buf_size, 0, 0);
+        if (service->rqbd_cache == NULL)
+                GOTO(failed, NULL);
 
         /* Now allocate the request buffers */
         rc = ptlrpc_grow_req_bufs(service);
@@ -2728,6 +2748,10 @@ int ptlrpc_unregister_service(struct ptlrpc_service *service)
         }
 
         ptlrpc_wait_replies(service);
+
+        /* XXX: What happens if these are NULL? */
+        cfs_mem_cache_destroy(service->rqbd_cache);
+        OBD_FREE(service->rqbd_cache_name, service->rqbd_cache_name_len);
 
         cfs_list_for_each_entry_safe(rs, t, &service->srv_free_rs_list,
                                      rs_list) {
