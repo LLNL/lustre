@@ -1187,6 +1187,12 @@ struct ptlrpc_service {
         int                             srv_nrqbd_receiving;
         /** timeout before re-posting reqs, in tick */
         cfs_duration_t                  srv_rqbd_timeout;
+        /** request buffer descriptor cache name */
+        char                           *rqbd_cache_name;
+        /** request buffer descriptor cache name length */
+        unsigned int                    rqbd_cache_name_len;
+        /** request buffer descriptor cache */
+        cfs_mem_cache_t                *rqbd_cache;
         /** request buffers to be reposted */
         cfs_list_t                      srv_idle_rqbds;
         /** req buffers receiving */
