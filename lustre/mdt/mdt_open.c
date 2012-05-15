@@ -1477,6 +1477,13 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
         EXIT;
 out_child:
         mdt_object_put(info->mti_env, child);
+        if (result)
+                CERROR("open "DFID"/(%s->"DFID") cr_flag="LPO64" mode=0%06o "
+                       "msg_flag=0x%x failed: %d\n",
+                       PFID(rr->rr_fid1), rr->rr_name,
+                       PFID(rr->rr_fid2), create_flags,
+                       ma->ma_attr.la_mode, msg_flags, result);
+
 out_parent:
         mdt_object_unlock_put(info, parent, lh, result || !created);
 out:

@@ -603,25 +603,27 @@ static struct dentry *ll_lookup_nd(struct inode *parent, struct dentry *dentry,
                                                        (struct ptlrpc_request *)
                                                           it->d.lustre.it_data);
                                 } else {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17))
-/* 2.6.1[456] have a bug in open_namei() that forgets to check
- * nd->intent.open.file for error, so we need to return it as lookup's result
- * instead */
                                         struct file *filp;
                                         nd->intent.open.file->private_data = it;
                                         filp =lookup_instantiate_filp(nd,dentry,
                                                                       NULL);
                                         if (IS_ERR(filp)) {
+                                                CERROR("lookup open file %.*s "
+                                                       DFID" failed: %ld.\n",
+                                                       dentry->d_name.len,
+                                                       dentry->d_name.name,
+                                                       PFID(ll_inode2fid(
+                                                              dentry->d_inode)),
+                                                       PTR_ERR(filp));
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17))
+/* 2.6.1[456] have a bug in open_namei() that forgets to check
+ * nd->intent.open.file for error, so we need to return it as lookup's result
+ * instead */
                                                 if (de)
                                                         dput(de);
                                                 de = (struct dentry *) filp;
-                                        }
-#else
-                                        nd->intent.open.file->private_data = it;
-                                        (void)lookup_instantiate_filp(nd,dentry,
-                                                                      NULL);
 #endif
-
+                                        }
                                 }
 #else /* HAVE_FILE_IN_STRUCT_INTENT */
                                 /* Release open handle as we have no way to
@@ -712,13 +714,19 @@ static int ll_create_it(struct inode *dir, struct dentry *dentry, int mode,
                dir->i_generation, dir, LL_IT2STR(it));
 
         rc = it_open_error(DISP_OPEN_CREATE, it);
-        if (rc)
+        if (rc) {
+                CERROR("create file %.*s failed: %d.\n",
+                       dentry->d_name.len, dentry->d_name.name, rc);
                 RETURN(rc);
+        }
 
         inode = ll_create_node(dir, dentry->d_name.name, dentry->d_name.len,
                                NULL, 0, mode, 0, it);
-        if (IS_ERR(inode))
+        if (IS_ERR(inode)) {
+                CERROR("create file %.*s inode failed: %ld.\n",
+                       dentry->d_name.len, dentry->d_name.name, PTR_ERR(inode));
                 RETURN(PTR_ERR(inode));
+        }
 
         d_instantiate(dentry, inode);
         RETURN(0);
@@ -831,14 +839,24 @@ static int ll_create_nd(struct inode *dir, struct dentry *dentry,
         /* Was there an error? Propagate it! */
         if (it->d.lustre.it_status) {
                 rc = it->d.lustre.it_status;
+                CERROR("create file %.*s failed: %d.\n",
+                       dentry->d_name.len, dentry->d_name.name, rc);
                 goto out;
         }
 
         rc = ll_create_it(dir, dentry, mode, it);
 #ifdef HAVE_FILE_IN_STRUCT_INTENT
         if (nd && (nd->flags & LOOKUP_OPEN) && dentry->d_inode) { /* Open */
+                struct file *filp;
+
                 nd->intent.open.file->private_data = it;
-                lookup_instantiate_filp(nd, dentry, NULL);
+                filp = lookup_instantiate_filp(nd, dentry, NULL);
+                if (IS_ERR(filp))
+                        CERROR("create open file %.*s "DFID" failed: %ld.\n",
+                               dentry->d_name.len, dentry->d_name.name,
+                               PFID(ll_inode2fid(dentry->d_inode)),
+                               PTR_ERR(filp));
+                        
         }
 #else
         ll_release_openhandle(dentry,it);

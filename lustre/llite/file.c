@@ -680,6 +680,9 @@ out_openerr:
                         ll_stop_statahead(inode, lli->lli_opendir_key);
                 if (fd != NULL)
                         ll_file_data_put(fd);
+
+                CERROR("open "DFID" failed: %d.\n",
+                       PFID(ll_inode2fid(inode)), rc);
         }
 
         return rc;
