@@ -86,7 +86,13 @@ ptlrpc_alloc_rqbd (struct ptlrpc_service *svc)
         rqbd->rqbd_cbid.cbid_fn = request_in_callback;
         rqbd->rqbd_cbid.cbid_arg = rqbd;
         CFS_INIT_LIST_HEAD(&rqbd->rqbd_reqs);
+
+#ifdef __KERNEL__
+        rqbd->rqbd_buffer = kmem_cache_alloc(svc->rqbd_cache, OBD_ALLOC_MASK);
+        memset(rqbd->rqbd_buffer, 0, svc->srv_buf_size);
+#else
         OBD_ALLOC_LARGE(rqbd->rqbd_buffer, svc->srv_buf_size);
+#endif
 
         if (rqbd->rqbd_buffer == NULL) {
                 OBD_FREE_PTR(rqbd);
@@ -114,7 +120,12 @@ ptlrpc_free_rqbd (struct ptlrpc_request_buffer_desc *rqbd)
         svc->srv_nbufs--;
         cfs_spin_unlock(&svc->srv_lock);
 
+#ifdef __KERNEL__
+        kmem_cache_free(svc->rqbd_cache, rqbd->rqbd_buffer);
+#else
         OBD_FREE_LARGE(rqbd->rqbd_buffer, svc->srv_buf_size);
+#endif
+
         OBD_FREE_PTR(rqbd);
 }
 
@@ -490,6 +501,9 @@ ptlrpc_init_svc(int nbufs, int bufsize, int max_req_size, int max_reply_size,
         struct ptlrpc_at_array *array;
         struct ptlrpc_service  *service;
         unsigned int            size, index;
+#ifdef __KERNEL__
+        int len;
+#endif
         ENTRY;
 
         LASSERT (nbufs > 0);
@@ -574,6 +588,22 @@ ptlrpc_init_svc(int nbufs, int bufsize, int max_req_size, int max_reply_size,
         cfs_spin_lock (&ptlrpc_all_services_lock);
         cfs_list_add (&service->srv_list, &ptlrpc_all_services);
         cfs_spin_unlock (&ptlrpc_all_services_lock);
+
+#ifdef __KERNEL__
+        /* Plus two for separator and null terminator characters */
+        len = strlen("ptlrpc_svc") + strlen(service->srv_name) + 2;
+        service->rqbd_cache_name = kmalloc(len, GFP_KERNEL);
+        if (service->rqbd_cache_name == NULL)
+                GOTO(failed, NULL);
+
+        snprintf(service->rqbd_cache_name, len, "%s-%s", "ptlrpc_svc",
+                 service->srv_name);
+
+        service->rqbd_cache = kmem_cache_create(service->rqbd_cache_name,
+                    service->srv_buf_size, 0, SLAB_HWCACHE_ALIGN, NULL);
+        if (service->rqbd_cache == NULL)
+                GOTO(failed, NULL);
+#endif
 
         /* Now allocate the request buffers */
         rc = ptlrpc_grow_req_bufs(service);
@@ -2732,6 +2762,11 @@ int ptlrpc_unregister_service(struct ptlrpc_service *service)
         }
 
         ptlrpc_wait_replies(service);
+
+#ifdef __KERNEL__
+        kmem_cache_destroy(service->rqbd_cache);
+        kfree(service->rqbd_cache_name);
+#endif
 
         cfs_list_for_each_entry_safe(rs, t, &service->srv_free_rs_list,
                                      rs_list) {

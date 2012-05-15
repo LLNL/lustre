@@ -79,6 +79,10 @@
 #include <obd_support.h>
 #include <lustre_ver.h>
 
+#ifdef __KERNEL__
+#include <linux/slab.h>
+#endif
+
 /* MD flags we _always_ use */
 #define PTLRPC_MD_OPTIONS  0
 
@@ -1130,6 +1134,12 @@ struct ptlrpc_service {
         int                             srv_nrqbd_receiving;
         /** timeout before re-posting reqs, in tick */
         cfs_duration_t                  srv_rqbd_timeout;
+#ifdef __KERNEL__
+        /** request buffer descriptor cache name */
+        char                           *rqbd_cache_name;
+        /** request buffer descriptor cache */
+        struct kmem_cache              *rqbd_cache;
+#endif
         /** request buffers to be reposted */
         cfs_list_t                      srv_idle_rqbds;
         /** req buffers receiving */
