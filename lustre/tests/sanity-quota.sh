@@ -25,11 +25,6 @@ ONLY=${ONLY:-"$*"}
 ALWAYS_EXCEPT="0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 $SANITY_QUOTA_EXCEPT"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
-# ORI-666 - 33
-if [ "$FSTYPE" = "zfs" ]; then
-    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 33"
-fi
-
 case `uname -r` in
 2.6*) FSTYPE=${FSTYPE:-ldiskfs};;
 *) error "unsupported kernel" ;;
@@ -2242,9 +2237,12 @@ test_33() {
 
         echo "Write files..."
         for i in `seq 0 $INODES`; do
-                $RUNAS dd if=/dev/zero of=$DIR/$tdir/$tfile-$i bs=$BLK_SZ \
-                   count=$BLK_CNT oflag=sync 2>/dev/null || error "write failed"
+                $RUNAS dd if=/dev/zero of=$DIR/$tdir/$tfile-$i conv=fsync \
+                   bs=$((BLK_SZ * BLK_CNT)) count=1 2>/dev/null || \
+                   error "write failed"
+		echo "Iteration $i/$INODES completed"
         done
+        sync; sync_all_data;
 
         echo "Verify disk usage after write"
         USED=`getquota -u $TSTID global curspace`
@@ -2255,12 +2253,9 @@ test_33() {
               error "Used space for group $TSTID is $USED, expected $TOTAL_BLKS"
 
         echo "Verify inode usage after write"
-        # With zfs, inode usage is computed from block usage, so it cannot be
-        # accurate. As a result, we only check that inode usage is increasing
-        [ "$FSTYPE" == "zfs" ] && INODES=1
         USED=`getquota -u $TSTID global curinodes`
         [ $USED -lt $INODES ] && \
-               error "Used inode for user $TSTID is $USED, expected $INODES"
+              error "Used inode for user $TSTID is $USED, expected $INODES"
         USED=`getquota -g $TSTID global curinodes`
         [ $USED -lt $INODES ] && \
               error "Used inode for group $TSTID is $USED, expected $INODES"
@@ -2300,8 +2295,9 @@ test_34() {
         [ $USED -ne 0 ] && error "Used space ($USED) for group $TSTID isn't 0."
 
         echo "Write file..."
-        dd if=/dev/zero of=$DIR/$tdir/$tfile bs=$BLK_SZ count=$BLK_CNT \
-                oflag=sync 2>/dev/null || error "write failed"
+        dd if=/dev/zero of=$DIR/$tdir/$tfile bs=$((BLK_SZ * BLK_CNT)) count=1 \
+                conv=fsync 2>/dev/null || error "write failed"
+        sync; sync_all_data;
 
         echo "chown the file to user $TSTID"
         chown $TSTID $DIR/$tdir/$tfile || error "chown failed"
@@ -2349,8 +2345,9 @@ test_35() {
         trap cleanup_quota_test EXIT
 
         echo "Write file..."
-        $RUNAS dd if=/dev/zero of=$DIR/$tdir/$tfile bs=$BLK_SZ \
-                count=$BLK_CNT oflag=sync 2>/dev/null || error "write failed"
+        $RUNAS dd if=/dev/zero of=$DIR/$tdir/$tfile bs=$((BLK_SZ * BLK_CNT)) \
+                count=1 conv=fsync 2>/dev/null || error "write failed"
+        sync; sync_all_data;
 
         echo "Save disk usage before restart"
         ORIG_USR_SPACE=`getquota -u $TSTID global curspace`
