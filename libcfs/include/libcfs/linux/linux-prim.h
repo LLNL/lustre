@@ -279,6 +279,7 @@ typedef atomic_t cfs_atomic_t;
 #define cfs_atomic_inc_and_test(atom)        atomic_inc_and_test(atom)
 #define cfs_atomic_inc_return(atom)          atomic_inc_return(atom)
 #define cfs_atomic_inc_not_zero(atom)        atomic_inc_not_zero(atom)
+#define cfs_atomic_add_unless(atom, a, u)    atomic_add_unless(atom, a, u)
 #define cfs_atomic_dec(atom)                 atomic_dec(atom)
 #define cfs_atomic_dec_and_test(atom)        atomic_dec_and_test(atom)
 #define cfs_atomic_dec_and_lock(atom, lock)  atomic_dec_and_lock(atom, lock)

@@ -42,6 +42,9 @@
 
 #include "osc_cl_internal.h"
 
+static void osc_lru_del(struct client_obd *cli, struct osc_page *opg, int del);
+static void osc_lru_add(struct client_obd *cli, struct osc_page *opg);
+
 /** \addtogroup osc 
  *  @{ 
  */
@@ -203,6 +206,8 @@ static void osc_page_transfer_add(const struct lu_env *env,
         cfs_list_add(&opg->ops_inflight, &obj->oo_inflight[crt]);
         opg->ops_submitter = cfs_current();
         cfs_spin_unlock(&obj->oo_seatbelt);
+
+	osc_lru_del(osc_cli(obj), opg, 0);
 }
 
 static int osc_page_cache_add(const struct lu_env *env,
@@ -312,10 +317,22 @@ static void osc_page_completion_read(const struct lu_env *env,
                                      const struct cl_page_slice *slice,
                                      int ioret)
 {
-        struct osc_page *opg = cl2osc_page(slice);
+	struct osc_page   *opg = cl2osc_page(slice);
+	struct osc_object *obj = cl2osc(opg->ops_cl.cpl_obj);
 
         if (likely(opg->ops_lock))
                 osc_page_putref_lock(env, opg);
+	osc_lru_add(osc_cli(obj), opg);
+}
+
+static void osc_page_completion_write(const struct lu_env *env,
+				      const struct cl_page_slice *slice,
+				      int ioret)
+{
+	struct osc_page   *opg = cl2osc_page(slice);
+	struct osc_object *obj = cl2osc(slice->cpl_obj);
+
+	osc_lru_add(osc_cli(obj), opg);
 }
 
 static int osc_page_fail(const struct lu_env *env,
@@ -414,7 +431,8 @@ static void osc_page_delete(const struct lu_env *env,
         cfs_spin_lock(&obj->oo_seatbelt);
         cfs_list_del_init(&opg->ops_inflight);
         cfs_spin_unlock(&obj->oo_seatbelt);
-        EXIT;
+	osc_lru_del(osc_cli(obj), opg, 1);
+	EXIT;
 }
 
 void osc_page_clip(const struct lu_env *env, const struct cl_page_slice *slice,
@@ -472,13 +490,234 @@ static const struct cl_page_operations osc_page_ops = {
                         .cpo_completion = osc_page_completion_read
                 },
                 [CRT_WRITE] = {
-                        .cpo_cache_add  = osc_page_cache_add
+			.cpo_cache_add  = osc_page_cache_add,
+			.cpo_completion = osc_page_completion_write
                 }
         },
         .cpo_clip           = osc_page_clip,
 	.cpo_cancel         = osc_page_cancel,
 	.cpo_flush          = osc_page_flush
 };
+
+static void discard_pagevec(const struct lu_env *env, struct cl_io *io,
+			    struct cl_page **pvec, int maxcnt)
+{
+	int i;
+
+	for (i = 0; i < maxcnt; i++) {
+		struct cl_page *page = pvec[i];
+		if (page != NULL) {
+			cl_page_unmap(env, io, page);
+			cl_page_discard(env, io, page);
+			cl_page_disown(env, io, page);
+			cl_page_put(env, page);
+			pvec[i] = NULL;
+		}
+	}
+}
+
+/**
+ * Remove @target of pages from LRU. If @target is less than zero, it means
+ * reclaiming -target lru pages(not reuse it), this happens if administrator
+ * is setting max_cache_mb to a less value.
+ */
+int osc_lru_shrink(struct client_obd *cli, int target)
+{
+	struct cl_env_nest nest;
+	struct lu_env *env;
+	struct cl_io *io;
+	struct cl_object *clobj = NULL;
+	struct cl_page **pvec;
+	struct osc_page *opg;
+	int nrpages = target > 0 ? target : -target;
+	int maxscan = 0;
+	int count = 0;
+	int index = 0;
+	int rc = 0;
+	ENTRY;
+
+	LASSERT(cfs_atomic_read(&cli->cl_lru_in_list) >= 0);
+	if (cfs_atomic_read(&cli->cl_lru_in_list) == 0)
+		RETURN(0);
+
+	env = cl_env_nested_get(&nest);
+	if (IS_ERR(env))
+		RETURN(PTR_ERR(env));
+
+	pvec = osc_env_info(env)->oti_pvec;
+	memset(pvec, 0, sizeof(*pvec) * OTI_PVEC_SIZE);
+
+	io = &osc_env_info(env)->oti_io;
+
+	client_obd_list_lock(&cli->cl_lru_list_lock);
+	maxscan = max(nrpages << 1, cfs_atomic_read(&cli->cl_lru_in_list));
+	while (!cfs_list_empty(&cli->cl_lru_list)) {
+		struct cl_page *page;
+
+		if (--maxscan < 0)
+			break;
+
+		opg = cfs_list_entry(cli->cl_lru_list.next, struct osc_page,
+				     ops_lru);
+		page = cl_page_top(opg->ops_cl.cpl_page);
+		if (page->cp_state == CPS_FREEING) {
+			cfs_list_move_tail(&opg->ops_lru, &cli->cl_lru_list);
+			continue;
+		}
+
+		LASSERT(page->cp_obj != NULL);
+		if (clobj != page->cp_obj) {
+			struct cl_object *tmp = page->cp_obj;
+
+			cl_object_get(tmp);
+			client_obd_list_unlock(&cli->cl_lru_list_lock);
+
+			if (clobj != NULL) {
+				discard_pagevec(env, io, pvec, index);
+				index = 0;
+
+				cl_io_fini(env, io);
+				cl_object_put(env, clobj);
+				clobj = NULL;
+			}
+
+			clobj = tmp;
+			io->ci_obj = clobj;
+			rc = cl_io_init(env, io, CIT_MISC, clobj);
+			if (rc != 0)
+				break;
+
+			++maxscan;
+			client_obd_list_lock(&cli->cl_lru_list_lock);
+			continue;
+		}
+
+		cl_page_get(page);
+		if (cl_page_own_try(env, io, page) != 0) {
+			/* move this page to the end of list */
+			cfs_list_move_tail(&opg->ops_lru,
+					   &cli->cl_lru_list);
+			cl_page_put(env, page);
+			continue;
+		}
+
+		/* page is owned, will be discarded later. */
+		cfs_atomic_dec(&cli->cl_lru_in_list);
+		cfs_list_del_init(&opg->ops_lru);
+		opg->ops_in_lru = 0;
+
+		pvec[index++] = page;
+		if (++count >= nrpages)
+			break;
+
+		if (unlikely(index == OTI_PVEC_SIZE)) {
+			client_obd_list_unlock(&cli->cl_lru_list_lock);
+			discard_pagevec(env, io, pvec, index);
+			index = 0;
+
+			client_obd_list_lock(&cli->cl_lru_list_lock);
+		}
+	}
+	client_obd_list_unlock(&cli->cl_lru_list_lock);
+
+	if (clobj != NULL) {
+		discard_pagevec(env, io, pvec, index);
+
+		cl_io_fini(env, io);
+		cl_object_put(env, clobj);
+	}
+	cl_env_nested_put(&nest, env);
+
+	if (target > 0 && count > 0) {
+		cfs_atomic_add(count, &cli->cl_lru_left);
+		cfs_waitq_broadcast(&cli->cl_lru_waitq);
+	}
+
+	RETURN(count > 0 ? count : rc);
+}
+
+static void osc_lru_add(struct client_obd *cli, struct osc_page *opg)
+{
+	int wake = 0;
+
+	if (!opg->ops_in_lru)
+		return;
+
+	cfs_atomic_dec(&cli->cl_lru_busy);
+	client_obd_list_lock(&cli->cl_lru_list_lock);
+	if (cfs_list_empty(&opg->ops_lru)) {
+		cfs_list_move_tail(&opg->ops_lru, &cli->cl_lru_list);
+		cfs_atomic_inc(&cli->cl_lru_in_list);
+		wake = 1;
+	}
+	client_obd_list_unlock(&cli->cl_lru_list_lock);
+	if (wake)
+		cfs_waitq_signal(&cli->cl_lru_waitq);
+}
+
+static void osc_lru_del(struct client_obd *cli, struct osc_page *opg, int del)
+{
+	if (opg->ops_in_lru) {
+		client_obd_list_lock(&cli->cl_lru_list_lock);
+		if (!cfs_list_empty(&opg->ops_lru)) {
+			LASSERT(cfs_atomic_read(&cli->cl_lru_in_list) > 0);
+			cfs_list_del_init(&opg->ops_lru);
+			cfs_atomic_dec_return(&cli->cl_lru_in_list);
+			if (!del)
+				cfs_atomic_inc(&cli->cl_lru_busy);
+		} else if (del) {
+			LASSERT(cfs_atomic_read(&cli->cl_lru_busy) > 0);
+			cfs_atomic_dec(&cli->cl_lru_busy);
+		}
+		client_obd_list_unlock(&cli->cl_lru_list_lock);
+		if (del) {
+			cfs_atomic_inc(&cli->cl_lru_left);
+			cfs_waitq_signal(&cli->cl_lru_waitq);
+		}
+	} else {
+		LASSERT(cfs_list_empty(&opg->ops_lru));
+	}
+}
+
+static int osc_lru_reserve(const struct lu_env *env, struct osc_object *obj,
+			   struct osc_page *opg)
+{
+	struct l_wait_info lwi = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
+	struct client_obd *cli = osc_cli(obj);
+	int rc = 0;
+	ENTRY;
+
+	LASSERT(cfs_atomic_read(&cli->cl_lru_left) >= 0);
+	while (!cfs_atomic_add_unless(&cli->cl_lru_left, -1, 0)) {
+		int gen;
+
+		/* run out of lru spaces, try to drop some */
+		rc = osc_lru_shrink(cli, 32);
+		if (rc < 0)
+			break;
+		if (rc > 0)
+			continue;
+
+		cfs_cond_resched();
+
+		/* slowest case, all of caching pages are busy */
+		gen = cfs_atomic_read(&cli->cl_lru_in_list);
+		rc = l_wait_event(cli->cl_lru_waitq,
+			     (cfs_atomic_read(&cli->cl_lru_in_list) > 0 &&
+			      gen != cfs_atomic_read(&cli->cl_lru_in_list)) ||
+			     cfs_atomic_read(&cli->cl_lru_left) > 0, &lwi);
+		if (rc < 0)
+			break;
+	}
+
+	if (rc >= 0) {
+		cfs_atomic_inc(&cli->cl_lru_busy);
+		opg->ops_in_lru = 1;
+		rc = 0;
+	}
+
+	RETURN(rc);
+}
 
 struct cl_page *osc_page_init(const struct lu_env *env,
                               struct cl_object *obj,
@@ -509,9 +748,15 @@ struct cl_page *osc_page_init(const struct lu_env *env,
                 opg->ops_temp = !osc_page_protected(env, opg, CLM_READ, 1);
 #endif
                 CFS_INIT_LIST_HEAD(&opg->ops_inflight);
-        } else
-                result = -ENOMEM;
-        return ERR_PTR(result);
+		CFS_INIT_LIST_HEAD(&opg->ops_lru);
+	} else
+		result = -ENOMEM;
+
+	/* reserve an LRU space for this page */
+	if (page->cp_type == CPT_CACHEABLE && result == 0)
+		result = osc_lru_reserve(env, osc, opg);
+
+	return ERR_PTR(result);
 }
 
 /**

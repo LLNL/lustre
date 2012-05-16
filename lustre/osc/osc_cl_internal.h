@@ -100,6 +100,7 @@ struct osc_session {
         struct osc_io       os_io;
 };
 
+#define OTI_PVEC_SIZE 16
 struct osc_thread_info {
         struct ldlm_res_id      oti_resname;
         ldlm_policy_data_t      oti_policy;
@@ -107,7 +108,8 @@ struct osc_thread_info {
         struct cl_attr          oti_attr;
         struct lustre_handle    oti_handle;
         struct cl_page_list     oti_plist;
-	struct cl_io	    oti_io;
+	struct cl_io            oti_io;
+	struct cl_page         *oti_pvec[OTI_PVEC_SIZE];
 };
 
 struct osc_object {
@@ -359,10 +361,18 @@ struct osc_page {
          */
                               ops_temp:1,
         /**
+	 * in LRU?
+	 */
+			      ops_in_lru:1,
+	/**
          * Set if the page must be transferred with OBD_BRW_SRVLOCK.
          */
                               ops_srvlock:1;
         /**
+	 * lru page list.
+	 */
+	cfs_list_t            ops_lru;
+	/**
          * Linkage into a per-osc_object list of pages in flight. For
          * debugging.
          */

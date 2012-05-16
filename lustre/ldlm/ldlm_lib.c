@@ -333,6 +333,16 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
         cfs_spin_lock_init(&cli->cl_write_page_hist.oh_lock);
         cfs_spin_lock_init(&cli->cl_read_offset_hist.oh_lock);
         cfs_spin_lock_init(&cli->cl_write_offset_hist.oh_lock);
+
+	/* lru for osc. */
+	cli->cl_lru_total = 128 << (20 - CFS_PAGE_SHIFT); /* 128M by default */
+	cfs_atomic_set(&cli->cl_lru_left, cli->cl_lru_total);
+	cfs_atomic_set(&cli->cl_lru_in_list, 0);
+	cfs_atomic_set(&cli->cl_lru_busy, 0);
+	CFS_INIT_LIST_HEAD(&cli->cl_lru_list);
+	cfs_waitq_init(&cli->cl_lru_waitq);
+	client_obd_list_lock_init(&cli->cl_lru_list_lock);
+
         cfs_waitq_init(&cli->cl_destroy_waitq);
         cfs_atomic_set(&cli->cl_destroy_in_flight, 0);
 #ifdef ENABLE_CHECKSUM

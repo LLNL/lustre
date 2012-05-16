@@ -160,6 +160,58 @@ static int osc_wr_max_dirty_mb(struct file *file, const char *buffer,
         return count;
 }
 
+static int osc_rd_max_cache_mb(char *page, char **start, off_t off, int count,
+			       int *eof, void *data)
+{
+	struct obd_device *dev = data;
+	struct client_obd *cli = &dev->u.cli;
+	int rc;
+
+	rc = snprintf(page, count,
+		      "lru total: %dM, free: %dP, in lru: %dP, busy %dP.\n",
+		      cli->cl_lru_total >> (20 - CFS_PAGE_SHIFT),
+		      cfs_atomic_read(&cli->cl_lru_left),
+		      cfs_atomic_read(&cli->cl_lru_in_list),
+		      cfs_atomic_read(&cli->cl_lru_busy));
+
+	return rc;
+}
+
+static int osc_wr_max_cache_mb(struct file *file, const char *buffer,
+			       unsigned long count, void *data)
+{
+	struct obd_device *dev = data;
+	struct client_obd *cli = &dev->u.cli;
+	int pages_number, mult, rc, diff = 0;
+
+	mult = 1 << (20 - CFS_PAGE_SHIFT);
+	rc = lprocfs_write_frac_helper(buffer, count, &pages_number, mult);
+	if (rc)
+		return rc;
+
+	if (pages_number < 0 ||
+	    pages_number < cli->cl_dirty_max >> CFS_PAGE_SHIFT ||
+	    pages_number > cfs_num_physpages / 2) /* 1/2 of RAM */
+		return -ERANGE;
+
+	client_obd_list_lock(&cli->cl_lru_list_lock);
+	diff = pages_number - cli->cl_lru_total;
+	if (diff > 0) {
+		cfs_atomic_add(diff, &cli->cl_lru_left);
+		cfs_waitq_broadcast(&cli->cl_lru_waitq);
+	} else if (diff < 0) {
+		diff = pages_number - cfs_atomic_read(&cli->cl_lru_busy) -
+		       cfs_atomic_read(&cli->cl_lru_in_list);
+		if (diff >= 0)
+			cfs_atomic_set(&cli->cl_lru_left, diff);
+	}
+	cli->cl_lru_total = pages_number;
+	client_obd_list_unlock(&cli->cl_lru_list_lock);
+	if (diff < 0)
+		(void)osc_lru_shrink(cli, diff);
+	return count;
+}
+
 static int osc_rd_cur_dirty_bytes(char *page, char **start, off_t off,
                                   int count, int *eof, void *data)
 {
@@ -478,6 +530,7 @@ static struct lprocfs_vars lprocfs_osc_obd_vars[] = {
                                 osc_wr_max_rpcs_in_flight, 0 },
         { "destroys_in_flight", osc_rd_destroys_in_flight, 0, 0 },
         { "max_dirty_mb",    osc_rd_max_dirty_mb, osc_wr_max_dirty_mb, 0 },
+	{ "max_cache_mb",    osc_rd_max_cache_mb, osc_wr_max_cache_mb, 0 },
         { "cur_dirty_bytes", osc_rd_cur_dirty_bytes, 0, 0 },
         { "cur_grant_bytes", osc_rd_cur_grant_bytes,
                              osc_wr_cur_grant_bytes, 0 },
