@@ -404,4 +404,16 @@ int  cl_get_grouplock(struct cl_object *obj, unsigned long gid, int nonblock,
                       struct ccc_grouplock *cg);
 void cl_put_grouplock(struct ccc_grouplock *cg);
 
+/**
+ * Data structures for LRU management on lustre client mount
+ */
+struct cl_client_lru {
+	cfs_atomic_t	ccl_users; /* how many users(OSCs) of this data */
+	cfs_atomic_t	ccl_page_left;
+	unsigned long	ccl_page_max;
+	cfs_list_t	ccl_list; /* entities for lru - actually osc list */
+	cfs_spinlock_t	ccl_lock; /* lock for list */
+	unsigned int	ccl_reclaim_count; /* statistics */
+};
+
 #endif /*LCLIENT_H */
