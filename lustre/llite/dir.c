@@ -303,6 +303,13 @@ static unsigned char ll_dir_filetype_table[LL_DIR_FT_MAX] = {
         [LL_DIR_FT_SYMLINK]  = DT_LNK,
 };
 
+#ifndef SEEK_SET
+#define SEEK_SET	0	/* seek relative to beginning of file */
+#define SEEK_CUR	1	/* seek relative to current file position */
+#define SEEK_END	2	/* seek relative to end of file */
+#define SEEK_MAX	SEEK_END
+#endif
+
 /*
  * Process one page. Returns:
  *
