@@ -260,7 +260,7 @@ config_recover_log_add(struct obd_device *obd, char *fsname,
         struct config_llog_data *cld;
         char logname[32];
 
-        if (IS_SERVER(lsi) && !IS_MDT(lsi))
+        if (IS_SERVER(lsi) && IS_OST(lsi))
                 return NULL;
 
         /* we have to use different llog for clients and mdts for cmd
