@@ -276,7 +276,10 @@ static int ofd_obd_disconnect(struct obd_export *exp)
         if (rc)
                 RETURN(rc);
 
-        lut_client_del(&env, exp);
+	if (exp->exp_obd->obd_replayable &&
+	    (!exp->exp_obd->obd_fail || exp->exp_failed))
+		lut_client_del(&env, exp);
+
         lu_env_fini(&env);
 
         class_export_put(exp);
