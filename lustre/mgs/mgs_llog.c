@@ -2246,6 +2246,20 @@ static int mgs_write_log_sys(const struct lu_env *env,
         rc = mgs_write_log_direct_all(env, mgs, fsdb, mti,
                                       *tmp == '\0' ? NULL : lcfg,
                                       mti->mti_fsname, sys);
+	if (rc == 0 && *tmp != '\0') {
+		switch (cmd) {
+		case LCFG_SET_TIMEOUT:
+			if (!obd_timeout_set || val > obd_timeout)
+				class_process_config(lcfg);
+			break;
+		case LCFG_SET_LDLM_TIMEOUT:
+			if (!ldlm_timeout_set || val > ldlm_timeout)
+				class_process_config(lcfg);
+			break;
+		default:
+			break;
+		}
+	}
         *ptr = sep;
         lustre_cfg_free(lcfg);
         return rc;
