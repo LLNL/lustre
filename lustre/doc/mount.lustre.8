@@ -127,6 +127,10 @@ The default soft recovery timeout is set to 300 seconds (5 minutes).
 The server will be allowed to incrementally extend its timeout up to a hard
 maximum of 'timeout' seconds.  The default hard recovery timeout is set to
 900 seconds (15 minutes).
+.TP
+.BI writeconf
+Erase the configuration logs for the filesystem that this server is part of, and regenerate them. This is very dangerous.  All clients must be unmounted.
+No clients should be started until all targets have restarted.
 .SH EXAMPLES
 .TP
 .B mount -t lustre cfs21@tcp0:/testfs /mnt/myfilesystem
