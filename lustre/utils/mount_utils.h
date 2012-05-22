@@ -98,17 +98,19 @@ struct mkfs_opts {
 
 /* used to describe the options to mount the lustre disk */
 struct mount_opts {
-        struct lustre_disk_data mo_ldd;
-        char *mo_orig_options;
-        char *mo_usource;               /* user-specified mount device */
-        char *mo_source;                /* our mount device name */
-        char  mo_target[PATH_MAX];      /* mount directory */
-        int   mo_nomtab;
-        int   mo_fake;
-        int   mo_force;
-        int   mo_retry;
-        int   mo_have_mgsnid;
-        int   mo_md_stripe_cache_size;
+	struct lustre_disk_data mo_ldd;
+	char	*mo_orig_options;
+	char	*mo_usource;		/* user-specified mount device */
+	char	*mo_source;		/* our mount device name */
+	char	mo_target[PATH_MAX];	/* mount directory */
+	int	mo_nomtab;
+	int	mo_fake;
+	int	mo_force;
+	int	mo_retry;
+	int	mo_have_mgsnid;
+	int	mo_have_failnid;
+	int	mo_have_failmode;
+	int	mo_md_stripe_cache_size;
 };
 
 #define MT_STR(data)   mt_str((data)->ldd_mount_type)
