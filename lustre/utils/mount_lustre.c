@@ -174,20 +174,48 @@ static void append_option(char *options, const char *one)
         strcat(options, one);
 }
 
-static void append_mgsnid(struct mount_opts *mop, char *options,
-                          const char *val)
+/* Add a nid to the options list and attempt to resolve the hostname */
+static void append_option_nid(char *options, char *nid, const char *param)
 {
-        char *resolved;
+	char *resolved;
 
-        append_option(options, PARAM_MGSNODE);
-        resolved = convert_hostnames((char *)val);
-        if (resolved) {
-                strcat(options, resolved);
-                free(resolved);
-        } else {
-                strcat(options, val);
-        }
-        mop->mo_have_mgsnid++;
+	append_option(options, param);
+
+	resolved = convert_hostnames((char *)nid);
+	if (resolved) {
+		strcat(options, resolved);
+		free(resolved);
+	} else {
+		strcat(options, nid);
+	}
+}
+
+/* Add a parameter to the options list from the ldd_params */
+static int append_option_ldd(char *options, char *params, const char *param)
+{
+	char *ptr = params;
+	char tmp, *sep;
+	int count = 0;
+
+	while ((ptr = strstr(ptr, param)) != NULL) {
+		sep = strchr(ptr, ' ');
+		if (sep != NULL) {
+			tmp = *sep;
+			*sep = '\0';
+		}
+
+		append_option_nid(options, ptr + strlen(param), param);
+		count++;
+
+		if (sep != NULL) {
+			*sep = tmp;
+			ptr = sep;
+		} else {
+			break;
+		}
+	}
+
+	return ((count > 0) ? 0 : ENOENT);
 }
 
 /* Replace options with subset of Lustre-specific options, and
@@ -214,7 +242,7 @@ static int parse_options(struct mount_opts *mop, char *orig_options,
                  * those mount options, see bug 22097. */
                 if (val && strncmp(arg, "md_stripe_cache_size", 20) == 0) {
 			mop->mo_md_stripe_cache_size = atoi(val + 1);
-                } else if (val && strncmp(arg, "retry", 5) == 0) {
+		} else if (val && strncmp(arg, "retry", 5) == 0) {
 			mop->mo_retry = atoi(val + 1);
 			if (mop->mo_retry > MAX_RETRIES)
 				mop->mo_retry = MAX_RETRIES;
@@ -222,14 +250,22 @@ static int parse_options(struct mount_opts *mop, char *orig_options,
 				mop->mo_retry = 0;
 		} else if (val && strncmp(arg, PARAM_MGSNODE,
 					  sizeof(PARAM_MGSNODE) - 1) == 0) {
-			/* mgs*=val (no val for plain "mgs" option) */
-			append_mgsnid(mop, options, val + 1);
-		} else if (val && strncmp(arg, "mgssec", 6) == 0) {
-			append_option(options, opt);
-		} else if (strcmp(opt, "force") == 0) {
-			//XXX special check for 'force' option
-			++mop->mo_force;
-			printf("force: %d\n", mop->mo_force);
+			append_option_nid(options, val + 1, PARAM_MGSNODE);
+			mop->mo_have_mgsnid++;
+		} else if (val && strncmp(arg, PARAM_FAILNODE,
+					  sizeof(PARAM_FAILNODE) - 1) == 0) {
+			append_option_nid(options, val + 1, PARAM_FAILNODE);
+			mop->mo_have_failnid++;
+		} else if (val && strncmp(arg, PARAM_FAILMODE,
+					  sizeof(PARAM_FAILMODE) - 1) == 0) {
+			append_option_nid(options, val + 1, PARAM_FAILMODE);
+			mop->mo_have_failmode++;
+                } else if (val && strncmp(arg, "mgssec", 6) == 0) {
+                        append_option(options, opt);
+                } else if (strcmp(opt, "force") == 0) {
+                        //XXX special check for 'force' option
+                        mop->mo_force++;
+                        printf("force: %d\n", mop->mo_force);
                 } else if (parse_one_option(opt, flagp) == 0) {
                         /* pass this on as an option */
                         append_option(options, opt);
@@ -247,32 +283,7 @@ static int parse_options(struct mount_opts *mop, char *orig_options,
         return 0;
 }
 
-/* Add mgsnids from ldd params */
-static int add_mgsnids(struct mount_opts *mop, char *options,
-		       const char *params)
-{
-	char *ptr = (char *)params;
-	char tmp, *sep;
-
-	while ((ptr = strstr(ptr, PARAM_MGSNODE)) != NULL) {
-		sep = strchr(ptr, ' ');
-		if (sep != NULL) {
-			tmp = *sep;
-			*sep = '\0';
-		}
-		append_option(options, ptr);
-		mop->mo_have_mgsnid++;
-		if (sep) {
-			*sep = tmp;
-			ptr = sep;
-		} else {
-			break;
-		}
-	}
-
-	return 0;
-}
-
+/* Glean any data we can from the disk */
 static int parse_ldd(char *source, struct mount_opts *mop, char *options)
 {
 	struct lustre_disk_data *ldd = &mop->mo_ldd;
@@ -336,7 +347,10 @@ static int parse_ldd(char *source, struct mount_opts *mop, char *options)
 			append_option(options, "mgs");
 			mop->mo_have_mgsnid++;
 		} else {
-			add_mgsnids(mop, options, ldd->ldd_params);
+			rc = append_option_ldd(options, ldd->ldd_params,
+					       PARAM_MGSNODE);
+			if (rc == 0)
+				mop->mo_have_mgsnid++;
 		}
 	}
 	/* Better have an mgsnid by now */
@@ -344,6 +358,21 @@ static int parse_ldd(char *source, struct mount_opts *mop, char *options)
 		fprintf(stderr, "%s: missing option mgsnode=<nid>\n",
 			progname);
 		return EINVAL;
+	}
+
+	/* Failover parameters are only used during mgs registration */
+	if (!mop->mo_have_failnid) {
+		rc = append_option_ldd(options, ldd->ldd_params,
+				       PARAM_FAILNODE);
+		if (rc == 0)
+			mop->mo_have_failnid++;
+	}
+
+	if (!mop->mo_have_failmode) {
+		rc = append_option_ldd(options, ldd->ldd_params,
+				       PARAM_FAILMODE);
+		if (rc == 0)
+			mop->mo_have_failmode++;
 	}
 
 	if (ldd->ldd_flags & (LDD_F_VIRGIN | LDD_F_WRITECONF))
@@ -375,6 +404,8 @@ static void set_defaults(struct mount_opts *mop)
 	mop->mo_force = 0;
 	mop->mo_retry = 0;
 	mop->mo_have_mgsnid = 0;
+	mop->mo_have_failnid = 0;
+	mop->mo_have_failmode = 0;
 	mop->mo_md_stripe_cache_size = 16384;
 	mop->mo_orig_options = "";
 }

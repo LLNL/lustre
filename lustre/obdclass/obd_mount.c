@@ -772,11 +772,12 @@ EXPORT_SYMBOL(server_name2index);
 
 /* Generate data for registration */
 static int server_lsi2mti(struct lustre_sb_info *lsi,
-                          struct mgs_target_info *mti)
+			  struct mgs_target_info *mti)
 {
-        lnet_process_id_t id;
-        int rc, i = 0;
-        ENTRY;
+	lnet_process_id_t id;
+	int rc, i = 0;
+	char *s;
+	ENTRY;
 
         if (!IS_SERVER(lsi))
                 RETURN(-EINVAL);
@@ -821,7 +822,21 @@ static int server_lsi2mti(struct lustre_sb_info *lsi,
         LASSERT(!(rc & LDD_F_NEED_INDEX));
         /* keep only LDD flags */
         mti->mti_flags = lsi->lsi_flags & LDD_F_MASK;
-        return 0;
+
+	/*
+	 * Verify all the ->lmd_opts can be stored as ->mti_params and
+	 * translate them from space to comma delimited for compatibility.
+	 * No effort is made to strip duplicate characters, however this
+	 * is not harmful.
+	 */
+	if (strlen(lsi->lsi_lmd->lmd_opts) >= sizeof(mti->mti_params))
+		return -EINVAL;
+
+	strcpy(mti->mti_params, lsi->lsi_lmd->lmd_opts);
+	while ((s = strchr(mti->mti_params, ',')) != NULL)
+		*s = ' ';
+
+	return 0;
 }
 
 /* Register an old or new target with the MGS. If needed MGS will construct

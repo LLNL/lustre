@@ -107,6 +107,8 @@ struct mount_opts {
 	int	 mo_force;
 	int	 mo_retry;
 	int	 mo_have_mgsnid;
+	int	 mo_have_failnid;
+	int	 mo_have_failmode;
 	int	 mo_md_stripe_cache_size;
 };
 
