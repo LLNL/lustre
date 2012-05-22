@@ -88,6 +88,7 @@ static void usage(FILE *out)
                 "\t\tretry=<num>: number of times mount is retried by client\n"
                 "\t\tmd_stripe_cache_size=<num>: set the raid stripe cache "
                 "size for the underlying raid if present\n"
+                "\t\twriteconf: erase all config logs for this fs\n"
                 );
         exit((out != stdout) ? EINVAL : 0);
 }
