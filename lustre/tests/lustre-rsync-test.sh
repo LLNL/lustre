@@ -15,12 +15,6 @@ ALWAYS_EXCEPT="$LRSYNC_EXCEPT"
 # bug number for skipped test:
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
-# ORI-665
-if [ "$FSTYPE" = "zfs" ]; then
-	skip_env "$0: skipping lustre-rsync-test with ZFS"
-	exit 0
-fi
-
 [ "$ALWAYS_EXCEPT$EXCEPT" ] && \
         echo "Skipping tests: `echo $ALWAYS_EXCEPT $EXCEPT`"
 
@@ -35,6 +29,12 @@ LUSTRE=${LUSTRE:-$(cd $(dirname $0)/..; echo $PWD)}
 init_test_env $@
 . ${CONFIG:=$LUSTRE/tests/cfg/$NAME.sh}
 init_logging
+
+# ORI-665
+if [ "$FSTYPE" = "zfs" ]; then
+	skip_env "$0: skipping lustre-rsync-test with ZFS"
+	exit 0
+fi
 
 check_and_setup_lustre
 
