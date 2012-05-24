@@ -2809,7 +2809,7 @@ static int lfs_data_version(int argc, char **argv)
                 return rc;
         }
 
-        printf("%llu\n", data_version);
+        printf(LPU64"\n", data_version);
 
         close(fd);
 
