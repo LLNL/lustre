@@ -27,16 +27,16 @@ fi
 # 21b - ORI-245
 # 21c - ORI-245
 # 27a - ORI-245
-# 29  - ORI-15
+# 29  - ORI-677
 # 32a - ORI-650
 # 32b - ORI-577
 # 35b - ORI-264
 # 37  - ORI-658
 # 38  - ORI-237
 # 49  - obd_mount doesn't parse options in ldd anymore?
-# 50g - LU-491
+# 50g - ORI-678
 # 57  - tunefs.lustre doesn't work anymore?
-# 58  - ORI-246
+# 58  - ORI-363
 ALWAYS_EXCEPT="$ALWAYS_EXCEPT 5b 5d 9 19b 21b 21c 27a 29 32a 32b 35b 37 38 49 50g 57 58"
 
 SRCDIR=`dirname $0`
