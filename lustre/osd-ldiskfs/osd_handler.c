@@ -4409,6 +4409,7 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
         int rc;
         ENTRY;
 
+	osd_shutdown(env, osd);
         osd_compat_fini(osd);
 
         if (osd->od_mnt) {
