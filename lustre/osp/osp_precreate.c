@@ -1,6 +1,4 @@
-/* -*- mode: c; c-basic-offset: 8; indent-tabs-mode: nil; -*-
- * vim:expandtab:shiftwidth=8:tabstop=8:
- *
+/*
  * GPL HEADER START
  *
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -28,6 +26,8 @@
 /*
  * Copyright  2009 Sun Microsystems, Inc. All rights reserved
  * Use is subject to license terms.
+ *
+ * Copyright (c) 2011, 2012, Whamcloud, Inc.
  */
 /*
  * This file is part of Lustre, http://www.lustre.org/
@@ -313,67 +313,131 @@ out_req:
 /**
  * claims connection is originated by MDS
  */
-static int osp_get_ost_lastid(struct osp_device *d)
+static int osp_precreate_connection_from_mds(struct osp_device *d)
 {
-        struct ptlrpc_request  *req = NULL;
-        struct obd_import      *imp;
-        char                   *tmp;
-        int                     rc;
-        obd_id                 *last_id;
-        ENTRY;
+	struct ptlrpc_request	*req = NULL;
+	struct obd_import	*imp;
+	char			*tmp;
+	int			 rc, group;
 
-        imp = d->opd_obd->u.cli.cl_import;
-        LASSERT(imp);
+	ENTRY;
 
-        req = ptlrpc_request_alloc(imp, &RQF_OST_GET_INFO_LAST_ID);
-        if (req == NULL) {
-                CERROR("can't allocate request\n");
-                RETURN(-ENOMEM);
-        }
+	imp = d->opd_obd->u.cli.cl_import;
+	LASSERT(imp);
 
-        req_capsule_set_size(&req->rq_pill, &RMF_SETINFO_KEY,
-                             RCL_CLIENT, sizeof(KEY_LAST_ID));
-        rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_GET_INFO);
-        if (rc) {
-                ptlrpc_request_free(req);
-                CERROR("can't pack request\n");
-                RETURN(rc);
-        }
+	req = ptlrpc_request_alloc(imp, &RQF_OBD_SET_INFO);
+	if (req == NULL) {
+		CERROR("can't allocate request\n");
+		RETURN(-ENOMEM);
+	}
 
-        tmp = req_capsule_client_get(&req->rq_pill, &RMF_SETINFO_KEY);
-        memcpy(tmp, KEY_LAST_ID, sizeof(KEY_LAST_ID));
+	req_capsule_set_size(&req->rq_pill, &RMF_SETINFO_KEY,
+			     RCL_CLIENT, sizeof(KEY_MDS_CONN));
+	req_capsule_set_size(&req->rq_pill, &RMF_SETINFO_VAL,
+			     RCL_CLIENT, sizeof(group));
+	rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_SET_INFO);
+	if (rc) {
+		ptlrpc_request_free(req);
+		CERROR("can't pack request\n");
+		RETURN(rc);
+	}
 
-        ptlrpc_request_set_replen(req);
+	tmp = req_capsule_client_get(&req->rq_pill, &RMF_SETINFO_KEY);
+	memcpy(tmp, KEY_MDS_CONN, sizeof(KEY_MDS_CONN));
+	group = FID_SEQ_OST_MDT0; /* XXX: what about CMD? */
+	tmp = req_capsule_client_get(&req->rq_pill, &RMF_SETINFO_VAL);
+	memcpy(tmp, &group, sizeof(group));
 
-        rc = ptlrpc_queue_wait(req);
-        LASSERT(req->rq_transno == 0);
-        if (rc) {
-                CERROR("Failed to get lastid\n");
-                GOTO(out_req, rc);
-        }
+	ptlrpc_request_set_replen(req);
 
-        last_id = req_capsule_server_get(&req->rq_pill, &RMF_OBD_ID);
+	rc = ptlrpc_queue_wait(req);
+	LASSERT(req->rq_transno == 0);
+	ptlrpc_req_finished(req);
 
-        cfs_spin_lock(&d->opd_pre_lock);
-        if (le64_to_cpu(d->opd_last_used_id) > *last_id) {
-                d->opd_pre_grow_count = OST_MIN_PRECREATE +
-                                        (le64_to_cpu(d->opd_last_used_id -
-                                         *last_id));
-                d->opd_pre_last_created = le64_to_cpu(d->opd_last_used_id) + 1;
-        } else {
-                d->opd_pre_grow_count = OST_MIN_PRECREATE;
-                d->opd_pre_last_created = *last_id + 1;
-        }
-        d->opd_pre_next = d->opd_pre_last_created;
-        d->opd_pre_grow_slow = 0;
-        cfs_spin_unlock(&d->opd_pre_lock);
+	RETURN(rc);
+}
 
-        CDEBUG(D_INFO,
-               "Got last_id "LPU64" from OST, last_used is "LPU64", next "LPU64"\n",
-               *last_id, le64_to_cpu(d->opd_last_used_id), d->opd_pre_next);
+/**
+ * asks OST to clean precreate orphans
+ * and gets next id for new objects
+ */
+static int osp_precreate_cleanup_orphans(struct osp_device *d)
+{
+	struct ptlrpc_request	*req = NULL;
+	struct obd_import	*imp;
+	struct ost_body		*body;
+	int			 rc;
+
+	ENTRY;
+
+	LASSERT(d->opd_recovery_completed);
+	LASSERT(d->opd_pre_reserved == 0);
+
+	imp = d->opd_obd->u.cli.cl_import;
+	LASSERT(imp);
+
+	req = ptlrpc_request_alloc(imp, &RQF_OST_CREATE);
+	if (req == NULL)
+		RETURN(-ENOMEM);
+
+	rc = ptlrpc_request_pack(req, LUSTRE_OST_VERSION, OST_CREATE);
+	if (rc) {
+		ptlrpc_request_free(req);
+		RETURN(rc);
+	}
+
+	body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
+	if (body == NULL)
+		GOTO(out_req, rc = -EPROTO);
+
+	body->oa.o_flags = OBD_FL_DELORPHAN;
+	body->oa.o_valid = OBD_MD_FLFLAGS | OBD_MD_FLGROUP;
+	body->oa.o_seq = FID_SEQ_OST_MDT0;
+
+	/* remove from NEXT after used one */
+	body->oa.o_id = d->opd_last_used_id + 1;
+
+	ptlrpc_request_set_replen(req);
+
+	/* Don't resend the delorphan req */
+	req->rq_no_resend = req->rq_no_delay = 1;
+
+	rc = ptlrpc_queue_wait(req);
+	if (rc)
+		GOTO(out_req, rc);
+
+	body = req_capsule_server_get(&req->rq_pill, &RMF_OST_BODY);
+	if (body == NULL)
+		GOTO(out_req, rc = -EPROTO);
+
+	/*
+	 * OST provides us with id new pool starts from in body->oa.o_id
+	 */
+	cfs_spin_lock(&d->opd_pre_lock);
+	if (le64_to_cpu(d->opd_last_used_id) > body->oa.o_id) {
+		d->opd_pre_grow_count = OST_MIN_PRECREATE +
+					le64_to_cpu(d->opd_last_used_id) -
+					body->oa.o_id;
+		d->opd_pre_last_created = le64_to_cpu(d->opd_last_used_id) + 1;
+	} else {
+		d->opd_pre_grow_count = OST_MIN_PRECREATE;
+		d->opd_pre_last_created = body->oa.o_id + 1;
+	}
+	d->opd_pre_next = d->opd_pre_last_created;
+	d->opd_pre_grow_slow = 0;
+	cfs_spin_unlock(&d->opd_pre_lock);
+
+	/* now we can wakeup all users awaiting for objects */
+	osp_pre_update_status(d, rc);
+	cfs_waitq_signal(&d->opd_pre_user_waitq);
+
+	CDEBUG(D_HA, "Got last_id "LPU64" from OST, last_used is "LPU64
+	       ", next "LPU64"\n", body->oa.o_id,
+	       le64_to_cpu(d->opd_last_used_id), d->opd_pre_next);
+
 out_req:
-        ptlrpc_req_finished(req);
-        RETURN(rc);
+	ptlrpc_req_finished(req);
+	RETURN(rc);
 }
 
 /*
@@ -464,7 +528,7 @@ static int osp_precreate_thread(void *_arg)
                         /* got connected, let's initialize connection */
                         d->opd_new_connection = 0;
                         d->opd_got_disconnected = 0;
-                        rc = osp_get_ost_lastid(d);
+			rc = osp_precreate_connection_from_mds(d);
 
                         /* if initialization went well, move on */
                         if (rc == 0)
@@ -487,9 +551,11 @@ static int osp_precreate_thread(void *_arg)
                              d->opd_got_disconnected, &lwi);
 
                 if (osp_precreate_running(d) && !d->opd_got_disconnected) {
-                        /* now we can wakeup all users awaiting for objects */
-                        osp_pre_update_status(d, 0);
-                        cfs_waitq_signal(&d->opd_pre_user_waitq);
+			rc = osp_precreate_cleanup_orphans(d);
+			if (rc) {
+				CERROR("%s: cannot cleanup orphans: rc = %d\n",
+				       d->opd_obd->obd_name,  rc);
+			}
                 }
 
                 /*
@@ -520,8 +586,11 @@ static int osp_precreate_thread(void *_arg)
                                 /* osp_precreate_send() sets opd_pre_status
                                  * in case of error, that prevent the using of
                                  * failed device. */
-                                if (rc != 0)
-                                        CERROR("Can't precreate: %d\n", rc);
+				if (rc != 0 && rc != -ENOSPC &&
+				    rc != -ETIMEDOUT && rc != -ENOTCONN)
+					CERROR("%s: cannot precreate objects:"
+					       " rc = %d\n",
+					       d->opd_obd->obd_name, rc);
                         }
                 }
         }
