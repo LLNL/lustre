@@ -126,6 +126,7 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
 	handle_t			*jh;
 	int				 rc;
 
+	ENTRY;
 	dentry = osd_child_dentry_by_inode(env, dir, name, strlen(name));
 	bh = osd_ldiskfs_find_entry(dir, dentry, &de, NULL);
 	if (bh) {
@@ -136,12 +137,12 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
 			iput(inode);
 			inode = ERR_PTR(-EEXIST);
 		}
-		return PTR_ERR(inode);
+		RETURN(PTR_ERR(inode));
 	}
 
 	jh = ldiskfs_journal_start_sb(sb, 100);
 	if (IS_ERR(jh))
-		return PTR_ERR(jh);
+		RETURN(PTR_ERR(jh));
 
 	inode = ldiskfs_create_inode(jh, dir, (S_IFREG | S_IRUGO | S_IWUSR));
 	if (IS_ERR(inode))
@@ -155,12 +156,16 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
 		rc = iam_lfix_create(inode, feat->dif_keysize_max,
 				     feat->dif_ptrsize, feat->dif_recsize_max,
 				     jh);
+	if (rc < 0)
+		GOTO(out_inode, rc);
+
 	dentry = osd_child_dentry_by_inode(env, dir, name, strlen(name));
 	rc = osd_ldiskfs_add_entry(jh, dentry, inode, NULL);
+out_inode:
+	iput(inode);
 out_jh:
 	ldiskfs_journal_stop(jh);
-	iput(inode);
-	return rc;
+	RETURN(rc);
 }
 
 static struct inode *osd_oi_index_open(struct osd_thread_info *info,
@@ -175,7 +180,7 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
 
         dentry = ll_lookup_one_len(name, osd_sb(osd)->s_root, strlen(name));
         if (IS_ERR(dentry))
-                return (void *) dentry;
+		return (void *)dentry;
 
         if (dentry->d_inode) {
                 LASSERT(!is_bad_inode(dentry->d_inode));
@@ -192,12 +197,15 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
                 return ERR_PTR(-ENOENT);
 
         rc = osd_oi_index_create_one(info, osd, name, f);
-        if (rc)
+	if (rc) {
+		CERROR("%s: failed to create %s: rc = %d\n",
+		       osd2lu_dev(osd)->ld_obd->obd_name, name, rc);
 		return ERR_PTR(rc);
+	}
 
         dentry = ll_lookup_one_len(name, osd_sb(osd)->s_root, strlen(name));
         if (IS_ERR(dentry))
-                return (void *) dentry;
+		return (void *)dentry;
 
         if (dentry->d_inode) {
                 LASSERT(!is_bad_inode(dentry->d_inode));
