@@ -247,11 +247,13 @@ static int osp_object_create(const struct lu_env *env, struct dt_object *dt,
 
                         CDEBUG(D_HA, "Writting gap "LPU64"+%d in llog\n",
                                d->opd_gap_start, count);
+#if 0 /* disable gap handling intil ORI-692 will be fixed */
                         /* XXX: CMD support */
                         osi->osi_oi.oi_seq = FID_SEQ_OST_MDT0;
                         fid_ostid_unpack(&osi->osi_fid, &osi->osi_oi,
                                          d->opd_index);
                         osp_sync_gap(env, d, &osi->osi_fid, count, th);
+#endif
                 } else {
                         cfs_spin_unlock(&d->opd_pre_lock);
                 }
