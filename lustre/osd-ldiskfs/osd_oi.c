@@ -127,49 +127,55 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
         handle_t                        *jh;
         int                              rc;
 
-        dentry = osd_child_dentry_by_inode(env, osd_sb(osd)->s_root->d_inode,
-                                           name, strlen(name));
-        dir = osd_sb(osd)->s_root->d_inode;
-        bh = osd_ldiskfs_find_entry(dir, dentry, &de, NULL);
-        if (bh) {
-                brelse(bh);
+	ENTRY;
+	dentry = osd_child_dentry_by_inode(env, osd_sb(osd)->s_root->d_inode,
+					   name, strlen(name));
+	dir = osd_sb(osd)->s_root->d_inode;
+	LASSERT(dir);
 
-                id->oii_ino = le32_to_cpu(de->inode);
-                id->oii_gen = OSD_OII_NOGEN;
+	bh = osd_ldiskfs_find_entry(dir, dentry, &de, NULL);
+	if (bh) {
+		id->oii_ino = le32_to_cpu(de->inode);
+		id->oii_gen = OSD_OII_NOGEN;
+		brelse(bh);
 
-                inode = osd_iget(info, osd, id);
-                if (!IS_ERR(inode)) {
-                        iput(inode);
-                        RETURN(-EEXIST);
-                }
-                RETURN(PTR_ERR(inode));
-        }
+		inode = osd_iget(info, osd, id);
+		if (!IS_ERR(inode)) {
+			iput(inode);
+			RETURN(-EEXIST);
+		}
+		RETURN(PTR_ERR(inode));
+	}
 
-        jh = ldiskfs_journal_start_sb(osd_sb(osd), 100);
-        LASSERT(!IS_ERR(jh));
+	jh = ldiskfs_journal_start_sb(osd_sb(osd), 100);
+	if (IS_ERR(jh))
+		return PTR_ERR(jh);
 
-        inode = ldiskfs_create_inode(jh, osd_sb(osd)->s_root->d_inode,
-                                    (S_IFREG | S_IXUGO | S_IRUGO | S_IWUSR));
-        LASSERT(!IS_ERR(inode));
+	inode = ldiskfs_create_inode(jh, dir,
+				     (S_IFREG | S_IXUGO | S_IRUGO | S_IWUSR));
+	if (IS_ERR(inode))
+		GOTO(out_jh, rc = PTR_ERR(inode));
 
-        if (feat->dif_flags & DT_IND_VARKEY)
-                rc = iam_lvar_create(inode, feat->dif_keysize_max,
-                                     feat->dif_ptrsize, feat->dif_recsize_max,
-                                     jh);
-        else
-                rc = iam_lfix_create(inode, feat->dif_keysize_max,
-                                     feat->dif_ptrsize, feat->dif_recsize_max,
-                                     jh);
+	if (feat->dif_flags & DT_IND_VARKEY)
+		rc = iam_lvar_create(inode, feat->dif_keysize_max,
+				     feat->dif_ptrsize, feat->dif_recsize_max,
+				     jh);
+	else
+		rc = iam_lfix_create(inode, feat->dif_keysize_max,
+				     feat->dif_ptrsize, feat->dif_recsize_max,
+				     jh);
+	if (rc < 0)
+		GOTO(out_inode, rc);
 
-        dentry = osd_child_dentry_by_inode(env, osd_sb(osd)->s_root->d_inode,
-                                           name, strlen(name));
-        rc = osd_ldiskfs_add_entry(jh, dentry, inode, NULL);
-        LASSERT(rc == 0);
+	dentry = osd_child_dentry_by_inode(env, dir, name, strlen(name));
+	rc = osd_ldiskfs_add_entry(jh, dentry, inode, NULL);
 
-        ldiskfs_journal_stop(jh);
-        iput(inode);
+out_inode:
+	iput(inode);
+out_jh:
+	ldiskfs_journal_stop(jh);
 
-        return rc;
+	RETURN(rc);
 }
 
 static struct inode *osd_oi_index_open(struct osd_thread_info *info,
@@ -184,7 +190,7 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
 
         dentry = ll_lookup_one_len(name, osd_sb(osd)->s_root, strlen(name));
         if (IS_ERR(dentry))
-                return (void *) dentry;
+		return (void *)dentry;
 
         if (dentry->d_inode) {
                 LASSERT(!is_bad_inode(dentry->d_inode));
@@ -201,12 +207,15 @@ static struct inode *osd_oi_index_open(struct osd_thread_info *info,
                 return ERR_PTR(-ENOENT);
 
         rc = osd_oi_index_create_one(info, osd, name, f);
-        if (rc)
-                RETURN(ERR_PTR(rc));
+	if (rc) {
+		CERROR("%s: failed to create %s: rc = %d\n",
+		       osd2lu_dev(osd)->ld_obd->obd_name, name, rc);
+		RETURN(ERR_PTR(rc));
+	}
 
         dentry = ll_lookup_one_len(name, osd_sb(osd)->s_root, strlen(name));
         if (IS_ERR(dentry))
-                return (void *) dentry;
+		return (void *)dentry;
 
         if (dentry->d_inode) {
                 LASSERT(!is_bad_inode(dentry->d_inode));
