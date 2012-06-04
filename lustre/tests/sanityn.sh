@@ -3,29 +3,26 @@
 set -e
 
 ONLY=${ONLY:-"$*"}
-# bug number for skipped test: 3192 LU-1205 15528/3811 16929 9977 15528/11549 18080
-ALWAYS_EXCEPT="                14b  18c     19         22    28   29          35    $SANITYN_EXCEPT"
+# UPDATE THE COMMENT BELOW WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
+# bug number : 3192 LU-1205 15528/3811 16929 9977 15528/11549 18080
+ALWAYS_EXCEPT="14b  18c     19         22    28   29          35    "
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT $SANITYN_EXCEPT"
 
 # Orion issues
-# 4  -- ORI-574
-# Disable as fail in master
-# 18 -- LU-1205
-ALWAYS_EXCEPT="$ALWAYS_EXCEPT 4 18"
-
+# ORI-574 -  4
+ALWAYS_EXCEPT="$ALWAYS_EXCEPT 4"
 # ORI-592 - 36
 if [ "$FSTYPE" = "zfs" ]; then
-    ALWAYS_EXCEPT="$ALWAYS_EXCEPT 36"
+	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 36"
 fi
 
-# bug number for skipped test:                                                    12652 12652
-grep -q 'Enterprise Server 10' /etc/SuSE-release && ALWAYS_EXCEPT="$ALWAYS_EXCEPT 11    14" || true
+# bug number for skipped test:	      12652 12652
+grep -q 'Enterprise Server 10' /etc/SuSE-release &&
+	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 11    14" || true
 
 # Tests that fail on uml
 [ "$UML" = "true" ] && EXCEPT="$EXCEPT 7"
-
-# It will be ported soon.
-EXCEPT="$EXCEPT 22"
 
 SRCDIR=`dirname $0`
 PATH=$PWD/$SRCDIR:$SRCDIR:$SRCDIR/../utils:$PATH
