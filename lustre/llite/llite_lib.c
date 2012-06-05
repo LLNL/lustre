@@ -2108,9 +2108,10 @@ int ll_remount_fs(struct super_block *sb, int *flags, char *data)
                                          KEY_READ_ONLY, sizeof(read_only),
                                          &read_only, NULL);
                 if (err) {
-                        LCONSOLE_WARN("Failed to remount %s %s (%d)\n",
-                                      profilenm, read_only ?
-                                      "read-only" : "read-write", err);
+                        if (sbi->ll_flags & LL_SBI_VERBOSE)
+                                LCONSOLE_WARN("Failed to remount %s %s (%d)\n",
+                                              profilenm, read_only ?
+                                              "read-only" : "read-write", err);
                         return err;
                 }
 
