@@ -5102,19 +5102,37 @@ min_ost_size () {
 get_block_size() {
     local facet=$1
     local device=$2
-    local size
+    local size=512 #
+    local fstype=$(facet_fstype $facet)
 
-    size=$(do_facet $facet "$DUMPE2FS -h $device 2>&1" |
-           awk '/^Block size:/ {print $3}')
+    case $fstype in
+        ldiskfs )
+            size=$(do_facet $facet "$DUMPE2FS -h $device 2>&1" |
+                   awk '/^Block size:/ {print $3}')
+            ;;
+        * )
+            error "Unknown fstype $fstype!";;
+    esac
     echo $size
 }
 
 # Check whether the "large_xattr" feature is enabled or not.
 large_xattr_enabled() {
     local mds_dev=$(mdsdevname ${SINGLEMDS//mds/})
+    local fstype=$(facet_fstype $SINGLEMDS)
+    local rc=1
 
-    do_facet $SINGLEMDS "$DUMPE2FS -h $mds_dev 2>&1 | grep -q large_xattr"
-    return ${PIPESTATUS[0]}
+    case $fstype in
+        ldiskfs )
+            do_facet $SINGLEMDS "$DUMPE2FS -h $mds_dev 2>&1 | \
+                                 grep -q large_xattr"
+            rc=${PIPESTATUS[0]};;
+        zfs )
+            rc=0;;
+        * )
+            error "Unknown fstype $fstype!";;
+    esac
+    return $rc
 }
 
 # Get the maximum xattr size supported by the filesystem.

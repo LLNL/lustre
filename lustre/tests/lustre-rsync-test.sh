@@ -30,12 +30,6 @@ init_test_env $@
 . ${CONFIG:=$LUSTRE/tests/cfg/$NAME.sh}
 init_logging
 
-# ORI-665
-if [ "$FSTYPE" = "zfs" ]; then
-	skip_env "$0: skipping lustre-rsync-test with ZFS"
-	exit 0
-fi
-
 check_and_setup_lustre
 
 DIR=${DIR:-$MOUNT}

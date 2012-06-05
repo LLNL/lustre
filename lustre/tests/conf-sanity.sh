@@ -3097,8 +3097,6 @@ test_61() { # LU-80
     [ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.1.53) ] ||
         { skip "Need MDS version at least 2.1.53"; return 0; }
 
-    [ "$FSTYPE" != "ldiskfs" ] && skip "not needed for FSTYPE=$FSTYPE" && return
-
     if ! large_xattr_enabled; then
         reformat=true
 
@@ -3154,7 +3152,9 @@ test_61() { # LU-80
 
     rm -f $file
     stopall
-    $reformat && reformat
+	if $reformat ; then
+		reformat
+	fi
 }
 run_test 61 "large xattr"
 

@@ -691,14 +691,14 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
         if (unlikely(rc != 0)) {
                 struct osd_device *osd = osd_dt_dev(d);
                 /* dmu will call commit callback with error code during abort */
-                if (!lu_device_is_md(&d->dd_lu_dev) && rc == ENOSPC)
+                if (!lu_device_is_md(&d->dd_lu_dev) && rc == -ENOSPC)
                         CERROR("%s: failed to start transaction due to ENOSPC. "
                                "Metadata overhead is underestimated or "
                                "grant_ratio is too low.\n",
                                osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name);
                 else
                         CERROR("%s: can't assign tx: %d\n",
-                               osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name, -rc);
+                               osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name, rc);
         } else {
                 /* add commit callback */
                 dmu_tx_callback_register(oh->ot_tx, osd_trans_commit_cb, oh);
@@ -812,12 +812,15 @@ static void __osd_declare_object_destroy(const struct lu_env *env,
                                          sizeof(uint64_t), 1, &xid);
                         if (rc) {
                                 CERROR("error during xattr lookup: %d\n", rc);
-                                break;
+                                goto out_err;
                         }
                         dmu_tx_hold_free(tx, xid, 0, DMU_OBJECT_END);
 
                         zap_cursor_advance(zc);
                 }
+                if (rc == -ENOENT)
+                        rc = 0;
+out_err:
                 udmu_zap_cursor_fini(zc);
         }
 out:
@@ -3260,6 +3263,7 @@ int __osd_sa_xattr_set(const struct lu_env *env, struct osd_object *obj,
         size_t  size;
         int     nv_size;
         int     rc;
+        int     too_big = 0;
 
         LASSERT(obj->oo_sa_hdl);
         if (obj->oo_sa_xattr == NULL) {
@@ -3270,25 +3274,39 @@ int __osd_sa_xattr_set(const struct lu_env *env, struct osd_object *obj,
 
         LASSERT(obj->oo_sa_xattr);
         /* Limited to 32k to keep nvpair memory allocations small */
-        if (buf->lb_len > DXATTR_MAX_ENTRY_SIZE)
-                return -EFBIG;
+        if (buf->lb_len > DXATTR_MAX_ENTRY_SIZE) {
+                too_big = 1;
+        } else {
+                /* Prevent the DXATTR SA from consuming the entire SA
+                 * region */
+                rc = -nvlist_size(obj->oo_sa_xattr, &size, NV_ENCODE_XDR);
+                if (rc)
+                        return rc;
 
-        /* Prevent the DXATTR SA from consuming the entire SA region */
-        rc = -nvlist_size(obj->oo_sa_xattr, &size, NV_ENCODE_XDR);
-        if (rc)
-                return rc;
+                if (size + buf->lb_len > DXATTR_MAX_SA_SIZE)
+                        too_big = 1;
+        }
 
-        if (size + buf->lb_len > DXATTR_MAX_SA_SIZE)
-                return -EFBIG;
-
+        /* even in case of -EFBIG we must lookup xattr and check can we
+         * rewrite it then delete from SA */
         rc = -nvlist_lookup_byte_array(obj->oo_sa_xattr, name, &nv_value,
                                        &nv_size);
         if (rc == 0) {
-                if (fl & LU_XATTR_CREATE)
+                if (fl & LU_XATTR_CREATE) {
                         return -EEXIST;
+                } else if (too_big) {
+                        rc = -nvlist_remove(obj->oo_sa_xattr, name,
+                                            DATA_TYPE_BYTE_ARRAY);
+                        if (rc < 0)
+                                return rc;
+                        rc = __osd_sa_xattr_update(env, obj, oh);
+                        return rc == 0 ? -EFBIG : rc;
+                }
         } else if (rc == -ENOENT) {
                 if (fl & LU_XATTR_REPLACE)
                         return -ENODATA;
+                else if (too_big)
+                        return -EFBIG;
         } else {
                 return rc;
         }
@@ -3433,6 +3451,7 @@ static int osd_xattr_set(const struct lu_env *env,
         oh = container_of0(handle, struct osd_thandle, ot_super);
 
         cfs_down(&obj->oo_guard);
+        CDEBUG(D_INODE, "Setting xattr %s with size %d\n", name, (int)buf->lb_len);
 	/* place xattr in dnode if xattr in SA is disabled or SA is full */
 	if (osd->od_xattr_in_sa) {
 		rc = __osd_sa_xattr_set(env, obj, buf, name, fl, oh);
@@ -3516,9 +3535,7 @@ int __osd_sa_xattr_del(const struct lu_env *env, struct osd_object *obj,
         }
 
         rc = -nvlist_remove(obj->oo_sa_xattr, name, DATA_TYPE_BYTE_ARRAY);
-        if (rc == -ENOENT)
-                rc = 0;
-        else if (rc == 0)
+        if (rc == 0)
                 rc = __osd_sa_xattr_update(env, obj, oh);
         return rc;
 }
@@ -3537,7 +3554,7 @@ int __osd_xattr_del(const struct lu_env *env, struct osd_object *obj,
                 return rc;
 
         if (obj->oo_xattr == ZFS_NO_OBJECT)
-                return rc;
+                return 0;
 
         rc = -zap_lookup(uos->os, obj->oo_xattr, name, sizeof(uint64_t), 1,
                          &xa_data_obj);
