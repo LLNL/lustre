@@ -3104,8 +3104,7 @@ test_61() { # LU-80
 	[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.1.53) ] ||
 		{ skip "Need MDS version at least 2.1.53"; return 0; }
 
-	if [ $(facet_fstype $SINGLEMDS) == ldiskfs ] &&
-	   ! large_xattr_enabled; then
+	if ! large_xattr_enabled; then
 		reformat=true
 
 		writeconf
