@@ -9228,6 +9228,34 @@ test_226 () {
 }
 run_test 226 "call path2fid and fid2path on files of all type"
 
+test_228() {
+	# get ost1 size - lustre-OST0000
+	ost1_size=`do_facet ost1 lfs df |grep ${ost1_svc} |awk '{print $4}'`
+	# write 800M at maximum
+	[ $ost1_size -gt 819200 ] && ost1_size=819200
+
+	lfs setstripe -c 1 -i 0 $DIR/$tfile
+	dd if=/dev/zero of=$DIR/$tfile bs=4k count=$((ost1_size>>2)) &
+	local dd_pid=$!
+
+	# change max_pages_per_rpc while writing the file
+	local osc1_mppc=osc.$(get_osc_import_name client ost1).max_pages_per_rpc
+	local orig_mppc=`$LCTL get_param -n $osc1_mppc`
+	local mppc=(32 64 128 256)
+	while /bin/true; do
+		local index=$((RANDOM%${#mppc[*]}))
+		echo "Set max_pages_per_rpc to ${mppc[index]}"
+		$LCTL set_param -n $osc1_mppc ${mppc[index]}
+
+		# loop until dd process exits
+		`ps ax -opid |grep -q $dd_pid` || break
+		sleep 0.$((RANDOM%10))
+	done
+	# restore original max_pages_per_rpc
+	$LCTL set_param $osc1_name $orig_mppc
+}
+run_test 228 "Change max_pages_per_rpc won't break osc extent attr"
+
 #
 # tests that do cleanup/setup should be run at the end
 #
