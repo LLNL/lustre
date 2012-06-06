@@ -1663,8 +1663,10 @@ static inline int prolong_timeout(struct ptlrpc_request *req)
 static void ost_prolong_lock_one(struct ost_prolong_data *opd,
                                  struct ldlm_lock *lock)
 {
-        LASSERT(lock->l_req_mode == lock->l_granted_mode);
-        LASSERT(lock->l_export == opd->opd_exp);
+	LASSERT(lock->l_export == opd->opd_exp);
+
+	if (lock->l_destroyed) /* lock already cancelled */
+		return;
 
         if (!(lock->l_flags & LDLM_FL_AST_SENT))
                 /* ignore locks not being cancelled */
