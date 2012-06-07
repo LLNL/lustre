@@ -1194,13 +1194,10 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 
 			rc = ofd_precreate_objects(env, ofd, next_id,
 						   oa->o_seq, count);
-			LASSERT(rc != 0);
-
 			if (rc > 0) {
 				created += rc;
 				diff -= rc;
-			}
-			if (rc < 0)
+			} else if (rc < 0) {
 				break;
 			}
 		}

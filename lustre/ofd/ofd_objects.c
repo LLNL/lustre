@@ -298,7 +298,8 @@ out:
 	}
 	OBD_FREE(batch, nr_saved * sizeof(struct ofd_object *));
 
-	CDEBUG(D_OTHER, "created %d/%d objects: %d\n", objects, nr_saved, rc);
+	CDEBUG((objects == 0 && rc == 0) ? D_ERROR : D_OTHER,
+	       "created %d/%d objects: %d\n", objects, nr_saved, rc);
 
 	LASSERT(ergo(objects == 0, rc < 0));
 	RETURN(objects > 0 ? objects : rc);
