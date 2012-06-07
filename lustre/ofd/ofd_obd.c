@@ -1115,21 +1115,19 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 
 			rc = ofd_precreate_objects(env, ofd, next_id,
 						   oa->o_seq, count);
-			LASSERT(rc != 0);
-
 			if (rc > 0) {
 				created += rc;
 				diff -= rc;
-			}
-			if (rc < 0)
+			} else if (rc < 0) {
 				break;
 			}
+		}
 		if (created > 0) {
                         /* some objects got created, we can return
                          * them, even if last creation failed */
                         oa->o_id = ofd_last_id(ofd, oa->o_seq);
                         rc = 0;
-                } else {
+		} else if (rc < 0) {
                         CERROR("unable to precreate: %d\n", rc);
                         oa->o_id = ofd_last_id(ofd, oa->o_seq);
                 }
