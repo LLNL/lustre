@@ -1182,12 +1182,22 @@ int lod_verify_striping(struct lod_device *d, const struct lu_buf *buf,
                 RETURN(-EINVAL);
         }
 
-        if ((lum->lmm_stripe_offset >= d->lod_ostnr) &&
-            (lum->lmm_stripe_offset != (typeof(lum->lmm_stripe_offset))(-1))) {
-                CDEBUG(D_IOCTL, "stripe offset %u > number of OSTs %u\n",
-                       lum->lmm_stripe_offset, d->lod_ostnr);
-                RETURN(-EINVAL);
-        }
+	/* an offset of -1 is treated as a "special" valid offset */
+	if (lum->lmm_stripe_offset != (typeof(lum->lmm_stripe_offset))(-1)) {
+		/* if offset is not within valid range [0, osts_size) */
+		if (lum->lmm_stripe_offset >= d->lod_osts_size) {
+			CDEBUG(D_IOCTL, "stripe offset %u >= bitmap size %u\n",
+			       lum->lmm_stripe_offset, d->lod_osts_size);
+			RETURN(-EINVAL);
+		}
+
+		/* if lmm_stripe_offset is *not* in bitmap */
+		if (!cfs_bitmap_check(d->lod_ost_bitmap, lum->lmm_stripe_offset)) {
+			CDEBUG(D_IOCTL, "stripe offset %u not in bitmap\n",
+			       lum->lmm_stripe_offset);
+			RETURN(-EINVAL);
+		}
+	}
 
         if (lum->lmm_magic == LOV_USER_MAGIC_V3)
                 v3 = buf->lb_buf;
