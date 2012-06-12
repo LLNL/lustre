@@ -1153,14 +1153,11 @@ __u16 lod_get_stripecnt(struct lod_device *lod, __u32 magic,
 int lod_verify_striping(struct lod_device *d, const struct lu_buf *buf,
                         int specific)
 {
-	struct lov_user_md_v1   *lum;
-	struct lov_user_md_v3   *v3 = NULL;
-	struct pool_desc        *pool = NULL;
-	int                      rc;
-	struct lod_ost_desc_idx *idx;
-	struct lod_ost_desc     *ost;
-	int i, j;
-	ENTRY;
+        struct lov_user_md_v1 *lum;
+        struct lov_user_md_v3 *v3 = NULL;
+        struct pool_desc      *pool = NULL;
+        int                    rc;
+        ENTRY;
 
         lum = buf->lb_buf;
 
@@ -1188,21 +1185,12 @@ int lod_verify_striping(struct lod_device *d, const struct lu_buf *buf,
                 RETURN(-EINVAL);
         }
 
-	/* check if lmm_stripe_offset is a valid ost index */
-	rc = 1;
-	for (i = 0, idx = d->lod_ost_idx[0]; idx != NULL;
-	                                     idx = d->lod_ost_idx[++i])
-		for (j = 0, ost = idx->ldi_ost[0]; ost != NULL;
-		                                   ost = idx->ldi_ost[++j])
-			if (ost->ltd_index == lum->lmm_stripe_offset)
-				rc = 0;
-
-	/* if lmm_stripe_offset is an *invalid* offset */
-	if (rc && (lum->lmm_stripe_offset != (typeof(lum->lmm_stripe_offset))(-1))) {
-		CDEBUG(D_IOCTL, "stripe offset %u invalid\n",
-		       lum->lmm_stripe_offset);
-		RETURN(-EINVAL);
-	}
+        if ((lum->lmm_stripe_offset >= d->lod_ostnr) &&
+            (lum->lmm_stripe_offset != (typeof(lum->lmm_stripe_offset))(-1))) {
+                CDEBUG(D_IOCTL, "stripe offset %u > number of OSTs %u\n",
+                       lum->lmm_stripe_offset, d->lod_ostnr);
+                RETURN(-EINVAL);
+        }
 
         if (lum->lmm_magic == LOV_USER_MAGIC_V3)
                 v3 = buf->lb_buf;
