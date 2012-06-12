@@ -406,12 +406,12 @@ static char *zfs_refquota_opts(struct mkfs_opts *mop, char *str, int len)
 
 static char *zfs_mkfs_opts(struct mkfs_opts *mop, char *str, int len)
 {
-        memset(str, 0, len);
+	memset(str, 0, len);
 
-        if (mop->mo_mkfsopts != NULL)
-                snprintf(str, len, " -o %s", mop->mo_mkfsopts);
+	if (strlen(mop->mo_mkfsopts) != 0)
+		snprintf(str, len, " -o %s", mop->mo_mkfsopts);
 
-        return str;
+	return str;
 }
 
 static int zfs_create_vdev(struct mkfs_opts *mop, char *vdev)
@@ -472,7 +472,8 @@ int zfs_make_lustre(struct mkfs_opts *mop)
         zpool_handle_t *php;
         char *pool = NULL;
         char *mkfs_cmd = NULL;
-        char *mkfs_tmp = NULL;
+	char *mkfs_refquota = NULL;
+	char *mkfs_tmp = NULL;
         char *ds = mop->mo_device;
         int pool_exists = 0, ret;
 
@@ -485,6 +486,12 @@ int zfs_make_lustre(struct mkfs_opts *mop)
                 ret = ENOMEM;
                 goto out;
         }
+
+	mkfs_refquota = malloc(PATH_MAX);
+	if (mkfs_refquota == NULL) {
+		ret = ENOMEM;
+		goto out;
+	}
 
         mkfs_tmp = malloc(PATH_MAX);
         if (mkfs_tmp == NULL) {
@@ -558,7 +565,7 @@ int zfs_make_lustre(struct mkfs_opts *mop)
         memset(mkfs_cmd, 0, PATH_MAX);
         snprintf(mkfs_cmd, PATH_MAX,
                  "zfs create -o canmount=off -o xattr=sa%s%s %s",
-                 zfs_refquota_opts(mop, mkfs_tmp, PATH_MAX),
+                 zfs_refquota_opts(mop, mkfs_refquota, PATH_MAX),
                  zfs_mkfs_opts(mop, mkfs_tmp, PATH_MAX),
                  ds);
 
@@ -578,8 +585,11 @@ out:
         if (mkfs_cmd != NULL)
                 free(mkfs_cmd);
 
-        if (mkfs_cmd != NULL)
+        if (mkfs_tmp != NULL)
                 free(mkfs_tmp);
+
+	if (mkfs_refquota != NULL)
+		free(mkfs_refquota);
 
         return ret;
 }
