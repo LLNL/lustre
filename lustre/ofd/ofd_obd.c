@@ -1311,17 +1311,23 @@ static int ofd_ping(const struct lu_env *env, struct obd_export *exp)
         return 0;
 }
 
-static int ofd_health_check(const struct lu_env *env, struct obd_device *obd)
+static int ofd_health_check(const struct lu_env *nul, struct obd_device *obd)
 {
         struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
         struct ofd_thread_info *info;
+	struct lu_env env;
 #ifdef USE_HEALTH_CHECK_WRITE
         struct thandle *th;
 #endif
         int rc = 0;
 
-        info = ofd_info_init(env, NULL);
-        rc = dt_statfs(env, ofd->ofd_osd, &info->fti_u.osfs);
+	/* obd_proc_read_health pass NULL env, we need real one */
+	rc = lu_env_init(&env, LCT_DT_THREAD);
+	if (rc)
+		RETURN(rc);
+
+        info = ofd_info_init(&env, NULL);
+        rc = dt_statfs(&env, ofd->ofd_osd, &info->fti_u.osfs);
         if (unlikely(rc))
                 GOTO(out, rc);
 
@@ -1336,27 +1342,28 @@ static int ofd_health_check(const struct lu_env *env, struct obd_device *obd)
         info->fti_buf.lb_len = CFS_PAGE_SIZE;
         info->fti_off = 0;
 
-        th = dt_trans_create(env, ofd->ofd_osd);
+        th = dt_trans_create(&env, ofd->ofd_osd);
         if (IS_ERR(th))
                 GOTO(out, rc = PTR_ERR(th));
 
-        rc = dt_declare_record_write(env, ofd->ofd_health_check_file,
+        rc = dt_declare_record_write(&env, ofd->ofd_health_check_file,
                                      info->fti_buf.lb_len, info->fti_off, th);
         if (rc == 0) {
                 th->th_sync = 1; /* sync IO is needed */
-                rc = dt_trans_start_local(env, ofd->ofd_osd, th);
+                rc = dt_trans_start_local(&env, ofd->ofd_osd, th);
                 if (rc == 0)
-                        rc = dt_record_write(env, ofd->ofd_health_check_file,
+                        rc = dt_record_write(&env, ofd->ofd_health_check_file,
                                              &info->fti_buf, &info->fti_off,
                                              th);
         }
-        dt_trans_stop(env, ofd->ofd_osd, th);
+        dt_trans_stop(&env, ofd->ofd_osd, th);
 
         OBD_FREE(info->fti_buf.lb_buf, CFS_PAGE_SIZE);
 
         CDEBUG(D_INFO, "write 1 page synchronously for checking io rc %d\n",rc);
 #endif
 out:
+	lu_env_fini(&env);
         return !!rc;
 }
 
