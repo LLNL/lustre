@@ -370,6 +370,8 @@ int class_attach(struct lustre_cfg *lcfg)
 
         llog_group_init(&obd->obd_olg);
 
+	obd->obd_conn_inprogress = 0;
+
         len = strlen(uuid);
         if (len >= sizeof(obd->obd_uuid)) {
                 CERROR("uuid must be < %d bytes long\n",
@@ -580,7 +582,16 @@ int class_cleanup(struct obd_device *obd, struct lustre_cfg *lcfg)
         }
         /* Leave this on forever */
         obd->obd_stopping = 1;
-        cfs_spin_unlock(&obd->obd_dev_lock);
+
+	/* wait for already-arrived-connections to finish. */
+	while (obd->obd_conn_inprogress > 0) {
+		cfs_spin_unlock(&obd->obd_dev_lock);
+
+		cfs_cond_resched();
+
+		cfs_spin_lock(&obd->obd_dev_lock);
+	}
+       cfs_spin_unlock(&obd->obd_dev_lock);
 
         if (lcfg->lcfg_bufcount >= 2 && LUSTRE_CFG_BUFLEN(lcfg, 1) > 0) {
                 for (flag = lustre_cfg_string(lcfg, 1); *flag != 0; flag++)
