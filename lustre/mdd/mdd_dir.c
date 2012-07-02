@@ -2304,6 +2304,12 @@ static int mdd_rename(const struct lu_env *env,
                 if (S_ISDIR(tg_attr->la_mode))
                         mdo_ref_del(env, mdd_tobj, handle);
 
+	        /* fetch updated nlink */
+		rc = mdd_la_get(env, mdd_tobj, tg_attr,
+				mdd_object_capa(env, mdd_tobj));
+		if (rc)
+			GOTO(fixup_tpobj, rc);
+
                 la->la_valid = LA_CTIME;
                 rc = mdd_attr_check_set_internal(env, mdd_tobj, la, handle, 0);
                 if (rc)
