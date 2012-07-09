@@ -1276,7 +1276,7 @@ static int ofd_sync(const struct lu_env *env, struct obd_export *exp,
 {
 	struct ofd_device	*ofd = ofd_exp(exp);
 	struct ofd_thread_info	*info;
-        struct ofd_object	*fo;
+	struct ofd_object	*fo;
 	int			 rc = 0;
 
 	ENTRY;
@@ -1307,9 +1307,12 @@ static int ofd_sync(const struct lu_env *env, struct obd_export *exp,
 	if (!ofd_object_exists(fo))
 		GOTO(unlock, rc = -ENOENT);
 
-	rc = dt_object_sync(env, ofd_object_child(fo));
-	if (rc)
-		GOTO(unlock, rc);
+	if (dt_version_get(env, ofd_object_child(fo)) >
+	    ofd_obd(ofd)->obd_last_committed) {
+		rc = dt_object_sync(env, ofd_object_child(fo));
+		if (rc)
+			GOTO(unlock, rc);
+	}
 
 	oinfo->oi_oa->o_valid = OBD_MD_FLID;
 	rc = ofd_attr_get(env, fo, &info->fti_attr);
