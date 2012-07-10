@@ -1280,8 +1280,8 @@ static void target_exp_dequeue_req_replay(struct ptlrpc_request *req)
 static void target_finish_recovery(struct obd_device *obd)
 {
         ENTRY;
-        LCONSOLE_INFO("%s: sending delayed replies to recovered clients\n",
-                      obd->obd_name);
+        LCONSOLE_INFO("%s: Sending delayed replies to %d recovered clients\n",
+                      obd->obd_name, obd->obd_connected_clients);
 
         ldlm_reprocess_all_ns(obd->obd_namespace);
         cfs_spin_lock(&obd->obd_recovery_task_lock);
@@ -1455,7 +1455,8 @@ static void check_and_start_recovery_timer(struct obd_device *obd)
                 cfs_spin_unlock(&obd->obd_recovery_task_lock);
                 return;
         }
-        CDEBUG(D_HA, "%s: starting recovery timer\n", obd->obd_name);
+        LCONSOLE_INFO("%s: Starting recovery timer for %u seconds\n",
+                      obd->obd_name, obd->obd_recovery_timeout);
         obd->obd_recovery_start = cfs_time_current_sec();
         cfs_spin_unlock(&obd->obd_recovery_task_lock);
 
