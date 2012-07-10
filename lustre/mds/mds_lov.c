@@ -866,18 +866,18 @@ static int __mds_lov_synchronize(void *data)
         rc = llog_connect(ctxt, NULL, NULL, uuid);
         llog_ctxt_put(ctxt);
         if (rc != 0) {
-                CERROR("%s failed at llog_origin_connect: %d\n",
-                       obd_uuid2str(uuid), rc);
+                CERROR("%s: %s failed at llog_origin_connect: %d\n",
+                       obd->obd_name, obd_uuid2str(uuid), rc);
                 GOTO(out, rc);
         }
 
-        LCONSOLE_INFO("MDS %s: %s now active, resetting orphans\n",
+        LCONSOLE_INFO("%s: %s now active, resetting orphans\n",
               obd->obd_name, obd_uuid2str(uuid));
 
         rc = mds_lov_clear_orphans(mds, uuid);
         if (rc != 0) {
-                CERROR("%s failed at mds_lov_clear_orphans: %d\n",
-                       obd_uuid2str(uuid), rc);
+                LCONSOLE_WARN("%s: Failed to clear orphan objects on OST: %d\n",
+                              obd_uuid2str(uuid), rc);
                 GOTO(out, rc);
         }
 
@@ -897,8 +897,8 @@ out:
         cfs_up_read(&mds->mds_notify_lock);
         if (rc) {
                 /* Deactivate it for safety */
-                CERROR("%s sync failed %d, deactivating\n", obd_uuid2str(uuid),
-                       rc);
+                LCONSOLE_WARN("%s: Sync failed deactivating: rc %d\n",
+                              obd_uuid2str(uuid), rc);
                 if (!obd->obd_stopping && mds->mds_lov_obd &&
                     !mds->mds_lov_obd->obd_stopping && !watched->obd_stopping)
                         obd_notify(mds->mds_lov_obd, watched,
