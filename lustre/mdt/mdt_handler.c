@@ -4474,8 +4474,8 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
 
         cfs_spin_lock_init(&m->mdt_ioepoch_lock);
         m->mdt_opts.mo_compat_resname = 0;
-        m->mdt_opts.mo_mds_capa = 1;
-        m->mdt_opts.mo_oss_capa = 1;
+	m->mdt_opts.mo_mds_capa = 0;
+	m->mdt_opts.mo_oss_capa = 0;
         m->mdt_capa_timeout = CAPA_TIMEOUT;
         m->mdt_capa_alg = CAPA_HMAC_ALG_SHA1;
         m->mdt_ck_timeout = CAPA_KEY_TIMEOUT;
