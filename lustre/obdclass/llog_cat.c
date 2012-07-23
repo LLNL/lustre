@@ -504,6 +504,14 @@ int llog_cat_cancel_records(const struct lu_env *env, struct llog_handle *cathan
 
                 lrc = llog_cancel_rec(env, loghandle, cookies->lgc_index);
                 if (lrc == 1) { /* log has been destroyed */
+			CERROR("Closing handle %p after canceling "LPX64
+			       ":%d: count=%u last_idx=%d\n",
+			       loghandle, lgl->lgl_oid, cookies->lgc_index,
+			       loghandle->lgh_hdr->llh_count,
+			       loghandle->lgh_last_idx);
+			LASSERT(!llog_exist(loghandle));
+			LASSERTF(loghandle->lgh_hdr->llh_count == 1, "%u\n",
+				 loghandle->lgh_hdr->llh_count);
                         index = loghandle->u.phd.phd_cookie.lgc_index;
                         cfs_down_write(&cathandle->lgh_lock);
                         if (cathandle->u.chd.chd_current_log == loghandle)

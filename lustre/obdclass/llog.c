@@ -95,6 +95,7 @@ void llog_free_handle(struct llog_handle *loghandle)
         LASSERT(sizeof(*(loghandle->lgh_hdr)) == LLOG_CHUNK_SIZE);
         OBD_FREE(loghandle->lgh_hdr, LLOG_CHUNK_SIZE);
 out:
+	CDEBUG(D_HA, "%s: Freeing %p\n", cfs_curproc_comm(), loghandle);
         OBD_FREE_PTR(loghandle);
 }
 
