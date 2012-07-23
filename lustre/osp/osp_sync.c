@@ -457,6 +457,10 @@ static struct ptlrpc_request *osp_sync_new_job(struct osp_device *d,
 	body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
 	LASSERT(body);
 	body->oa.o_lcookie.lgc_lgl = llh->lgh_id;
+	if (body->oa.o_lcookie.lgc_lgl.lgl_oid == 0x5a5a5a5a5a5a5a5aULL ||
+	    body->oa.o_lcookie.lgc_lgl.lgl_ogen == 0x5a5a5a5aUL ||
+	    body->oa.o_lcookie.lgc_lgl.lgl_oseq == 0x5a5a5a5a5a5a5a5aULL)
+		CDEBUG(D_HA, "Poisoned log ID from handle %p\n", llh);
 	body->oa.o_lcookie.lgc_subsys = LLOG_MDS_OST_ORIG_CTXT;
 	body->oa.o_lcookie.lgc_index = h->lrh_index;
 	CFS_INIT_LIST_HEAD(&req->rq_exp_list);
@@ -576,7 +580,8 @@ static int osp_sync_process_record(const struct lu_env *env,
 		LASSERT(d->opd_syn_prev_done == 0);
 		if (!memcmp(&d->opd_syn_generation, &gen->lgr_gen,
 			    sizeof(gen->lgr_gen))) {
-			CDEBUG(D_HA, "processed all old entries\n");
+			CERROR("processed all old entries: "LPX64":%d\n",
+			       cookie.lgc_lgl.lgl_oid, cookie.lgc_index);
 			d->opd_syn_prev_done = 1;
 		}
 
@@ -704,8 +709,9 @@ static void osp_sync_process_committed(const struct lu_env *env,
 			rc = llog_cat_cancel_records(env, llh, 1,
 						     &body->oa.o_lcookie);
 			if (rc)
-				CERROR("%s: can't cancel record: %d\n",
-				       obd->obd_name, rc);
+				DEBUG_REQ(D_ERROR, req,
+				          "%s: can't cancel record: %d\n",
+				          obd->obd_name, rc);
 		} else {
 			DEBUG_REQ(D_HA, req, "not committed");
 		}
