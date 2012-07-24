@@ -375,12 +375,12 @@ cfs_sigset_t cfs_block_allsigs()
         return old;
 }
 
-cfs_sigset_t cfs_block_sigs(unsigned long sigs)
+cfs_sigset_t cfs_block_sigs(sigset_t bit)
 {
         cfs_sigset_t    old = 0;
 #ifdef __DARWIN8__
 #else
-        block_procsigmask(current_proc(), sigs);
+        block_procsigmask(current_proc(), bit);
 #endif
         return old;
 }

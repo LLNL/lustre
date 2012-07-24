@@ -310,28 +310,30 @@ cfs_block_allsigs(void)
         return old;
 }
 
-sigset_t cfs_block_sigs(unsigned long sigs)
+sigset_t
+cfs_block_sigs(sigset_t bits)
 {
         unsigned long  flags;
         sigset_t        old;
 
         SIGNAL_MASK_LOCK(current, flags);
         old = current->blocked;
-	sigaddsetmask(&current->blocked, sigs);
+        current->blocked = bits;
         RECALC_SIGPENDING;
         SIGNAL_MASK_UNLOCK(current, flags);
         return old;
 }
 
 /* Block all signals except for the @sigs */
-sigset_t cfs_block_sigsinv(unsigned long sigs)
+cfs_sigset_t
+cfs_block_sigsinv(unsigned long sigs)
 {
         unsigned long flags;
-        sigset_t old;
+        cfs_sigset_t old;
 
         SIGNAL_MASK_LOCK(current, flags);
         old = current->blocked;
-	sigaddsetmask(&current->blocked, ~sigs);
+        siginitsetinv(&current->blocked, sigs);
         RECALC_SIGPENDING;
         SIGNAL_MASK_UNLOCK(current, flags);
 

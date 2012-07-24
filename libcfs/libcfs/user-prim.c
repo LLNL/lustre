@@ -287,19 +287,18 @@ cfs_sigset_t cfs_block_allsigs(void)
         int            rc;
 
         sigfillset(&all);
-        rc = sigprocmask(SIG_BLOCK, &all, &old);
+        rc = sigprocmask(SIG_SETMASK, &all, &old);
         LASSERT(rc == 0);
 
         return old;
 }
 
-cfs_sigset_t cfs_block_sigs(unsigned long sigs)
+cfs_sigset_t cfs_block_sigs(cfs_sigset_t blocks)
 {
         cfs_sigset_t   old;
-	cfs_sigset_t   blocks = { { sigs } }; /* kludge */
         int   rc;
 
-        rc = sigprocmask(SIG_BLOCK, &blocks, &old);
+        rc = sigprocmask(SIG_SETMASK, &blocks, &old);
         LASSERT (rc == 0);
 
         return old;
