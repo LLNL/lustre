@@ -1236,10 +1236,6 @@ static int ofd_sync(const struct lu_env *env, struct obd_export *exp,
 
 	if (dt_version_get(env, ofd_object_child(fo)) >
 	    ofd_obd(ofd)->obd_last_committed) {
-		CDEBUG(D_DLMTRACE, "sync "DFID"(%Lu > %Lu)\n",
-		       PFID(lu_object_fid(&fo->ofo_obj.do_lu)),
-		       dt_version_get(env, ofd_object_child(fo)),
-		       ofd_obd(ofd)->obd_last_committed);
 		rc = dt_object_sync(env, ofd_object_child(fo));
 		if (rc)
 			GOTO(unlock, rc);
