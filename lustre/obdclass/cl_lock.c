@@ -1399,8 +1399,11 @@ int cl_unuse_try(const struct lu_env *env, struct cl_lock *lock)
                  */
                 result = 0;
         } else {
-                CERROR("result = %d, this is unlikely!\n", result);
-                cl_lock_extransit(env, lock, state);
+		CL_LOCK_DEBUG(D_ERROR, env, lock, "unuse return %d\n", result);
+		/* Set the lock state to CLS_NEW so it will be destroyed.
+		 * In lov_lock_unuse() it will release sublocks even if error
+		 * occurs. */
+		cl_lock_extransit(env, lock, CLS_NEW);
         }
 
         result = result ?: lock->cll_error;
@@ -1410,18 +1413,6 @@ int cl_unuse_try(const struct lu_env *env, struct cl_lock *lock)
 }
 EXPORT_SYMBOL(cl_unuse_try);
 
-static void cl_unuse_locked(const struct lu_env *env, struct cl_lock *lock)
-{
-        int result;
-        ENTRY;
-
-        result = cl_unuse_try(env, lock);
-        if (result)
-                CL_LOCK_DEBUG(D_ERROR, env, lock, "unuse return %d\n", result);
-
-        EXIT;
-}
-
 /**
  * Unlocks a lock.
  */
@@ -1429,7 +1420,7 @@ void cl_unuse(const struct lu_env *env, struct cl_lock *lock)
 {
         ENTRY;
         cl_lock_mutex_get(env, lock);
-        cl_unuse_locked(env, lock);
+        cl_unuse_try(env, lock);
         cl_lock_mutex_put(env, lock);
         cl_lock_lockdep_release(env, lock);
         EXIT;
@@ -2142,7 +2133,7 @@ struct cl_lock *cl_lock_request(const struct lu_env *env, struct cl_io *io,
                                 }
                                 rc = 1;
                         }
-                        cl_unuse_locked(env, lock);
+                        cl_unuse_try(env, lock);
                 }
                 cl_lock_trace(D_DLMTRACE, env,
                               rc <= 0 ? "enqueue failed" : "agl succeed", lock);
