@@ -459,6 +459,10 @@ int ofd_server_data_init(const struct lu_env *env,
         obd->obd_last_committed = fsd->lsd_last_transno;
         cfs_spin_unlock(&ofd->ofd_transno_lock);
 
+	cfs_spin_lock(&ofd->ofd_lut.lut_translock);
+	ofd->ofd_lut.lut_last_transno = fsd->lsd_last_transno;
+	cfs_spin_unlock(&ofd->ofd_lut.lut_translock);
+
         /* save it, so mount count and last_transno is current */
         rc = lut_server_data_update(env, &ofd->ofd_lut, 0);
         if (rc)
