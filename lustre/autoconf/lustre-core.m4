@@ -2102,6 +2102,26 @@ LB_LINUX_TRY_COMPILE([
 
 
 #
+# 3.1.1 has ext4_blocks_for_truncate
+#
+AC_DEFUN([LC_BLOCKS_FOR_TRUNCATE],
+[AC_MSG_CHECKING([if kernel has ext4_blocks_for_truncate])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/fs.h>
+	#include "$LINUX/fs/ext4/ext4_jbd2.h"
+	#include "$LINUX/fs/ext4/truncate.h"
+],[
+	ext4_blocks_for_truncate(NULL);
+],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_BLOCKS_FOR_TRUNCATE, 1,
+		  [kernel has ext4_blocks_for_truncate])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2256,6 +2276,9 @@ AC_DEFUN([LC_PROG_LINUX],
          LC_BLK_QUEUE_MAX_SEGMENTS
          LC_SET_CPUS_ALLOWED
          LC_SELINUX_IS_ENABLED
+
+	 # 3.1.1
+	 LC_BLOCKS_FOR_TRUNCATE
 
          #
          if test x$enable_server = xyes ; then
