@@ -459,10 +459,6 @@ static struct ptlrpc_request *osp_sync_new_job(struct osp_device *d,
         body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
         LASSERT(body);
         body->oa.o_lcookie.lgc_lgl = llh->lgh_id;
-        if (body->oa.o_lcookie.lgc_lgl.lgl_oid == 0x5a5a5a5a5a5a5a5aULL ||
-            body->oa.o_lcookie.lgc_lgl.lgl_ogen == 0x5a5a5a5aUL ||
-            body->oa.o_lcookie.lgc_lgl.lgl_oseq == 0x5a5a5a5a5a5a5a5aULL)
-                CERROR("Poisoned log ID from handle %p\n", llh);
         body->oa.o_lcookie.lgc_subsys = LLOG_MDS_OST_ORIG_CTXT;
         body->oa.o_lcookie.lgc_index = h->lrh_index;
         CFS_INIT_LIST_HEAD(&req->rq_exp_list);
