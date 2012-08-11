@@ -347,23 +347,6 @@ static struct ll_inode_info *ll_close_next_lli(struct ll_close_queue *lcq)
         return lli;
 }
 
-int ll_close_thread_cb(void *arg)
-{
-	struct ll_close_queue *lcq = arg;
-	struct ll_inode_info *lli = NULL;
-	int empty = 0, stop = 0;
-
-	stop = cfs_atomic_read(&lcq->lcq_stop);
-	empty = cfs_list_empty(&lcq->lcq_head);
-	lli = cfs_list_entry(lcq->lcq_head.next, struct ll_inode_info,
-	                     lli_close_list);
-
-	CERROR("ll_close_thread timeout triggered. "
-	       "lli = %p, empty = %i, stop = %i\n", lli, empty, stop);
-
-	return 0;
-}
-
 static int ll_close_thread(void *arg)
 {
         struct ll_close_queue *lcq = arg;
@@ -378,8 +361,7 @@ static int ll_close_thread(void *arg)
         cfs_complete(&lcq->lcq_comp);
 
         while (1) {
-                struct l_wait_info lwi = LWI_TIMEOUT(cfs_time_seconds(60),
-                                                     ll_close_thread_cb, lcq);
+                struct l_wait_info lwi = { 0 };
                 struct ll_inode_info *lli;
                 struct inode *inode;
 
