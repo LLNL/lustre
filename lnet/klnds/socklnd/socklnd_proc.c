@@ -27,8 +27,10 @@
 
 #include <linux/seq_file.h>
 
-#define SOCKLND_PROC_ROOT    "sys/lnet/socklnd"
-#define SOCKLND_PROC_STATS   "sys/lnet/socklnd/stats"
+#define SOCKLND_PROC_ROOT    "socklnd"
+#define SOCKLND_PROC_STATS   "stats"
+
+struct proc_dir_entry *socklnd_proc_root;
 
 /* FIXME: I should really make a shared lnet version of these and combine the
    o2iblnd and socklnd histogram patches. */
@@ -165,12 +167,13 @@ ksocknal_proc_init(void)
 {
         struct proc_dir_entry *entry;
 
-        if (!proc_mkdir(SOCKLND_PROC_ROOT, NULL)) {
+        socklnd_proc_root = proc_mkdir(SOCKLND_PROC_ROOT, NULL);
+        if (socklnd_proc_root == NULL) {
                 CERROR("couldn't create proc dir %s\n", SOCKLND_PROC_ROOT);
                 return -1;
         }
 
-        entry = create_proc_entry(SOCKLND_PROC_STATS, 0644, NULL);
+        entry = create_proc_entry(SOCKLND_PROC_STATS, 0644, socklnd_proc_root);
         if (entry == NULL) {
                 CERROR("couldn't create proc entry %s\n", SOCKLND_PROC_STATS);
                 return -1;
@@ -185,7 +188,7 @@ ksocknal_proc_init(void)
 void
 ksocknal_proc_fini(void)
 {
-        remove_proc_entry(SOCKLND_PROC_STATS, NULL);
+        remove_proc_entry(SOCKLND_PROC_STATS, socklnd_proc_root);
         remove_proc_entry(SOCKLND_PROC_ROOT, NULL);
 }
 

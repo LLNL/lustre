@@ -27,8 +27,10 @@
 
 #include <linux/seq_file.h>
 
-#define O2IB_PROC_ROOT    "sys/lnet/o2iblnd"
-#define O2IB_PROC_STATS   "sys/lnet/o2iblnd/stats"
+#define O2IB_PROC_ROOT    "o2iblnd"
+#define O2IB_PROC_STATS   "stats"
+
+struct proc_dir_entry *o2iblnd_proc_root;
 
 /* copy of lprocfs_oh_tally() */
 static void
@@ -177,13 +179,14 @@ kiblnd_proc_init(void)
 {
         struct proc_dir_entry *entry;
 
-        if (!proc_mkdir(O2IB_PROC_ROOT, NULL)) {
+        o2iblnd_proc_root = proc_mkdir(O2IB_PROC_ROOT, NULL);
+        if (o2iblnd_proc_root == NULL) {
                 CERROR("couldn't create proc dir %s\n", O2IB_PROC_ROOT);
                 return -1;
         }
 
         /* Initialize LNET_PROC_NIS */
-        entry = create_proc_entry(O2IB_PROC_STATS, 0644, NULL);
+        entry = create_proc_entry(O2IB_PROC_STATS, 0644, o2iblnd_proc_root);
         if (entry == NULL) {
                 CERROR("couldn't create proc entry %s\n", O2IB_PROC_STATS);
                 return -1;
@@ -198,7 +201,7 @@ kiblnd_proc_init(void)
 void
 kiblnd_proc_fini(void)
 {
-        remove_proc_entry(O2IB_PROC_STATS, NULL);
+        remove_proc_entry(O2IB_PROC_STATS, o2iblnd_proc_root);
         remove_proc_entry(O2IB_PROC_ROOT, NULL);
 }
 
