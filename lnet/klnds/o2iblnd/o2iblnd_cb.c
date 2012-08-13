@@ -2992,6 +2992,7 @@ kiblnd_check_txs_locked(kib_conn_t *conn, cfs_list_t *txs)
 {
         kib_tx_t          *tx;
         cfs_list_t        *ttmp;
+        cfs_time_t         start;
 
         cfs_list_for_each (ttmp, txs) {
                 tx = cfs_list_entry (ttmp, kib_tx_t, tx_list);
@@ -3004,9 +3005,16 @@ kiblnd_check_txs_locked(kib_conn_t *conn, cfs_list_t *txs)
                 }
 
                 if (cfs_time_aftereq (jiffies, tx->tx_deadline)) {
-                        CERROR("Timed out tx: %s, %lu seconds\n",
+                        start = tx->tx_deadline -
+                                cfs_time_seconds(*kiblnd_tunables.kib_timeout);
+
+                        CERROR("Timed out TX on %s list after %lus "
+                               "(%lus waiting, %lus active).",
                                kiblnd_queue2str(conn, txs),
-                               cfs_duration_sec(jiffies - tx->tx_deadline));
+                               cfs_duration_sec(jiffies - start),
+                               cfs_duration_sec(tx->tx_active_q_time - start),
+                               cfs_duration_sec(jiffies - tx->tx_active_q_time));
+
                         return 1;
                 }
         }
