@@ -853,10 +853,10 @@ static ssize_t ll_file_io_generic(const struct lu_env *env,
 #endif
                         if ((iot == CIT_WRITE) &&
                             !(cio->cui_fd->fd_flags & LL_FILE_GROUP_LOCKED)) {
-                                if (cfs_mutex_lock_interruptible(&lli->
-                                                               lli_write_mutex))
-                                        GOTO(out, result = -ERESTARTSYS);
-                                write_mutex_locked = 1;
+//                                if (cfs_mutex_lock_interruptible(&lli->
+//                                                               lli_write_mutex))
+//                                        GOTO(out, result = -ERESTARTSYS);
+                                write_mutex_locked = 0;
                         } else if (iot == CIT_READ) {
                                 cfs_down_read(&lli->lli_trunc_sem);
                         }

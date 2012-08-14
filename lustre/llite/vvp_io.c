@@ -441,8 +441,8 @@ static ssize_t lustre_generic_file_read(struct file *file,
 static ssize_t lustre_generic_file_write(struct file *file,
                                         struct ccc_io *vio, loff_t *ppos)
 {
-        return generic_file_aio_write(vio->cui_iocb, vio->cui_iov,
-                                      vio->cui_nrsegs, *ppos);
+        return __generic_file_aio_write(vio->cui_iocb, vio->cui_iov,
+                                        vio->cui_nrsegs, ppos);
 }
 #endif
 
