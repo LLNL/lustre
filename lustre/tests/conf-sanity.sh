@@ -594,6 +594,11 @@ is_blkdev () {
 #
 
 test_17() {
+	if [ $(facet_fstype mgs) != ldiskfs ]; then
+		skip "Only works with ldiskfs-based MGTs at the moment"
+		return
+	fi
+
         setup
         check_mount || return 41
         cleanup || return $?
