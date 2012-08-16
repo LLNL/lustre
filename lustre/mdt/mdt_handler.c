@@ -1977,13 +1977,39 @@ static int mdt_quotactl(struct mdt_thread_info *info)
         int                  id, rc;
         ENTRY;
 
-        oqctl = req_capsule_client_get(pill, &RMF_OBD_QUOTACTL);
-        if (oqctl == NULL)
-                RETURN(-EPROTO);
+	oqctl = req_capsule_client_get(pill, &RMF_OBD_QUOTACTL);
+	if (oqctl == NULL)
+		RETURN(err_serious(-EPROTO));
 
-        id = oqctl->qc_id;
+	rc = req_capsule_server_pack(pill);
+	if (rc)
+		RETURN(err_serious(rc));
+
+	switch (oqctl->qc_cmd) {
+	case Q_QUOTACHECK:
+	case LUSTRE_Q_INVALIDATE:
+	case LUSTRE_Q_FINVALIDATE:
+	case Q_QUOTAON:
+	case Q_QUOTAOFF:
+	case Q_INITQUOTA:
+		/* deprecated, not used any more */
+		RETURN(-EOPNOTSUPP);
+	/* master quotactl */
+	case Q_GETINFO:
+	case Q_SETINFO:
+	case Q_SETQUOTA:
+	case Q_GETQUOTA:
+	/* slave quotactl */
+	case Q_GETOINFO:
+	case Q_GETOQUOTA:
+		break;
+	default:
+		CERROR("Unsupported quotactl command: %d\n", oqctl->qc_cmd);
+		RETURN(-EFAULT);
+	}
 
         /* map uid/gid for remote client */
+        id = oqctl->qc_id;
         if (exp_connect_rmtclient(exp)) {
                 struct lustre_idmap_table *idmap;
 
@@ -2009,17 +2035,43 @@ static int mdt_quotactl(struct mdt_thread_info *info)
                 }
         }
 
-        rc = req_capsule_server_pack(pill);
-        if (rc)
-                RETURN(rc);
-
-        repoqc = req_capsule_server_get(pill, &RMF_OBD_QUOTACTL);
-        LASSERT(repoqc != NULL);
+	repoqc = req_capsule_server_get(pill, &RMF_OBD_QUOTACTL);
+	if (repoqc == NULL)
+		RETURN(err_serious(-EFAULT));
 
         if (oqctl->qc_id != id)
                 cfs_swap(oqctl->qc_id, id);
-	rc = lquotactl_slv(info->mti_env, info->mti_mdt->mdt_bottom,
-			   oqctl);
+
+	switch (oqctl->qc_cmd) {
+
+	/* master quotactl */
+	case Q_GETINFO:
+	case Q_SETINFO:
+	case Q_SETQUOTA:
+		/* XXX: not implemented yet. Will be when qmt support is
+		 * added */
+		CERROR("quotactl operation %d not implemented yet\n",
+		       oqctl->qc_cmd);
+		RETURN(-EOPNOTSUPP);
+	case Q_GETQUOTA:
+		/* XXX: return no limit for now, just for testing purpose */
+		memset(&oqctl->qc_dqblk, 0, sizeof(struct obd_dqblk));
+		oqctl->qc_dqblk.dqb_valid = QIF_LIMITS;
+		rc = 0;
+		break;
+
+	/* slave quotactl */
+	case Q_GETOINFO:
+	case Q_GETOQUOTA:
+		rc = lquotactl_slv(info->mti_env, info->mti_mdt->mdt_bottom,
+				   oqctl);
+		break;
+
+	default:
+		CERROR("Unsupported quotactl command: %d\n", oqctl->qc_cmd);
+		RETURN(-EFAULT);
+	}
+
         if (oqctl->qc_id != id)
                 cfs_swap(oqctl->qc_id, id);
 
