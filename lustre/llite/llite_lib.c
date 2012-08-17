@@ -2153,8 +2153,8 @@ int ll_prep_inode(struct inode **inode,
 	if (S_ISREG(md.body->mode) && sbi->ll_flags & LL_SBI_LAYOUT_LOCK &&
 	    md.lsm != NULL && !ll_have_md_lock(*inode, &ibits, LCK_MINMODE)) {
 		CERROR("%s: inode "DFID" (%p) layout lock not granted.\n",
-			ll_get_fsname(*inode), PFID(ll_inode2fid(*inode)),
-			*inode);
+			ll_get_fsname(sbi, NULL, 0),
+			PFID(ll_inode2fid(*inode)), *inode);
 	}
 
 out:
@@ -2349,4 +2349,37 @@ int ll_get_obd_name(struct inode *inode, unsigned int cmd, unsigned long arg)
                 RETURN(-EFAULT);
 
         RETURN(0);
+}
+
+/**
+ * Get lustre file system name by \a sbi. If \a buf is provided(non-NULL), the
+ * fsname will be returned in this buffer; otherwise, a static buffer will be
+ * used to store the fsname and returned to caller.
+ */
+char *ll_get_fsname(struct ll_sb_info *sbi, char *buf, int buflen)
+{
+	static char fsname_static[MTI_NAME_MAXLEN];
+	struct lustre_sb_info *lsi = s2lsi(sbi->ll_mnt->mnt_sb);
+	char *ptr;
+	int len;
+
+	if (buf == NULL) {
+		/* this means the caller wants to use static buffer
+		 * and it doesn't care about race. Usually this is
+		 * in error reporting path */
+		buf = fsname_static;
+		buflen = sizeof(fsname_static);
+	}
+
+	len = strlen(lsi->lsi_lmd->lmd_profile);
+	ptr = strrchr(lsi->lsi_lmd->lmd_profile, '-');
+	if (ptr && (strcmp(ptr, "-client") == 0))
+		len -= 7;
+
+	if (unlikely(len >= buflen))
+		len = buflen - 1;
+	strncpy(buf, lsi->lsi_lmd->lmd_profile, len);
+	buf[len] = '\0';
+
+	return buf;
 }
