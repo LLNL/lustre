@@ -2724,6 +2724,11 @@ diff_files_xattrs()
 }
 
 test_52() {
+	if [ $(facet_fstype ost1) == zfs ]; then
+		skip "Does not work with ZFS-based OSTs yet"
+		return
+	fi
+
 	start_mds
 	[ $? -eq 0 ] || { error "Unable to start MDS"; return 1; }
 	start_ost
