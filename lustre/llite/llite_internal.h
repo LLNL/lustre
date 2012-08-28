@@ -433,7 +433,8 @@ struct ll_sb_info {
 
         struct lprocfs_stats     *ll_stats; /* lprocfs stats counter */
 
-	struct cl_client_lru      ll_lru;
+        unsigned long             ll_async_page_max;
+        unsigned long             ll_async_page_count;
 
         struct lprocfs_stats     *ll_ra_stats;
 
@@ -651,7 +652,6 @@ struct page *ll_get_dir_page(struct file *filp, struct inode *dir, __u64 hash,
 int ll_readdir(struct file *filp, void *cookie, filldir_t filldir);
 
 int ll_get_mdt_idx(struct inode *inode);
-char *ll_get_fsname(struct ll_sb_info *sbi);
 /* llite/namei.c */
 int ll_objects_destroy(struct ptlrpc_request *request,
                        struct inode *dir);

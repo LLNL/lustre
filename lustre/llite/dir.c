@@ -667,9 +667,9 @@ int ll_send_mgc_param(struct obd_export *mgc, char *string)
         return rc;
 }
 
-char *ll_get_fsname(struct ll_sb_info *sbi)
+char *ll_get_fsname(struct inode *inode)
 {
-        struct lustre_sb_info *lsi = s2lsi(sbi->ll_mnt->mnt_sb);
+        struct lustre_sb_info *lsi = s2lsi(inode->i_sb);
         char *ptr, *fsname;
         int len;
 
@@ -750,7 +750,7 @@ int ll_dir_setstripe(struct inode *inode, struct lov_user_md *lump,
                 OBD_ALLOC(param, MGS_PARAM_MAXLEN);
 
                 /* Get fsname and assume devname to be -MDT0000. */
-                fsname = ll_get_fsname(sbi);
+                fsname = ll_get_fsname(inode);
                 /* Set root stripesize */
                 sprintf(param, "%s-MDT0000.lov.stripesize=%u", fsname,
                         lump ? le32_to_cpu(lump->lmm_stripe_size) : 0);
