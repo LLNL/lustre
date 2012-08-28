@@ -1100,16 +1100,20 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 	CDEBUG(D_INFO, "ofd_create(oa->o_seq="LPU64",oa->o_id="LPU64")\n",
 	       oa->o_seq, oa->o_id);
 
+	if (OBD_FAIL_CHECK_VALUE(OBD_FAIL_OST_ENOSPC,
+				 ofd->ofd_lut.lut_lsd.lsd_ost_index))
+		GOTO(out_nolock, rc = -ENOSPC);
+
 	if ((oa->o_valid & OBD_MD_FLFLAGS) &&
 	    (oa->o_flags & OBD_FL_RECREATE_OBJS)) {
 		if (!ofd_obd(ofd)->obd_recovering ||
 		    oa->o_id > ofd_last_id(ofd, oa->o_seq)) {
 			CERROR("recreate objid "LPU64" > last id "LPU64"\n",
 					oa->o_id, ofd_last_id(ofd, oa->o_seq));
-			GOTO(out, rc = -EINVAL);
+			GOTO(out_nolock, rc = -EINVAL);
 		}
 		/* do nothing because we create objects during first write */
-		GOTO(out, rc = 0);
+		GOTO(out_nolock, rc = 0);
 	}
 	/* former ofd_handle_precreate */
 	if ((oa->o_valid & OBD_MD_FLFLAGS) &&
@@ -1118,7 +1122,7 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 		if (oti->oti_conn_cnt < exp->exp_conn_cnt) {
 			CERROR("%s: dropping old orphan cleanup request\n",
 			       ofd_obd(ofd)->obd_name);
-			GOTO(out, rc = 0);
+			GOTO(out_nolock, rc = 0);
 		}
 		/* This causes inflight precreates to abort and drop lock */
 		cfs_set_bit(oa->o_seq, &ofd->ofd_destroys_in_progress);
@@ -1222,6 +1226,7 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 	ofd_info2oti(info, oti);
 out:
 	cfs_mutex_unlock(&ofd->ofd_create_locks[oa->o_seq]);
+out_nolock:
 	if (rc == 0 && ea != NULL) {
 		struct lov_stripe_md *lsm = *ea;
 

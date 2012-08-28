@@ -300,12 +300,11 @@ static int osp_precreate_send(struct osp_device *d)
         CDEBUG(D_OTHER, "current precreated pool: %Lu-%Lu\n",
                d->opd_pre_next, d->opd_pre_last_created);
 
+out_req:
         /* now we can wakeup all users awaiting for objects */
-        /* XXX: how do we do if rc != 0 ? */
         osp_pre_update_status(d, rc);
         cfs_waitq_signal(&d->opd_pre_user_waitq);
 
-out_req:
         ptlrpc_req_finished(req);
         RETURN(rc);
 }
