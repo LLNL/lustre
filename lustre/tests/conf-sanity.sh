@@ -2958,6 +2958,11 @@ test_55() {
 	local mdsdev=$(mdsdevname 1)
 	local mdsvdev=$(mdsvdevname 1)
 
+	if [ $(facet_fstype mds1) != ldiskfs ]; then
+		skip "Only applicable to ldiskfs-based MDTs"
+		return
+	fi
+
 	for i in 1023 2048
 	do
 		add mds1 $(mkfs_opts mds1) --reformat $mdsdev $mdsvdev ||
