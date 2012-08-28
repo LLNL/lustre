@@ -2929,9 +2929,14 @@ test_53b() {
 run_test 53b "check MDT thread count params"
 
 test_54a() {
-    do_rpc_nodes $(facet_host ost1) run_llverdev $(ostdevname 1) -p
-    [ $? -eq 0 ] || error "llverdev failed!"
-    reformat_and_config
+	if [ $(facet_fstype ost1) != ldiskfs ]; then
+		skip "Only applicable to ldiskfs-based OSTs"
+		return
+	fi
+
+	do_rpc_nodes $(facet_host ost1) run_llverdev $(ostdevname 1) -p
+	[ $? -eq 0 ] || error "llverdev failed!"
+	reformat_and_config
 }
 run_test 54a "test llverdev and partial verify of device"
 
