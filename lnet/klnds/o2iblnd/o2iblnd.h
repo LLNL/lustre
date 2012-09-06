@@ -124,6 +124,7 @@ typedef struct
         int              *kib_require_priv_port;/* accept only privileged ports */
         int              *kib_use_priv_port;    /* use privileged port for active connect */
         char            **kib_qp_debug_upcall;
+        int              *kib_schedulers;       /* schedulers */
 } kib_tunables_t;
 
 extern kib_tunables_t  kiblnd_tunables;

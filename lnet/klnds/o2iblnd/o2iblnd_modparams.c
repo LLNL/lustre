@@ -140,6 +140,10 @@ static char *qp_debug_upcall = "";
 CFS_MODULE_PARM(qp_debug_upcall, "s", charp, 0444,
                 "upcall to run when ib timeout occurs");
 
+static int schedulers; /* initialized to zero by compiler */
+CFS_MODULE_PARM(schedulers, "i", int, 0444,
+                "Schedulers");
+
 kib_tunables_t kiblnd_tunables = {
         .kib_dev_failover           = &dev_failover,
         .kib_service                = &service,
@@ -164,7 +168,8 @@ kib_tunables_t kiblnd_tunables = {
         .kib_pmr_pool_size          = &pmr_pool_size,
         .kib_require_priv_port      = &require_privileged_port,
         .kib_use_priv_port          = &use_privileged_port,
-        .kib_qp_debug_upcall        = &qp_debug_upcall
+        .kib_qp_debug_upcall        = &qp_debug_upcall,
+        .kib_schedulers             = &schedulers
 };
 
 #if defined(CONFIG_SYSCTL) && !CFS_SYSFS_MODULE_PARM
@@ -194,7 +199,8 @@ enum {
         O2IBLND_FMR_FLUSH_TRIGGER,
         O2IBLND_FMR_CACHE,
         O2IBLND_PMR_POOL_SIZE,
-        O2IBLND_DEV_FAILOVER
+        O2IBLND_DEV_FAILOVER,
+        O2IBLND_SCHEDULERS
 };
 #else
 
@@ -219,6 +225,7 @@ enum {
 #define O2IBLND_FMR_CACHE        CTL_UNNUMBERED
 #define O2IBLND_PMR_POOL_SIZE    CTL_UNNUMBERED
 #define O2IBLND_DEV_FAILOVER     CTL_UNNUMBERED
+#define O2IBLND_SCHEDULERS       CTL_UNNUMBERED
 
 #endif
 
@@ -392,6 +399,14 @@ static cfs_sysctl_table_t kiblnd_ctl_table[] = {
                 .mode     = 0444,
                 .proc_handler = &proc_dointvec
         },
+        {
+                .ctl_name = O2IBLND_SCHEDULERS,
+                .procname = "schedulers",
+                .data     = &schedulers,
+                .maxlen   = sizeof(int),
+                .mode     = 0444,
+                .proc_handler = &proc_dointvec
+        },
         {0}
 };
 
@@ -497,6 +512,14 @@ kiblnd_tunables_init (void)
                 CWARN("Concurrent sends %d is lower than message queue size: %d, "
                       "performance may drop slightly.\n",
                       *kiblnd_tunables.kib_concurrent_sends, *kiblnd_tunables.kib_peertxcredits);
+        }
+
+        if (*kiblnd_tunables.kib_schedulers <= 0) {
+                *kiblnd_tunables.kib_schedulers = IBLND_N_SCHED;
+        } else if (*kiblnd_tunables.kib_schedulers > IBLND_N_SCHED) {
+                CWARN("Number of schedulers %d exceeds machine capacity, lowering to %d .\n",
+                      *kiblnd_tunables.kib_schedulers, IBLND_N_SCHED);
+                *kiblnd_tunables.kib_schedulers = IBLND_N_SCHED;
         }
 
         kiblnd_sysctl_init();
