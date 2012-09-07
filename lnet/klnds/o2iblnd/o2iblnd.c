@@ -622,12 +622,12 @@ kiblnd_debug_ib_qp(kib_conn_t *conn)
 }
 
 void
-kiblnd_debug_conn (kib_conn_t *conn)
+kiblnd_debug_conn_locked (kib_conn_t *conn)
 {
         cfs_list_t           *tmp;
         int                   i;
 
-        cfs_spin_lock(&conn->ibc_lock);
+	LASSERT(cfs_spin_is_locked(&conn->ibc_lock));
 
         CDEBUG(D_CONSOLE, "conn[%d] %p [version %x] -> %s: \n",
                cfs_atomic_read(&conn->ibc_refcount), conn,
@@ -667,8 +667,6 @@ kiblnd_debug_conn (kib_conn_t *conn)
         CDEBUG(D_CONSOLE, "   rxs:\n");
         for (i = 0; i < IBLND_RX_MSGS(conn->ibc_version); i++)
                 kiblnd_debug_rx(&conn->ibc_rxs[i]);
-
-        cfs_spin_unlock(&conn->ibc_lock);
 }
 
 int

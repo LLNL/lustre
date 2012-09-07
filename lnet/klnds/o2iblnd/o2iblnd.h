@@ -1103,6 +1103,7 @@ void kiblnd_free_pages (kib_pages_t *p);
 
 int  kiblnd_cm_callback(struct rdma_cm_id *cmid,
                         struct rdma_cm_event *event);
+void kiblnd_debug_conn_locked (kib_conn_t *conn);
 int  kiblnd_translate_mtu(int value);
 
 int  kiblnd_dev_failover(kib_dev_t *dev);

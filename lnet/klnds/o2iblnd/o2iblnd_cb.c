@@ -3025,7 +3025,6 @@ kiblnd_check_txs_locked(kib_conn_t *conn, cfs_list_t *txs)
 static int
 kiblnd_conn_timed_out_locked(kib_conn_t *conn)
 {
-        void kiblnd_debug_conn(kib_conn_t *);
         int  cnt = 0;
 
         if (kiblnd_check_txs_locked(conn, &conn->ibc_tx_queue)) {
@@ -3054,7 +3053,7 @@ kiblnd_conn_timed_out_locked(kib_conn_t *conn)
         }
 
         if (cnt != 0)
-                kiblnd_debug_conn(conn);
+                kiblnd_debug_conn_locked(conn);
 
         return cnt;
 }
