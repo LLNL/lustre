@@ -1910,6 +1910,11 @@ static int brw_interpret(const struct lu_env *env,
 	struct client_obd *cli = aa->aa_cli;
         ENTRY;
 
+	if (IS_POISONED_PTR(aa->aa_oa)) {
+		DEBUG_REQ(D_ERROR, req, "obdo already freed");
+		LBUG();
+	}
+
         rc = osc_brw_fini_request(req, rc);
         CDEBUG(D_INODE, "request %p aa %p rc %d\n", req, aa, rc);
         /* When server return -EINPROGRESS, client should always retry
