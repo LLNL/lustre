@@ -691,9 +691,11 @@ do {                                                                          \
 #ifdef CONFIG_DEBUG_SLAB
 #define POISON(ptr, c, s) do {} while (0)
 #define POISON_PTR(ptr)  ((void)0)
+#define IS_POISONED_PTR(ptr) (0)
 #else
 #define POISON(ptr, c, s) memset(ptr, c, s)
 #define POISON_PTR(ptr)  (ptr) = (void *)0xdeadbeef
+#define IS_POISONED_PTR(ptr) (ptr == (void *)0xdeadbeef)
 #endif
 
 #ifdef POISON_BULK
