@@ -1308,15 +1308,18 @@ static int ofd_sync(const struct lu_env *env, struct obd_export *exp,
 		GOTO(out, rc = PTR_ERR(fo));
 	}
 
-	ofd_write_lock(env, fo);
 	if (!ofd_object_exists(fo))
-		GOTO(unlock, rc = -ENOENT);
+		GOTO(put, rc = -ENOENT);
 
 	if (dt_version_get(env, ofd_object_child(fo)) >
 	    ofd_obd(ofd)->obd_last_committed) {
+		CDEBUG(D_DLMTRACE, "sync "DFID"(%Lu > %Lu)\n",
+		       PFID(lu_object_fid(&fo->ofo_obj.do_lu)),
+		       dt_version_get(env, ofd_object_child(fo)),
+		       ofd_obd(ofd)->obd_last_committed);
 		rc = dt_object_sync(env, ofd_object_child(fo));
 		if (rc)
-			GOTO(unlock, rc);
+			GOTO(put, rc);
 	}
 
 	oinfo->oi_oa->o_valid = OBD_MD_FLID;
@@ -1325,8 +1328,7 @@ static int ofd_sync(const struct lu_env *env, struct obd_export *exp,
 
 	ofd_counter_incr(exp, LPROC_OFD_STATS_SYNC, oinfo->oi_jobid, 1);
 	EXIT;
-unlock:
-	ofd_write_unlock(env, fo);
+put:
 	ofd_object_put(env, fo);
 out:
 	return rc;
