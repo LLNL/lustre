@@ -1,60 +1,92 @@
 # lustre.spec
-%{!?version: %global version @VERSION@}
-%{!?kver: %global kver ""}
-%{!?kdir: %global kdir %(dir=$(echo "%configure_args" | sed -ne 's/.*--with-linux=\\([^ ][^ ]*\\).*$/\\1/p'); if [ -n "$dir" ]; then echo "$dir"; else if [ -n "%kver" ]; then kversion="%kver"; else kversion="$(uname -r)"; fi; echo "/lib/modules/$kversion/source"; fi)}
 
-%{!?kobjdir: %global kobjdir %(dir=$(echo "%configure_args" | sed -ne 's/.*--with-linux-obj=\\([^ ][^ ]*\\).*$/\\1/p'); if [ -n "$dir" ]; then echo "$dir"; else if [ -n "%kver" ]; then kversion="%kver"; else kversion="$(uname -r)"; fi; if [ "%kdir" = "/lib/modules/$kversion/source" ]; then echo "/lib/modules/$kversion/build"; else echo "%kdir"; fi; fi)}
+# Declare rpmbuild --with/--without parameters
+%bcond_without servers
+%bcond_without lustre_tests
+%bcond_with zfs
 
-# as an alternative to this implementation we could simply "make -C $kdir kernelversion"
-%{!?kversion: %global kversion %(if test -s %kobjdir/include/generated/utsrelease.h ; then LINUXRELEASEHEADER=%kobjdir/include/generated/utsrelease.h ; elif test -s %kobjdir/include/linux/utsrelease.h ; then LINUXRELEASEHEADER=%kobjdir/include/linux/utsrelease.h ; else LINUXRELEASEHEADER=%kobjdir/include/linux/version.h; fi; sed -ne '/^#define UTS_RELEASE/s/.*"\\(.*\\)"$/\\1/p' $LINUXRELEASEHEADER)}
+# Helper macros
+%define empty_string() %(if [ -z "%{1}" ]; then echo 1; else echo 0; fi)
+%define nonempty_string() %(if [ -n "%{1}" ]; then echo 1; else echo 0; fi)
 
-%{!?downstream_release: %global downstream_release "@DOWNSTREAM_RELEASE@"}
-
-%define buildid %(if [ -n "@BUILDID@" ]; then echo "_@BUILDID@"; fi)
-
-%{!?myrelease: %global myrelease %(if [ -n "%downstream_release" ]; then echo -n "%{downstream_release}_"; fi; echo %kversion | tr '-' '_')}
-
-# always append the buildid, even when the caller defines %release
-%define fullrelease %{myrelease}%{buildid}
-
-%{!?lustre_name: %global lustre_name lustre}
-%{!?build_lustre_tests: %global build_lustre_tests 1}
-
-# in order to get kernel symset and/or kernel module dependencies into
-# the RPM, in order to support weak-modules, the internal dependency gen-
-# erator needs to be disabled
-# this is done with (reduce the double % down to a single %):
-#
-# %%global _use_internal_dependency_generator 0
-#
-# on SLES10, /usr/lib/rpm/macros already sets this, so no harm in also
-# defining it here (until Suse changes their mind)
-#
-# on RHEL5, however, we do need to explicitly disable the internal dep-
-# endency generator and allow the external one be used
-# but since RedHat's kABI is only a subset of the total kernel ABI, it
-# doesn't include all of the symbols we (or OFED for that matter) need
-# until RedHat includes all of the symbols we need in their symsets we
-# cannot support weak-modules
-# we did e-mail the maintainer of all of this stuff @redhat but got no
-# response from them
-#%%global _use_internal_dependency_generator 0
-
-%define is_client %(bash -c "if [[ %{lustre_name} = *-client ]]; then echo -n '1'; else echo -n '0'; fi")
-# for those uses that don't want the -smp/-bigsmp (or the .arch) on the end
-# of %kversion
-%define krequires %(bash -c "echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/-ppc64$//' -e 's/-default$//'")
-
-%define sles10 %(bash -c "if [ "%sles_version" = "10" ]; then echo -n '1'; else echo -n '0'; fi")
-
-%if %sles10
-%define flavor %(bash -c "echo %{kversion} | sed -e 's/^.*-//'")
+# parameter sanity checks
+%if %{without servers} && %{with zfs}
+  %{error:"with zfs" is not compatible with "without servers"}
 %endif
+
+# RHEL 6.x:
+%if %{defined el6}
+  %define klnk %{_usrsrc}/kernels/*/include/config
+  %{!?kver: %global kver %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
+  %{!?kverpkg: %global kverpkg %(echo %{kver} | %{__sed} -e 's/.%{_target_cpu}$//g')}
+  %{!?kdir: %global kdir %{_usrsrc}/kernels/%{kver}}
+  %{!?kobjdir: %global kobjdir %kdir}
+  %if %{undefined buildrequires}
+    %if %{with servers}
+      %define br_arg2 kernel-debuginfo-common-%{_target_cpu}
+    %endif
+    %global buildrequires kernel-devel %{?br_arg2}
+  %endif
+  %if %{undefined modules_requires} && %{nonempty_string %{kverpkg}}
+      %global modules_requires kernel = %{kverpkg}
+  %endif
+%endif
+
+# SLES:
+%if %{defined suse_version}
+  %if %{undefined modules_requires}
+    %define flavor %(bash -c "echo %{kver} | sed -e 's/^.*-//'")
+    %global modules_requires kernel-%{flavor}
+  %endif
+%endif
+
+# Set the release string from three possible sources
+%if %{nonempty_string @DOWNSTREAM_RELEASE@}
+  %define rel_down @DOWNSTREAM_RELEASE@
+%endif
+%if %{nonempty_string @BUILDID@}
+  %define rel_build @BUILDID@
+%endif
+%if %{defined kverpkg} && %{undefined build_src_rpm}
+  %define rel_kver %(echo %{kverpkg} | tr '-' '_')
+%endif
+%if %{defined rel_down} && %{defined rel_build}
+  %define us1 _
+%else
+  %if %{defined rel_down} && %{defined rel_kver}
+    %define us1 _
+  %endif
+%endif
+%if %{defined rel_build} && %{defined rel_kver}
+  %define us2 _
+%endif
+%global release %{?rel_down}%{?us1}%{?rel_build}%{?us2}%{?rel_kver}
+
+# Set the package name prefix
+%if %{undefined lustre_name}
+  %if %{with servers}
+    %global lustre_name lustre
+  %else
+    %global lustre_name lustre-client
+  %endif
+%endif
+
+%{!?version: %global version @VERSION@}
+
+# The kernel version should only be appended to a binary RPM.  When
+# building a source RPM it must be kernel version agnostic.  This means
+# the source RPM must never specify a required kernel version, but the
+# final RPM should be keyed to the kernel version it was built against.
+%if %{defined build_src_rpm}
+  %undefine buildrequires
+  %undefine modules_requires
+%endif
+
 
 Summary: Lustre File System
 Name: %{lustre_name}
 Version: %{version}
-Release: %{fullrelease}
+Release: %{release}%{!?build_src_rpm:%{?dist}}
 License: GPL
 Group: Utilities/System
 Source: lustre-%{version}.tar.gz
@@ -62,32 +94,32 @@ URL: http://wiki.whamcloud.com/
 BuildRoot: %{_tmppath}/lustre-%{version}-root
 Obsoletes: lustre-lite, lustre-lite-utils, lustre-ldap nfs-utils-lustre
 Provides: lustre-lite = %{version}, lustre-lite-utils = %{version}
-Requires: %{name}-modules = %{version}
-# GSS requires this: BuildRequires: pkgconfig, libgssapi-devel >= 0.10
+Requires: %{lustre_name}-modules = %{version}
+%if %{defined buildrequires}
+BuildRequires: %{buildrequires}
+%endif
+%if %{with zfs}
+BuildRequires: spl-modules-devel zfs-modules-devel zfs-devel
+%endif
 
 %description
 Userspace tools and files for the Lustre file system.
 
 %package modules
-Summary: Kernel Lustre modules for Linux %{kversion}
-# for SLES11, we need nothing here
-# for SLES10, we need (where %{flavor} is, i.e. smp):
-%if %sles10
-Requires: kernel-%{flavor}
-%else
-%if %{_vendor}=="redhat" || %{_vendor}=="fedora"
-# for RHEL we need to require the specific kernel still since weak-modules
-# support on RH is, well, weak, to be punny about it
-Requires: kernel = %{krequires}
+Summary: Kernel Lustre modules for Linux %{kverpkg}
+%if %{defined modules_requires}
+Requires: %{modules_requires}
 %endif
-%endif
-%if ! %{is_client}
+%if %{with servers}
 Requires: lustre-backend-fs
+%endif
+%if %{with zfs}
+Requires: spl-modules zfs-modules spl zfs
 %endif
 Group: Development/Kernel
 
 %description modules
-Lustre file system, server and network drivers for Linux %{kversion}.
+Lustre file system, server and network drivers for Linux %{kverpkg}.
 
 %package source
 Summary: Object-Based Disk storage driver source
@@ -96,46 +128,11 @@ Group: Development/Kernel
 %description source
 Lustre sources for further development
 
-# Since the RPMs we ship are to be used on both SLES and RHEL, we
-# can't include any dependency information (since the package names
-# are different on the two platforms).
-#
-# Instead, we can build these empty meta-packages that only include
-# dependency information.  These let people get the correct
-# dependencies for their platform and lets them use tools like yum and
-# red carpet to install the correct files.
-#
-# Unfortunately I have not seen this come up on the lists much, so I
-# have disabled them (by commenting out their empty files section
-# below) until it's clear that they resolve more confusion than they
-# add.
-
-%package deps-sles
-Summary: Lustre dependencies meta-package for SLES
-Group: Utilities/System
-Provides: lustre-deps = %{version}
-Requires: %{name} = %{version}, sles-release
-Conflicts: %{name}-deps-rhel
-
-%description deps-sles
-This package has RPM dependencies appropriate for SLES systems.
-
-%package deps-rhel
-Summary: Lustre dependencies meta-package for RHEL
-Group: Utilities/System
-Provides: lustre-deps = %{version}
-Requires: %{name} = %{version}, redhat-release
-Conflicts: %{name}-deps-sles
-
-%description deps-rhel
-This package has RPM dependencies appropriate for RHEL, RHL, and FC
-systems.
-
 %package tests
 Summary: Lustre testing framework
 Group: Development/Kernel
-Provides: %{name}-tests = %{version}
-Requires: %{name} = %{version}, %{name}-modules = %{version}
+Provides: %{lustre_name}-tests = %{version}
+Requires: %{lustre_name} = %{version}, %{lustre_name}-modules = %{version}
 
 %description tests
 This package contains a set of test binaries and scripts that are intended
@@ -168,29 +165,21 @@ cd $RPM_BUILD_DIR/lustre-%{version}
 # override %optflags so that the vendor's overzealous flags don't create
 # build failures
 %define optflags -g -O2 -Werror
-CONFIGURE_ARGS="%{?configure_args} --with-release=%release"
-%if %{build_lustre_tests}
-CONFIGURE_ARGS="$CONFIGURE_ARGS --enable-tests --enable-liblustre-tests"
+
+%if %{with lustre_tests}
+%define conf_tests --enable-tests --enable-liblustre-tests
 %else
-CONFIGURE_ARGS="$CONFIGURE_ARGS --disable-tests --disable-liblustre-tests"
+%define conf_tests --disable-tests --disable-liblustre-tests
+%endif
+%if %{without servers}
+%define conf_disable_server --disable-server
 %endif
 
-# if %%kdir was given, make sure it's not in the configure arguments
-if [ -n "%kdir" ]; then
-	CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-linux=[^ ][^ ]* \?//')
-fi
-# ditto for %%kobjdir
-if [ -n "%kobjdir" ]; then
-	CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-linux-obj=[^ ][^ ]* \?//')
-fi
-
-# we need to eval "configure" because $CONFIGURE_ARGS could have a quoted
-# string in it which we don't want word splitted by the shell
-%define eval_configure %(echo '%configure' | sed -e 's#\./configure#eval ./configure#')
-
-%eval_configure \
+%configure \
+        %{?configure_args} \
+        --with-release=%{release} %{?conf_tests} %{?conf_disable_server}  \
 	%{?kdir: --with-linux=%kdir} %{?kobjdir: --with-linux-obj=%kobjdir} \
-	$CONFIGURE_ARGS
+        %{?configure_args_override}
 make -j $RPM_BUILD_NCPUS -s
 
 %install
@@ -198,14 +187,14 @@ make install DESTDIR=$RPM_BUILD_ROOT
 # hack to avoid changing the libsysio code for "make install"
 rm -f $RPM_BUILD_ROOT%{_libdir}/libsysio.a
 # Remove ldiskfs module(s) - they are packaged by the ldiskfs .spec.
-rm -rf $RPM_BUILD_ROOT/lib/modules/%{kversion}/updates/kernel/fs/lustre-ldiskfs
+rm -rf $RPM_BUILD_ROOT/lib/modules/%{kver}/updates/kernel/fs/lustre-ldiskfs
 
 # hack to include the llog_test module in lustre-tests
 llog_base=$RPM_BUILD_DIR/lustre-%{version}/lustre/obdclass/llog_test
 if [ -e ${llog_base}.ko ]; then
-  cp ${llog_base}.ko $RPM_BUILD_ROOT/lib/modules/%{kversion}/updates/kernel/fs/lustre
+  cp ${llog_base}.ko $RPM_BUILD_ROOT/lib/modules/%{kver}/updates/kernel/fs/lustre
 elif [ -e ${llog_base}.o ]; then
-  cp ${llog_base}.o $RPM_BUILD_ROOT/lib/modules/%{kversion}/updates/kernel/fs/lustre
+  cp ${llog_base}.o $RPM_BUILD_ROOT/lib/modules/%{kver}/updates/kernel/fs/lustre
 fi
 
 # The .ha_v2 extension identifies the heartbeat resource agent as using
@@ -278,9 +267,9 @@ if [ -f $RPM_BUILD_DIR/lustre-%{version}/lustre/include/linux/lustre_types.h ] ;
   echo '%attr(-, root, root) /usr/include/linux/lustre_types.h' >>lustre.files
 fi
 
-%if %{build_lustre_tests}
+%if %{with lustre_tests}
 echo '%attr(-, root, root) %{_libdir}/lustre/tests/*' >lustre-tests.files
-echo '%attr(-, root, root) /lib/modules/%{kversion}/updates/kernel/fs/lustre/llog_test.*' >>lustre-tests.files
+echo '%attr(-, root, root) /lib/modules/%{kver}/updates/kernel/fs/lustre/llog_test.*' >>lustre-tests.files
 modules_excludes="|llog_test"
 if [ -d $RPM_BUILD_ROOT%{_libdir}/lustre/liblustre/tests ] ; then
   echo '%attr(-, root, root) %{_libdir}/lustre/liblustre/tests/*' >>lustre-tests.files
@@ -289,7 +278,7 @@ fi
 
 pushd $RPM_BUILD_ROOT >/dev/null
 > $RPM_BUILD_DIR/lustre-%{version}/lustre-modules.files
-find lib/modules/%{kversion}/updates -type f | awk "!/(ZZZZZZZZZZ$modules_excludes)/ {print \"%attr(-, root, root) /\"\$0}" >>$RPM_BUILD_DIR/lustre-%{version}/lustre-modules.files
+find lib/modules/%{kver}/updates -type f | awk "!/(ZZZZZZZZZZ$modules_excludes)/ {print \"%attr(-, root, root) /\"\$0}" >>$RPM_BUILD_DIR/lustre-%{version}/lustre-modules.files
 popd >/dev/null
 
 # mark modules executable for find-debuginfo.sh
@@ -310,18 +299,18 @@ find $RPM_BUILD_ROOT/lib/modules/%{kversion}/updates -name "*.ko" -type f | \
 # %files deps-sles
 # %files deps-rhel
 
-%if %{build_lustre_tests}
+%if %{with lustre_tests}
 %files tests -f lustre-tests.files
 %endif
 
 %post modules
-if [ -f /boot/System.map-%{kversion} ]; then
-	depmod -ae -F /boot/System.map-%{kversion} %{kversion} || exit 0
+if [ -f /boot/System.map-%{kver} ]; then
+	depmod -ae -F /boot/System.map-%{kver} %{kver} || exit 0
 else
-	depmod -ae %{kversion} || exit 0
+	depmod -ae %{kver} || exit 0
 fi
 
-MODULES_RPM_NAME=$(rpm -q %{name}-modules | grep "%{version}-%{release}")
+MODULES_RPM_NAME=$(rpm -q %{lustre_name}-modules | grep "%{version}-%{release}")
 # "weak modules" support
 # Suse
 if [ -x /usr/lib/module-init-tools/weak-modules ]; then
@@ -350,42 +339,42 @@ if sysctl kernel.unsupported >/dev/null 2>&1 &&
 fi
 
 %preun modules
-MODULES_RPM_NAME=$(rpm -q %{name}-modules | grep "%{version}-%{release}")
-rpm -ql $MODULES_RPM_NAME | grep '\.ko$' > /var/run/%{name}-modules || true
+MODULES_RPM_NAME=$(rpm -q %{lustre_name}-modules | grep "%{version}-%{release}")
+rpm -ql $MODULES_RPM_NAME | grep '\.ko$' > /var/run/%{lustre_name}-modules || true
 
 %postun modules
-if [ -f /boot/System.map-%{kversion} ]; then
-	depmod -ae -F /boot/System.map-%{kversion} %{kversion} || exit 0
+if [ -f /boot/System.map-%{kver} ]; then
+	depmod -ae -F /boot/System.map-%{kver} %{kver} || exit 0
 else
-	depmod -ae %{kversion} || exit 0
+	depmod -ae %{kver} || exit 0
 fi
 
 # "weak modules" support
 # Suse
 if [ -x /usr/lib/module-init-tools/weak-modules ]; then
-    cat /var/run/%{name}-modules |
+    cat /var/run/%{lustre_name}-modules |
         /usr/lib/module-init-tools/weak-modules --remove-modules
 fi
 # RedHat
 if [ -x /sbin/weak-modules ]; then
-    cat /var/run/%{name}-modules |
+    cat /var/run/%{lustre_name}-modules |
         /sbin/weak-modules --remove-modules
 fi
-rm /var/run/%{name}-modules
+rm /var/run/%{lustre_name}-modules
 
-%if %{build_lustre_tests}
+%if %{with lustre_tests}
 %post tests
-if [ -f /boot/System.map-%{kversion} ]; then
-	depmod -ae -F /boot/System.map-%{kversion} %{kversion} || exit 0
+if [ -f /boot/System.map-%{kver} ]; then
+	depmod -ae -F /boot/System.map-%{kver} %{kver} || exit 0
 else
-	depmod -ae %{kversion} || exit 0
+	depmod -ae %{kver} || exit 0
 fi
 
 %postun tests
-if [ -f /boot/System.map-%{kversion} ]; then
-	depmod -ae -F /boot/System.map-%{kversion} %{kversion} || exit 0
+if [ -f /boot/System.map-%{kver} ]; then
+	depmod -ae -F /boot/System.map-%{kver} %{kver} || exit 0
 else
-	depmod -ae %{kversion} || exit 0
+	depmod -ae %{kver} || exit 0
 fi
 %endif
 

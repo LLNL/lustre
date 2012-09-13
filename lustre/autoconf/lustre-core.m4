@@ -2355,6 +2355,10 @@ AC_ARG_ENABLE([server],
 	AC_HELP_STRING([--disable-server],
 			[disable Lustre server support]),
 	[],[enable_server='yes'])
+if test x$enable_server != xyes ; then
+	RPMBUILD_WITHOUT_SERVERS="--without servers"
+	AC_SUBST([RPMBUILD_WITHOUT_SERVERS])
+fi
 AC_MSG_RESULT([$enable_server])
 
 AC_MSG_CHECKING([whether to build Lustre client support])

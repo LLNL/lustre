@@ -306,6 +306,9 @@ AC_ARG_WITH([zfs-obj],
 if test x$with_zfs = xyes; then
 	LB_ZFS_DEFINE_OPTIONS
 
+        RPMBUILD_WITH_ZFS="--with zfs"
+        AC_SUBST([RPMBUILD_WITH_ZFS])
+
 	AC_MSG_CHECKING([zfs source directory])
 	AC_MSG_RESULT([$ZFS_DIR])
 	AC_SUBST(ZFS_DIR)
