@@ -119,6 +119,9 @@ if test x$with_ldiskfs = xyes; then
 	LB_LDISKFS_EXT_DIR
 	LB_LDISKFS_BUILD
 	AC_DEFINE(HAVE_LDISKFS_OSD, 1, Enable ldiskfs osd)
+else
+	RPMBUILD_WITHOUT_LDISKFS="--without ldiskfs"
+	AC_SUBST([RPMBUILD_WITHOUT_LDISKFS])
 fi
 
 # If ldiskfs is in tree, we are still responsible for triggering
