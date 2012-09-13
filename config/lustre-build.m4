@@ -367,6 +367,10 @@ AC_ARG_ENABLE([tests],
 		enable_tests='yes'
 	])
 AC_MSG_RESULT([$enable_tests])
+if test x$enable_tests != xyes ; then
+	RPMBUILD_WITHOUT_LUSTRE_TESTS="--without lustre_tests"
+        AC_SUBST([RPMBUILD_WITHOUT_LUSTRE_TESTS])
+fi
 ])
 
 #
