@@ -91,6 +91,13 @@ case x$with_ldiskfs in
 		;;
 esac
 
+# We will need to tell the lustre.spec file, through an rpmbuild command line
+# option, that ldiskfs is in-tree so it knows not to require ldiskfs-devel.
+if test x$ldiskfs_intree = xyes; then
+	RPMBUILD_WITH_LDISKFS_INTREE="--with ldiskfs_intree"
+	AC_SUBST([RPMBUILD_WITH_LDISKFS_INTREE])
+fi
+
 AC_MSG_CHECKING([whether to enable ldiskfs])
 AC_MSG_RESULT([$with_ldiskfs])
 
@@ -119,6 +126,9 @@ if test x$with_ldiskfs = xyes; then
 	LB_LDISKFS_EXT_DIR
 	LB_LDISKFS_BUILD
 	AC_DEFINE(HAVE_LDISKFS_OSD, 1, Enable ldiskfs osd)
+else
+	RPMBUILD_WITHOUT_LDISKFS="--without ldiskfs"
+	AC_SUBST([RPMBUILD_WITHOUT_LDISKFS])
 fi
 
 # If ldiskfs is in tree, we are still responsible for triggering
