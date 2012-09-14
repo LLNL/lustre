@@ -215,7 +215,6 @@ static int do_lcfg(char *cfgname, lnet_nid_t nid, int cmd,
         lustre_cfg_free(lcfg);
         return(rc);
 }
-EXPORT_SYMBOL(do_lcfg);
 
 /** Call class_attach and class_setup.  These methods in turn call
  * obd type-specific methods.
@@ -905,7 +904,6 @@ out:
         OBD_FREE_PTR(mti);
         RETURN(rc);
 }
-EXPORT_SYMBOL(server_register_target);
 
 /**
  * Notify the MGS that this target is ready.
