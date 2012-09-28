@@ -1648,8 +1648,12 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 		/* We didn't find the correct object, so we need to re-create it
 		 * via a regular replay. */
 		if (!(create_flags & MDS_OPEN_CREAT)) {
-			DEBUG_REQ(D_ERROR, req,
-				  "OPEN & CREAT not in open replay/by_fid.");
+			DEBUG_REQ(D_ERROR, req, DFID"/%s->"DFID" cr_flags="LPO64
+				  " mode=%#06o msg_flag=%#x not found in open "
+				  "replay.",
+				  PFID(rr->rr_fid1), rr->rr_name,
+				  PFID(rr->rr_fid2), create_flags,
+				  ma->ma_attr.la_mode, msg_flags);
 			GOTO(out, result = -EFAULT);
 		}
 		CDEBUG(D_INFO, "No object(1), continue as regular open.\n");
