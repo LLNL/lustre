@@ -1903,7 +1903,7 @@ int ptlrpc_expire_one_request(struct ptlrpc_request *req, int async_unlink)
         req->rq_timedout = 1;
         cfs_spin_unlock(&req->rq_lock);
 
-        DEBUG_REQ(req->rq_fake ? D_INFO : D_WARNING, req, "Request "
+        DEBUG_REQ(req->rq_fake ? D_INFO : D_NETERROR, req, "Request "
                   " sent has %s: [sent "CFS_DURATION_T"/"
                   "real "CFS_DURATION_T"]",
                   req->rq_net_err ? "failed due to network error" :
