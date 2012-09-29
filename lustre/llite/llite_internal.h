@@ -675,7 +675,6 @@ struct page *ll_get_dir_page(struct file *filp, struct inode *dir, __u64 hash,
 int ll_readdir(struct file *filp, void *cookie, filldir_t filldir);
 
 int ll_get_mdt_idx(struct inode *inode);
-char *ll_get_fsname(struct inode *inode);
 /* llite/namei.c */
 int ll_objects_destroy(struct ptlrpc_request *request,
                        struct inode *dir);
@@ -842,6 +841,7 @@ struct md_op_data *ll_prep_md_op_data(struct md_op_data *op_data,
                                       int mode, __u32 opc, void *data);
 void ll_finish_md_op_data(struct md_op_data *op_data);
 int ll_get_obd_name(struct inode *inode, unsigned int cmd, unsigned long arg);
+char *ll_get_fsname(struct ll_sb_info *sbi, char *buf, int buflen);
 
 /* llite/llite_nfs.c */
 extern struct export_operations lustre_export_operations;
