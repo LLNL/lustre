@@ -412,6 +412,12 @@ static int mdd_changelog_init(const struct lu_env *env, struct mdd_device *mdd)
 		mdd->mdd_cl.mc_flags |= CLM_ERR;
 	}
 
+	/* This is a temporary hack to overcome LU-2079 */
+	if (rc == -EFAULT) {
+		rc = 0;
+		mdd->mdd_cl.mc_flags = 0;
+	}
+
 	return rc;
 }
 
