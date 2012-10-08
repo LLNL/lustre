@@ -2171,7 +2171,7 @@ int ll_prep_inode(struct inode **inode,
 	if (S_ISREG(md.body->mode) && sbi->ll_flags & LL_SBI_LAYOUT_LOCK &&
 	    md.lsm != NULL && !ll_have_md_lock(*inode, &ibits, LCK_MINMODE)) {
 		CERROR("%s: inode "DFID" (%p) layout lock not granted.\n",
-			ll_get_fsname(sbi, NULL, 0),
+			ll_get_fsname(s2lsi((*inode)->i_sb), NULL, 0),
 			PFID(ll_inode2fid(*inode)), *inode);
 	}
 
@@ -2379,10 +2379,9 @@ int ll_get_obd_name(struct inode *inode, unsigned int cmd, unsigned long arg)
  * fsname will be returned in this buffer; otherwise, a static buffer will be
  * used to store the fsname and returned to caller.
  */
-char *ll_get_fsname(struct ll_sb_info *sbi, char *buf, int buflen)
+char *ll_get_fsname(struct lustre_sb_info *lsi, char *buf, int buflen)
 {
 	static char fsname_static[MTI_NAME_MAXLEN];
-	struct lustre_sb_info *lsi = s2lsi(sbi->ll_mnt->mnt_sb);
 	char *ptr;
 	int len;
 

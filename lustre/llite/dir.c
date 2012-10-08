@@ -722,7 +722,7 @@ int ll_dir_setstripe(struct inode *inode, struct lov_user_md *lump,
 
 		buf = param;
 		/* Get fsname and assume devname to be -MDT0000. */
-		ll_get_fsname(sbi, buf, MTI_NAME_MAXLEN);
+		ll_get_fsname(s2lsi(inode->i_sb), buf, MTI_NAME_MAXLEN);
 		strcat(buf, "-MDT0000.lov");
 		buf += strlen(buf);
 

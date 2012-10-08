@@ -405,7 +405,7 @@ static int ll_wr_max_cached_mb(struct file *file, const char *buffer,
 
 	if (pages_number < 0 || pages_number > cfs_num_physpages) {
 		CERROR("%s: can't set max cache more than %lu MB\n",
-			ll_get_fsname(sbi, NULL, 0),
+			ll_get_fsname(s2lsi(sb), NULL, 0),
 			cfs_num_physpages >> (20 - CFS_PAGE_SHIFT));
 		RETURN(-ERANGE);
 	}
