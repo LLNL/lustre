@@ -423,8 +423,10 @@ struct lov_stripe_md *ccc_inode_lsm_get(struct inode *inode);
 void ccc_inode_lsm_put(struct inode *inode, struct lov_stripe_md *lsm);
 
 /**
- * Data structure managing a client's cached clean pages. An LRU of
- * pages is maintained, along with other statistics.
+ * Data structure managing a client's cached pages. A count of
+ * "unstable" pages is maintained, and an LRU of clean pages is
+ * maintained. "unstable" pages are pages pinned by the ptlrpc
+ * layer for recovery purposes.
  */
 struct cl_client_cache {
 	cfs_atomic_t	ccc_users;    /* # of users (OSCs) of this data */
@@ -433,6 +435,11 @@ struct cl_client_cache {
 	cfs_atomic_t	ccc_lru_left; /* # of LRU entries available */
 	unsigned long	ccc_lru_max;  /* Max # of LRU entries possible */
 	unsigned int	ccc_lru_shrinkers; /* # of threads reclaiming */
+	cfs_atomic_t	ccc_unstable_nr;    /* # of unstable pages pinned */
+	cfs_atomic_t	ccc_unstable_max;   /* Max # of unstable pages */
+	cfs_waitq_t	ccc_unstable_waitq; /* Signaled on BRW commit */
+	cfs_atomic_t	ccc_unstable_waiters; /* Current # of threads waiting
+					       * on ccc_unstable_waitq  */
 };
 
 #endif /*LCLIENT_H */
