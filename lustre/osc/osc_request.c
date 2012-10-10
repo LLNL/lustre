@@ -1197,6 +1197,33 @@ static obd_count osc_checksum_bulk(int nob, obd_count pg_count,
 	return cksum;
 }
 
+/* Performs "unstable" page accounting. This function balances the
+ * increment operations performed in osc_brw_prep_request. It is
+ * registered as the RPC request callback, and is executed when the
+ * bulk RPC is committed on the server. Thus at this point, the pages
+ * involved in the bulk transfer are no longer considered unstable. */
+void osc_commit_cb(struct ptlrpc_request *req)
+{
+	int i, page_count;
+	struct ptlrpc_bulk_desc *desc = req->rq_bulk;
+	struct client_obd       *cli  = &req->rq_import->imp_obd->u.cli;
+
+	/* No unstable page tracking */
+	if (cli->cl_cache == NULL)
+		return;
+
+	page_count = desc->bd_iov_count;
+	LASSERT(page_count >= 0);
+
+	for (i = 0; i < page_count; i++)
+		dec_zone_page_state(desc->bd_iov[i].kiov_page, NR_UNSTABLE_NFS);
+
+	cfs_atomic_add(-1 * page_count, &cli->cl_cache->ccc_unstable_nr);
+	LASSERT(cfs_atomic_read(&cli->cl_cache->ccc_unstable_nr) >= 0);
+
+	cfs_waitq_broadcast(&cli->cl_cache->ccc_unstable_waitq);
+}
+
 static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                                 struct lov_stripe_md *lsm, obd_count page_count,
                                 struct brw_page **pga,
@@ -1231,6 +1258,10 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
         }
         if (req == NULL)
                 RETURN(-ENOMEM);
+
+	/* "unstable" page accounting. See: osc_commit_cb. */
+	if (opc == OST_WRITE && cli->cl_cache != NULL)
+		req->rq_commit_cb = osc_commit_cb;
 
         for (niocount = i = 1; i < page_count; i++) {
                 if (!can_merge_pages(pga[i - 1], pga[i]))
@@ -1306,6 +1337,10 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                 LASSERT((pga[0]->flag & OBD_BRW_SRVLOCK) ==
                         (pg->flag & OBD_BRW_SRVLOCK));
 
+		/* "unstable" page accounting. See: osc_commit_cb. */
+		if (opc == OST_WRITE && cli->cl_cache != NULL)
+			inc_zone_page_state(pg->pg, NR_UNSTABLE_NFS);
+
 		ptlrpc_prep_bulk_page_pin(desc, pg->pg, poff, pg->count);
                 requested_nob += pg->count;
 
@@ -1319,6 +1354,10 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                 }
                 pg_prev = pg;
         }
+
+	/* "unstable" page accounting. See: osc_commit_cb. */
+	if (opc == OST_WRITE && cli->cl_cache != NULL)
+		cfs_atomic_add(page_count, &cli->cl_cache->ccc_unstable_nr);
 
         LASSERTF((void *)(niobuf - niocount) ==
                 req_capsule_client_get(&req->rq_pill, &RMF_NIOBUF_REMOTE),
