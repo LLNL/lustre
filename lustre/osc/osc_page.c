@@ -44,8 +44,8 @@
 
 static void osc_lru_del(struct client_obd *cli, struct osc_page *opg, bool del);
 static void osc_lru_add(struct client_obd *cli, struct osc_page *opg);
-static int osc_lru_reserve(const struct lu_env *env, struct osc_object *obj,
-			   struct osc_page *opg);
+static int osc_lru_reserve(struct client_obd *cli, struct osc_page *opg);
+static int osc_lru_unreserve(struct client_obd *cli, struct osc_page *opg);
 
 /** \addtogroup osc
  *  @{
@@ -510,9 +510,12 @@ static const struct cl_page_operations osc_page_ops = {
 int osc_page_init(const struct lu_env *env, struct cl_object *obj,
 		struct cl_page *page, cfs_page_t *vmpage)
 {
-	struct osc_object *osc = cl2osc(obj);
-	struct osc_page   *opg = cl_object_page_slice(obj, page);
-	int result;
+	struct osc_object	*osc = cl2osc(obj);
+	struct client_obd	*cli   = osc_cli(osc);
+	struct cl_client_cache	*cache = cli->cl_cache;
+	struct l_wait_info	 lwi   = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
+	struct osc_page		*opg = cl_object_page_slice(obj, page);
+	int			 result;
 
 	opg->ops_from = 0;
 	opg->ops_to   = CFS_PAGE_SIZE;
@@ -539,7 +542,39 @@ int osc_page_init(const struct lu_env *env, struct cl_object *obj,
 
 	/* reserve an LRU space for this page */
 	if (page->cp_type == CPT_CACHEABLE && result == 0)
-		result = osc_lru_reserve(env, osc, opg);
+		result = osc_lru_reserve(cli, opg);
+
+	/* Skip unstable page tracking on these conditions: LRU reserve
+	 * error, no tracking structure, or the page is direct IO */
+	if (result != 0 || cache == NULL || page->cp_type != CPT_CACHEABLE)
+		return result;
+
+	/* Unless this is true, we are over our limit of unstable pages.
+	 * We must wait until pages are committed. */
+	while (cfs_atomic_read(&cache->ccc_unstable_nr) >=
+	       cfs_atomic_read(&cache->ccc_unstable_max)) {
+
+		/* ccu_max of 0 is a "magic" value which
+		 * disables the unstable limit. No need to undo
+		 * osc_lru_reserve like below, result == 0 here. */
+		if (cfs_atomic_read(&cache->ccc_unstable_max) == 0)
+			break;
+
+		cfs_atomic_inc(&cache->ccc_unstable_waiters);
+		result = l_wait_event(cache->ccc_unstable_waitq,
+			cfs_atomic_read(&cache->ccc_unstable_nr) == 0 ||
+			cfs_atomic_read(&cache->ccc_unstable_nr) <
+			cfs_atomic_read(&cache->ccc_unstable_max),
+			&lwi);
+		cfs_atomic_dec(&cache->ccc_unstable_waiters);
+
+		/* The wait event must have been interrupted, ensure the
+		 * osc_lru_reserve call is undone */
+		if (result != 0) {
+			osc_lru_unreserve(cli, opg);
+			break;
+		}
+	}
 
 	return result;
 }
@@ -877,11 +912,9 @@ static int osc_lru_reclaim(struct client_obd *cli)
 	return rc;
 }
 
-static int osc_lru_reserve(const struct lu_env *env, struct osc_object *obj,
-			   struct osc_page *opg)
+static int osc_lru_reserve(struct client_obd *cli, struct osc_page *opg)
 {
 	struct l_wait_info lwi = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
-	struct client_obd *cli = osc_cli(obj);
 	int rc = 0;
 	ENTRY;
 
@@ -924,6 +957,18 @@ static int osc_lru_reserve(const struct lu_env *env, struct osc_object *obj,
 	}
 
 	RETURN(rc);
+}
+
+static int osc_lru_unreserve(struct client_obd *cli, struct osc_page *opg)
+{
+	ENTRY;
+
+	opg->ops_in_lru = 0;
+	cfs_atomic_dec(&cli->cl_lru_busy);
+	cfs_atomic_inc(cli->cl_lru_left);
+	cfs_waitq_signal(&osc_lru_waitq);
+
+	RETURN(0);
 }
 
 /** @} osc */
