@@ -1231,6 +1231,66 @@ static obd_count osc_checksum_bulk(int nob, obd_count pg_count,
 	return cksum;
 }
 
+/* Performs "unstable" page accounting. This function balances the
+ * increment operations performed in osc_inc_unstable_pages. It is
+ * registered as the RPC request callback, and is executed when the
+ * bulk RPC is committed on the server. Thus at this point, the pages
+ * involved in the bulk transfer are no longer considered unstable. */
+void osc_dec_unstable_pages(struct ptlrpc_request *req)
+{
+	struct ptlrpc_bulk_desc *desc       = req->rq_bulk;
+	struct client_obd       *cli        = &req->rq_import->imp_obd->u.cli;
+	obd_count                page_count = desc->bd_iov_count;
+	int i;
+
+	/* No unstable page tracking */
+	if (cli->cl_cache == NULL)
+		return;
+
+	LASSERT(page_count >= 0);
+
+	spin_lock(&req->rq_lock);
+	LASSERT(req->rq_unstable == 1);
+	req->rq_unstable = 0;
+	spin_unlock(&req->rq_lock);
+
+	for (i = 0; i < page_count; i++)
+		dec_zone_page_state(desc->bd_iov[i].kiov_page, NR_UNSTABLE_NFS);
+
+	cfs_atomic_sub(page_count, &cli->cl_cache->ccc_unstable_nr);
+	LASSERT(cfs_atomic_read(&cli->cl_cache->ccc_unstable_nr) >= 0);
+
+	cfs_waitq_broadcast(&cli->cl_cache->ccc_unstable_waitq);
+}
+
+/* "unstable" page accounting. See: osc_dec_unstable_pages. */
+void osc_inc_unstable_pages(struct ptlrpc_request *req)
+{
+	struct ptlrpc_bulk_desc *desc = req->rq_bulk;
+	struct client_obd       *cli  = &req->rq_import->imp_obd->u.cli;
+	obd_count                page_count = desc->bd_iov_count;
+	int i;
+
+	/* No unstable page tracking */
+	if (cli->cl_cache == NULL)
+		return;
+
+	LASSERT(page_count >= 0);
+
+	spin_lock(&req->rq_lock);
+	LASSERT(req->rq_unstable == 0);
+	req->rq_unstable = 1;
+	spin_unlock(&req->rq_lock);
+
+	req->rq_commit_cb = osc_dec_unstable_pages;
+
+	for (i = 0; i < page_count; i++)
+		inc_zone_page_state(desc->bd_iov[i].kiov_page, NR_UNSTABLE_NFS);
+
+	LASSERT(cfs_atomic_read(&cli->cl_cache->ccc_unstable_nr) >= 0);
+	cfs_atomic_add(page_count, &cli->cl_cache->ccc_unstable_nr);
+}
+
 static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                                 struct lov_stripe_md *lsm, obd_count page_count,
                                 struct brw_page **pga,
@@ -1353,6 +1413,9 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                 }
                 pg_prev = pg;
         }
+
+	if (opc == OST_WRITE)
+		osc_inc_unstable_pages(req);
 
         LASSERTF((void *)(niobuf - niocount) ==
                 req_capsule_client_get(&req->rq_pill, &RMF_NIOBUF_REMOTE),

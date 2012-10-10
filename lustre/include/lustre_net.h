@@ -719,7 +719,9 @@ struct ptlrpc_request {
                 rq_invalid_rqset:1,
 		rq_generation_set:1,
 		/* do not resend request on -EINPROGRESS */
-		rq_no_retry_einprogress:1;
+		rq_no_retry_einprogress:1,
+		/* bulk request, sent to server, but uncommitted */
+		rq_unstable:1;
 
 	unsigned int rq_nr_resend;
 
