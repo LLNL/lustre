@@ -714,6 +714,88 @@ static int ll_rd_maxea_size(char *page, char **start, off_t off,
         return snprintf(page, count, "%u\n", ealen);
 }
 
+static int ll_wr_max_unstable_mb(struct file *file, const char *buffer,
+				 unsigned long count, void *data)
+{
+	struct super_block	*sb    = data;
+	struct ll_sb_info	*sbi   = ll_s2sbi(sb);
+	struct cl_client_cache	*cache = &sbi->ll_cache;
+	int pages_number, mult, rc;
+
+	if (strncmp(buffer, "disabled", count) == 0) {
+		pages_number = 0;
+	} else {
+		mult = 1 << (20 - CFS_PAGE_SHIFT);
+		rc = lprocfs_write_frac_helper(buffer, count,
+					       &pages_number, mult);
+		if (rc < 0)
+			return rc;
+	}
+
+	if (pages_number < 0 || pages_number > cfs_num_physpages)
+		return -ERANGE;
+
+	cfs_atomic_set(&cache->ccc_unstable_max, pages_number);
+	cfs_waitq_broadcast(&cache->ccc_unstable_waitq);
+
+	return count;
+}
+
+static int ll_rd_max_unstable_mb(char *page, char **start, off_t off,
+			         int count, int *eof, void *data)
+{
+	struct super_block	*sb    = data;
+	struct ll_sb_info	*sbi   = ll_s2sbi(sb);
+	struct cl_client_cache	*cache = &sbi->ll_cache;
+	int pages_number, mult, rc;
+
+	pages_number = cfs_atomic_read(&cache->ccc_unstable_max);
+
+	if (pages_number == 0) {
+		rc = snprintf(page, count, "disabled\n");
+	} else {
+		mult = 1 << (20 - CFS_PAGE_SHIFT);
+		rc = lprocfs_read_frac_helper(page, count, pages_number, mult);
+	}
+
+	return rc;
+}
+
+static int ll_rd_unstable_stats(char *page, char **start, off_t off,
+			        int count, int *eof, void *data)
+{
+	struct super_block	*sb    = data;
+	struct ll_sb_info	*sbi   = ll_s2sbi(sb);
+	struct cl_client_cache	*cache = &sbi->ll_cache;
+	int pages, pages_max, waiters, mb, mb_max, rc;
+
+	pages     = cfs_atomic_read(&cache->ccc_unstable_nr);
+	pages_max = cfs_atomic_read(&cache->ccc_unstable_max);
+	waiters   = cfs_atomic_read(&cache->ccc_unstable_waiters);
+	mb        = (pages     * CFS_PAGE_SIZE) >> 20;
+	mb_max    = (pages_max * CFS_PAGE_SIZE) >> 20;
+
+	if (pages_max == 0) {
+		rc = snprintf(page, count,
+			      "unstable_pages:     %8d\n"
+			      "unstable_pages_max: disabled\n"
+			      "unstable_mb:        %8d\n"
+			      "unstable_mb_max:    disabled\n"
+			      "waiting_threads:    %8d\n",
+			      pages, mb, waiters);
+	} else {
+		rc = snprintf(page, count,
+			      "unstable_pages:     %8d\n"
+			      "unstable_pages_max: %8d\n"
+			      "unstable_mb:        %8d\n"
+			      "unstable_mb_max:    %8d\n"
+			      "waiting_threads:    %8d\n",
+			      pages, pages_max, mb, mb_max, waiters);
+	}
+
+	return rc;
+}
+
 static struct lprocfs_vars lprocfs_llite_obd_vars[] = {
         { "uuid",         ll_rd_sb_uuid,          0, 0 },
         //{ "mntpt_path",   ll_rd_path,             0, 0 },
@@ -744,6 +826,8 @@ static struct lprocfs_vars lprocfs_llite_obd_vars[] = {
         { "statahead_stats",  ll_rd_statahead_stats, 0, 0 },
         { "lazystatfs",       ll_rd_lazystatfs, ll_wr_lazystatfs, 0 },
         { "max_easize",       ll_rd_maxea_size, 0, 0 },
+	{ "max_unstable_mb",  ll_rd_max_unstable_mb, ll_wr_max_unstable_mb, 0},
+	{ "unstable_stats",   ll_rd_unstable_stats, 0, 0},
         { 0 }
 };
 
