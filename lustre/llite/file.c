@@ -2335,15 +2335,13 @@ static int ll_inode_revalidate_fini(struct inode *inode, int rc) {
                 if (!S_ISREG(inode->i_mode) &&
                     !S_ISDIR(inode->i_mode))
                         return 0;
-        }
+	} else {
+		CERROR("%s: revalidate FID "DFID" error: rc = %d\n",
+		       ll_get_fsname(inode->i_sb, NULL, 0),
+		       PFID(ll_inode2fid(inode)), rc);
+	}
 
-        if (rc) {
-                CERROR("failure %d inode %lu\n", rc, inode->i_ino);
-                return -abs(rc);
-
-        }
-
-        return 0;
+	return rc;
 }
 
 int __ll_inode_revalidate_it(struct dentry *dentry, struct lookup_intent *it,
