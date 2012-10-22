@@ -1856,43 +1856,45 @@ void lustre_assert_wire_constants(void)
 	LASSERTF(II_FL_NONUNQ == 8, "found %lld\n",
 		 (long long)II_FL_NONUNQ);
 
-	/* Checks for struct niobuf_remote */
-	LASSERTF((int)sizeof(struct niobuf_remote) == 16, "found %lld\n",
-		 (long long)(int)sizeof(struct niobuf_remote));
-	LASSERTF((int)offsetof(struct niobuf_remote, offset) == 0, "found %lld\n",
-		 (long long)(int)offsetof(struct niobuf_remote, offset));
-	LASSERTF((int)sizeof(((struct niobuf_remote *)0)->offset) == 8, "found %lld\n",
-		 (long long)(int)sizeof(((struct niobuf_remote *)0)->offset));
-	LASSERTF((int)offsetof(struct niobuf_remote, len) == 8, "found %lld\n",
-		 (long long)(int)offsetof(struct niobuf_remote, len));
-	LASSERTF((int)sizeof(((struct niobuf_remote *)0)->len) == 4, "found %lld\n",
-		 (long long)(int)sizeof(((struct niobuf_remote *)0)->len));
-	LASSERTF((int)offsetof(struct niobuf_remote, flags) == 12, "found %lld\n",
-		 (long long)(int)offsetof(struct niobuf_remote, flags));
-	LASSERTF((int)sizeof(((struct niobuf_remote *)0)->flags) == 4, "found %lld\n",
-		 (long long)(int)sizeof(((struct niobuf_remote *)0)->flags));
-	LASSERTF(OBD_BRW_READ == 0x01, "found 0x%.8x\n",
-		OBD_BRW_READ);
-	LASSERTF(OBD_BRW_WRITE == 0x02, "found 0x%.8x\n",
-		OBD_BRW_WRITE);
-	LASSERTF(OBD_BRW_SYNC == 0x08, "found 0x%.8x\n",
-		OBD_BRW_SYNC);
-	LASSERTF(OBD_BRW_CHECK == 0x10, "found 0x%.8x\n",
-		OBD_BRW_CHECK);
-	LASSERTF(OBD_BRW_FROM_GRANT == 0x20, "found 0x%.8x\n",
-		OBD_BRW_FROM_GRANT);
-	LASSERTF(OBD_BRW_GRANTED == 0x40, "found 0x%.8x\n",
-		OBD_BRW_GRANTED);
-	LASSERTF(OBD_BRW_NOCACHE == 0x80, "found 0x%.8x\n",
-		OBD_BRW_NOCACHE);
-	LASSERTF(OBD_BRW_NOQUOTA == 0x100, "found 0x%.8x\n",
-		OBD_BRW_NOQUOTA);
-	LASSERTF(OBD_BRW_SRVLOCK == 0x200, "found 0x%.8x\n",
-		OBD_BRW_SRVLOCK);
-	LASSERTF(OBD_BRW_ASYNC == 0x400, "found 0x%.8x\n",
-		OBD_BRW_ASYNC);
-	LASSERTF(OBD_BRW_MEMALLOC == 0x800, "found 0x%.8x\n",
-		OBD_BRW_MEMALLOC);
+        /* Checks for struct niobuf_remote */
+        LASSERTF((int)sizeof(struct niobuf_remote) == 16, "found %lld\n",
+                 (long long)(int)sizeof(struct niobuf_remote));
+        LASSERTF((int)offsetof(struct niobuf_remote, offset) == 0, "found %lld\n",
+                 (long long)(int)offsetof(struct niobuf_remote, offset));
+        LASSERTF((int)sizeof(((struct niobuf_remote *)0)->offset) == 8, "found %lld\n",
+                 (long long)(int)sizeof(((struct niobuf_remote *)0)->offset));
+        LASSERTF((int)offsetof(struct niobuf_remote, len) == 8, "found %lld\n",
+                 (long long)(int)offsetof(struct niobuf_remote, len));
+        LASSERTF((int)sizeof(((struct niobuf_remote *)0)->len) == 4, "found %lld\n",
+                 (long long)(int)sizeof(((struct niobuf_remote *)0)->len));
+        LASSERTF((int)offsetof(struct niobuf_remote, flags) == 12, "found %lld\n",
+                 (long long)(int)offsetof(struct niobuf_remote, flags));
+        LASSERTF((int)sizeof(((struct niobuf_remote *)0)->flags) == 4, "found %lld\n",
+                 (long long)(int)sizeof(((struct niobuf_remote *)0)->flags));
+        LASSERTF(OBD_BRW_READ == 0x01, "found 0x%.8x\n",
+                 OBD_BRW_READ);
+        LASSERTF(OBD_BRW_WRITE == 0x02, "found 0x%.8x\n",
+                 OBD_BRW_WRITE);
+        LASSERTF(OBD_BRW_SYNC == 0x08, "found 0x%.8x\n",
+                 OBD_BRW_SYNC);
+        LASSERTF(OBD_BRW_CHECK == 0x10, "found 0x%.8x\n",
+                 OBD_BRW_CHECK);
+        LASSERTF(OBD_BRW_FROM_GRANT == 0x20, "found 0x%.8x\n",
+                 OBD_BRW_FROM_GRANT);
+        LASSERTF(OBD_BRW_GRANTED == 0x40, "found 0x%.8x\n",
+                 OBD_BRW_GRANTED);
+        LASSERTF(OBD_BRW_NOCACHE == 0x80, "found 0x%.8x\n",
+                 OBD_BRW_NOCACHE);
+        LASSERTF(OBD_BRW_NOQUOTA == 0x100, "found 0x%.8x\n",
+                 OBD_BRW_NOQUOTA);
+        LASSERTF(OBD_BRW_SRVLOCK == 0x200, "found 0x%.8x\n",
+                 OBD_BRW_SRVLOCK);
+        LASSERTF(OBD_BRW_ASYNC == 0x400, "found 0x%.8x\n",
+                 OBD_BRW_ASYNC);
+        LASSERTF(OBD_BRW_MEMALLOC == 0x800, "found 0x%.8x\n",
+                 OBD_BRW_MEMALLOC);
+        LASSERTF(OBD_BRW_SOFT_SYNC == 0x4000, "found 0x%.8x\n",
+                 OBD_BRW_SOFT_SYNC);
 
 	/* Checks for struct ost_body */
 	LASSERTF((int)sizeof(struct ost_body) == 208, "found %lld\n",
