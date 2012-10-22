@@ -112,6 +112,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 {
 	struct ofd_object	*fo;
 	int			 i, j, k, rc = 0, tot_bytes = 0;
+	int			 soft_sync = 0;
 
 	ENTRY;
 	LASSERT(env != NULL);
@@ -175,6 +176,9 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 				lnb[j+k].lnb_rc = -ENOSPC;
 			if (!(rnb[i].rnb_flags & OBD_BRW_ASYNC))
 				oti->oti_sync_write = 1;
+			if (rnb[i].rnb_flags & OBD_BRW_SOFT_SYNC)
+				soft_sync = 1;
+
 			/* remote client can't break through quota */
 			if (exp_connect_rmtclient(exp))
 				lnb[j+k].lnb_flags &= ~OBD_BRW_NOQUOTA;
@@ -185,6 +189,9 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 		tot_bytes += rnb[i].rnb_len;
 	}
 	LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
+
+	if (soft_sync)
+		dt_commit_async(env, ofd->ofd_osd);
 
 	rc = dt_write_prep(env, ofd_object_child(fo), lnb, *nr_local);
 	if (unlikely(rc != 0))
