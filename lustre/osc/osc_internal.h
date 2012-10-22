@@ -218,4 +218,6 @@ int osc_quotactl(struct obd_device *unused, struct obd_export *exp,
 int osc_quotacheck(struct obd_device *unused, struct obd_export *exp,
                    struct obd_quotactl *oqctl);
 int osc_quota_poll_check(struct obd_export *exp, struct if_quotacheck *qchk);
+
+int osc_over_unstable_soft_limit(struct client_obd *cli);
 #endif /* OSC_INTERNAL_H */
