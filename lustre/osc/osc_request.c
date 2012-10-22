@@ -1221,6 +1221,9 @@ void osc_commit_cb(struct ptlrpc_request *req)
 	cfs_atomic_add(-1 * page_count, &cli->cl_cache->ccc_unstable_nr);
 	LASSERT(cfs_atomic_read(&cli->cl_cache->ccc_unstable_nr) >= 0);
 
+	cfs_atomic_add(-1 * page_count, &cli->cl_unstable_count);
+	LASSERT(cfs_atomic_read(&cli->cl_unstable_count) >= 0);
+
 	cfs_waitq_broadcast(&cli->cl_cache->ccc_unstable_waitq);
 }
 
@@ -1356,8 +1359,10 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
         }
 
 	/* "unstable" page accounting. See: osc_commit_cb. */
-	if (opc == OST_WRITE && cli->cl_cache != NULL)
+	if (opc == OST_WRITE && cli->cl_cache != NULL) {
 		cfs_atomic_add(page_count, &cli->cl_cache->ccc_unstable_nr);
+		cfs_atomic_add(page_count, &cli->cl_unstable_count);
+	}
 
         LASSERTF((void *)(niobuf - niocount) ==
                 req_capsule_client_get(&req->rq_pill, &RMF_NIOBUF_REMOTE),
