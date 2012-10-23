@@ -225,6 +225,9 @@ static int llog_osd_read_header(const struct lu_env *env,
 		CERROR("%s: error reading log header from "DFID": rc = %d\n",
 		       o->do_lu.lo_dev->ld_obd->obd_name,
 		       PFID(lu_object_fid(&o->do_lu)), rc);
+		CERROR("attrs: valid %Lx, mode %o, size %Lu, block %Lu\n",
+		       lgi->lgi_attr.la_valid, lgi->lgi_attr.la_mode,
+		       lgi->lgi_attr.la_size, lgi->lgi_attr.la_blocks);
 		RETURN(rc);
 	}
 
