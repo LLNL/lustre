@@ -68,6 +68,7 @@ struct llog_handle *llog_alloc_handle(void)
 	cfs_init_rwsem(&loghandle->lgh_lock);
 	cfs_spin_lock_init(&loghandle->lgh_hdr_lock);
 	CFS_INIT_LIST_HEAD(&loghandle->u.phd.phd_entry);
+	cfs_atomic_set(&loghandle->lgh_debug_ref, 1);
 
 	return loghandle;
 }
@@ -77,8 +78,20 @@ struct llog_handle *llog_alloc_handle(void)
  */
 void llog_free_handle(struct llog_handle *loghandle)
 {
+	int debug_ref;
+
 	if (!loghandle)
 		return;
+
+	debug_ref = cfs_atomic_read(&loghandle->lgh_debug_ref);
+	if (debug_ref > 1) {
+		CWARN("Still busy: %d: "LPX64":"LPX64":%x: %d %d "LPU64" %u\n",
+		      debug_ref, loghandle->lgh_id.lgl_oid,
+		      loghandle->lgh_id.lgl_oseq, loghandle->lgh_id.lgl_ogen,
+		      loghandle->lgh_last_idx, loghandle->lgh_cur_idx,
+		      loghandle->lgh_cur_offset, loghandle->lgh_hdr->llh_count);
+		libcfs_debug_dumpstack(NULL);
+	}
 
 	if (!loghandle->lgh_hdr)
 		goto out;
