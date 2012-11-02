@@ -575,6 +575,8 @@ int llog_cat_process_cb(const struct lu_env *env, struct llog_handle *cat_llh,
                 /* Skip processing of the logs until startcat */
                 RETURN(0);
 
+	cfs_atomic_inc(&llh->lgh_debug_ref);
+
         if (d->lpd_startidx > 0) {
                 struct llog_process_cat_data cd;
 
@@ -588,6 +590,8 @@ int llog_cat_process_cb(const struct lu_env *env, struct llog_handle *cat_llh,
 		rc = llog_process_or_fork(env, llh, d->lpd_cb, d->lpd_data,
 					  NULL, false);
         }
+
+	cfs_atomic_dec(&llh->lgh_debug_ref);
 
         RETURN(rc);
 }
