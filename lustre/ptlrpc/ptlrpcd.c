@@ -807,12 +807,19 @@ static void ptlrpcd_fini(void)
 
 static int ptlrpcd_init(void)
 {
-        int nthreads = cfs_num_online_cpus();
-        char name[16];
-        int size, i = -1, j, rc = 0;
-        ENTRY;
+	char	name[16];
+	int	rc = 0;
+	int	i = -1;
+	int	j;
+	int	nthreads;
+	int	size;
+	ENTRY;
 
 #ifdef __KERNEL__
+	nthreads = cfs_cpt_weight(cfs_cpt_table, CFS_CPT_ANY) /
+		   cfs_cpu_ht_nsiblings(0);
+	nthreads = min_t(int, PTLRPCD_NTHRS_MAX, nthreads);
+
         if (max_ptlrpcds > 0 && max_ptlrpcds < nthreads)
                 nthreads = max_ptlrpcds;
         if (nthreads < 2)
