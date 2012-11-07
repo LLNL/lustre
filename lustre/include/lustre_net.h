@@ -3479,6 +3479,8 @@ typedef enum {
         PDL_POLICY_PREFERRED    = 4,
 } pdl_policy_t;
 
+#define PTLRPCD_NTHRS_MAX	32
+
 /* ptlrpc/ptlrpcd.c */
 void ptlrpcd_stop(struct ptlrpcd_ctl *pc, int force);
 void ptlrpcd_free(struct ptlrpcd_ctl *pc);
