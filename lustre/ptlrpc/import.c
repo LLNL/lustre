@@ -202,6 +202,11 @@ static void ptlrpc_deactivate_and_unlock_import(struct obd_import *imp)
         LASSERT_SPIN_LOCKED(&imp->imp_lock);
 
         CDEBUG(D_HA, "setting import %s INVALID\n", obd2cli_tgt(imp->imp_obd));
+	/*
+	 * Make sure that no new requests get processed for this import.
+	 * ptlrpc_{queue,set}_wait must (and does) hold imp_lock while testing
+	 * this flag and then putting requests on sending_list or delayed_list.
+	 */
         imp->imp_invalid = 1;
         imp->imp_generation++;
         cfs_spin_unlock(&imp->imp_lock);

@@ -2809,18 +2809,32 @@ int ptlrpc_replay_req(struct ptlrpc_request *req)
 }
 EXPORT_SYMBOL(ptlrpc_replay_req);
 
+static void
+ptlrpc_abort_cond_resched(struct obd_import *imp)
+{
+	/* called with hold of imp_lock */
+	if (!cfs_need_resched())
+		return;
+
+	cfs_spin_unlock(&imp->imp_lock);
+
+	CDEBUG(D_RPCTRACE, "reschedule abort_inflight for %s:%s",
+	       imp->imp_obd->obd_uuid.uuid,
+	       libcfs_nid2str(imp->imp_connection->c_peer.nid));
+	cfs_schedule();
+
+	cfs_spin_lock(&imp->imp_lock);
+}
+
 /**
  * Aborts all in-flight request on import \a imp sending and delayed lists
  */
 void ptlrpc_abort_inflight(struct obd_import *imp)
 {
-        cfs_list_t *tmp, *n;
-        ENTRY;
+	cfs_list_t	*tmp;
+	cfs_list_t	*n;
+	ENTRY;
 
-        /* Make sure that no new requests get processed for this import.
-         * ptlrpc_{queue,set}_wait must (and does) hold imp_lock while testing
-         * this flag and then putting requests on sending_list or delayed_list.
-         */
         cfs_spin_lock(&imp->imp_lock);
 
         /* XXX locking?  Maybe we should remove each request with the list
@@ -2831,40 +2845,50 @@ void ptlrpc_abort_inflight(struct obd_import *imp)
                 struct ptlrpc_request *req =
                         cfs_list_entry(tmp, struct ptlrpc_request, rq_list);
 
-                DEBUG_REQ(D_RPCTRACE, req, "inflight");
+		if (req->rq_import_generation >= imp->imp_generation)
+			continue;
 
-                cfs_spin_lock (&req->rq_lock);
-                if (req->rq_import_generation < imp->imp_generation) {
-                        req->rq_err = 1;
-			req->rq_status = -EIO;
-                        ptlrpc_client_wake_req(req);
-                }
-                cfs_spin_unlock (&req->rq_lock);
-        }
+		DEBUG_REQ(D_RPCTRACE, req, "abort inflight req");
 
-        cfs_list_for_each_safe(tmp, n, &imp->imp_delayed_list) {
-                struct ptlrpc_request *req =
-                        cfs_list_entry(tmp, struct ptlrpc_request, rq_list);
+		cfs_spin_lock(&req->rq_lock);
 
-                DEBUG_REQ(D_RPCTRACE, req, "aborting waiting req");
+		req->rq_err = 1;
+		req->rq_status = -EIO;
+		ptlrpc_client_wake_req(req);
 
-                cfs_spin_lock (&req->rq_lock);
-                if (req->rq_import_generation < imp->imp_generation) {
-                        req->rq_err = 1;
-			req->rq_status = -EIO;
-                        ptlrpc_client_wake_req(req);
-                }
-                cfs_spin_unlock (&req->rq_lock);
-        }
+		cfs_spin_unlock(&req->rq_lock);
+	}
 
-        /* Last chance to free reqs left on the replay list, but we
-         * will still leak reqs that haven't committed.  */
-        if (imp->imp_replayable)
-                ptlrpc_free_committed(imp);
+	ptlrpc_abort_cond_resched(imp);
 
-        cfs_spin_unlock(&imp->imp_lock);
+	cfs_list_for_each_safe(tmp, n, &imp->imp_delayed_list) {
+		struct ptlrpc_request *req =
+			cfs_list_entry(tmp, struct ptlrpc_request, rq_list);
 
-        EXIT;
+		if (req->rq_import_generation >= imp->imp_generation)
+			continue;
+
+		DEBUG_REQ(D_RPCTRACE, req, "aborting waiting req");
+
+		cfs_spin_lock(&req->rq_lock);
+
+		req->rq_err = 1;
+		req->rq_status = -EIO;
+		ptlrpc_client_wake_req(req);
+
+		cfs_spin_unlock(&req->rq_lock);
+	}
+
+	/* Last chance to free reqs left on the replay list, but we
+	 * will still leak reqs that haven't committed.  */
+	if (imp->imp_replayable) {
+		ptlrpc_abort_cond_resched(imp);
+		ptlrpc_free_committed(imp);
+	}
+
+	cfs_spin_unlock(&imp->imp_lock);
+
+	EXIT;
 }
 EXPORT_SYMBOL(ptlrpc_abort_inflight);
 
