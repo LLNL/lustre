@@ -1506,6 +1506,8 @@ int ll_setattr_raw(struct dentry *dentry, struct iattr *attr)
 	 * resides on the MDS, ie, this file has no objects. */
 	if (lsm != NULL)
 		attr->ia_valid &= ~ATTR_SIZE;
+	/* can't call ll_setattr_ost() while holding a refcount of lsm */
+	ccc_inode_lsm_put(inode, lsm);
 
         memcpy(&op_data->op_attr, attr, sizeof(*attr));
 
@@ -1519,10 +1521,8 @@ int ll_setattr_raw(struct dentry *dentry, struct iattr *attr)
                 GOTO(out, rc);
 
         ll_ioepoch_open(lli, op_data->op_ioepoch);
-	if (lsm == NULL || !S_ISREG(inode->i_mode)) {
-                CDEBUG(D_INODE, "no lsm: not setting attrs on OST\n");
+	if (!S_ISREG(inode->i_mode))
                 GOTO(out, rc = 0);
-        }
 
         if (ia_valid & ATTR_SIZE)
                 attr->ia_valid |= ATTR_SIZE;
@@ -1538,7 +1538,6 @@ int ll_setattr_raw(struct dentry *dentry, struct iattr *attr)
                 rc = ll_setattr_ost(inode, attr);
         EXIT;
 out:
-	ccc_inode_lsm_put(inode, lsm);
         if (op_data) {
                 if (op_data->op_ioepoch) {
                         rc1 = ll_setattr_done_writing(inode, op_data, mod);
@@ -1705,7 +1704,6 @@ void ll_update_inode(struct inode *inode, struct lustre_md *md)
 	LASSERT ((lsm != NULL) == ((body->valid & OBD_MD_FLEASIZE) != 0));
 	if (lsm != NULL) {
 		LASSERT(S_ISREG(inode->i_mode));
-		cfs_mutex_lock(&lli->lli_och_mutex);
 		CDEBUG(D_INODE, "adding lsm %p to inode %lu/%u(%p)\n",
 				lsm, inode->i_ino, inode->i_generation, inode);
 		/* cl_file_inode_init must go before lli_has_smd or a race
@@ -1714,7 +1712,6 @@ void ll_update_inode(struct inode *inode, struct lustre_md *md)
 		 * glimpse would try to use uninitialized lov */
 		if (cl_file_inode_init(inode, md) == 0)
 			lli->lli_has_smd = true;
-		cfs_mutex_unlock(&lli->lli_och_mutex);
 
 		lli->lli_maxbytes = lsm->lsm_maxbytes;
 		if (lli->lli_maxbytes > MAX_LFS_FILESIZE)
@@ -1804,7 +1801,7 @@ void ll_update_inode(struct inode *inode, struct lustre_md *md)
                          * lock on the client and set LLIF_MDS_SIZE_LOCK holding
                          * it. */
                         mode = ll_take_md_lock(inode, MDS_INODELOCK_UPDATE,
-                                               &lockh);
+                                               &lockh, LDLM_FL_CBPENDING);
                         if (mode) {
                                 if (lli->lli_flags & (LLIF_DONE_WRITING |
                                                       LLIF_EPOCH_PENDING |
