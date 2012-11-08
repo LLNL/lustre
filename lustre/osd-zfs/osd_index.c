@@ -405,6 +405,10 @@ static int osd_dir_lookup(const struct lu_env *env, struct dt_object *dt,
 			 (void *)&oti->oti_zde);
 	memcpy(rec, &oti->oti_zde.lzd_fid, sizeof(struct lu_fid));
 
+	/* cache for subsequent FID->DNODE lookup */
+	oti->oti_f2d.fd_fid = oti->oti_zde.lzd_fid;
+	oti->oti_f2d.fd_dnode = oti->oti_zde.lzd_reg.zde_dnode;
+
 	RETURN(rc == 0 ? 1 : rc);
 }
 

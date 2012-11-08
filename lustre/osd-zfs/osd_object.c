@@ -356,6 +356,7 @@ int osd_object_init0(const struct lu_env *env, struct osd_object *obj)
 static int osd_object_init(const struct lu_env *env, struct lu_object *l,
 			   const struct lu_object_conf *conf)
 {
+	struct lustre_mdt_attrs	*lma = &osd_oti_get(env)->oti_mdt_attrs;
 	struct osd_object	*obj = osd_obj(l);
 	struct osd_device	*osd = osd_obj2dev(obj);
 	uint64_t		 oid;
@@ -384,6 +385,33 @@ static int osd_object_init(const struct lu_env *env, struct lu_object *l,
                 }
 		rc = 0;
 	}
+
+	/* verify with LMA, only on real objects (backed by dnode) */
+	if (rc == 0 && obj->oo_db) {
+		struct lu_buf buf = { lma, sizeof(*lma) };
+		int size;
+
+		rc = __osd_xattr_get(env, obj, &buf, XATTR_NAME_LMA, &size);
+		if (rc == 0 && size == sizeof(*lma)) {
+			lustre_lma_swab(lma);
+			if (!lu_fid_eq(lu_object_fid(l), &lma->lma_self_fid)) {
+				CERROR("%s: looking for "DFID", found "DFID"\n",
+				       osd->od_svname, PFID(lu_object_fid(l)),
+				       PFID(&lma->lma_self_fid));
+				rc = -ESTALE;
+				dump_stack();
+			}
+		} else {
+			if (lu_object_fid(l)->f_seq != FID_SEQ_LOCAL_FILE)
+				/* do not complain on system objects: some, like
+				 * quota objects aren't created by Lustre */
+				CERROR("%s: can't get LMA on "DFID": rc = %d\n",
+				       osd->od_svname, PFID(lu_object_fid(l)),
+				       rc);
+			rc = 0;
+		}
+	}
+
 	LASSERT(osd_invariant(obj));
 	RETURN(rc);
 }

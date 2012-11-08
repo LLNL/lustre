@@ -234,6 +234,16 @@ int osd_fid_lookup(const struct lu_env *env, struct osd_device *dev,
 		*oid = info->oti_zde.lzd_reg.zde_dnode;
 	}
 
+	if (lu_fid_eq(&info->oti_f2d.fd_fid, fid)) {
+		/* verify the mapping */
+		if (unlikely(*oid != info->oti_f2d.fd_dnode)) {
+			CERROR("%s: fid->dnode mismatch for "DFID
+			       ": %Lu in direntry, %Lu in OI\n", dev->od_svname,
+			       PFID(fid), info->oti_f2d.fd_dnode, *oid);
+			return -ESTALE;
+		}
+	}
+
 	RETURN(rc);
 }
 

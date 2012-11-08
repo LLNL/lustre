@@ -409,6 +409,7 @@ static int mdd_changelog_init(const struct lu_env *env, struct mdd_device *mdd)
 		CERROR("%s: changelog setup during init failed: rc = %d\n",
 		       obd->obd_name, rc);
 		mdd->mdd_cl.mc_flags |= CLM_ERR;
+		rc = 0;
 	}
 
 	return rc;
