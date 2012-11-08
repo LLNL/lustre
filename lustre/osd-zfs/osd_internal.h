@@ -121,6 +121,11 @@ struct osa_attr {
 	uint64_t	ctime[2];
 };
 
+struct osd_fid2dnode {
+	struct lu_fid	fd_fid;
+	uint64_t	fd_dnode;
+};
+
 struct osd_thread_info {
 	const struct lu_env	*oti_env;
 
@@ -156,6 +161,7 @@ struct osd_thread_info {
 	struct luz_direntry	 oti_zde;
 
 	struct lquota_id_info	 oti_qi;
+	struct osd_fid2dnode	 oti_f2d;	/* cached fid-to-dnode */
 };
 
 extern struct lu_context_key osd_key;
@@ -419,6 +425,8 @@ int __osd_sa_xattr_set(const struct lu_env *env, struct osd_object *obj,
 int __osd_xattr_set(const struct lu_env *env, struct osd_object *obj,
 		    const struct lu_buf *buf, const char *name, int fl,
 		    struct osd_thandle *oh);
+int __osd_xattr_get(const struct lu_env *env, struct osd_object *obj,
+		    struct lu_buf *buf, const char *name, int *sizep);
 static inline int
 osd_xattr_set_internal(const struct lu_env *env, struct osd_object *obj,
 		       const struct lu_buf *buf, const char *name, int fl,
