@@ -1390,8 +1390,6 @@ static void __osc_unreserve_grant(struct client_obd *cli,
 	} else {
 		cli->cl_avail_grant += unused;
 	}
-	if (unused > 0)
-		osc_wake_cache_waiters(cli);
 }
 
 void osc_unreserve_grant(struct client_obd *cli,
@@ -1399,6 +1397,8 @@ void osc_unreserve_grant(struct client_obd *cli,
 {
 	client_obd_list_lock(&cli->cl_loi_list_lock);
 	__osc_unreserve_grant(cli, reserved, unused);
+	if (unused > 0)
+		osc_wake_cache_waiters(cli);
 	client_obd_list_unlock(&cli->cl_loi_list_lock);
 }
 
