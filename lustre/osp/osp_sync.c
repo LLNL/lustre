@@ -716,8 +716,16 @@ static void osp_sync_process_committed(const struct lu_env *env,
 			rc = llog_cat_cancel_records(env, llh, 1,
 						     &body->oa.o_lcookie);
 			if (rc)
-				CERROR("%s: can't cancel record: %d\n",
-				       obd->obd_name, rc);
+				DEBUG_REQ(D_ERROR, req,
+					  "%s: can't cancel record "
+					  LPX64":"LPX64":%u:%u:%u: %d\n",
+					  obd->obd_name,
+					  body->oa.o_lcookie.lgc_lgl.lgl_oid,
+					  body->oa.o_lcookie.lgc_lgl.lgl_oseq,
+					  body->oa.o_lcookie.lgc_lgl.lgl_ogen,
+					  body->oa.o_lcookie.lgc_subsys,
+					  body->oa.o_lcookie.lgc_index,
+					  rc);
 		} else {
 			DEBUG_REQ(D_HA, req, "not committed");
 		}
