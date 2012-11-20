@@ -1310,7 +1310,7 @@ void class_disconnect_stale_exports(struct obd_device *obd,
 			continue;
 
 		cfs_spin_lock(&exp->exp_lock);
-		if (test_export(exp)) {
+		if (test_export(exp) || exp->exp_failed) {
 			cfs_spin_unlock(&exp->exp_lock);
 			continue;
 		}
@@ -1356,6 +1356,11 @@ void class_fail_export(struct obd_export *exp)
 
         if (obd_dump_on_timeout)
                 libcfs_debug_dumplog();
+
+	/* if called during recovery then should keep obd_stale_clients
+	 * consistent */
+	if (exp->exp_obd->obd_recovering)
+		exp->exp_obd->obd_stale_clients++;
 
 	/* need for safe call CDEBUG after obd_disconnect */
 	class_export_get(exp);
