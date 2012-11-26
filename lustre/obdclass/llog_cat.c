@@ -834,8 +834,7 @@ int cat_cancel_cb(const struct lu_env *env, struct llog_handle *cathandle,
 
 	rc = llog_cat_id2handle(env, cathandle, &loghandle, &lir->lid_id);
 	if (rc) {
-		CERROR("%s: cannot find handle for llog "LPX64"\n: %d",
-		       loghandle->lgh_ctxt->loc_obd->obd_name,
+		CERROR("Cannot find handle for llog "LPX64": %d\n",
 		       lir->lid_id.lgl_oid, rc);
 		if (rc == -ENOENT || rc == -ESTALE) {
 			index = rec->lrh_index;
