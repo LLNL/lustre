@@ -105,12 +105,17 @@ int ldlm_expired_completion_wait(void *data)
                 if (ptlrpc_check_suspend())
                         RETURN(0);
 
-                LDLM_ERROR(lock, "lock timed out (enqueued at "CFS_TIME_T", "
+                LCONSOLE_WARN("lock timed out (enqueued at "CFS_TIME_T", "
+                              CFS_DURATION_T"s ago)\n",
+                              lock->l_last_activity,
+                              cfs_time_sub(cfs_time_current_sec(),
+                                           lock->l_last_activity));
+                LDLM_DEBUG(lock, "lock timed out (enqueued at "CFS_TIME_T", "
                            CFS_DURATION_T"s ago); not entering recovery in "
                            "server code, just going back to sleep",
                            lock->l_last_activity,
                            cfs_time_sub(cfs_time_current_sec(),
-                           lock->l_last_activity));
+                                        lock->l_last_activity));
                 if (cfs_time_after(cfs_time_current(), next_dump)) {
                         last_dump = next_dump;
                         next_dump = cfs_time_shift(300);
