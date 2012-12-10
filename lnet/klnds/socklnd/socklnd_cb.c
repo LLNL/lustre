@@ -2438,9 +2438,9 @@ ksocknal_check_peer_timeouts (int idx)
 	read_lock(&ksocknal_data.ksnd_global_lock);
 
         cfs_list_for_each_entry_typed(peer, peers, ksock_peer_t, ksnp_list) {
-                cfs_time_t  deadline = 0;
-                int         resid = 0;
+                ksock_tx_t *tx2   = NULL;
                 int         n     = 0;
+                cfs_time_t  then;
 
                 if (ksocknal_send_keepalive_locked(peer) != 0) {
 			read_unlock(&ksocknal_data.ksnd_global_lock);
@@ -2493,6 +2493,8 @@ ksocknal_check_peer_timeouts (int idx)
                         /* ignore the TX if connection is being closed */
                         if (tx->tx_conn->ksnc_closing)
                                 continue;
+                        if (tx2 == NULL)
+                                tx2 = tx;
                         n++;
                 }
 
@@ -2501,26 +2503,19 @@ ksocknal_check_peer_timeouts (int idx)
                         continue;
                 }
 
-                tx = cfs_list_entry(peer->ksnp_zc_req_list.next,
-                                    ksock_tx_t, tx_zc_list);
-                deadline = tx->tx_deadline;
-                resid    = tx->tx_resid;
-                conn     = tx->tx_conn;
-                ksocknal_conn_addref(conn);
+                conn = tx2->tx_conn;
+                then = cfs_time_shift(*ksocknal_tunables.ksnd_timeout);
+
+		CNETERR("Total %d stale ZC_REQs for peer %s detected; the "
+			"oldest(%p) timed out %ld secs ago, last send %ld secs "
+			"ago, last recv %ld secs ago, resid: %d, wmem: %d\n",
+			n, libcfs_nid2str(peer->ksnp_id.nid), tx2,
+			cfs_duration_sec(cfs_time_current() - tx2->tx_deadline),
+			cfs_duration_sec(then - conn->ksnc_tx_deadline),
+			cfs_duration_sec(then - conn->ksnc_rx_deadline),
+			tx2->tx_resid, libcfs_sock_wmem_queued(conn->ksnc_sock));
 
 		spin_unlock(&peer->ksnp_lock);
-		read_unlock(&ksocknal_data.ksnd_global_lock);
-
-                CERROR("Total %d stale ZC_REQs for peer %s detected; the "
-                       "oldest(%p) timed out %ld secs ago, "
-                       "resid: %d, wmem: %d\n",
-                       n, libcfs_nid2str(peer->ksnp_id.nid), tx,
-                       cfs_duration_sec(cfs_time_current() - deadline),
-                       resid, libcfs_sock_wmem_queued(conn->ksnc_sock));
-
-                ksocknal_close_conn_and_siblings (conn, -ETIMEDOUT);
-                ksocknal_conn_decref(conn);
-                goto again;
         }
 
 	read_unlock(&ksocknal_data.ksnd_global_lock);
