@@ -382,7 +382,7 @@ int ofd_server_data_init(const struct lu_env *env, struct ofd_device *ofd)
 		  sizeof(lsd->lsd_padding) == LR_SERVER_SIZE);
 
 	if (last_rcvd_size == 0) {
-		LCONSOLE_WARN("%s: new disk, initializing\n", obd->obd_name);
+		LCONSOLE_INFO("%s: Initializing new disk\n", obd->obd_name);
 
 		memcpy(lsd->lsd_uuid, obd->obd_uuid.uuid,
 		       sizeof(lsd->lsd_uuid));
