@@ -1453,6 +1453,8 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 {
         cfs_list_t *tmp, *next;
         int force_timer_recalc = 0;
+	int processed = 0;
+	cfs_time_t start = jiffies;
         ENTRY;
 
         if (cfs_atomic_read(&set->set_remaining) == 0)
@@ -1465,6 +1467,8 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
                 struct obd_import *imp = req->rq_import;
                 int unregistered = 0;
                 int rc = 0;
+
+		processed++;
 
                 if (req->rq_phase == RQ_PHASE_NEW &&
                     ptlrpc_send_new_req(req)) {
@@ -1807,6 +1811,11 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 			ptlrpc_req_finished(req);
 		}
         }
+
+	if (cfs_time_after(jiffies, start + cfs_time_shift(5)))
+		LCONSOLE_WARN("%us to process %d reqs\n",
+			      (int)cfs_duration_sec(jiffies-start),
+			      processed);
 
         /* If we hit an error, we want to recover promptly. */
         RETURN(cfs_atomic_read(&set->set_remaining) == 0 || force_timer_recalc);
