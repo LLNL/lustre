@@ -350,7 +350,6 @@ struct llog_handle {
 	char			*lgh_name;
 	void			*private_data;
 	struct llog_operations	*lgh_logops;
-	cfs_atomic_t		 lgh_debug_ref;
 };
 
 /* llog_lvfs.c */
