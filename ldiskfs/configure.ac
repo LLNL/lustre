@@ -1,8 +1,12 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.57])
-AC_INIT([Lustre ldiskfs], 3.3.0, [http://bugs.whamcloud.com/])
-AC_CONFIG_SRCDIR([lustre-ldiskfs.spec.in])
+AC_INIT(m4_esyscmd([awk '/Name:/ {printf "%s",$2}' < META]),
+        m4_esyscmd([awk '/Version:/ {printf "%s",$2}' < META]),
+        [http://bugs.whamcloud.com/])
+AC_SUBST(PACKAGE_RELEASE, m4_esyscmd([awk '/Release:/ {printf "%s",$2}' < META]))
+
+AC_CONFIG_SRCDIR([ldiskfs.spec.in])
 
 # Don't look for install-sh, etc. in ..
 AC_CONFIG_AUX_DIR([config])
@@ -72,6 +76,7 @@ LDISKFSDIR="$PWD/ldiskfs"
 AC_SUBST(LDISKFSDIR)
 
 LDISKFS_AC_PATCH_PROGRAM
+LDISKFS_AC_RPM
 
 if test x$enable_server$enable_dist = xyesno ; then
 LB_LDISKFS_EXT_DIR
