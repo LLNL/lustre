@@ -1,0 +1,266 @@
+# The following block is used to allow the source RPM to be rebuilt
+# against specific kernels.  It is preferable that rpmbuild define the
+# require_kver, require_kdir, require_obj constants for us, but if it does not
+# not we attempt to determine the correct values based on your distro.
+
+# kdir:    Full path to the kernel source headers
+# kobj:    Full path to the kernel build objects
+# kver:    Kernel version
+# kpkg:    Kernel package name
+# kdevpkg: Kernel devel package name
+# kverpkg: Kernel package version
+
+%if %{defined require_kver}
+%define kver %{require_kver}
+%endif
+
+%if %{defined require_kdir}
+%define kdir %{require_kdir}
+%endif
+
+%if %{defined require_kobj}
+%define kobj %{require_kobj}
+%endif
+
+# SLES:
+%if %{defined suse_version}
+ %if %{undefined kver}
+  %ifarch ppc64
+   %define kverextra     ppc64
+  %else
+   %define kverextra     default
+  %endif
+
+  %if %{suse_version} >= 1100
+   %define klnk          %{_usrsrc}/linux-obj/%{_target_cpu}/%{kverextra}
+   %define krelease      %{klnk}/include/config/kernel.release
+  %else
+   %define klnk          %{_usrsrc}/linux-obj/%{_target_cpu}/%{kverextra}
+   %define krelease      %{klnk}/.kernelrelease
+  %endif
+
+  %define kver           %((echo X; %{__cat} %{krelease} 2>/dev/null)|tail -1)
+ %endif
+
+ %if %{undefined kverextra}
+  %define kverextra      %(echo %{kver} | cut -f3 -d'-')
+ %endif
+
+ %define kpkg            kernel-%{kverextra}
+ %define kdevpkg         kernel-source
+ %define kverpkg         %(echo %{kver} | %{__sed} -e 's/-%{kverextra}//g')
+
+ # The kernel and rpm versions do not strictly match under SLES11
+ # e.g. kernel version 2.6.27.19-5 != rpm version 2.6.27.19-5.1
+ %if %{suse_version} >= 1100
+  %define koppkg         >=
+ %else
+  %define koppkg         =
+ %endif
+
+ %if %{undefined kdir}
+  %define kdir           %{_usrsrc}/linux-%{kverpkg}
+ %endif
+ %if %{undefined kobj}
+  %define kobj           %{kdir}-obj/%{_target_cpu}/%{kverextra}
+ %endif
+%else
+
+# CHAOS 4.x:
+%if %{defined ch4}
+ %if %{undefined kver}
+  %define klnk           %{_usrsrc}/kernels/*/include/config
+  %define kver           %((echo X; %{__cat} %{klnk}/kernel.release
+                            2>/dev/null) | tail -1)
+ %endif
+ %define kpkg            chaos-kernel
+ %define kdevpkg         chaos-kernel-devel
+ %define kverpkg         %{kver}
+ %define koppkg          =
+ %if %{undefined kdir}
+  %define kdir %{_usrsrc}/kernels/%{kver}
+ %endif
+ %if %{undefined kobj}
+  %define kobj           %{kdir}
+ %endif
+%else
+
+# RHEL 5.x/6.x, CHAOS 5.x:
+%if %{defined el5} || %{defined el6} || %{defined ch5}
+ %if %{undefined kver}
+  %define klnk           %{_usrsrc}/kernels/*/include/config
+  %define kver           %((echo X; %{__cat} %{klnk}/kernel.release
+                            2>/dev/null) | tail -1)
+ %endif
+ %define kpkg            kernel
+ %if %{defined el6} || %{defined ch5}
+  %define kdevpkg         kernel-devel,kernel-debuginfo-common-%{_target_cpu}
+ %else
+  %define kdevpkg         kernel-devel
+ %endif
+ %if %{defined el6} || %{defined ch5}
+  %define kverpkg        %(echo %{kver} | %{__sed} -e 's/.%{_target_cpu}//g')
+ %else
+  %define kverpkg        %{kver}
+ %endif
+ %define koppkg          =
+ %if %{undefined kdir}
+  %if %{defined el6} || %{defined ch5}
+   %define kobj           %{_usrsrc}/kernels/%{kver}
+   %define kdir           %((echo X; ls -1d %{_usrsrc}/debug/*/linux-%{kver}
+                             2>/dev/null) | tail -1)
+  %else
+   %define kdir           %{_usrsrc}/kernels/%{kver}-%{_target_cpu}
+  %endif
+ %endif
+ %if %{undefined kobj}
+  %define kobj           %{kdir}
+ %endif
+%else
+
+# Fedora:
+%if %{defined fedora}
+ %if %{undefined kver}
+  %define klnk           %{_usrsrc}/kernels/*/include/config
+  %define kver           %((echo X; %{__cat} %{klnk}/kernel.release
+                            2>/dev/null) | tail -1)
+ %endif
+ %define kpkg            kernel
+ %define kdevpkg         kernel-devel
+ %define kverpkg         %(echo %{kver} | %{__sed} -e 's/.%{_target_cpu}//g')
+ %define koppkg          =
+ %if %{undefined kdir}
+  %define kdir           %{_usrsrc}/kernels/%{kver}
+ %endif
+ %if %{undefined kobj}
+  %define kobj           %{kdir}
+ %endif
+%else
+
+# Unsupported distro:
+ %if %{undefined kver}
+  %define kver           %(uname -r)
+ %endif
+ %define kverpkg         %{kver}
+ %if %{undefined kdir}
+  %define kdir           /lib/modules/%{kver}/build
+ %endif
+ %if %{undefined kobj}
+  %define kobj           %{kdir}
+ %endif
+
+%endif
+%endif
+%endif
+%endif
+
+# Distro agnostic:
+%define name             @PACKAGE_NAME@
+%define version          @PACKAGE_VERSION@
+%define release_global   0
+
+# The kernel version should only be appended to a binary RPM.  When
+# building a source RPM it must be kernel version agnostic.  This means
+# the source RPM must never specify a required kernel version, but the
+# final RPM should be keyed to the kernel version it was built against.
+%if %{defined build_src_rpm}
+ %define release          %{release_global}
+ %if %{defined kpkg}
+  %define krequires       %{kpkg}
+ %endif
+%else
+ %define relext           %(echo %{kverpkg} | %{__sed} -e 's/-/_/g')
+ %define release          %{release_global}_%{relext}
+ %if %{defined kpkg}
+  %define krequires       %{kpkg} %{koppkg} %{kverpkg}
+ %endif
+%endif
+
+Summary:         ldiskfs File System
+Group:           Utilities/System
+Name:            %{name}
+Version:         %{version}
+Release:         %{release}
+License:         GPL
+URL:             git://git.whamcloud.com/fs/lustre-release.git
+BuildRoot:       %{_tmppath}/%{name}-%{version}-%{release}-%(%{__id} -un)
+Source:          %{name}-%{version}.tar.gz
+Provides:        lustre-backend-fs
+Obsoletes:       lustre-ldiskfs
+%if %{defined krequires}
+Requires:        %{krequires}
+%endif
+%if %{defined kdevpkg}
+BuildRequires:   %{kdevpkg}
+%endif
+
+%description
+The %{name} package contains kernel modules for the ldiskfs file system.
+
+%package devel
+Summary:         ldiskfs File System Headers and Symbols
+Group:           Development/Libraries
+%if %{defined krequires}
+Requires:        %{krequires}
+%endif
+%if %{defined kdevpkg}
+BuildRequires:   %{kdevpkg}
+%endif
+Obsoletes:       lustre-ldiskfs-devel
+
+%description devel
+The %{name}-devel package contains the kernel header files and
+Module.symvers symbols needed for building additional modules
+which use %{name}.
+
+%prep
+%setup -n %{name}-%{version}
+%build
+%configure --with-linux=%{kdir} --with-linux-obj=%{kobj}
+make -j 4
+
+%install
+rm -rf $RPM_BUILD_ROOT
+make DESTDIR=$RPM_BUILD_ROOT install
+# Kernel modules need to be executable at the end of the install
+# section to allow the find-debuginfo.sh to produce a proper
+# debuginfo package.  Permissions will be corrected in the files
+# section.
+find ${RPM_BUILD_ROOT} -name "*.ko" -exec chmod 755 \{\} \;
+
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+%files
+%defattr(644, root, root, 755)
+/lib/modules/*
+
+%files devel
+%defattr(-,root,root)
+%{_prefix}/src/%{name}-%{version}
+
+%post devel
+# Make ldiskfs symlink point to this package's source.
+if [ -h %{_prefix}/src/ldiskfs -o ! -e %{_prefix}/src/ldiskfs ]; then
+	ln -snf %{name}-%{version}/%{kver} %{_prefix}/src/ldiskfs
+fi
+
+%postun devel
+# If the ldiskfs symlink is now dangling, remove it.
+if [ -h %{_prefix}/src/ldiskfs -a ! -e %{_prefix}/src/ldiskfs ]; then
+	rm -f %{_prefix}/src/ldiskfs
+fi
+
+%post
+if [ -f /boot/System.map-%{kver} ]; then
+	depmod -ae -F /boot/System.map-%{kver} %{kver} || exit 0
+else
+	depmod -ae %{kver} || exit 0
+fi
+
+%postun
+if [ -f /boot/System.map-%{kver} ]; then
+	depmod -ae -F /boot/System.map-%{kver} %{kver} || exit 0
+else
+	depmod -ae %{kver} || exit 0
+fi
