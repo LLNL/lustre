@@ -23,11 +23,6 @@
 # (./ldiskfs) then it will be configured and built recursively as part of
 # the lustre build system.
 #
-# NOTE: The lustre and in-tree ldiskfs build systems both make use these
-# macros.  This is undesirable and confusing at best, it is potentially
-# danagerous at worst.  The ldiskfs build system should be entirely stand
-# alone without dependency on the lustre build system.
-#
 AC_DEFUN([LB_PATH_LDISKFS],
 [
 AC_ARG_WITH([ldiskfs],
@@ -40,9 +35,21 @@ AC_ARG_WITH([ldiskfs],
 		fi
 	])
 
+# Note that in all cases we want to figure out if the ldiskfs source is
+# in-tree, even when we don't plan to compile binaries of ldiskfs.  We
+# need to know this, for instance, so we can properly trigger the build
+# of source rpms even when we're skipping the binary ldiskfs rpm build.
+ldiskfs_intree='no'
 case x$with_ldiskfs in
 	xno)
 		LDISKFS_DIR=
+
+		# Check ./ldiskfs
+		ldiskfs_src=$PWD/ldiskfs
+		if test -e "$ldiskfs_src"; then
+			LDISKFS_DIR=$(readlink -f $ldiskfs_src)
+			ldiskfs_intree='yes'
+		fi
 		;;
 	xyes)
 		LDISKFS_DIR=
@@ -51,6 +58,7 @@ case x$with_ldiskfs in
 		ldiskfs_src=$PWD/ldiskfs
 		if test -e "$ldiskfs_src"; then
 			LDISKFS_DIR=$(readlink -f $ldiskfs_src)
+			ldiskfs_intree='yes'
 		else
 			# Check /usr/src/ldiskfs-*/$LINUXRELEASE
 			ldiskfs_src=$(ls -1d \
@@ -74,6 +82,12 @@ case x$with_ldiskfs in
 	*)
 		LDISKFS_DIR=$(readlink -f $with_ldiskfs)
 		with_ldiskfs='yes'
+		# check if that path happens to be in-tree
+		INTREE_PATH_WOULD_BE=$(readlink -f $PWD/ldiskfs)
+		if test x$LDISKFS_DIR = x$INTREE_PATH_WOULD_BE; then
+			ldiskfs_intree='yes'
+		fi
+
 		;;
 esac
 
@@ -107,6 +121,14 @@ if test x$with_ldiskfs = xyes; then
 	AC_DEFINE(HAVE_LDISKFS_OSD, 1, Enable ldiskfs osd)
 fi
 
+# If ldiskfs is in tree, we are still responsible for triggering
+# the build of the ldiskfs source rpm when someone runs "make
+# srpm" in the lustre top-level directory.  Someday when/if
+# ldiskfs is moved out of tree, we can drop this.
+if test x$enable_dist = xyes; then
+	LB_LDISKFS_BUILD
+fi
+
 #
 # LDISKFS_DEVEL is required because when using the ldiskfs-devel package the
 # ext4 source will be fully patched to ldiskfs.  When building with the
@@ -126,6 +148,7 @@ AM_CONDITIONAL(LDISKFS_DEVEL, \
 
 AM_CONDITIONAL(LDISKFS_BUILD, test x$enable_ldiskfs_build = xyes)
 AM_CONDITIONAL(LDISKFS_ENABLED, test x$with_ldiskfs = xyes)
+AM_CONDITIONAL(LDISKFS_INTREE, test x$ldiskfs_intree = xyes)
 
 if test -e "$PWD/ldiskfs"; then
 	LDISKFS_DIST_SUBDIR="ldiskfs"
@@ -220,8 +243,8 @@ AC_ARG_ENABLE([ldiskfs-build],
 	AC_HELP_STRING([--enable-ldiskfs-build],
 		[enable ldiskfs configure/make]),
 	[], [
-		LDISKFS_DIR_INTREE=$(readlink -f $PWD/ldiskfs)
-		if test x$LDISKFS_DIR = x$LDISKFS_DIR_INTREE; then
+		# ldiskfs_intree is defined in LB_PATH_LDISKFS
+		if test x$ldiskfs_intree = xyes; then
 			enable_ldiskfs_build='yes'
 		else
 			enable_ldiskfs_build='no'
@@ -233,9 +256,11 @@ if test x$enable_ldiskfs_build = xyes; then
 	AC_MSG_RESULT([$enable_ldiskfs_build])
 	LDISKFS_SUBDIR="ldiskfs"
 
-	LB_CHECK_FILE([$LDISKFS_DIR/configure], [], [
-		AC_MSG_ERROR([Complete ldiskfs build system must exist])])
-	LB_LDISKFS_EXT_SOURCE
+	if test X$enable_dist = xno; then
+		LB_CHECK_FILE([$LDISKFS_DIR/configure], [], [
+			AC_MSG_ERROR([Complete ldiskfs build system must exist])])
+		LB_LDISKFS_EXT_SOURCE
+	fi
 
 	AC_SUBST(LDISKFS_SUBDIR)
 else
