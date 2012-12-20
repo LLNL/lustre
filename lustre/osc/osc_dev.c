@@ -47,7 +47,6 @@
  * @{ 
  */
 
-cfs_mem_cache_t *osc_page_kmem;
 cfs_mem_cache_t *osc_lock_kmem;
 cfs_mem_cache_t *osc_object_kmem;
 cfs_mem_cache_t *osc_thread_kmem;
@@ -57,11 +56,6 @@ cfs_mem_cache_t *osc_extent_kmem;
 cfs_mem_cache_t *osc_quota_kmem;
 
 struct lu_kmem_descr osc_caches[] = {
-        {
-                .ckd_cache = &osc_page_kmem,
-                .ckd_name  = "osc_page_kmem",
-                .ckd_size  = sizeof (struct osc_page)
-        },
         {
                 .ckd_cache = &osc_lock_kmem,
                 .ckd_name  = "osc_lock_kmem",
