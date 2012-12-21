@@ -1854,7 +1854,28 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 			libcfs_nid2str(imp->imp_connection->c_peer.nid),
 			lustre_msg_get_opc(req->rq_reqmsg));
 
-		spin_lock(&imp->imp_lock);
+		{
+			cfs_time_t enough = cfs_time_shift(5);
+			unsigned long count = 0;
+			while (spin_trylock(&imp->imp_lock) == 0) {
+				if (++count % 32768 != 0)
+					continue;
+
+				if (cfs_time_before(jiffies, enough))
+					continue;
+
+				enough = cfs_time_shift(3600);
+				DEBUG_REQ(D_ERROR, req, "spining..");
+#ifdef __KERNEL__
+				CERROR("import %p, obd %p, imp_lock = %u\n",
+				       imp, imp->imp_obd,
+				       imp->imp_lock.raw_lock.slock);
+				libcfs_panic_on_lbug = 0;
+#endif
+				LBUG();
+			}
+		}
+
 		/* Request already may be not on sending or delaying list. This
 		 * may happen in the case of marking it erroneous for the case
 		 * ptlrpc_import_delay_req(req, status) find it impossible to
