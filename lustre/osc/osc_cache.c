@@ -1496,7 +1496,10 @@ static int osc_enter_cache(const struct lu_env *env, struct client_obd *cli,
 	struct osc_object *osc = oap->oap_obj;
 	struct lov_oinfo  *loi = osc->oo_oinfo;
 	struct osc_cache_waiter ocw;
-	struct l_wait_info lwi = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
+	struct l_wait_info lwi1 = LWI_TIMEOUT_INTR(cfs_time_seconds(600), NULL,
+						   LWI_ON_SIGNAL_NOOP, NULL);
+	struct l_wait_info lwi2 = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
+	struct l_wait_info *lwi = &lwi1;
 	int rc = -EDQUOT;
 	ENTRY;
 
@@ -1534,8 +1537,14 @@ static int osc_enter_cache(const struct lu_env *env, struct client_obd *cli,
 		CDEBUG(D_CACHE, "%s: sleeping for cache space @ %p for %p\n",
 		       cli->cl_import->imp_obd->obd_name, &ocw, oap);
 
-		rc = l_wait_event(ocw.ocw_waitq,
-				  cfs_list_empty(&ocw.ocw_entry), &lwi);
+		do {
+			rc = l_wait_event(ocw.ocw_waitq,
+					  cfs_list_empty(&ocw.ocw_entry), lwi);
+			if (rc < 0)
+				CERROR("LU-2576: Wait event error! (rc = %i, empty = %i)",
+				       rc, cfs_list_empty(&ocw.ocw_entry));
+			lwi = &lwi2;
+		} while (rc == -ETIMEDOUT);
 
 		client_obd_list_lock(&cli->cl_loi_list_lock);
 		cfs_list_del_init(&ocw.ocw_entry);
