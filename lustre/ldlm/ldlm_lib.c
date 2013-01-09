@@ -693,10 +693,17 @@ void target_client_add_cb(struct obd_device *obd, __u64 transno, void *cb_data,
 }
 EXPORT_SYMBOL(target_client_add_cb);
 
+#ifdef __KERNEL__
 static void
-target_start_and_reset_recovery_timer(struct obd_device *obd,
-                                      struct ptlrpc_request *req,
-                                      int new_client);
+check_and_start_recovery_timer(struct obd_device *obd,
+                               struct ptlrpc_request *req, int new_client);
+#else
+static inline void
+check_and_start_recovery_timer(struct obd_device *obd,
+                               struct ptlrpc_request *req, int new_client)
+{
+}
+#endif
 
 int target_handle_connect(struct ptlrpc_request *req)
 {
@@ -954,7 +961,7 @@ no_export:
         /* If this is the first time a client connects,
          * reset the recovery timer */
         if (rc == 0 && target->obd_recovering)
-                target_start_and_reset_recovery_timer(target, req, !export);
+                check_and_start_recovery_timer(target, req, export == NULL);
 
         /* We want to handle EALREADY but *not* -EALREADY from
          * target_handle_reconnect(), return reconnection state in a flag */
@@ -1372,7 +1379,6 @@ static void abort_lock_replay_queue(struct obd_device *obd)
                 target_request_copy_put(req);
         }
 }
-#endif
 
 /* Called from a cleanup function if the device is being cleaned up
    forcefully.  The exports should all have been disconnected already,
@@ -1432,56 +1438,85 @@ void target_cancel_recovery_timer(struct obd_device *obd)
 
 /* extend = 1 means require at least "duration" seconds left in the timer,
    extend = 0 means set the total duration (start_recovery_timer) */
-static void reset_recovery_timer(struct obd_device *obd, int duration,
-                                 int extend)
+static void target_start_recovery_timer(struct obd_device *obd)
 {
-        cfs_time_t now = cfs_time_current_sec();
-        cfs_duration_t left;
+	if (obd->obd_recovery_start != 0)
+		return;
 
-        cfs_spin_lock(&obd->obd_recovery_task_lock);
-        if (!obd->obd_recovering || obd->obd_abort_recovery) {
-                cfs_spin_unlock(&obd->obd_recovery_task_lock);
-                return;
-        }
+	cfs_spin_lock(&obd->obd_dev_lock);
+	if (!obd->obd_recovering || obd->obd_abort_recovery) {
+		cfs_spin_unlock(&obd->obd_dev_lock);
+		return;
+	}
 
-        left = cfs_time_sub(obd->obd_recovery_end, now);
+	LASSERT(obd->obd_recovery_timeout != 0);
 
-        if (extend && (duration > left))
-                obd->obd_recovery_timeout += duration - left;
-        else if (!extend && (duration > obd->obd_recovery_timeout))
-                /* Track the client's largest expected replay time */
-                obd->obd_recovery_timeout = duration;
+	if (obd->obd_recovery_start != 0) {
+		cfs_spin_unlock(&obd->obd_dev_lock);
+		return;
+	}
 
-        /* Hard limit of obd_recovery_time_hard which should not happen */
-        if (obd->obd_recovery_timeout > obd->obd_recovery_time_hard)
-                obd->obd_recovery_timeout = obd->obd_recovery_time_hard;
+	cfs_timer_arm(&obd->obd_recovery_timer,
+		      cfs_time_shift(obd->obd_recovery_timeout));
+	obd->obd_recovery_start = cfs_time_current_sec();
+	cfs_spin_unlock(&obd->obd_dev_lock);
 
-        obd->obd_recovery_end = obd->obd_recovery_start +
-                                obd->obd_recovery_timeout;
-        if (cfs_time_before(now, obd->obd_recovery_end)) {
-                left = cfs_time_sub(obd->obd_recovery_end, now);
-                LASSERT(left != 0);
-                cfs_timer_arm(&obd->obd_recovery_timer, cfs_time_shift(left));
-        }
-        cfs_spin_unlock(&obd->obd_recovery_task_lock);
-        CDEBUG(D_HA, "%s: recovery timer will expire in %u seconds\n",
-               obd->obd_name, (unsigned)left);
+	LCONSOLE_WARN("%s: will be in recovery for at least %d:%.02d, "
+		      "or until %d client%s reconnect%s\n",
+		      obd->obd_name,
+		      obd->obd_recovery_timeout / 60,
+		      obd->obd_recovery_timeout % 60,
+		      obd->obd_max_recoverable_clients,
+		      (obd->obd_max_recoverable_clients == 1) ? "" : "s",
+		      (obd->obd_max_recoverable_clients == 1) ? "s" : "");
 }
 
-static void check_and_start_recovery_timer(struct obd_device *obd)
+/* extend recovery window
+ *
+ * if %extend is true, extend recovery window to have %drt remaining at least;
+ * otherwise, make sure the recovery timeout value is not less than %drt.
+ */
+static void extend_recovery_timer(struct obd_device *obd, int drt, int extend)
 {
-        cfs_spin_lock(&obd->obd_recovery_task_lock);
-        if (cfs_timer_is_armed(&obd->obd_recovery_timer)) {
-                cfs_spin_unlock(&obd->obd_recovery_task_lock);
-                return;
-        }
-        LCONSOLE_INFO("%s: Starting recovery timer for %d:%.02d\n",
-                      obd->obd_name, obd->obd_recovery_timeout / 60,
-                      obd->obd_recovery_timeout % 60);
-        obd->obd_recovery_start = cfs_time_current_sec();
-        cfs_spin_unlock(&obd->obd_recovery_task_lock);
+	cfs_time_t now;
+	cfs_time_t end;
+	cfs_duration_t left;
+	int to;
 
-        reset_recovery_timer(obd, obd->obd_recovery_timeout, 0);
+	cfs_spin_lock(&obd->obd_dev_lock);
+	if (!obd->obd_recovering || obd->obd_abort_recovery) {
+		cfs_spin_unlock(&obd->obd_dev_lock);
+		return;
+	}
+
+	LASSERT(obd->obd_recovery_start != 0);
+
+	now = cfs_time_current_sec();
+	to = obd->obd_recovery_timeout;
+	end = obd->obd_recovery_start + to;
+	left = cfs_time_sub(end, now);
+
+	if (extend && (drt > left)) {
+		to += drt - left;
+	} else if (!extend && (drt > to)) {
+		to = drt;
+		/* reduce drt by already passed time */
+		drt -= obd->obd_recovery_timeout - left;
+	}
+
+	if (to > obd->obd_recovery_time_hard)
+		to = obd->obd_recovery_time_hard;
+	if (obd->obd_recovery_timeout < to) {
+		LASSERT(drt >= 0);
+		obd->obd_recovery_timeout = to;
+		cfs_timer_arm(&obd->obd_recovery_timer,
+			     cfs_time_shift(drt));
+	}
+
+	cfs_spin_unlock(&obd->obd_dev_lock);
+
+	CDEBUG(D_HA, "%s: recovery timer will expire in %u seconds\n",
+	       obd->obd_name, (unsigned)drt);
 }
 
 /* Reset the timer with each new client connection */
@@ -1496,9 +1531,9 @@ static void check_and_start_recovery_timer(struct obd_device *obd)
  */
 
 static void
-target_start_and_reset_recovery_timer(struct obd_device *obd,
-                                      struct ptlrpc_request *req,
-                                      int new_client)
+check_and_start_recovery_timer(struct obd_device *obd,
+                               struct ptlrpc_request *req,
+                               int new_client)
 {
         int service_time = lustre_msg_get_service_time(req->rq_reqmsg);
 
@@ -1508,7 +1543,7 @@ target_start_and_reset_recovery_timer(struct obd_device *obd,
                 at_measured(&req->rq_rqbd->rqbd_service->srv_at_estimate,
                             service_time);
 
-        check_and_start_recovery_timer(obd);
+	target_start_recovery_timer(obd);
 
         /* convert the service time to rpc timeout,
          * reuse service_time to limit stack usage */
@@ -1518,12 +1553,11 @@ target_start_and_reset_recovery_timer(struct obd_device *obd,
          * to reconnect, then try the failover server.  The max delay between
          * connect attempts is SWITCH_MAX + SWITCH_INC + INITIAL */
         service_time += 2 * (CONNECTION_SWITCH_MAX + CONNECTION_SWITCH_INC +
-                             INITIAL_CONNECT_TIMEOUT);
-        if (service_time > obd->obd_recovery_timeout && !new_client)
-                reset_recovery_timer(obd, service_time, 0);
-}
+                        INITIAL_CONNECT_TIMEOUT);
 
-#ifdef __KERNEL__
+        if (service_time > obd->obd_recovery_timeout && !new_client)
+                extend_recovery_timer(obd, service_time, 0);
+}
 
 /** Health checking routines */
 static inline int exp_connect_healthy(struct obd_export *exp)
@@ -1687,7 +1721,7 @@ repeat:
                  * reset timer, recovery will proceed with versions now,
                  * timeout is set just to handle reconnection delays
                  */
-                reset_recovery_timer(obd, RECONNECT_DELAY_MAX, 1);
+                extend_recovery_timer(obd, RECONNECT_DELAY_MAX, 1);
                 /** Wait for recovery events again, after evicting bad clients */
                 goto repeat;
         }
@@ -1805,13 +1839,15 @@ static int handle_recovery_req(struct ptlrpc_thread *thread,
         lu_context_fini(&req->rq_recov_session);
         /* don't reset timer for final stage */
         if (!exp_finished(req->rq_export)) {
+                int to = obd_timeout;
+
                 /**
                  * Add request timeout to the recovery time so next request from
                  * this client may come in recovery time
                  */
-                 reset_recovery_timer(class_exp2obd(req->rq_export),
-                                      AT_OFF ? obd_timeout :
-                                      lustre_msg_get_timeout(req->rq_reqmsg), 1);
+                if (!AT_OFF)
+                        to  = lustre_msg_get_service_time(req->rq_reqmsg);
+                extend_recovery_timer(class_exp2obd(req->rq_export), to, 1);
         }
 reqcopy_put:
         RETURN(rc);
@@ -2043,7 +2079,7 @@ void target_recovery_init(struct lu_target *lut, svc_handler_t handler)
 }
 EXPORT_SYMBOL(target_recovery_init);
 
-#endif
+#endif /* __KERNEL__ */
 
 static int target_process_req_flags(struct obd_device *obd,
                                     struct ptlrpc_request *req)

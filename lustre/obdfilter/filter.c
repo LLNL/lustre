@@ -2020,6 +2020,9 @@ int filter_common_setup(struct obd_device *obd, struct lustre_cfg* lcfg,
         /* failover is the default */
         obd->obd_replayable = 1;
 
+        /* disable connection until configuration finishes */
+        obd->obd_no_conn = 1;
+
         if (lcfg->lcfg_bufcount > 3 && LUSTRE_CFG_BUFLEN(lcfg, 3) > 0) {
                 str = lustre_cfg_string(lcfg, 3);
                 if (strchr(str, 'n')) {
@@ -2126,17 +2129,6 @@ int filter_common_setup(struct obd_device *obd, struct lustre_cfg* lcfg,
                       obd->obd_name, label ?: str, lmi ? "on " : "",
                       lmi ? s2lsi(lmi->lmi_sb)->lsi_lmd->lmd_dev : "",
                       obd->obd_replayable ? "enabled" : "disabled");
-
-        if (obd->obd_recovering)
-                LCONSOLE_WARN("%s: Will be in recovery for at least %d:%.02d, "
-                              "or until %d client%s reconnect%s\n",
-                              obd->obd_name,
-                              obd->obd_recovery_timeout / 60,
-                              obd->obd_recovery_timeout % 60,
-                              obd->obd_max_recoverable_clients,
-                              (obd->obd_max_recoverable_clients == 1) ? "" : "s",
-                              (obd->obd_max_recoverable_clients == 1) ? "s": "");
-
 
         RETURN(0);
 
@@ -4694,6 +4686,24 @@ static int filter_process_config(struct obd_device *obd, obd_count len,
         return rc;
 }
 
+static int filter_notify(struct obd_device *obd,
+                         struct obd_device *unused,
+                         enum obd_notify_event ev, void *data)
+{
+        switch (ev) {
+        case OBD_NOTIFY_CONFIG:
+                LASSERT(obd->obd_no_conn);
+                cfs_spin_lock(&obd->obd_dev_lock);
+                obd->obd_no_conn = 0;
+                cfs_spin_unlock(&obd->obd_dev_lock);
+                break;
+        default:
+                CDEBUG(D_INFO, "%s: Unhandled notification %#x\n",
+                       obd->obd_name, ev);
+        }
+        return 0;
+}
+
 static struct lvfs_callback_ops filter_lvfs_ops = {
         l_fid2dentry:     filter_lvfs_fid2dentry,
 };
@@ -4728,6 +4738,7 @@ static struct obd_ops filter_obd_ops = {
         .o_iocontrol      = filter_iocontrol,
         .o_health_check   = filter_health_check,
         .o_process_config = filter_process_config,
+        .o_notify 	   = filter_notify,
 };
 
 quota_interface_t *filter_quota_interface_ref;
