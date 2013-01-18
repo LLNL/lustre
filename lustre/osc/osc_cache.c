@@ -1488,6 +1488,9 @@ static int ocw_granted(struct client_obd *cli, struct osc_cache_waiter *ocw)
 	int rc;
 	client_obd_list_lock(&cli->cl_loi_list_lock);
 	rc = cfs_list_empty(&ocw->ocw_entry) || cli->cl_w_in_flight == 0;
+	CDEBUG(D_CACHE, "LU-2576: Wait event signaled! "
+			"(rc = %i, empty = %i, cl_w_in_flight = %i)\n",
+	        rc, cfs_list_empty(&ocw->ocw_entry), cli->cl_w_in_flight);
 	client_obd_list_unlock(&cli->cl_loi_list_lock);
 	return rc;
 }
@@ -1550,8 +1553,10 @@ static int osc_enter_cache(const struct lu_env *env, struct client_obd *cli,
 			rc = l_wait_event(ocw.ocw_waitq,
 					  ocw_granted(cli, &ocw), lwi);
 			if (rc < 0)
-				CERROR("LU-2576: Wait event error! (rc = %i, empty = %i)\n",
-				       rc, cfs_list_empty(&ocw.ocw_entry));
+				CERROR("LU-2576: Wait event error! (rc = %i, "
+				       "empty = %i, cl_w_in_flight = %i)\n",
+				       rc, cfs_list_empty(&ocw.ocw_entry),
+				       cli->cl_w_in_flight);
 			lwi = &lwi2;
 		} while (rc == -ETIMEDOUT);
 
