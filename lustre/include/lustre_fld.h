@@ -98,6 +98,10 @@ struct lu_server_fld {
          * Fld service name in form "fld-srv-lustre-MDTXXX" */
         char                     lsf_name[80];
 
+	/**
+	 * Backend does not support range lookups,
+	 * indexes other that 0 will be prohibited */
+	int			 lsf_no_range_lookup;
 };
 
 struct lu_client_fld {
@@ -147,23 +151,31 @@ enum {
 int fld_query(struct com_thread_info *info);
 
 /* Server methods */
-int fld_server_init(const struct lu_env *env, struct lu_server_fld *fld,
-		    struct dt_device *dt, const char *prefix, int mds_node_id);
+int fld_server_init(struct lu_server_fld *fld,
+                    struct dt_device *dt,
+                    const char *prefix,
+                    const struct lu_env *env,
+                    int mds_node_id);
 
-void fld_server_fini(const struct lu_env *env, struct lu_server_fld *fld);
+void fld_server_fini(struct lu_server_fld *fld,
+                     const struct lu_env *env);
 
-int fld_declare_server_create(const struct lu_env *env,
-			      struct lu_server_fld *fld,
-			      struct lu_seq_range *new,
-			      struct thandle *th);
+int fld_declare_server_create(struct lu_server_fld *fld,
+                              const struct lu_env *env,
+                              struct thandle *th);
 
-int fld_server_create(const struct lu_env *env,
-		      struct lu_server_fld *fld,
-		      struct lu_seq_range *add_range,
-		      struct thandle *th);
+int fld_server_create(struct lu_server_fld *fld,
+                      const struct lu_env *env,
+                      struct lu_seq_range *add_range,
+                      struct thandle *th);
 
-int fld_server_lookup(const struct lu_env *env, struct lu_server_fld *fld,
-		      seqno_t seq, struct lu_seq_range *range);
+int fld_server_delete(struct lu_server_fld *fld,
+                      const struct lu_env *env,
+                      struct lu_seq_range *range);
+
+int fld_server_lookup(struct lu_server_fld *fld,
+                      const struct lu_env *env,
+                      seqno_t seq, struct lu_seq_range *range);
 
 /* Client methods */
 int fld_client_init(struct lu_client_fld *fld,
