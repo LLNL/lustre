@@ -238,6 +238,8 @@ extern int llapi_fid2path(const char *device, const char *fidstr, char *path,
 			  int pathlen, long long *recno, int *linkno);
 extern int llapi_path2fid(const char *path, lustre_fid *fid);
 extern int llapi_fd2fid(const int fd, lustre_fid *fid);
+extern int llapi_open_by_fid(const char *lustre_dir, const char *fidstr,
+			     int flags);
 
 extern int llapi_get_version(char *buffer, int buffer_size, char **version);
 extern int llapi_get_data_version(int fd, __u64 *data_version, __u64 flags);
@@ -305,9 +307,173 @@ extern struct hsm_user_request *llapi_hsm_user_request_alloc(int itemcount,
 extern int llapi_hsm_request(char *mnt, struct hsm_user_request *request);
 extern int llapi_hsm_current_action(const char *path,
 				    struct hsm_current_action *hca);
+
+/* llapi_layout user interface */
+
+/** Opaque data type abstracting the layout of a Lustre file. */
+typedef struct llapi_layout llapi_layout_t;
+
+/**
+ * Return a pointer to a newly-allocated opaque data type containing
+ * the layout for the file at \a path.  The pointer should be freed with
+ * llapi_layout_free() when it is no longer needed. Failure is indicated
+ * by a NULL return value and an appropriate error code stored in errno.
+ */
+llapi_layout_t *llapi_layout_by_path(const char *path);
+
+/**
+ * Return a pointer to a newly-allocated opaque data type containing the
+ * layout for the file referenced by open file descriptor \a fd.  The
+ * pointer should be freed with llapi_layout_free() when it is no longer
+ * needed. Failure is indicated by a NULL return value and an
+ * appropriate error code stored in errno.
+ */
+llapi_layout_t *llapi_layout_by_fd(int fd);
+
+/**
+ * Return a pointer to a newly-allocated opaque data type containing the
+ * layout for the file associated with Lustre file identifier string
+ * \a fidstr.  The string \a lustre_dir must name a path within the
+ * filesystem that contains the file being looked up, such as the
+ * filesystem root.  The returned pointer should be freed with
+ * llapi_layout_free() when it is no longer needed.  Failure is
+ * indicated with a NULL return value and an appropriate error code
+ * stored in errno.
+ */
+llapi_layout_t *llapi_layout_by_fid(const char *lustre_dir, const char *fidstr);
+
+/**
+ * Allocate a new layout. Use this when creating a new file with
+ * llapi_layout_file_create.
+ */
+llapi_layout_t *llapi_layout_alloc();
+
+/**
+ * Free memory allocated for \a layout.
+ */
+void llapi_layout_free(llapi_layout_t *layout);
+
+/**
+ * Read stripe count of \a layout.
+ * If \a layout was not initialized with
+ * llapi_layout_by_{path,fd,fid}(), a return value of -1 with
+ * errno set to 0 means a file created with \a layout will be striped as
+ * widely as possible.
+ *
+ * \retval  0 Use filesystem default.
+ * \retval >0 The number of stripes in the layout.
+ * \retval -1 Error with status code in errno, except as noted above.
+ */
+int llapi_layout_stripe_count(const llapi_layout_t *layout);
+
+/**
+ * Set the stripe count of \a layout to \a stripe_count.
+ *
+ * \retval  0 Success.
+ * \retval -1 Invalid argument, errno set to EINVAL.
+ */
+int llapi_layout_stripe_count_set(llapi_layout_t *layout, int stripe_count);
+
+/**
+ * Get the stripe size of \a layout.
+ *
+ * \retval  0 Use filesystem default.
+ * \retval >0 Bytes stored on each OST before moving to the next OST.
+ * \retval -1 Invalid argument, errno set to EINVAL.
+ */
+ssize_t llapi_layout_stripe_size(const llapi_layout_t *layout);
+
+/**
+ * Set the stripe size of \a layout to \a stripe_size.
+ *
+ * \retval  0 Success.
+ * \retval -1 Invalid argument, errno set to EINVAL.
+ */
+int llapi_layout_stripe_size_set(llapi_layout_t *layout, size_t stripe_size);
+
+/**
+ * Read stripe pattern of \a layout.
+ *
+ * \retval 0+ The RAID striping pattern used by the layout.
+ * \retval -1 Error with status code in errno.
+ */
+int llapi_layout_pattern(const llapi_layout_t *layout);
+
+/**
+ * Set the stripe pattern of \a layout to \a pattern.
+ *
+ * \retval  0 Success.
+ * \retval -1 Invalid argument, errno set to EINVAL.
+ */
+int llapi_layout_pattern_set(llapi_layout_t *layout, int pattern);
+
+/**
+ * Get the index of the OST where stripe number \a stripe_number is stored.
+ *
+ * An error return value will result from a NULL layout, if \a
+ * stripe_number is out of range, or if \a layout was not initialized
+ * with llapi_layout_lookup_by{path,fd,fid}().
+ *
+ * \retval 0+ OST index number.
+ * \retval -1 Invalid argument, errno set to EINVAL.
+ */
+int llapi_layout_ost_index(const llapi_layout_t *layout, int stripe_number);
+
+/**
+ * Set the OST index associated with stripe number \a stripe_number to
+ * \a ost_index.
+ * NB: This is currently supported only for \a stripe_number = 0 and
+ * other usage will return ENOTSUPP in errno.  A NULL \a layout or
+ * out-of-range \a stripe_number will return EINVAL in errno.
+ *
+ * \retval  0 Success.
+ * \retval -1 Error with errno set to non-zero value.
+ */
+int llapi_layout_ost_index_set(llapi_layout_t *layout, int stripe_number,
+			       int ost_index);
+
+/**
+ * Get the name of the pool of OSTs from which file objects will be allocated
+ * The returned pointer should be treated as read-only and is valid only
+ * as long as \a layout.
+ *
+ * \retval non-NULL A (possibly empty) string containing pool name.
+ * \retval NULL     Invalid argument, errno set to EINVAL.
+ */
+const char *llapi_layout_pool_name(const llapi_layout_t *layout);
+
+/**
+ * Set the name of the pool of OSTs from which file objects will be
+ * allocated to \a pool_name.
+ *
+ * If the pool name uses "fsname.pool" notation to qualify the pool name
+ * with a filesystem name, the "fsname." portion will be silently
+ * discarded before storing the value, and no validation that
+ * \a pool_name is an existing non-empty pool in filesystem \a fsname will
+ * be performed.  Such validation can be performed by the application if
+ * desired using the llapi_search_ost() function.  The maximum length of
+ * the stored value is defined by the constant LOV_MAXPOOLNAME.
+ *
+ * \retval  0 Success.
+ * \retval -1 Invalid argument, errno set to EINVAL.
+ */
+int llapi_layout_pool_name_set(llapi_layout_t *layout, const char *pool_name);
+
+/**
+ * Create a new file with the specified \a layout with the name \a path
+ * using permissions in \a mode and open() \a flags.  Return an open
+ * file descriptor for the new file.  If \a path is not on a Lustre
+ * filesystem this function is likely but not guaranteed to fail and
+ * return EOPNOTSUPP in errno.  The application can definitively test
+ * whether \a path is on a Lustre filesystem using the
+ * llapi_search_fsname() function.
+ *
+ * \retval 0+ An open file descriptor.
+ * \retval -1 Error with status code in errno.
+ */
+int llapi_layout_file_create(const llapi_layout_t *layout, char *path,
+			     int flags, int mode);
+
 /** @} llapi */
 
 #endif
-
-
-
