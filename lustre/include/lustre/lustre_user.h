@@ -270,6 +270,24 @@ typedef struct lu_fid lustre_fid;
 #define LOV_ALL_STRIPES       0xffff /* only valid for directories */
 #define LOV_V1_INSANE_STRIPE_COUNT 65532 /* maximum stripe count bz13933 */
 
+#define XATTR_NAME_ACL_ACCESS	"system.posix_acl_access"
+#define XATTR_NAME_ACL_DEFAULT	"system.posix_acl_default"
+#define XATTR_USER_PREFIX	"user."
+#define XATTR_TRUSTED_PREFIX	"trusted."
+#define XATTR_SECURITY_PREFIX	"security."
+#define XATTR_LUSTRE_PREFIX	"lustre."
+
+#define XATTR_LUSTRE_LOV	XATTR_LUSTRE_PREFIX "lov"
+#define XATTR_NAME_LOV		XATTR_TRUSTED_PREFIX "lov"
+#define XATTR_NAME_LMA		XATTR_TRUSTED_PREFIX "lma"
+#define XATTR_NAME_LMV		XATTR_TRUSTED_PREFIX "lmv"
+#define XATTR_NAME_LINK		XATTR_TRUSTED_PREFIX "link"
+#define XATTR_NAME_FID		XATTR_TRUSTED_PREFIX "fid"
+#define XATTR_NAME_VERSION	XATTR_TRUSTED_PREFIX "version"
+#define XATTR_NAME_SOM		XATTR_TRUSTED_PREFIX "som"
+#define XATTR_NAME_HSM		XATTR_TRUSTED_PREFIX "hsm"
+#define XATTR_NAME_LFSCK_NAMESPACE XATTR_TRUSTED_PREFIX "lfsck_namespace"
+
 #define lov_user_ost_data lov_user_ost_data_v1
 struct lov_user_ost_data_v1 {     /* per-stripe data structure */
         __u64 l_object_id;        /* OST object ID */
