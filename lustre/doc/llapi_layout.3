@@ -1,0 +1,398 @@
+.TH lustreapi 3 "2013 Jan 05" The Lustre user application interface library
+.SH NAME
+llapi_layout - abstract interface to the layout of a Lustre file
+.SH SYNOPSIS
+.nf
+.B #include <lustre/lustreapi.h>
+.sp
+.BI "lustre_layout_t *llapi_layout_lookup_bypath(const char *"path );
+.sp
+.BI "lustre_layout_t *llapi_layout_lookup_fd(int "fd );
+.sp
+.BI "lustre_layout_t *llapi_layout_lookup_fid(const char *"lustre_dir ,
+.BI "                                         const char *"fidstr );
+.sp
+.BI "lustre_layout_t *llapi_layout_alloc();"
+.sp
+.BI "void llapi_layout_free(lustre_layout_t *"layout );
+.sp
+.BI "int llapi_layout_stripe_count(const lustre_layout_t *" layout );
+.sp
+.BI "int llapi_layout_stripe_count_set(lustre_layout_t *"layout ,
+.BI "                                  int " stripe_count );
+.sp
+.BI "int llapi_layout_stripe_size(const lustre_layout_t *" layout );
+.sp
+.BI "int llapi_layout_stripe_size_set(lustre_layout_t *" layout ,
+.BI "                                 int " stripe_size );
+.sp
+.BI "int llapi_layout_pattern(const lustre_layout_t *" layout );
+.sp
+.BI "int llapi_layout_pattern_set(lustre_layout_t *" layout ", int " pattern );
+.sp
+.BI "int llapi_layout_ost_index(const lustre_layout_t *" layout ,
+.BI "                           int " stripe_number );
+.sp
+.BI "int llapi_layout_ost_index_set(lustre_layout_t *" layout ,
+.BI "                               int " stripe_number ", int " ost_index );
+.sp
+.BI "int llapi_layout_obj_id(const lustre_layout_t *" layout ,
+.BI "                        int " stripe_number );
+.sp
+.BI "const char *llapi_layout_pool_name(const lustre_layout_t *" layout );
+.sp
+.BI "int llapi_layout_pool_name_set(lustre_layout_t *" layout ",
+.BI "                               const char *" pool_name );
+.sp
+.BI "int llapi_layout_file_create(const lustre_layout_t *" layout ",
+.BI "                             char *" path ", int " mode ", int " flags );
+.sp
+.fi
+.SH DESCRIPTION
+.LP
+The functions described  below provide an abstract interface to
+manipulating the layout information of a file on a Lustre filesystem.
+Layouts are represented by the opaque data type
+.B lustre_layout_t
+which is passed as a handle to the various functions.
+
+A layout has a number of attributes that describe how a file's data are stored
+in the filesystem.  These include stripe count, stripe size, RAID pattern, pool
+name, and the OST index and object identifier associated with each stripe. In
+general, a function named for the attribute returns its value while a
+corresponding function with the suffix
+.B "_set"
+sets its value.
+.PP
+.BI "lustre_layout_t *llapi_layout_lookup_bypath(const char *"path );
+.IP
+Return a pointer to a newly-allocated
+.B lustre_layout_t
+containing the layout for the file at
+.IR path .
+The pointer should be freed with
+.B llapi_layout_free
+when it is no longer needed.
+.IP
+If
+.I path
+is not on a Lustre filesystem this function is likely but not guaranteed
+to fail and return EOPNOTSUPP in errno.  The application can
+definitively test whether
+.I path
+is on a Lustre filesystem using the
+.B llapi_search_fsname
+function.
+.PP
+.BI "lustre_layout_t *llapi_layout_lookup_fd(int "fd );
+.IP
+Equivalent to
+.B llapi_layout_lookup_bypath
+except that it takes an open file descriptor
+.I fd
+instead of a path name.
+.PP
+.nf
+.BI "lustre_layout_t *llapi_layout_lookup_fid(const char *"lustre_dir ,
+.BI "                                         const char *"fidstr );
+.fi
+.IP
+Equivalent to
+.B llapi_layout_lookup_bypath
+except that instead of a path name it takes a string representation of a
+Lustre file identifier
+.IR fidstr .
+The command
+.RB ' "lfs path2fid <file>" '
+can be used to display the Lustre file identifier of a file in string
+form.  The string
+.I lustre_dir
+must name a path within the filesystem that contains the file being
+looked up, such as the filesystem root.
+.PP
+.BI "lustre_layout_t *llapi_layout_alloc();"
+.IP
+Return a pointer to a newly-allocated
+.BR lustre_layout_t .
+The pointer should be freed with
+.B llapi_layout_free
+when it is no longer needed.  This pointer can be used as a handle to set layout
+attributes and create a file with
+.BR llapi_layout_file_create .
+.PP
+.BI "void llapi_layout_free(lustre_layout_t *"layout );
+.IP
+Free the memory associated with
+.IR layout .
+.PP
+.BI "int llapi_layout_stripe_count(const lustre_layout_t *" layout );
+.IP
+Return the number of stripes in
+.IR layout .
+.PP
+.nf
+.BI "int llapi_layout_stripe_count_set(lustre_layout_t *"layout ,
+.BI "                                  int " stripe_count );
+.fi
+.IP
+Set the number of stripes in
+.I layout
+to
+.IR stripe_count .
+.PP
+.BI "int llapi_layout_stripe_size(const lustre_layout_t *" layout );
+.IP
+Return the size in bytes of each stripe in
+.IR layout .
+.PP
+.nf
+.BI "int llapi_layout_stripe_size_set(lustre_layout_t *" layout ,
+.BI "                                 int " stripe_size );
+.fi
+.IP
+Set the size in bytes of each stripe in
+.I layout
+to
+.IR stripe_size .
+.PP
+.BI "int llapi_layout_pattern(const lustre_layout_t *" layout );
+.IP
+Return the RAID striping pattern used by
+.IR layout .
+.PP
+.BI "int llapi_layout_pattern_set(lustre_layout_t *" layout ", int " pattern );
+.IP
+Set the RAID striping pattern used by
+.I layout
+to
+.IR pattern .
+If
+.I pattern
+is not a supported RAID level the return value will be -1 and errno will
+be set to
+.IR EOPNOTSUPP .
+.PP
+.nf
+.BI "int llapi_layout_ost_index(const lustre_layout_t *" layout ,
+.BI "                           int " stripe_number );
+.fi
+.IP
+Return the index number of the OST associated with stripe number
+.I stripe_number
+in
+.IR layout .
+This attribute is only meaningful if
+.I layout
+was initialized with
+.BR llapi_layout_lookup_by{path,fd,fid} ,
+otherwise the return value will be -1 and
+.B errno
+will be set to 0.
+.PP
+.nf
+.BI "int llapi_layout_ost_index_set(lustre_layout_t *" layout ,
+.BI "                               int " stripe_number ", int " ost_index );
+.fi
+.IP
+Set the index number of the OST associated with stripe number
+.I stripe_number
+to
+.IR ost_index .
+.PP
+.nf
+.BI "int llapi_layout_obj_id(const lustre_layout_t *" layout ,
+.BI "                        int " stripe_number );
+.fi
+.IP
+Return the object identifier associated with stripe number
+.I stripe_number
+in
+.IR layout .
+This is a read-only attribute and is only meaningful if
+.I layout
+was initialized with
+.BR llapi_layout_lookup_by{path,fd,fid} ,
+otherwise the return value will be -1 and
+.B errno
+will be set to 0.
+.PP
+.BI "const char *llapi_layout_pool_name(const lustre_layout_t *" layout );
+.IP
+Return a string containing the name of the pool of OSTs used by
+.IR layout .
+.PP
+.nf
+.BI "int llapi_layout_pool_name_set(lustre_layout_t *" layout ",
+.BI "                               const char *" pool_name );
+.fi
+.IP
+Set the name of the pool of OSTs used by
+.I layout
+to
+.IR pool_name .
+.IP
+If the pool name uses "fsname.pool" notation to qualify the pool name
+with a filesystem name, the "fsname." portion will be silently
+discarded before storing the value, and no validation that
+.I pool_name
+is an existing non-empty pool in filesystem 'fsname' will
+be performed.  Such validation can be performed by the application
+using the
+.I llapi_search_ost
+function.  The maximum length of
+the stored value is defined by the constant
+.BR LOV_MAXPOOLNAME .
+.PP
+.nf
+.BI "int llapi_layout_file_create(const lustre_layout_t *" layout ",
+.BI "                             char *" path ", int " mode ", int " flags );
+.fi
+.IP
+Create a new file at
+.I path
+with the permissions specified in
+.I mode
+using the attributes in
+.IR layout .
+The specified
+.I flags
+will be used to
+.B open()
+the file.  It is an error if
+.I path
+is the name of an existing file.
+.IP
+If
+.I path
+is not on a Lustre filesystem this function is likely but not guaranteed
+to fail and return EOPNOTSUPP in errno.  The application can
+definitively test whether
+.I path
+is on a Lustre filesystem using the
+.B llapi_search_fsname
+function.
+.SH RETURN VALUES
+.LP
+Functions returning pointer types return a valid pointer on success or
+.B NULL
+on failure with
+.B errno
+set to an appropriate error code.
+.sp
+Functions returning integer types indicate an error by returning -1 and
+setting
+.B errno
+with an appropriate value. A non-negative return value indicates success.
+In some cases -1 is a valid return value on success, as described below.
+In these cases
+.B errno
+is set to 0 to distinguish the successful return from an error.
+.sp
+.B llapi_layout_stripe_count
+will return -1 and set
+.B errno
+to 0 if a previous call to
+.B llapi_layout_stripe_count_set
+set the attribute value to -1 to indicate that the file should be striped as
+widely as possible.
+.sp
+.B llapi_layout_ost_index
+and
+.B llapi_layout_obj_id
+will return -1 and set
+.B errno
+to 0 if the layout was not read from disk, in which case the
+attributes are not meaningful.
+.sp
+.B llapi_layout_pool_name()
+returns a
+.B const
+pointer to a (possibly empty) string representing the name of the pool
+of OSTs used by the layout.  If the pool name is empty then any
+available OST in the filesystem is eligible to be used.
+.SH ERRORS
+The following values may be stored in
+.B errno
+if the return value of a function indicates an error.
+.TP 15
+.SM EINVAL
+.I stripe_size
+or
+.I stripe_offset
+or
+.I stripe_count
+or
+.I stripe_pattern
+is invalid.
+.IP
+An invalid argument was passed to a function.
+.TP
+.SM EEXIST
+The name of an existing file was passed to
+.IR llapi_layout_file_create .
+.TP
+.SM ENOMEM
+A memory allocation failure occurred.
+.TP
+.SM EACCES
+The user does not have permission to perform the requested operation.
+.TP
+.SM EBADF
+An invalid file descriptor was passed to
+.BR llapi_layout_lookup_byfd .
+.TP
+.SM ENOENT
+A non-existent file was looked up by
+.B llapi_layout_lookup_bypath
+or
+.BR llapi_layout_lookup_byfid .
+.TP
+.SM EOPNOTSUPP
+The requested operation is not supported.
+.SH "EXAMPLE"
+.nf
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <lustre/lustreapi.h>
+
+int main(int argc, char *argv[])
+{
+        int fd;
+        lustre_layout_t *layout;
+        char *path;
+
+        if (argc != 2)
+                return -1;
+
+        path = argv[1];
+        layout = llapi_layout_alloc();
+        llapi_layout_stripe_count_set(layout, 2);
+        llapi_layout_stripe_size_set(layout, 1048576);
+        fd = llapi_layout_file_create(layout, path, 0640, 0);
+        if (fd < 0) {
+                printf("Failed to create %s: %s\\n", path, strerror(errno));
+                return -1;
+        }
+        close(fd);
+        llapi_layout_free(layout);
+
+        layout = llapi_layout_lookup_bypath(path);
+        printf("%s with stripe size %llu, striped across %d OSTs,"
+               " has been created!\\n", path,
+               llapi_layout_stripe_size(layout),
+               llapi_layout_stripe_count(layout));
+        llapi_layout_free(layout);
+        return 0;
+}
+.fi
+.SH "BUGS"
+Setting the OST index number is only supported for stripe number 0.
+
+The RAID pattern may only be set to 0.
+.SH "SEE ALSO"
+.BR open (2),
+.BR lustre (7),
+.BR lustreapi (7),
+.BR lfs (1)
