@@ -42,7 +42,10 @@
 #define LDD_UUID_PROP                   "lustre:uuid"
 #define LDD_USERDATA_PROP               "lustre:userdata"
 #define LDD_MOUNTOPTS_PROP              "lustre:mountopts"
-#define LDD_PARAMS_PROP			"lustre:params"
+#define LDD_MGSNODE_PROP                "lustre:mgsnode"
+#define LDD_FAILNODE_PROP               "lustre:failnode"
+#define LDD_FAILMODE_PROP               "lustre:failmode"
+#define LDD_IDENTITY_UPCALL_PROP        "lustre:identity_upcall"
 
 /* indicate if the ZFS OSD has been successfully setup */
 static int osd_zfs_setup = 0;
@@ -149,6 +152,21 @@ static int zfs_set_prop_str(zfs_handle_t *zhp, char *prop, char *val)
 	return ret;
 }
 
+static int zfs_set_prop_param(zfs_handle_t *zhp, struct lustre_disk_data *ldd,
+			      char *param, char *prop)
+{
+	char *str;
+	int ret = 0;
+
+	if (get_param(ldd->ldd_params, param, &str) == 0) {
+		vprint("  %s=%s\n", prop, str);
+		ret = zfs_prop_set(zhp, prop, str);
+		free(str);
+	}
+
+	return ret;
+}
+
 static int osd_check_zfs_setup(void)
 {
 	if (osd_zfs_setup == 0) {
@@ -211,11 +229,22 @@ int zfs_write_ldd(struct mkfs_opts *mop)
 	if (ret)
 		goto out_close;
 
-	if (strlen(ldd->ldd_params) > ZAP_MAXVALUELEN) {
-		ret = E2BIG;
+	ret = zfs_set_prop_param(zhp, ldd, PARAM_MGSNODE, LDD_MGSNODE_PROP);
+	if (ret)
 		goto out_close;
-	}
-	ret = zfs_set_prop_str(zhp, LDD_PARAMS_PROP, ldd->ldd_params);
+
+	ret = zfs_set_prop_param(zhp, ldd, PARAM_FAILNODE, LDD_FAILNODE_PROP);
+	if (ret)
+		goto out_close;
+
+	ret = zfs_set_prop_param(zhp, ldd, PARAM_FAILMODE, LDD_FAILMODE_PROP);
+	if (ret)
+		goto out_close;
+
+	ret = zfs_set_prop_param(zhp, ldd, PARAM_MDT PARAM_ID_UPCALL,
+				 LDD_IDENTITY_UPCALL_PROP);
+	if (ret)
+		goto out_close;
 
 out_close:
 	zfs_close(zhp);
@@ -260,6 +289,26 @@ static int zfs_get_prop_str(zfs_handle_t *zhp, char *prop, char *val)
 		return ret;
 
 	(void) strcpy(val, propstr);
+
+	return ret;
+}
+
+static int zfs_get_prop_param(zfs_handle_t *zhp, struct lustre_disk_data *ldd,
+		char *param, char *prop)
+{
+	nvlist_t *propval;
+	char *propstr;
+	int ret;
+
+	ret = nvlist_lookup_nvlist(zfs_get_user_props(zhp), prop, &propval);
+	if (ret)
+		return ret;
+
+	ret = nvlist_lookup_string(propval, ZPROP_VALUE, &propstr);
+	if (ret)
+		return ret;
+
+	ret = add_param(ldd->ldd_params, param, propstr);
 
 	return ret;
 }
@@ -312,7 +361,20 @@ int zfs_read_ldd(char *ds,  struct lustre_disk_data *ldd)
 	if (ret && (ret != ENOENT))
 		goto out_close;
 
-	ret = zfs_get_prop_str(zhp, LDD_PARAMS_PROP, ldd->ldd_params);
+	ret = zfs_get_prop_param(zhp, ldd, PARAM_MGSNODE, LDD_MGSNODE_PROP);
+	if (ret && (ret != ENOENT))
+		goto out_close;
+
+	ret = zfs_get_prop_param(zhp, ldd, PARAM_FAILNODE, LDD_FAILNODE_PROP);
+	if (ret && (ret != ENOENT))
+		goto out_close;
+
+	ret = zfs_get_prop_param(zhp, ldd, PARAM_FAILMODE, LDD_FAILMODE_PROP);
+	if (ret && (ret != ENOENT))
+		goto out_close;
+
+	ret = zfs_get_prop_param(zhp, ldd, PARAM_MDT PARAM_ID_UPCALL,
+				 LDD_IDENTITY_UPCALL_PROP);
 	if (ret && (ret != ENOENT))
 		goto out_close;
 
