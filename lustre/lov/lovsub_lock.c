@@ -107,16 +107,11 @@ static void lovsub_lock_state(const struct lu_env *env,
                 struct lov_lock *lov    = scan->lll_super;
                 struct cl_lock  *parent = lov->lls_cl.cls_lock;
 
-		/*
-		 * if (sub->lss_active != parent) {
-		 *	lovsub_parent_lock(env, lov);
-		 *	cl_lock_signal(env, parent);
-		 *	lovsub_parent_unlock(env, lov);
-		 * }
-		 */
-		/* Used to be the code in the comment, but it's not necessary
-		 * to take parents mutex to just wake them up. */
-		cfs_waitq_broadcast(&parent->cll_wq);
+                if (sub->lss_active != parent) {
+                        lovsub_parent_lock(env, lov);
+                        cl_lock_signal(env, parent);
+                        lovsub_parent_unlock(env, lov);
+                }
         }
         EXIT;
 }
