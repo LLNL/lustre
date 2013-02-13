@@ -1959,8 +1959,6 @@ static int discard_cb(const struct lu_env *env, struct cl_io *io,
 
 	LASSERT(lock->cll_descr.cld_mode >= CLM_WRITE);
 	KLASSERT(ergo(page->cp_type == CPT_CACHEABLE,
-		      !PageWriteback(cl_page_vmpage(env, page))));
-	KLASSERT(ergo(page->cp_type == CPT_CACHEABLE,
 		      !PageDirty(cl_page_vmpage(env, page))));
 
 	info->clt_next_index = pgoff_at_lock(page, lock) + 1;
