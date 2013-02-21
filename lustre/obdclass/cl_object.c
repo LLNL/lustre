@@ -535,6 +535,12 @@ EXPORT_SYMBOL(cl_site_stats_print);
  * bz20044, bz22683.
  */
 
+static CFS_LIST_HEAD(cl_envs);
+static unsigned cl_envs_cached_nr  = 0;
+static unsigned cl_envs_cached_max = 128; /* XXX: prototype: arbitrary limit
+                                           * for now. */
+static DEFINE_SPINLOCK(cl_envs_guard);
+
 struct cl_env {
         void             *ce_magic;
         struct lu_env     ce_lu;
@@ -791,11 +797,35 @@ static void cl_env_fini(struct cl_env *cle)
 
 static struct lu_env *cl_env_obtain(void *debug)
 {
+	struct cl_env *cle;
 	struct lu_env *env;
 
 	ENTRY;
-	env = cl_env_new(lu_context_tags_default,
-			 lu_session_tags_default, debug);
+	spin_lock(&cl_envs_guard);
+	LASSERT(equi(cl_envs_cached_nr == 0, cfs_list_empty(&cl_envs)));
+	if (cl_envs_cached_nr > 0) {
+		int rc;
+
+		cle = container_of(cl_envs.next, struct cl_env, ce_linkage);
+		cfs_list_del_init(&cle->ce_linkage);
+		cl_envs_cached_nr--;
+		spin_unlock(&cl_envs_guard);
+
+                env = &cle->ce_lu;
+                rc = lu_env_refill(env);
+                if (rc == 0) {
+                        cl_env_init0(cle, debug);
+                        lu_context_enter(&env->le_ctx);
+                        lu_context_enter(&cle->ce_ses);
+                } else {
+                        cl_env_fini(cle);
+                        env = ERR_PTR(rc);
+                }
+        } else {
+		spin_unlock(&cl_envs_guard);
+		env = cl_env_new(lu_context_tags_default,
+				 lu_session_tags_default, debug);
+	}
 	RETURN(env);
 }
 
@@ -895,11 +925,23 @@ static void cl_env_exit(struct cl_env *cle)
  */
 unsigned cl_env_cache_purge(unsigned nr)
 {
+	struct cl_env *cle;
+
 	ENTRY;
+	spin_lock(&cl_envs_guard);
+	for (; !cfs_list_empty(&cl_envs) && nr > 0; --nr) {
+		cle = container_of(cl_envs.next, struct cl_env, ce_linkage);
+		cfs_list_del_init(&cle->ce_linkage);
+		LASSERT(cl_envs_cached_nr > 0);
+		cl_envs_cached_nr--;
+		spin_unlock(&cl_envs_guard);
 
-	/* noop */
-
-	RETURN(0);
+		cl_env_fini(cle);
+		spin_lock(&cl_envs_guard);
+	}
+	LASSERT(equi(cl_envs_cached_nr == 0, cfs_list_empty(&cl_envs)));
+	spin_unlock(&cl_envs_guard);
+	RETURN(nr);
 }
 EXPORT_SYMBOL(cl_env_cache_purge);
 
@@ -925,7 +967,21 @@ void cl_env_put(struct lu_env *env, int *refcheck)
                 cl_env_detach(cle);
                 cle->ce_debug = NULL;
                 cl_env_exit(cle);
-		cl_env_fini(cle);
+                /*
+                 * Don't bother to take a lock here.
+                 *
+                 * Return environment to the cache only when it was allocated
+                 * with the standard tags.
+                 */
+                if (cl_envs_cached_nr < cl_envs_cached_max &&
+                    (env->le_ctx.lc_tags & ~LCT_HAS_EXIT) == LCT_CL_THREAD &&
+                    (env->le_ses->lc_tags & ~LCT_HAS_EXIT) == LCT_SESSION) {
+			spin_lock(&cl_envs_guard);
+			cfs_list_add(&cle->ce_linkage, &cl_envs);
+			cl_envs_cached_nr++;
+			spin_unlock(&cl_envs_guard);
+		} else
+			cl_env_fini(cle);
 	}
 }
 EXPORT_SYMBOL(cl_env_put);
