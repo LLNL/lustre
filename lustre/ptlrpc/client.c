@@ -1867,8 +1867,21 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 				enough = cfs_time_shift(3600);
 				DEBUG_REQ(D_ERROR, req, "spining..");
 #ifdef __KERNEL__
-				CERROR("import %p, obd %p, imp_lock = %u\n",
+				CERROR("import %p, obd %p, "
+#ifdef CONFIG_DEBUG_SPINLOCK
+				       "owner = %p, "
+				       "owner->pid = %i, "
+				       "owner_cpu = %i, "
+				       "magic = %x, "
+#endif
+				       "imp_lock = %u\n",
 				       imp, imp->imp_obd,
+#ifdef CONFIG_DEBUG_SPINLOCK
+				       imp->imp_lock.owner,
+				       ((struct task_struct *)imp->imp_lock.owner)->pid,
+				       imp->imp_lock.owner_cpu,
+				       imp->imp_lock.magic,
+#endif
 				       imp->imp_lock.raw_lock.slock);
 				libcfs_panic_on_lbug = 0;
 #endif
