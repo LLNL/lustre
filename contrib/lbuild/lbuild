@@ -226,35 +226,9 @@ EOF
     fatal "$1" "$2"
 }
 
-# canonicalize a relative path to a file
-canon_filepath() {
-    local PATH="$1"
-
-    if [ ! -f "$PATH" ]; then
-        return 1
-    fi
-
-    local FILE=${PATH##*/}
-    local DIR=${PATH%/*}
-
-    echo $(canon_path "$DIR")/$FILE
-    return 0
-}
-
-# canonicalize a relative path to a dir
-canon_path() {
-    local PATH="$1"
-
-    if [ ! -d "$PATH" ]; then
-        return 1
-    fi
-
-    pushd "$PATH" >/dev/null || return 1
-    local CANONPATH=$PWD
-    popd >/dev/null
-
-    echo "$CANONPATH"
-    return 0
+# canonicalize a path
+canonicalize() {
+    readlink -f "$1"
 }
 
 check_options() {
@@ -1770,13 +1744,15 @@ while [ "$1" ]; do
             shift 2
             ;;
         --kerneltree)
-            if ! KERNELTREE=$(canon_path "$2"); then
+            KERNELTREE=$(canonicalize "$2")
+            if [ ! -d "$KERNELTREE" ]; then
                 fatal 1 "Could not determine the canonical location of $2"
             fi
             shift 2
             ;;
         --linux | --with-linux)
-            if ! LINUX=$(canon_path "$2"); then
+            LINUX=$(canonicalize "$2")
+            if [ ! -d "$LINUX" ]; then
                 fatal 1 "Could not determine the canonical location of $2"
             fi
             shift 2
@@ -1790,7 +1766,8 @@ while [ "$1" ]; do
             shift 2
             ;;
         --reusebuild)
-            if ! REUSEBUILD=$(canon_path "$2"); then
+            REUSEBUILD=$(canonicalize "$2")
+            if [ ! -d "$REUSEBUILD" ]; then
                 fatal 1 "Could not determine the canonical location of $2"
             fi
             shift 2
@@ -1812,7 +1789,8 @@ while [ "$1" ]; do
             shift
             ;;
         --kernelrpm)
-            if ! KERNELRPMSBASE=$(canon_path "$2"); then
+            KERNELRPMSBASE=$(canonicalize "$2")
+            if [ ! -d "$KERNELRPMSBASE" ]; then
                 fatal 1 "Could not determine the canonical location of $2"
             fi
             shift 2
@@ -1822,7 +1800,8 @@ while [ "$1" ]; do
             shift 2
             ;;
         --lustre)
-            if ! LUSTRE=$(canon_filepath "$2"); then
+            LUSTRE=$(canonicalize "$2")
+            if [ ! -f "$LUSTRE" ]; then
                 fatal 1 "Could not determine the canonical location of $2"
             fi
             shift 2
