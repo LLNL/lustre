@@ -609,12 +609,14 @@ fi
 ])
 
 #
-# LB_LDISKFS_DEFINE_OPTIONS
+# LDISKFS_DEFINE_KERNEL_OPTIONS
 #
-# Enable config options related to ldiskfs.  These are used by ldiskfs,
-# lvfs, and the osd-ldiskfs code (which includes ldiskfs headers.)
+# Set defines that come from the ext4 code in the kernel.
+# These are applied after the s/ext4/ldiskfs conversion,
+# so they begin with "CONFIG_LDISKFS", but in original
+# kernel source they all begin with "CONFIG_EXT4".
 #
-AC_DEFUN([LB_LDISKFS_DEFINE_OPTIONS],
+AC_DEFUN([LDISKFS_DEFINE_KERNEL_OPTIONS],
 [
 AC_DEFINE(CONFIG_LDISKFS_FS_XATTR, 1,
 	[enable extended attributes for ldiskfs])

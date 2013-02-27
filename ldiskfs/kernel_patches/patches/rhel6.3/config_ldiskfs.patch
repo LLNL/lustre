@@ -1,0 +1,14 @@
+Index: linux-stage/fs/ext4/ext4.h
+===================================================================
+--- linux-stage.orig/fs/ext4/ext4.h
++++ linux-stage/fs/ext4/ext4.h
+@@ -33,6 +33,9 @@
+ #include <linux/compat.h>
+ #endif
+ 
++/* Set explicitly for lustre's external use of this header */
++#define CONFIG_EXT4_FS_XATTR 1
++
+ /*
+  * The fourth extended filesystem constants/structures
+  */
