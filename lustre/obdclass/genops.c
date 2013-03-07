@@ -1382,10 +1382,6 @@ void class_disconnect_stale_exports(struct obd_device *obd,
         }
 	spin_unlock(&obd->obd_dev_lock);
 
-	if (evicted)
-		LCONSOLE_WARN("%s: disconnecting %d stale clients\n",
-			      obd->obd_name, evicted);
-
 	class_disconnect_export_list(&work_list, exp_flags_from_obd(obd) |
 						 OBD_OPT_ABORT_RECOV);
 	EXIT;
