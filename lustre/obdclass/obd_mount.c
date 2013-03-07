@@ -1709,10 +1709,12 @@ static int server_register_target(struct lustre_sb_info *lsi)
 				" on the MGS node.\n", lsi->lsi_svname);
                 } else if (writeconf) {
                         LCONSOLE_ERROR_MSG(0x15f,
-                                "Communication to the MGS return error %d. "
-                                "Is the MGS running?\n", rc);
+                                "Error %d communicating with the MGS, "
+                                "is the MGS running?\n", rc);
                 } else {
-                        CERROR("Cannot talk to the MGS: %d, not fatal\n", rc);
+                        LCONSOLE_WARN(
+                                "Error %d communicating with the MGS, "
+                                "is the MGS running?\n", rc);
                         /* reset the error code for non-fatal error. */
                         rc = 0;
                 }
@@ -1814,7 +1816,6 @@ static int server_start_targets(struct super_block *sb, struct vfsmount *mnt)
 						 0, 0, 0, 0);
                         if (rc) {
 				mutex_unlock(&server_start_lock);
-                                CERROR("failed to start OSS: %d\n", rc);
                                 RETURN(rc);
                         }
                 }
@@ -2363,8 +2364,8 @@ static int server_fill_super(struct super_block *sb)
 	/* Start low level OSD */
 	rc = osd_start(lsi, sb->s_flags);
 	if (rc) {
-		CERROR("Unable to start osd on %s: %d\n",
-		       lsi->lsi_lmd->lmd_dev, rc);
+                LCONSOLE_WARN("%s: Unable to start osd: %d\n",
+                              lsi->lsi_svname, rc);
                 lustre_put_lsi(sb);
                 RETURN(rc);
 	}
@@ -2398,7 +2399,8 @@ static int server_fill_super(struct super_block *sb)
 			(IS_OST(lsi) || IS_MDT(lsi))) {
 		rc = server_start_targets(sb, lsi->lsi_srv_mnt);
                 if (rc < 0) {
-                        CERROR("Unable to start targets: %d\n", rc);
+                        LCONSOLE_WARN("%s: Unable to start target: %d\n",
+                                      lsi->lsi_svname, rc);
                         GOTO(out_mnt, rc);
                 }
         /* FIXME overmount client here,
@@ -2589,7 +2591,7 @@ static int lmd_make_exclusion(struct lustre_mount_data *lmd, char *ptr)
                 s1++;
                 rc = server_name2index(s1, &index, &s2);
                 if (rc < 0) {
-                        CERROR("Can't parse server name '%s'\n", s1);
+                        LCONSOLE_WARN("Can't parse server name '%s'\n", s1);
                         break;
                 }
                 if (rc == LDD_F_SV_TYPE_OST)
@@ -2906,7 +2908,8 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
         RETURN(rc);
 
 invalid:
-        CERROR("Bad mount options %s\n", options);
+        LCONSOLE_WARN("%s: Bad mount options '%s'\n",
+                      devname ? devname : "<unknown device>", options);
         RETURN(-EINVAL);
 }
 
