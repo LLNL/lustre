@@ -1411,7 +1411,7 @@ static void target_finish_recovery(struct obd_device *obd)
         if (!cfs_list_empty(&obd->obd_req_replay_queue) ||
             !cfs_list_empty(&obd->obd_lock_replay_queue) ||
             !cfs_list_empty(&obd->obd_final_req_queue)) {
-                CERROR("%s: Recovery queues ( %s%s%s) are not empty\n",
+                LCONSOLE_WARN("%s: Recovery queues ( %s%s%s) are not empty\n",
                        obd->obd_name,
                        cfs_list_empty(&obd->obd_req_replay_queue) ? "" : "req ",
                        cfs_list_empty(&obd->obd_lock_replay_queue) ? \
@@ -1558,7 +1558,7 @@ static void target_start_recovery_timer(struct obd_device *obd)
 	spin_unlock(&obd->obd_dev_lock);
 
         LCONSOLE_WARN("%s: Will be in recovery for at least %d:%.02d, "
-                      "or until %d client%s reconnect%s\n",
+                      "or until %d client%s reconnect%s.\n",
                       obd->obd_name,
                       obd->obd_recovery_timeout / 60,
                       obd->obd_recovery_timeout % 60,
@@ -1799,15 +1799,14 @@ static int target_recovery_overseer(struct obd_device *obd,
 repeat:
 	wait_event(obd->obd_next_transno_waitq, check_routine(obd));
 	if (obd->obd_abort_recovery) {
-		CWARN("recovery is aborted, evict exports in recovery\n");
+		CDEBUG(D_HA, "recovery is aborted, evicting stale exports\n");
 		/** evict exports which didn't finish recovery yet */
 		class_disconnect_stale_exports(obd, exp_finished);
 		return 1;
 	} else if (obd->obd_recovery_expired) {
 		obd->obd_recovery_expired = 0;
 		/** If some clients died being recovered, evict them */
-		LCONSOLE_WARN("%s: recovery is timed out, "
-			      "evict stale exports\n", obd->obd_name);
+                CDEBUG(D_HA, "recovery timed out, evicting stale exports\n");
 		/** evict cexports with no replay in queue, they are stalled */
 		class_disconnect_stale_exports(obd, health_check);
 		/** continue with VBR */
@@ -2084,12 +2083,16 @@ static int target_recovery_thread(void *arg)
 	delta = (jiffies - delta) / HZ;
 	CDEBUG(D_INFO,"4: recovery completed in %lus - %d/%d reqs/locks\n",
 	      delta, obd->obd_replayed_requests, obd->obd_replayed_locks);
+
+	target_finish_recovery(obd);
+
 	if (delta > OBD_RECOVERY_TIME_SOFT) {
-		CWARN("too long recovery - read logs\n");
+                LCONSOLE_WARN("%s: Recovery exceed expected maximum time of "
+                              "%d:%.02d.\n", obd->obd_name,
+                              (int)OBD_RECOVERY_TIME_SOFT / 60,
+                              (int)OBD_RECOVERY_TIME_SOFT % 60);
 		libcfs_debug_dumplog();
 	}
-
-        target_finish_recovery(obd);
 
         lu_context_fini(&env->le_ctx);
         trd->trd_processing_task = 0;
@@ -2130,7 +2133,7 @@ void target_stop_recovery_thread(struct obd_device *obd)
 		/** recovery can be done but postrecovery is not yet */
 		spin_lock(&obd->obd_dev_lock);
 		if (obd->obd_recovering) {
-			CERROR("%s: Aborting recovery\n", obd->obd_name);
+			LCONSOLE_INFO("%s: Aborting recovery\n", obd->obd_name);
 			obd->obd_abort_recovery = 1;
 			wake_up(&obd->obd_next_transno_waitq);
 		}
