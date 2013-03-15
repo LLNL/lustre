@@ -798,19 +798,19 @@ static int ldlm_resource_complain(cfs_hash_t *hs, cfs_hash_bd_t *bd,
         struct ldlm_resource  *res = cfs_hash_object(hs, hnode);
 
 	lock_res(res);
-        CERROR("Namespace %s resource refcount nonzero "
+        CDEBUG(D_DLMTRACE, "Namespace %s resource refcount nonzero "
                "(%d) after lock cleanup; forcing "
                "cleanup.\n",
                ldlm_ns_name(ldlm_res_to_ns(res)),
                cfs_atomic_read(&res->lr_refcount) - 1);
 
-        CERROR("Resource: %p ("LPU64"/"LPU64"/"LPU64"/"
+        CDEBUG(D_DLMTRACE, "Resource: %p ("LPU64"/"LPU64"/"LPU64"/"
                LPU64") (rc: %d)\n", res,
                res->lr_name.name[0], res->lr_name.name[1],
                res->lr_name.name[2], res->lr_name.name[3],
                cfs_atomic_read(&res->lr_refcount) - 1);
 
-	ldlm_resource_dump(D_ERROR, res);
+	ldlm_resource_dump(D_DLMTRACE, res);
 	unlock_res(res);
         return 0;
 }
