@@ -70,6 +70,14 @@ static inline int mdd_links_del(const struct lu_env *env,
 				const struct lu_fid *pfid,
 				const struct lu_name *lname,
 				struct thandle *handle);
+static int mdd_links_rename(const struct lu_env *env,
+			    struct mdd_object *mdd_obj,
+			    const struct lu_fid *oldpfid,
+			    const struct lu_name *oldlname,
+			    const struct lu_fid *newpfid,
+			    const struct lu_name *newlname,
+			    struct thandle *handle,
+			    int first, int check);
 
 static int
 __mdd_lookup_locked(const struct lu_env *env, struct md_object *pobj,
@@ -2495,7 +2503,7 @@ int mdd_links_read(const struct lu_env *env, struct mdd_object *mdd_obj,
 		ldata->ml_buf = mdd_buf_alloc(env, rc);
 		if (ldata->ml_buf->lb_buf == NULL)
 			return -ENOMEM;
-		rc = mdo_xattr_get(env, mdd_obj, &LU_BUF_NULL,
+		rc = mdo_xattr_get(env, mdd_obj, ldata->ml_buf,
 				   XATTR_NAME_LINK, capa);
 	}
 	if (rc < 0)
@@ -2737,14 +2745,14 @@ static int __mdd_links_del(const struct lu_env *env,
 	return 0;
 }
 
-int mdd_links_rename(const struct lu_env *env,
-		     struct mdd_object *mdd_obj,
-		     const struct lu_fid *oldpfid,
-		     const struct lu_name *oldlname,
-		     const struct lu_fid *newpfid,
-		     const struct lu_name *newlname,
-		     struct thandle *handle,
-		     int first, int check)
+static int mdd_links_rename(const struct lu_env *env,
+			    struct mdd_object *mdd_obj,
+			    const struct lu_fid *oldpfid,
+			    const struct lu_name *oldlname,
+			    const struct lu_fid *newpfid,
+			    const struct lu_name *newlname,
+			    struct thandle *handle,
+			    int first, int check)
 {
 	struct mdd_link_data ldata = { 0 };
 	int updated = 0;

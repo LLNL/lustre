@@ -1237,10 +1237,6 @@ static int mdd_prepare(const struct lu_env *env,
 		}
 	}
 
-	rc = mdd_compat_fixes(env, mdd);
-	if (rc)
-		GOTO(out, rc);
-
 	rc = orph_index_init(env, mdd);
 	if (rc != 0)
                 GOTO(out, rc);
