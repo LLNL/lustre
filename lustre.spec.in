@@ -121,7 +121,7 @@ Lustre file system, server and network drivers for Linux %{kverpkg}.
 %package osd-ldiskfs
 Summary: osd-ldiskfs is the mandatory glue for LDISKFS support in Lustre.
 BuildRequires: ldiskfs-devel
-Requires: %{lustre_name}-modules = %{version}, ldiskfs
+Requires: lustre-modules = %{version}, ldiskfs
 Provides: lustre-osd
 Group: Development/Kernel
 
@@ -137,7 +137,7 @@ backing store of a Lustre server.
 %package osd-zfs
 Summary: osd-zfs is the mandatory glue for ZFS support in Lustre.
 BuildRequires: zfs-devel zfs-modules-devel
-Requires: %{lustre_name}-modules = %{version}, zfs-modules
+Requires: lustre-modules = %{version}, zfs-modules
 Provides: lustre-osd
 Group: Development/Kernel
 
