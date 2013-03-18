@@ -1,4 +1,3 @@
-rhel6.3/config_ldiskfs.patch
 sles11sp2/ext4-introduce-ext4_kvmalloc-ext4_kzalloc-and-ext4_kvfree.patch
 sles11sp2/ext4-speed-up-fitrim-by-recording-flags-in-ext4_group_info.patch
 sles11sp2/ext4-add-missing-kfree-on-error-return-path-in-add_new_gdb.patch
