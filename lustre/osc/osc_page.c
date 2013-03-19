@@ -939,12 +939,17 @@ static int osc_lru_reclaim(struct client_obd *cli)
 
 static int osc_lru_reserve(struct client_obd *cli, struct osc_page *opg)
 {
-	struct l_wait_info lwi = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
-	int rc = 0;
+	struct l_wait_info lwi = LWI_TIMEOUT_INTR(cfs_time_seconds(60), NULL,
+						  LWI_ON_SIGNAL_NOOP, NULL);
+	int rc = 0, dcache_on = 0, timedout = 0;
 	ENTRY;
 
 	if (cli->cl_cache == NULL) /* shall not be in LRU */
 		RETURN(0);
+
+	dcache_on = libcfs_debug & D_CACHE;
+	if (!dcache_on)
+		libcfs_debug |= D_CACHE;
 
 	LASSERT(cfs_atomic_read(cli->cl_lru_left) >= 0);
 	while (!cfs_atomic_add_unless(cli->cl_lru_left, -1, 0)) {
@@ -971,14 +976,32 @@ static int osc_lru_reserve(struct client_obd *cli, struct osc_page *opg)
 				&lwi);
 
 		cfs_atomic_dec(&osc_lru_waiters);
-		if (rc < 0)
+		if (rc == -ETIMEDOUT) {
+			timedout++;
+			CERROR("LU-2948: osc_lru_waitq time out! (count = %i, "
+			       "gen = %i, left = %i, in_list = %i)\n", timedout,
+				gen, cfs_atomic_read(cli->cl_lru_left),
+				cfs_atomic_read(&cli->cl_lru_in_list));
+			if (timedout == 1 || timedout % 10 == 0)
+				libcfs_debug_dumplog();
+		} else if (rc < 0 && rc != -ETIMEDOUT) {
 			break;
+		}
 	}
 
 	if (rc >= 0) {
 		cfs_atomic_inc(&cli->cl_lru_busy);
 		opg->ops_in_lru = 1;
 		rc = 0;
+	}
+
+	if (!dcache_on)
+		libcfs_debug &= ~D_CACHE;
+
+	if (timedout) {
+		CERROR("LU-2948: osc_lru_waitq timed out %i time(s) "
+		       "(rc = %i)\n", timedout, rc);
+		libcfs_debug_dumplog();
 	}
 
 	RETURN(rc);
