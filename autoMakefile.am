@@ -1,8 +1,12 @@
 SUBDIRS := @LDISKFS_SUBDIR@ @SPL_SUBDIR@ @ZFS_SUBDIR@ . @LIBSYSIO_SUBDIR@ @SNMP_SUBDIR@ @LUSTREIOKIT_SUBDIR@ @LIBCFS_SUBDIR@ lnet lustre
 DIST_SUBDIRS := @LDISKFS_DIST_SUBDIR@ @SNMP_DIST_SUBDIR@ libsysio lustre-iokit @LIBCFS_SUBDIR@ lnet lustre
 SOURCES_SUBDIRS := @LIBCFS_SUBDIR@ lnet lustre
-RPM_SUBDIRS := @LDISKFS_SUBDIR@ @LUSTREIOKIT_SUBDIR@
 MODULE_SYMVERS_DEPS = module-symvers
+
+FAKE_TARGETS = srpm rpms debs
+FAKE_TARGETS += srpm-iokit rpms-iokit
+FAKE_TARGETS += srpm-ldiskfs rpms-ldiskfs
+.PHONY: $(FAKE_TARGETS)
 
 @TESTS_TRUE@BUILD_TESTS = true
 @TESTS_FALSE@BUILD_TESTS = false
@@ -20,15 +24,6 @@ AUTOMAKE_OPTIONS = foreign
 FIND_TAG_FILES_CMD = find $(top_srcdir) \
 		     -path $(top_srcdir)/ldiskfs/ldiskfs/linux-stage \
 		     -prune -false -o -type f -name '*.[hc]'
-
-MAKEEACHSUBDIR =					\
-	for subdir in $(RPM_SUBDIRS) ; do		\
-		echo "Making $@ in $$subdir" ; 		\
-		cd $$subdir ;				\
-		$(MAKE) $(AM_MAKEFLAGS) $@ ;		\
-		cd - ;					\
-		echo "Finished $@ in $$subdir" ;	\
-	done
 
 # these empty rules are needed so that automake doesn't add its own
 # recursive rules
@@ -114,7 +109,43 @@ EXTRA_DIST = @PACKAGE_TARNAME@.spec					\
 	build/mptlinux.spec.patch build/patches                         \
 	build/funcs.sh build/find_linux_rpms build/exit_traps.sh
 
-rpms-real: @PACKAGE_TARNAME@.spec dist Makefile
+srpm-iokit:
+	@echo "Running \"make srpm\" in lustre-iokit"
+	@$(MAKE) -C lustre-iokit $(AM_MAKEFLAGS) srpm
+
+rpms-iokit:
+	@echo "Running \"make rpms\" in lustre-iokit"
+	@$(MAKE) -C lustre-iokit $(AM_MAKEFLAGS) rpms
+
+if LDISKFS_INTREE
+SRPM_LDISKFS_DEP=srpm-ldiskfs
+if LDISKFS_BUILD
+RPMS_LDISKFS_DEP=rpms-ldiskfs
+else
+RPMS_LDISKFS_DEP=
+endif # LDISKFS_BUILD
+else
+RPMS_LDISKFS_DEP=
+SRPM_LDISKFS_DEP=
+endif # LDISKFS_INTREE
+
+ldiskfs/configure:
+	@echo "Running ldiskfs/autogen.sh from lustre's autoMakefile"
+	cd ldiskfs && sh autogen.sh
+
+srpm-ldiskfs: ldiskfs/configure
+	@echo "Building ldiskfs source rpm from lustre's autoMakefile"
+	cd ldiskfs && \
+	./configure && \
+	make srpm
+
+rpms-ldiskfs: ldiskfs/configure
+	@echo "Building ldiskfs rpms from lustre's autoMakefile"
+	cd ldiskfs && \
+	./configure --with-linux=@LINUX@ --with-linux-obj=@LINUX_OBJ@ && \
+	make rpm
+
+rpms: @PACKAGE_TARNAME@.spec dist Makefile $(RPMS_LDISKFS_DEP) rpms-iokit
 	CONFIGURE_ARGS=$$(echo $$(eval echo $(ac_configure_args)) | \
 		sed -re 's/--(en|dis)able-tests//'); \
 	if [ -n "@LINUX@" ]; then \
@@ -145,19 +176,11 @@ rpms-real: @PACKAGE_TARNAME@.spec dist Makefile
 	echo "Building Lustre RPM with $$RPMARGS"; \
 	eval rpmbuild $$RPMARGS -ta $(distdir).tar.gz
 
-srpm-real: @PACKAGE_TARNAME@.spec dist Makefile
+srpm: @PACKAGE_TARNAME@.spec dist Makefile $(SRPM_LDISKFS_DEP) srpm-iokit
 	if [[ "X$(BUILD_TESTS)" = Xfalse ]]; then \
 		RPMARGS="--define \"build_lustre_tests 0\""; \
 	fi; \
-	eval rpmbuild $$RPMARGS -ta $(distdir).tar.gz
-
-rpms:
-	@$(MAKEEACHSUBDIR)
-	$(MAKE) $(AM_MAKEFLAGS) rpms-real
-
-srpm:
-	@$(MAKEEACHSUBDIR)
-	$(MAKE) $(AM_MAKEFLAGS) srpm-real
+	eval rpmbuild $$RPMARGS -ts $(distdir).tar.gz
 
 # In the debs target, first make sure what's in the changelog reflects
 # the software version.  Here's how we could dig the version out of the
@@ -272,8 +295,3 @@ module-dist-hook:
 		echo -e "I have no idea how to create a META file in $(distdir).\nPlease file a bug at http://bugzilla.lustre.org/"; \
 		exit 1; \
 	fi
-if LDISKFS_ENABLED
-	if [ -f $(distdir)/META -a -d $(distdir)/ldiskfs ]; then \
-		cp $(distdir)/META $(distdir)/ldiskfs/META; \
-	fi
-endif
