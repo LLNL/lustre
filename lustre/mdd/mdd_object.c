@@ -2358,6 +2358,11 @@ out:
                         dp->ldp_flags |= cpu_to_le32(LDF_COLLIDE);
                 last->lde_reclen = 0; /* end mark */
         }
+        CDEBUG(D_INFO,
+               "lu_dirpage ldp_hash_start "LPU64
+               " ldp_hash_end "LPU64" ldp_flags %u\n",
+               le64_to_cpu(dp->ldp_hash_start), le64_to_cpu(dp->ldp_hash_end),
+               le32_to_cpu(dp->ldp_flags));
         return result;
 }
 
