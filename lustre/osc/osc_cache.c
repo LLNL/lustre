@@ -1318,7 +1318,7 @@ static int osc_completion(const struct lu_env *env, struct osc_async_page *oap,
 	       "dropped: %ld avail: %ld, reserved: %ld, flight: %d } " fmt,   \
 	       __tmp->cl_import->imp_obd->obd_name,			      \
 	       __tmp->cl_dirty, __tmp->cl_dirty_max,			      \
-	       cfs_atomic_read(&obd_dirty_pages), obd_max_dirty_pages,	      \
+	       cfs_atomic_read(&obd_dirty_pages), obd_max_pinned_pages,	      \
 	       __tmp->cl_lost_grant, __tmp->cl_avail_grant,		      \
 	       __tmp->cl_reserved_grant, __tmp->cl_w_in_flight, ##args);      \
 } while (0)
@@ -1468,7 +1468,7 @@ static int osc_enter_cache_try(struct client_obd *cli,
 		return 0;
 
 	if (cli->cl_dirty + CFS_PAGE_SIZE <= cli->cl_dirty_max &&
-	    cfs_atomic_read(&obd_dirty_pages) + 1 <= obd_max_dirty_pages) {
+	    cfs_atomic_read(&obd_dirty_pages) + 1 <= obd_max_pinned_pages) {
 		osc_consume_write_grant(cli, &oap->oap_brw_page);
 		if (transient) {
 			cli->cl_dirty_transit += CFS_PAGE_SIZE;
@@ -1586,10 +1586,10 @@ void osc_wake_cache_waiters(struct client_obd *cli)
 		/* if we can't dirty more, we must wait until some is written */
 		if ((cli->cl_dirty + CFS_PAGE_SIZE > cli->cl_dirty_max) ||
 		    (cfs_atomic_read(&obd_dirty_pages) + 1 >
-		     obd_max_dirty_pages)) {
+		     obd_max_pinned_pages)) {
 			CDEBUG(D_CACHE, "no dirty room: dirty: %ld "
 			       "osc max %ld, sys max %d\n", cli->cl_dirty,
-			       cli->cl_dirty_max, obd_max_dirty_pages);
+			       cli->cl_dirty_max, obd_max_pinned_pages);
 			return;
 		}
 

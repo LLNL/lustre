@@ -77,8 +77,8 @@ unsigned int obd_dump_on_timeout;
 EXPORT_SYMBOL(obd_dump_on_timeout);
 unsigned int obd_dump_on_eviction;
 EXPORT_SYMBOL(obd_dump_on_eviction);
-unsigned int obd_max_dirty_pages = 256;
-EXPORT_SYMBOL(obd_max_dirty_pages);
+unsigned int obd_max_pinned_pages = 256;
+EXPORT_SYMBOL(obd_max_pinned_pages);
 cfs_atomic_t obd_dirty_pages;
 EXPORT_SYMBOL(obd_dirty_pages);
 unsigned int obd_timeout = OBD_TIMEOUT_DEFAULT;   /* seconds */
@@ -584,9 +584,9 @@ int init_obdclass(void)
          * For clients with less memory, a larger fraction is needed
          * for other purposes (mostly for BGL). */
         if (cfs_num_physpages <= 512 << (20 - CFS_PAGE_SHIFT))
-                obd_max_dirty_pages = cfs_num_physpages / 4;
+                obd_max_pinned_pages = cfs_num_physpages / 4;
         else
-                obd_max_dirty_pages = cfs_num_physpages / 2;
+                obd_max_pinned_pages = cfs_num_physpages / 2;
 
         err = obd_init_caches();
         if (err)

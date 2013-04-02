@@ -73,7 +73,7 @@ enum {
         OBD_DUMP_ON_EVICTION,   /* dump kernel debug log upon eviction */
         OBD_DEBUG_PEER_ON_TIMEOUT, /* dump peer debug when RPC times out */
         OBD_ALLOC_FAIL_RATE,    /* memory allocation random failure rate */
-        OBD_MAX_DIRTY_PAGES,    /* maximum dirty pages */
+        OBD_MAX_PINNED_PAGES,   /* maximum pinned (dirty + unstable) pages */
         OBD_AT_MIN,             /* Adaptive timeouts params */
         OBD_AT_MAX,
         OBD_AT_EXTRA,
@@ -98,7 +98,7 @@ enum {
 #define OBD_DUMP_ON_EVICTION    CTL_UNNUMBERED
 #define OBD_DEBUG_PEER_ON_TIMEOUT CTL_UNNUMBERED
 #define OBD_ALLOC_FAIL_RATE     CTL_UNNUMBERED
-#define OBD_MAX_DIRTY_PAGES     CTL_UNNUMBERED
+#define OBD_MAX_PINNED_PAGES    CTL_UNNUMBERED
 #define OBD_AT_MIN              CTL_UNNUMBERED
 #define OBD_AT_MAX              CTL_UNNUMBERED
 #define OBD_AT_EXTRA            CTL_UNNUMBERED
@@ -213,7 +213,7 @@ int LL_PROC_PROTO(proc_pages_max)
         return 0;
 }
 
-int LL_PROC_PROTO(proc_max_dirty_pages_in_mb)
+int LL_PROC_PROTO(proc_max_pinned_pages_in_mb)
 {
         int rc = 0;
         DECLARE_LL_PROC_PPOS_DECL;
@@ -226,16 +226,16 @@ int LL_PROC_PROTO(proc_max_dirty_pages_in_mb)
                 rc = lprocfs_write_frac_helper(buffer, *lenp,
                                                (unsigned int*)table->data,
                                                1 << (20 - CFS_PAGE_SHIFT));
-                /* Don't allow them to let dirty pages exceed 90% of system
+                /* Don't allow them to let pinned pages exceed 90% of system
                  * memory and set a hard minimum of 4MB. */
-                if (obd_max_dirty_pages > ((cfs_num_physpages / 10) * 9)) {
-                        CERROR("Refusing to set max dirty pages to %u, which "
+                if (obd_max_pinned_pages > ((cfs_num_physpages / 10) * 9)) {
+                        CERROR("Refusing to set max pinned pages to %u, which "
                                "is more than 90%% of available RAM; setting "
-                               "to %lu\n", obd_max_dirty_pages,
+                               "to %lu\n", obd_max_pinned_pages,
                                ((cfs_num_physpages / 10) * 9));
-                        obd_max_dirty_pages = ((cfs_num_physpages / 10) * 9);
-                } else if (obd_max_dirty_pages < 4 << (20 - CFS_PAGE_SHIFT)) {
-                        obd_max_dirty_pages = 4 << (20 - CFS_PAGE_SHIFT);
+                        obd_max_pinned_pages = ((cfs_num_physpages / 10) * 9);
+                } else if (obd_max_pinned_pages < 4 << (20 - CFS_PAGE_SHIFT)) {
+                        obd_max_pinned_pages = 4 << (20 - CFS_PAGE_SHIFT);
                 }
         } else {
                 char buf[21];
@@ -394,12 +394,12 @@ static cfs_sysctl_table_t obd_table[] = {
         },
 #endif
         {
-                INIT_CTL_NAME(OBD_MAX_DIRTY_PAGES)
-                .procname = "max_dirty_mb",
-                .data     = &obd_max_dirty_pages,
+                INIT_CTL_NAME(OBD_MAX_PINNED_PAGES)
+                .procname = "max_pinned_mb",
+                .data     = &obd_max_pinned_pages,
                 .maxlen   = sizeof(int),
                 .mode     = 0644,
-                .proc_handler = &proc_max_dirty_pages_in_mb
+                .proc_handler = &proc_max_pinned_pages_in_mb
         },
         {
                 INIT_CTL_NAME(OBD_AT_MIN)
