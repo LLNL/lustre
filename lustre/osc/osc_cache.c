@@ -1315,10 +1315,12 @@ static int osc_completion(const struct lu_env *env, struct osc_async_page *oap,
 #define OSC_DUMP_GRANT(cli, fmt, args...) do {				      \
 	struct client_obd *__tmp = (cli);				      \
 	CDEBUG(D_CACHE, "%s: { dirty: %ld/%ld dirty_pages: %d/%d "	      \
-	       "dropped: %ld avail: %ld, reserved: %ld, flight: %d } " fmt,   \
+	       "unstable_pages: %d/%d dropped: %ld avail: %ld, "	      \
+	       "reserved: %ld, flight: %d } " fmt,			      \
 	       __tmp->cl_import->imp_obd->obd_name,			      \
 	       __tmp->cl_dirty, __tmp->cl_dirty_max,			      \
 	       cfs_atomic_read(&obd_dirty_pages), obd_max_pinned_pages,	      \
+	       cfs_atomic_read(&obd_unstable_pages), obd_max_pinned_pages,    \
 	       __tmp->cl_lost_grant, __tmp->cl_avail_grant,		      \
 	       __tmp->cl_reserved_grant, __tmp->cl_w_in_flight, ##args);      \
 } while (0)
@@ -1468,7 +1470,8 @@ static int osc_enter_cache_try(struct client_obd *cli,
 		return 0;
 
 	if (cli->cl_dirty + CFS_PAGE_SIZE <= cli->cl_dirty_max &&
-	    cfs_atomic_read(&obd_dirty_pages) + 1 <= obd_max_pinned_pages) {
+	    cfs_atomic_read(&obd_unstable_pages) + 1 +
+	    cfs_atomic_read(&obd_dirty_pages) <= obd_max_pinned_pages) {
 		osc_consume_write_grant(cli, &oap->oap_brw_page);
 		if (transient) {
 			cli->cl_dirty_transit += CFS_PAGE_SIZE;
@@ -1584,9 +1587,9 @@ void osc_wake_cache_waiters(struct client_obd *cli)
 	ENTRY;
 	cfs_list_for_each_safe(l, tmp, &cli->cl_cache_waiters) {
 		/* if we can't dirty more, we must wait until some is written */
-		if ((cli->cl_dirty + CFS_PAGE_SIZE > cli->cl_dirty_max) ||
-		    (cfs_atomic_read(&obd_dirty_pages) + 1 >
-		     obd_max_pinned_pages)) {
+		if (cli->cl_dirty + CFS_PAGE_SIZE > cli->cl_dirty_max ||
+		    cfs_atomic_read(&obd_unstable_pages) + 1 +
+		    cfs_atomic_read(&obd_dirty_pages) > obd_max_pinned_pages) {
 			CDEBUG(D_CACHE, "no dirty room: dirty: %ld "
 			       "osc max %ld, sys max %d\n", cli->cl_dirty,
 			       cli->cl_dirty_max, obd_max_pinned_pages);
@@ -1764,6 +1767,85 @@ static void osc_process_ar(struct osc_async_rc *ar, __u64 xid,
 		ar->ar_force_sync = 0;
 }
 
+/* Performs "unstable" page accounting. This function balances the
+ * increment operations performed in osc_inc_unstable_pages. It is
+ * registered as the RPC request callback, and is executed when the
+ * bulk RPC is committed on the server. Thus at this point, the pages
+ * involved in the bulk transfer are no longer considered unstable. */
+void osc_dec_unstable_pages(struct ptlrpc_request *req)
+{
+	struct ptlrpc_bulk_desc *desc       = req->rq_bulk;
+	struct client_obd       *cli        = &req->rq_import->imp_obd->u.cli;
+	obd_count                page_count = desc->bd_iov_count;
+	int i;
+
+	/* No unstable page tracking */
+	if (cli->cl_cache == NULL)
+		return;
+
+	LASSERT(page_count >= 0);
+
+	for (i = 0; i < page_count; i++)
+		dec_zone_page_state(desc->bd_iov[i].kiov_page, NR_UNSTABLE_NFS);
+
+	cfs_atomic_sub(page_count, &cli->cl_cache->ccc_unstable_nr);
+	LASSERT(cfs_atomic_read(&cli->cl_cache->ccc_unstable_nr) >= 0);
+
+	cfs_atomic_sub(page_count, &obd_unstable_pages);
+	LASSERT(cfs_atomic_read(&obd_unstable_pages) >= 0);
+
+	spin_lock(&req->rq_lock);
+	req->rq_committed = 1;
+	req->rq_unstable  = 0;
+	spin_unlock(&req->rq_lock);
+
+	cfs_waitq_broadcast(&cli->cl_cache->ccc_unstable_waitq);
+}
+
+/* "unstable" page accounting. See: osc_dec_unstable_pages. */
+void osc_inc_unstable_pages(struct ptlrpc_request *req)
+{
+	struct ptlrpc_bulk_desc *desc = req->rq_bulk;
+	struct client_obd       *cli  = &req->rq_import->imp_obd->u.cli;
+	obd_count                page_count = desc->bd_iov_count;
+	int i;
+
+	/* No unstable page tracking */
+	if (cli->cl_cache == NULL)
+		return;
+
+	LASSERT(page_count >= 0);
+
+	for (i = 0; i < page_count; i++)
+		inc_zone_page_state(desc->bd_iov[i].kiov_page, NR_UNSTABLE_NFS);
+
+	LASSERT(cfs_atomic_read(&cli->cl_cache->ccc_unstable_nr) >= 0);
+	cfs_atomic_add(page_count, &cli->cl_cache->ccc_unstable_nr);
+
+	LASSERT(cfs_atomic_read(&obd_unstable_pages) >= 0);
+	cfs_atomic_add(page_count, &obd_unstable_pages);
+
+	spin_lock(&req->rq_lock);
+
+	/* If the request has already been committed (i.e. brw_commit
+	 * called via rq_commit_cb), we need to undo the unstable page
+	 * increments we just performed because rq_commit_cb wont be
+	 * called again. Otherwise, just set the commit callback so the
+	 * unstable page accounting is properly updated when the request
+	 * is committed */
+	if (req->rq_committed) {
+		/* Drop lock before calling osc_dec_unstable_pages */
+		spin_unlock(&req->rq_lock);
+		osc_dec_unstable_pages(req);
+		spin_lock(&req->rq_lock);
+	} else {
+		req->rq_unstable  = 1;
+		req->rq_commit_cb = osc_dec_unstable_pages;
+	}
+
+	spin_unlock(&req->rq_lock);
+}
+
 /* this must be called holding the loi list lock to give coverage to exit_cache,
  * async_flag maintenance, and oap_request */
 static void osc_ap_completion(const struct lu_env *env, struct client_obd *cli,
@@ -1775,6 +1857,9 @@ static void osc_ap_completion(const struct lu_env *env, struct client_obd *cli,
 
 	ENTRY;
 	if (oap->oap_request != NULL) {
+		if (rc == 0)
+			osc_inc_unstable_pages(oap->oap_request);
+
 		xid = ptlrpc_req_xid(oap->oap_request);
 		ptlrpc_req_finished(oap->oap_request);
 		oap->oap_request = NULL;
