@@ -1775,15 +1775,6 @@ static void osc_ap_completion(const struct lu_env *env, struct client_obd *cli,
 
 	ENTRY;
 	if (oap->oap_request != NULL) {
-		/* The request hasn't been committed (i.e. the commit
-		 * callback hasn't run) and an error has occurred (i.e.
-		 * the commit callback will not run). In this case we
-		 * must manually decrement the unstable pages in order
-		 * to match and balance the previous osc_brw_prep_request
-		 * call for this request. */
-		if (oap->oap_request->rq_unstable == 1 && rc < 0)
-			osc_dec_unstable_pages(oap->oap_request);
-
 		xid = ptlrpc_req_xid(oap->oap_request);
 		ptlrpc_req_finished(oap->oap_request);
 		oap->oap_request = NULL;
