@@ -136,8 +136,8 @@ backing store of a Lustre server.
 %if %{with zfs}
 %package osd-zfs
 Summary: osd-zfs is the mandatory glue for ZFS support in Lustre.
-BuildRequires: zfs-devel zfs-modules-devel
-Requires: %{lustre_name}-modules = %{version}, zfs-modules
+BuildRequires: spl-devel-kmod zfs-devel-kmod zfs-devel
+Requires: %{lustre_name}-modules = %{version}, zfs
 Provides: lustre-osd
 Group: Development/Kernel
 
