@@ -32,7 +32,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <limits.h>
-#include <attr/xattr.h>
+#include <sys/xattr.h>
 
 #include <liblustre.h>
 #include <obd.h>
