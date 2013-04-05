@@ -5,3 +5,5 @@
 /*.h
 /sources
 /trace
+/Module.symvers
+/stamp-h2

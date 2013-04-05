@@ -726,3 +726,42 @@ AC_DEFUN([LDISKFS_AC_PATCH_PROGRAM], [
 
 	AM_CONDITIONAL([USE_QUILT], [test x$use_quilt = xyes])
 ])
+
+#
+# LDISFKS_AC_RPM
+#
+# Check if the "rpm" and "rpmbuild" commands are available.
+#
+AC_DEFUN([LDISKFS_AC_RPM], [
+	RPM=rpm
+	RPMBUILD=rpmbuild
+
+	AC_MSG_CHECKING([whether $RPM is available])
+	AS_IF([tmp=$($RPM --version 2>/dev/null)], [
+		RPM_VERSION=$(echo $tmp | $AWK '/RPM/ { print $[3] }')
+		HAVE_RPM=yes
+		AC_MSG_RESULT([$HAVE_RPM ($RPM_VERSION)])
+	],[
+		HAVE_RPM=no
+		AC_MSG_RESULT([$HAVE_RPM])
+	])
+
+	AC_MSG_CHECKING([whether $RPMBUILD is available])
+	AS_IF([tmp=$($RPMBUILD --version 2>/dev/null)], [
+		RPMBUILD_VERSION=$(echo $tmp | $AWK '/RPM/ { print $[3] }')
+		HAVE_RPMBUILD=yes
+		AC_MSG_RESULT([$HAVE_RPMBUILD ($RPMBUILD_VERSION)])
+	],[
+		HAVE_RPMBUILD=no
+		AC_MSG_RESULT([$HAVE_RPMBUILD])
+	])
+
+	AC_SUBST(HAVE_RPM)
+	AC_SUBST(RPM)
+	AC_SUBST(RPM_VERSION)
+
+	AC_SUBST(HAVE_RPMBUILD)
+	AC_SUBST(RPMBUILD)
+	AC_SUBST(RPMBUILD_VERSION)
+])
+
