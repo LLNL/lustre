@@ -54,7 +54,7 @@ EXTRA_DIST = license-status version_tag.pl version_tag-git.pl \
 	     version_tag-cvs.pl version_tag-none.pl lc_common \
 	     $(addsuffix .in,$(genscripts)) lc_mon $(sbinscripts) \
 	     $(bin_SCRIPTS) make_META.pl lustre lnet lhbadm \
-	     haconfig ldev Lustre.ha_v2
+	     haconfig ldev Lustre.ha_v2 dkms.mkconf
 
 scriptlibdir = @libexecdir@/@PACKAGE@
 scriptlib_SCRIPTS = haconfig
