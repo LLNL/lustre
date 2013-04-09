@@ -20,6 +20,7 @@
 %{!?lustre_name: %global lustre_name lustre}
 %{!?build_lustre_tests: %global build_lustre_tests 1}
 
+%{!?build_lustre_modules: %global build_lustre_modules 1}
 %{!?build_lustre_osd_ldiskfs: %global build_lustre_osd_ldiskfs 0}
 %{!?build_lustre_osd_zfs: %global build_lustre_osd_zfs 0}
 
@@ -76,6 +77,7 @@ Requires: %{name}-modules = %{version}
 %description
 Userspace tools and files for the Lustre file system.
 
+%if %{build_lustre_modules}
 %package modules
 Summary: Kernel Lustre modules for Linux %{kversion}
 # for SLES11, we need nothing here
@@ -125,6 +127,7 @@ modify data that is supposed to be stored persistently. This API is the interfac
 to code that bridges individual file systems. This specific package provides an
 implementation of the OSD API for using the ZFS filesystem as the underlying
 backing store of a Lustre server.
+%endif
 %endif
 
 %package source
@@ -211,6 +214,26 @@ CONFIGURE_ARGS="%{?configure_args} --with-release=%release"
 CONFIGURE_ARGS="$CONFIGURE_ARGS --enable-tests --enable-liblustre-tests"
 %else
 CONFIGURE_ARGS="$CONFIGURE_ARGS --disable-tests --disable-liblustre-tests"
+%endif
+
+%if %{build_lustre_modules}
+CONFIGURE_ARGS="$CONFIGURE_ARGS --enable-modules"
+%else
+CONFIGURE_ARGS="$CONFIGURE_ARGS --disable-modules"
+%endif
+
+# May be enabled when build_lustre_modules=0 to enable utility support.
+%if %{build_lustre_osd_ldiskfs}
+CONFIGURE_ARGS="$CONFIGURE_ARGS --with-ldiskfs"
+%else
+CONFIGURE_ARGS="$CONFIGURE_ARGS --without-ldiskfs"
+%endif
+
+# May be enabled when build_lustre_modules=0 to enable utility support.
+%if %{build_lustre_osd_zfs}
+CONFIGURE_ARGS="$CONFIGURE_ARGS --with-zfs"
+%else
+CONFIGURE_ARGS="$CONFIGURE_ARGS --without-zfs"
 %endif
 
 # if %%kdir was given, make sure it's not in the configure arguments
@@ -320,7 +343,9 @@ fi
 
 %if %{build_lustre_tests}
 echo '%attr(-, root, root) %{_libdir}/lustre/tests/*' >lustre-tests.files
+%if %{build_lustre_modules}
 echo '%attr(-, root, root) /lib/modules/%{kversion}/updates/kernel/fs/lustre/llog_test.*' >>lustre-tests.files
+%endif
 if [ -d $RPM_BUILD_ROOT%{_libdir}/lustre/liblustre/tests ] ; then
   echo '%attr(-, root, root) %{_libdir}/lustre/liblustre/tests/*' >>lustre-tests.files
 fi
@@ -332,6 +357,7 @@ find $RPM_BUILD_ROOT/lib/modules/%{kversion}/updates -name "*.ko" -type f | \
 
 %files -f lustre.files
 
+%if %{build_lustre_modules}
 %files modules
 %attr(-, root, root) /lib/modules/%{kversion}/updates/*
 %if %{build_lustre_tests}
@@ -356,6 +382,7 @@ find $RPM_BUILD_ROOT/lib/modules/%{kversion}/updates -name "*.ko" -type f | \
 %files osd-zfs
 %attr(-, root, root) /lib/modules/%{kversion}/updates/kernel/fs/lustre/osd_zfs.ko
 %endif
+%endif
 
 %files source
 %attr(-, root, root) /usr/src/lustre-%{version}
@@ -368,6 +395,7 @@ find $RPM_BUILD_ROOT/lib/modules/%{kversion}/updates -name "*.ko" -type f | \
 %files tests -f lustre-tests.files
 %endif
 
+%if %{build_lustre_modules}
 %post modules
 if [ -f /boot/System.map-%{kversion} ]; then
 	depmod -ae -F /boot/System.map-%{kversion} %{kversion} || exit 0
@@ -555,6 +583,7 @@ if [ -x /sbin/weak-modules ]; then
         /sbin/weak-modules --remove-modules
 fi
 rm /var/run/%{name}-osd-zfs
+%endif
 %endif
 
 %if %{build_lustre_tests}
