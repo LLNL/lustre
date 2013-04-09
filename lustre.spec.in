@@ -20,9 +20,9 @@
 %{!?lustre_name: %global lustre_name lustre}
 %{!?build_lustre_tests: %global build_lustre_tests 1}
 
-%{!?build_lustre_modules: %global build_lustre_modules 1}
+%{!?build_lustre_modules: %global build_lustre_modules 0}
 %{!?build_lustre_osd_ldiskfs: %global build_lustre_osd_ldiskfs 0}
-%{!?build_lustre_osd_zfs: %global build_lustre_osd_zfs 0}
+%{!?build_lustre_osd_zfs: %global build_lustre_osd_zfs 1}
 
 # in order to get kernel symset and/or kernel module dependencies into
 # the RPM, in order to support weak-modules, the internal dependency gen-
@@ -67,7 +67,7 @@
 Summary: Lustre File System
 Name: %{lustre_name}
 Version: %{version}
-Release: %{fullrelease}
+Release: 1%{?dist}
 License: GPL
 Group: Utilities/System
 Source: lustre-%{version}.tar.gz
@@ -80,6 +80,10 @@ Requires: %{name}-modules = %{version}
 Requires: lustre-osd
 %endif
 # GSS requires this: BuildRequires: pkgconfig, libgssapi-devel >= 0.10
+%if %{build_lustre_osd_zfs}
+BuildRequires: zfs-devel
+Requires: zfs-devel
+%endif
 
 %description
 Userspace tools and files for the Lustre file system.
@@ -125,7 +129,8 @@ backing store of a Lustre server.
 %if %{build_lustre_osd_zfs}
 %package osd-zfs
 Summary: osd-zfs is the mandatory glue for ZFS support in Lustre.
-Requires: lustre-modules = %{version}, zfs-kmod
+Requires: %{lustre_name}-modules = %{version}, zfs-kmod
+BuildRequires: zfs-devel zfs-devel-kmod spl-devel-kmod
 Provides: lustre-osd
 Group: Development/Kernel
 
