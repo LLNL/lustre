@@ -65,6 +65,7 @@ TAGS
 /INSTALL
 /install-sh
 /lustre.spec
+/lustre-dkms.spec
 /lustre*.tar.gz
 /missing
 /mkinstalldirs
