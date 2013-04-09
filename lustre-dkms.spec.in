@@ -18,6 +18,7 @@ BuildArch:      noarch
 Requires:       dkms >= 2.2.0.2
 Requires:       spl-dkms >= 0.6.1
 Requires:       zfs-dkms >= 0.6.1
+Requires:       zfs-devel >= 0.6.1
 Requires:       gcc, make, perl
 Requires:       kernel-devel
 Provides:       %{module}-kmod = %{version}
@@ -70,5 +71,7 @@ dkms remove -m %{module} -v %{version} --all --rpm_safe_upgrade
 exit 0
 
 %changelog
+* Mon Apr 15 2013 Brian Behlendorf <behlendorf1@llnl.gov> - 2.3.64-1
+- Rebased on 2.3.64.
 * Fri Apr  8 2013 Brian Behlendorf <behlendorf1@llnl.gov> - 2.3.63-1
 - First DKMS packages.
