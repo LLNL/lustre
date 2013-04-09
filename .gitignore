@@ -72,6 +72,7 @@ TAGS
 /INSTALL
 /libtool
 /lustre.spec
+/lustre-dkms.spec
 /lustre*.tar.gz
 /mkinstalldirs
 /Module.markers

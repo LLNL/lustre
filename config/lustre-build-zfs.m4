@@ -72,7 +72,7 @@ AC_DEFUN([LB_SPL], [
 	dnl # source directory.  In order of preference:
 	dnl #
 	splver=$(ls -1 /usr/src/ | grep -m1 spl | cut -f2 -d'-')
-	splsrc0="/var/lib/dkms/spl/${splver}/build"
+	splsrc0="/var/lib/dkms/spl/${splver}/source"
 	splsrc1="/usr/src/spl-${splver}/${LINUXRELEASE}"
 	splsrc2="/usr/src/spl-${splver}"
 	splsrc3="../spl/"
@@ -178,7 +178,7 @@ AC_DEFUN([LB_ZFS], [
 	dnl # source directory.  In order of preference:
 	dnl #
 	zfsver=$(ls -1 /usr/src/ | grep -m1 zfs | cut -f2 -d'-')
-	zfssrc0="/var/lib/dkms/zfs/${zfsver}/build"
+	zfssrc0="/var/lib/dkms/zfs/${zfsver}/source"
 	zfssrc1="/usr/src/zfs-${zfsver}/${LINUXRELEASE}"
 	zfssrc2="/usr/src/zfs-${zfsver}"
 	zfssrc3="../zfs/"
