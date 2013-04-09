@@ -61,6 +61,7 @@ TAGS
 /config.h.in
 /INSTALL
 /lustre.spec
+/lustre-dkms.spec
 /lustre*.tar.gz
 /mkinstalldirs
 /Module.markers
