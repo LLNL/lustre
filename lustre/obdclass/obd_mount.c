@@ -858,7 +858,7 @@ static int lmd_make_exclusion(struct lustre_mount_data *lmd, const char *ptr)
                 s1++;
                 rc = server_name2index(s1, &index, &s2);
                 if (rc < 0) {
-                        CERROR("Can't parse server name '%s'\n", s1);
+                        LCONSOLE_WARN("Can't parse server name '%s'\n", s1);
                         break;
                 }
                 if (rc == LDD_F_SV_TYPE_OST)
@@ -1175,7 +1175,8 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
         RETURN(rc);
 
 invalid:
-        CERROR("Bad mount options %s\n", options);
+        LCONSOLE_WARN("%s: Bad mount options '%s'\n",
+                      devname ? devname : "<unknown device>", options);
         RETURN(-EINVAL);
 }
 
