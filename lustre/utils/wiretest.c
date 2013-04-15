@@ -66,6 +66,7 @@ void lustre_assert_wire_constants(void)
 	  * with gcc version 4.4.4 20100726 (Red Hat 4.4.4-13) (GCC)  */
 
 
+
 	/* Constants... */
 	LASSERTF(PTL_RPC_MSG_REQUEST == 4711, "found %lld\n",
 		 (long long)PTL_RPC_MSG_REQUEST);
