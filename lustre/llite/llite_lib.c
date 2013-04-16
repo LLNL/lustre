@@ -1107,7 +1107,7 @@ void ll_put_super(struct super_block *sb)
         }
 
 	/* Wait for unstable pages to be committed to stable storage */
-	while (force == 0 && rc == 0) {
+	if (force == 0) {
 		struct l_wait_info lwi = LWI_INTR(LWI_ON_SIGNAL_NOOP, NULL);
 		rc = l_wait_event(sbi->ll_cache.ccc_unstable_waitq,
 			cfs_atomic_read(&sbi->ll_cache.ccc_unstable_nr) == 0,
