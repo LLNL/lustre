@@ -558,7 +558,7 @@ int osc_over_unstable_soft_limit(struct client_obd *cli)
 	osc_upages = cfs_atomic_read(&cli->cl_unstable_count);
 
 	return osc_upages != 0 &&
-	       obd_upages >= (obd_max_pinned_pages - obd_dpages) / 2;
+	       obd_upages >= (obd_max_dirty_pages - obd_dpages) / 2;
 }
 
 /**
