@@ -1634,6 +1634,23 @@ static inline void lmm_oi_cpu_to_le(struct ost_id *dst_oi,
 #define MAX_MD_SIZE (sizeof(struct lov_mds_md) + 4 * sizeof(struct lov_ost_data))
 #define MIN_MD_SIZE (sizeof(struct lov_mds_md) + 1 * sizeof(struct lov_ost_data))
 
+#define XATTR_NAME_ACL_ACCESS   "system.posix_acl_access"
+#define XATTR_NAME_ACL_DEFAULT  "system.posix_acl_default"
+#define XATTR_USER_PREFIX       "user."
+#define XATTR_TRUSTED_PREFIX    "trusted."
+#define XATTR_SECURITY_PREFIX   "security."
+#define XATTR_LUSTRE_PREFIX     "lustre."
+
+#define XATTR_NAME_LOV          "trusted.lov"
+#define XATTR_NAME_LMA          "trusted.lma"
+#define XATTR_NAME_LMV          "trusted.lmv"
+#define XATTR_NAME_LINK         "trusted.link"
+#define XATTR_NAME_FID          "trusted.fid"
+#define XATTR_NAME_VERSION      "trusted.version"
+#define XATTR_NAME_SOM		"trusted.som"
+#define XATTR_NAME_HSM		"trusted.hsm"
+#define XATTR_NAME_LFSCK_NAMESPACE "trusted.lfsck_namespace"
+
 struct lov_mds_md_v3 {            /* LOV EA mds/wire data (little-endian) */
 	__u32 lmm_magic;          /* magic number = LOV_MAGIC_V3 */
 	__u32 lmm_pattern;        /* LOV_PATTERN_RAID0, LOV_PATTERN_RAID1 */
