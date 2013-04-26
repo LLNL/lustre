@@ -72,9 +72,9 @@ EXPORT_SYMBOL(linkea_init);
  * Numbers are always big-endian
  * \retval record length
  */
-int linkea_entry_pack(struct link_ea_entry *lee,
-		      const struct lu_name *lname,
-		      const struct lu_fid *pfid)
+static int linkea_entry_pack(struct link_ea_entry *lee,
+			     const struct lu_name *lname,
+			     const struct lu_fid *pfid)
 {
 	struct lu_fid   tmpfid;
 	int             reclen;
