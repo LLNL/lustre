@@ -336,6 +336,7 @@ find $RPM_BUILD_ROOT/lib/modules/%{kver}/updates -name "*.ko" -type f | \
 %exclude /lib/modules/%{kver}/updates/kernel/fs/lustre/llog_test.ko
 %endif
 %if %{with ldiskfs}
+%exclude /lib/modules/%{kver}/updates/kernel/fs/lustre/fsfilt_ldiskfs.ko
 %exclude /lib/modules/%{kver}/updates/kernel/fs/lustre/osd_ldiskfs.ko
 %endif
 %if %{with zfs}
@@ -347,6 +348,7 @@ find $RPM_BUILD_ROOT/lib/modules/%{kver}/updates -name "*.ko" -type f | \
 
 %if %{with ldiskfs}
 %files osd-ldiskfs
+%attr(-, root, root) /lib/modules/%{kver}/updates/kernel/fs/lustre/fsfilt_ldiskfs.ko
 %attr(-, root, root) /lib/modules/%{kver}/updates/kernel/fs/lustre/osd_ldiskfs.ko
 %endif
 
