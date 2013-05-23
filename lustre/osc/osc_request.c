@@ -2064,9 +2064,7 @@ static void brw_commit(struct ptlrpc_request *req)
 	 * osc_dec_unstable_pages is still called. Otherwise unstable
 	 * pages may be leaked. */
 	if (req->rq_unstable)
-		spin_unlock(&req->rq_lock);
 		osc_dec_unstable_pages(req);
-		spin_lock(&req->rq_lock);
 	else
 		req->rq_committed = 1;
 	spin_unlock(&req->rq_lock);
