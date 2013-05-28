@@ -245,8 +245,9 @@ make -j $RPM_BUILD_NCPUS -s %{?make_args}
 make install DESTDIR=$RPM_BUILD_ROOT
 # hack to avoid changing the libsysio code for "make install"
 rm -f $RPM_BUILD_ROOT%{_libdir}/libsysio.a
-# Remove ldiskfs module(s) - they are packaged by the ldiskfs .spec.
+# Remove ldiskfs build products - they are packaged by the ldiskfs .spec.
 rm -rf $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/updates/kernel/fs/lustre-ldiskfs
+rm -rf $RPM_BUILD_ROOT%{?rootdir}/usr/src/ldiskfs-*
 
 # hack to include the llog_test module in lustre-tests
 llog_base=$RPM_BUILD_DIR/lustre-%{version}/lustre/obdclass/llog_test
