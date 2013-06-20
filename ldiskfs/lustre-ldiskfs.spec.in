@@ -186,6 +186,7 @@ URL:             git://git.whamcloud.com/fs/lustre-release.git
 BuildRoot:       %{_tmppath}/%{name}-%{version}-%{release}-%(%{__id} -un)
 Source:          %{name}-%{version}.tar.gz
 Provides:        lustre-backend-fs
+Requires:        modutils >= 2.4.10, ldiskfsprogs >= 1.42.7.wc1
 Obsoletes:       ldiskfs
 %if %{defined krequires}
 Requires:        %{krequires}
