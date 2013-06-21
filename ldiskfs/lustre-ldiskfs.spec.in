@@ -180,7 +180,7 @@ Summary:         ldiskfs File System
 Group:           Utilities/System
 Name:            %{name}
 Version:         %{version}
-Release:         %{release}
+Release:         %{release}%{?dist}
 License:         GPL
 URL:             git://git.whamcloud.com/fs/lustre-release.git
 BuildRoot:       %{_tmppath}/%{name}-%{version}-%{release}-%(%{__id} -un)
