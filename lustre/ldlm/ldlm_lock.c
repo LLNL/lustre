@@ -1685,6 +1685,16 @@ ldlm_error_t ldlm_lock_enqueue(struct ldlm_namespace *ns,
                 }
         }
 
+#ifdef HAVE_SERVER_SUPPORT
+	if ((res->lr_type == LDLM_FLOCK) &&
+	    unlikely(lock->l_export->exp_flock_hash == NULL)) {
+		rc = ldlm_init_flock_export(lock->l_export);
+		if (rc) {
+			ldlm_lock_destroy(lock);
+			RETURN(rc);
+		}
+	}
+#endif
         /* For a replaying lock, it might be already in granted list. So
          * unlinking the lock will cause the interval node to be freed, we
          * have to allocate the interval node early otherwise we can't regrant
