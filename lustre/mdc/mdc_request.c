@@ -1493,15 +1493,11 @@ out:
 	return rc;
 }
 
-static struct kuc_hdr *changelog_kuc_hdr(char *buf, int len, int flags,
-					 struct llog_changelog_rec *rec_debug)
+static struct kuc_hdr *changelog_kuc_hdr(char *buf, int len, int flags)
 {
         struct kuc_hdr *lh = (struct kuc_hdr *)buf;
 
-	LASSERTF(len <= CR_MAXSIZE,
-		 "CR_MAXSIZE=%d, len=%d, rec=%p, changelog_rec_size=%d",
-		 CR_MAXSIZE, len, rec_debug,
-		 rec_debug == NULL ? 0 : changelog_rec_size(&rec_debug->cr));
+        LASSERT(len <= CR_MAXSIZE);
 
         lh->kuc_magic = KUC_MAGIC;
         lh->kuc_transport = KUC_TRANSPORT_CHANGELOG;
@@ -1555,7 +1551,7 @@ static int changelog_kkuc_cb(const struct lu_env *env, struct llog_handle *llh,
 	len = sizeof(*lh) + changelog_rec_size(&rec->cr) + rec->cr.cr_namelen;
 
         /* Set up the message */
-        lh = changelog_kuc_hdr(cs->cs_buf, len, cs->cs_flags, rec);
+        lh = changelog_kuc_hdr(cs->cs_buf, len, cs->cs_flags);
         memcpy(lh + 1, &rec->cr, len - sizeof(*lh));
 
         rc = libcfs_kkuc_msg_put(cs->cs_fp, lh);
@@ -1607,7 +1603,7 @@ static int mdc_changelog_send_thread(void *csdata)
 
         /* Send EOF no matter what our result */
         if ((kuch = changelog_kuc_hdr(cs->cs_buf, sizeof(*kuch),
-                                      cs->cs_flags, NULL))) {
+                                      cs->cs_flags))) {
                 kuch->kuc_msgtype = CL_EOF;
                 libcfs_kkuc_msg_put(cs->cs_fp, kuch);
         }
