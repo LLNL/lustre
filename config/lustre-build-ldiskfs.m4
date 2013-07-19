@@ -146,6 +146,9 @@ AS_IF([test x$enable_ldiskfs != xno],[
 	AC_DEFINE(CONFIG_LDISKFS_FS_XATTR, 1, [extened attributes for ldiskfs])
 	AC_SUBST(LDISKFS_SUBDIR, ldiskfs)
 	AC_DEFINE(HAVE_LDISKFS_OSD, 1, Enable ldiskfs osd)
+],[
+	RPMBUILD_WITHOUT_LDISKFS="--without ldiskfs"
+	AC_SUBST([RPMBUILD_WITHOUT_LDISKFS])
 ])
 
 AC_MSG_CHECKING([whether to build ldiskfs])
