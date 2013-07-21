@@ -1466,10 +1466,11 @@ struct lustre_md {
 };
 
 struct md_open_data {
-        struct obd_client_handle *mod_och;
-        struct ptlrpc_request    *mod_open_req;
-        struct ptlrpc_request    *mod_close_req;
-        cfs_atomic_t              mod_refcount;
+	struct obd_client_handle	*mod_och;
+	struct ptlrpc_request		*mod_open_req;
+	struct ptlrpc_request		*mod_close_req;
+	cfs_atomic_t			 mod_refcount;
+	bool				 mod_is_create;
 };
 
 struct lookup_intent;
@@ -1536,9 +1537,9 @@ struct md_ops {
 
         int (*m_free_lustre_md)(struct obd_export *, struct lustre_md *);
 
-        int (*m_set_open_replay_data)(struct obd_export *,
-                                      struct obd_client_handle *,
-                                      struct ptlrpc_request *);
+	int (*m_set_open_replay_data)(struct obd_export *,
+				      struct obd_client_handle *,
+				      struct lookup_intent *);
         int (*m_clear_open_replay_data)(struct obd_export *,
                                         struct obd_client_handle *);
         int (*m_set_lock_data)(struct obd_export *, __u64 *, void *, __u64 *);

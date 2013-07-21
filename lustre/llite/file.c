@@ -456,7 +456,7 @@ static int ll_och_fill(struct obd_export *md_exp, struct ll_inode_info *lli,
         och->och_flags = it->it_flags;
         ll_ioepoch_open(lli, body->ioepoch);
 
-        return md_set_open_replay_data(md_exp, och, req);
+	return md_set_open_replay_data(md_exp, och, it);
 }
 
 int ll_local_open(struct file *file, struct lookup_intent *it,
