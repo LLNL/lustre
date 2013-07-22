@@ -1,7 +1,0 @@
-/linux-stage
-/linux
-/modules.order
-/*.c
-/*.h
-/sources
-/trace
