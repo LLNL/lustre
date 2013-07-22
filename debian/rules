@@ -368,7 +368,6 @@ kdist_config: prep-deb-files patch-stamp
 		    --disable-utils \
 		    --disable-liblustre \
 		    --disable-snmp \
-		    --enable-ldiskfs \
 		    --disable-zerocopy \
 		    --disable-tests \
 		    --enable-quota
