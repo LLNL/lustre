@@ -169,6 +169,7 @@ Requires: modutils >= 2.4.10
 Requires: ldiskfsprogs >= 1.42.7.wc1
 Provides: lustre-osd
 Obsoletes: lustre-ldiskfs
+Obsoletes: ldiskfs
 Group: Development/Kernel
 
 %description osd-ldiskfs
