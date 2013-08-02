@@ -44,29 +44,5 @@ int get_root_path(int want, char *fsname, int *outfd, char *path, int index);
 int root_ioctl(const char *mdtname, int opc, void *data, int *mdtidxp,
 	       int want_error);
 
-/* Helper functions for testing validity of stripe attributes. */
-
-static inline int llapi_stripe_size_validity(unsigned long long stripe_size)
-{
-	return (stripe_size < 0 || (stripe_size & (LOV_MIN_STRIPE_SIZE - 1)))
-		? EINVAL : 0;
-}
-
-static inline int llapi_stripe_size_excess(unsigned long long stripe_size)
-{
-	return (stripe_size >= (1ULL << 32)) ? EINVAL : 0;
-}
-
-static inline int llapi_stripe_count_validity(int stripe_count)
-{
-	return (stripe_count < -1 || stripe_count > LOV_MAX_STRIPE_COUNT)
-		? EINVAL : 0;
-}
-
-static inline int llapi_stripe_offset_validity(int stripe_offset)
-{
-	return (stripe_offset < -1 || stripe_offset > MAX_OBD_DEVICES)
-		? EINVAL : 0;
-}
 
 #endif /* _LUSTREAPI_INTERNAL_H_ */

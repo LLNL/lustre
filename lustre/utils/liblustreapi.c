@@ -241,14 +241,14 @@ int llapi_stripe_limit_check(unsigned long long stripe_size, int stripe_offset,
 				"larger than expected (%u)", page_size,
 				LOV_MIN_STRIPE_SIZE);
 	}
-	if (llapi_stripe_size_validity(stripe_size) != 0) {
+	if (stripe_size < 0 || (stripe_size & (LOV_MIN_STRIPE_SIZE - 1))) {
 		rc = -EINVAL;
 		llapi_error(LLAPI_MSG_ERROR, rc, "error: bad stripe_size %lu, "
 				"must be an even multiple of %d bytes",
 				stripe_size, page_size);
 		return rc;
 	}
-	if (llapi_stripe_offset_validity(stripe_offset) != 0) {
+	if (stripe_offset < -1 || stripe_offset > MAX_OBD_DEVICES) {
 		rc = -EINVAL;
 		llapi_error(LLAPI_MSG_ERROR, rc, "error: bad stripe offset %d",
 				stripe_offset);
@@ -260,7 +260,7 @@ int llapi_stripe_limit_check(unsigned long long stripe_size, int stripe_offset,
 				stripe_count);
 		return rc;
 	}
-	if (llapi_stripe_size_excess(stripe_size) != 0) {
+	if (stripe_size >= (1ULL << 32)) {
 		rc = -EINVAL;
 		llapi_error(LLAPI_MSG_ERROR, rc,
 				"warning: stripe size 4G or larger "
