@@ -3927,13 +3927,13 @@ int llapi_changelog_recv(void *priv, struct changelog_ext_rec **rech)
                 return -EINVAL;
         if (rech == NULL)
                 return -EINVAL;
-        kuch = malloc(CR_MAXSIZE + sizeof(*kuch));
+        kuch = malloc(KUC_MSG_MAXSIZE);
         if (kuch == NULL)
                 return -ENOMEM;
 
 repeat:
         rc = libcfs_ukuc_msg_get(&cp->kuc, (char *)kuch,
-                                 CR_MAXSIZE + sizeof(*kuch),
+                                 KUC_MSG_MAXSIZE,
                                  KUC_TRANSPORT_CHANGELOG);
         if (rc < 0)
                 goto out_free;
