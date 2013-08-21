@@ -1086,9 +1086,9 @@ static struct obd_ops mdd_obd_device_ops = {
 LU_KEY_INIT_FINI(mdd_capainfo, struct md_capainfo);
 
 struct lu_context_key mdd_capainfo_key = {
-        .lct_tags = LCT_SESSION,
-        .lct_init = mdd_capainfo_key_init,
-        .lct_fini = mdd_capainfo_key_fini
+	.lct_tags = LCT_SERVER_SESSION,
+	.lct_init = mdd_capainfo_key_init,
+	.lct_fini = mdd_capainfo_key_fini
 };
 
 struct md_capainfo *md_capainfo(const struct lu_env *env)
