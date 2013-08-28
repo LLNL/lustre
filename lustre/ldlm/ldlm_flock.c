@@ -100,15 +100,21 @@ ldlm_flocks_overlap(struct ldlm_lock *lock, struct ldlm_lock *new)
                 lock->l_policy_data.l_flock.start));
 }
 
-static inline void ldlm_flock_blocking_link(struct ldlm_lock *req,
+static inline int ldlm_flock_blocking_link(struct ldlm_lock *req,
 					   struct ldlm_lock *lock)
 {
+	int rc = 0;
 
         /* For server only */
         if (req->l_export == NULL)
-		return;
+		return 0;
 
-	LASSERT(req->l_export->exp_flock_hash != NULL);
+	if (unlikely(req->l_export->exp_flock_hash == NULL)) {
+		rc = ldlm_init_flock_export(req->l_export);
+		if (rc)
+			goto error;
+	}
+
 	LASSERT(cfs_hlist_unhashed(&req->l_exp_flock_hash));
 
         req->l_policy_data.l_flock.blocking_owner =
@@ -120,6 +126,8 @@ static inline void ldlm_flock_blocking_link(struct ldlm_lock *req,
 	cfs_hash_add(req->l_export->exp_flock_hash,
 		     &req->l_policy_data.l_flock.owner,
 		     &req->l_exp_flock_hash);
+error:
+	return rc;
 }
 
 static inline void ldlm_flock_blocking_unlink(struct ldlm_lock *req)
@@ -250,6 +258,7 @@ ldlm_process_flock_lock(struct ldlm_lock *req, __u64 *flags, int first_enq,
         int overlaps = 0;
         int splitted = 0;
         const struct ldlm_callback_suite null_cbs = { NULL };
+	int rc;
         ENTRY;
 
 	CDEBUG(D_DLMTRACE, "flags %#llx owner "LPU64" pid %u mode %u start "
@@ -328,7 +337,12 @@ reprocess:
 
 			/* add lock to blocking list before deadlock
 			 * check to prevent race */
-			ldlm_flock_blocking_link(req, lock);
+			rc = ldlm_flock_blocking_link(req, lock);
+			if (rc) {
+				ldlm_flock_destroy(req, mode, *flags);
+				*err = rc;
+				RETURN(LDLM_ITER_STOP);
+			}
 			if (ldlm_flock_deadlock(req, lock)) {
 				ldlm_flock_blocking_unlink(req);
 				ldlm_flock_destroy(req, mode, *flags);
