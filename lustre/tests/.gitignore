@@ -3,6 +3,8 @@
 /testreq
 /truncate
 /directio
+/openme
+/writeme
 /mcreate
 /munlink
 /mlink
@@ -42,7 +44,6 @@
 /write_append_truncate
 /ll_sparseness_verify
 /ll_sparseness_write
-/llapi_layout_test
 /mrename
 /cmknod
 /iopentest1
