@@ -75,6 +75,7 @@
 struct lu_context_key	osd_key;
 
 static char *root_tag = "osd_mount, rootdb";
+static int osd_txg_sync_delay_us = -1;
 
 /* Slab for OSD object allocation */
 struct kmem_cache *osd_object_kmem;
@@ -298,8 +299,13 @@ static int osd_trans_stop(const struct lu_env *env, struct thandle *th)
 
 	osd_unlinked_list_emptify(osd, &unlinked, true);
 
-	if (sync)
-		txg_wait_synced(dmu_objset_pool(osd->od_objset.os), txg);
+	if (sync) {
+		if (osd_txg_sync_delay_us < 0)
+			txg_wait_synced(dmu_objset_pool(osd->od_objset.os),
+					txg);
+		else
+			udelay(osd_txg_sync_delay_us);
+	}
 
 	RETURN(rc);
 }
@@ -1089,6 +1095,9 @@ extern unsigned int osd_oi_count;
 CFS_MODULE_PARM(osd_oi_count, "i", int, 0444,
 		"Number of Object Index containers to be created, "
 		"it's only valid for new filesystem.");
+
+CFS_MODULE_PARM(osd_txg_sync_delay_us, "i", int, 0644,
+		"When zero or greater delay N usec instead of doing txg sync");
 
 MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Object Storage Device ("LUSTRE_OSD_ZFS_NAME")");
