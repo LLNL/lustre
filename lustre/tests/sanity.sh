@@ -816,7 +816,7 @@ run_test 24c "rename directory to non-existent target"
 test_24d() {
 	test_mkdir $DIR/$tdir
 	test_mkdir $DIR/$tdir/d$testnum.1
-	test_mkdir $DIR/$tdir/d$ttestnum.2
+	test_mkdir $DIR/$tdir/d$testnum.2
 	mrename $DIR/$tdir/d$testnum.1 $DIR/$tdir/d$testnum.2
 	$CHECKSTAT -a $DIR/$tdir/d$testnum.1 || error "d$testnum.1 exists"
 	$CHECKSTAT -t dir $DIR/$tdir/d$testnum.2 || error "d$testnum.2 not dir"
@@ -1153,6 +1153,7 @@ run_test 24z "rename one remote dir to another remote dir should fail"
 test_24A() { # LU-3182
 	local NFILES=5000
 
+	rm -rf $DIR/$tdir
 	mkdir -p $DIR/$tdir
 	createmany -m $DIR/$tdir/$tfile $NFILES
 	local t=`ls $DIR/$tdir | wc -l`
@@ -1312,10 +1313,10 @@ test_27k() { # bug 2844
 	[ ! -d $DIR/d27 ] && test_mkdir -p $DIR d27
 	$SETSTRIPE -S 67108864 $FILE || error "setstripe failed"
 	BLKSIZE=`stat $FILE | awk '/IO Block:/ { print $7 }'`
-	[ $BLKSIZE -le $LL_MAX_BLKSIZE ] || error "$BLKSIZE > $LL_MAX_BLKSIZE"
+	[ $BLKSIZE -le $LL_MAX_BLKSIZE ] || error "1:$BLKSIZE > $LL_MAX_BLKSIZE"
 	dd if=/dev/zero of=$FILE bs=4k count=1
 	BLKSIZE=`stat $FILE | awk '/IO Block:/ { print $7 }'`
-	[ $BLKSIZE -le $LL_MAX_BLKSIZE ] || error "$BLKSIZE > $LL_MAX_BLKSIZE"
+	[ $BLKSIZE -le $LL_MAX_BLKSIZE ] || error "2:$BLKSIZE > $LL_MAX_BLKSIZE"
 }
 run_test 27k "limit i_blksize for broken user apps ============="
 
