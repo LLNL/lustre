@@ -3198,11 +3198,13 @@ static int __osd_ea_add_rec(struct osd_thread_info *info,
          * it is IGIF now but needs FID in dir entry as well for readdir
          * to work.
          * LU-838 should fix that and remove fid_is_igif() check */
-        if (fid_is_igif((struct lu_fid *)fid) ||
-            fid_is_norm((struct lu_fid *)fid)) {
-                ldp = (struct ldiskfs_dentry_param *)info->oti_ldp;
-                osd_get_ldiskfs_dirent_param(ldp, fid);
-                child->d_fsdata = (void *)ldp;
+	/* For root fid, it only needs to handle insert .. during rename */
+	if (fid_is_igif((struct lu_fid *)fid) ||
+	    fid_is_norm((struct lu_fid *)fid) ||
+	    (fid_is_root((struct lu_fid *)fid) && strcmp(name, dotdot) == 0)) {
+		ldp = (struct ldiskfs_dentry_param *)info->oti_ldp;
+		osd_get_ldiskfs_dirent_param(ldp, fid);
+		child->d_fsdata = (void *)ldp;
         } else {
                 child->d_fsdata = NULL;
         }

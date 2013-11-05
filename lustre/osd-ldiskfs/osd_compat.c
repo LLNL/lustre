@@ -675,6 +675,9 @@ int osd_obj_spec_lookup(struct osd_thread_info *info, struct osd_device *osd,
 			RETURN(PTR_ERR(osd_seq));
 		root = osd_seq->oos_root;
 		name = "LAST_ID";
+	} else if (fid_is_root(fid)) {
+		root = osd_sb(osd)->s_root;
+		name = "ROOT";
 	} else {
 		root = osd_sb(osd)->s_root;
 		name = oid2name(fid_oid(fid));

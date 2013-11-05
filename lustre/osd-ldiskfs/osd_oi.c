@@ -516,7 +516,7 @@ int osd_oi_lookup(struct osd_thread_info *info, struct osd_device *osd,
 		if (unlikely(fid_is_acct(fid)))
 			return osd_acct_obj_lookup(info, osd, fid, id);
 		else if (unlikely(fid_seq(fid) == FID_SEQ_LOCAL_FILE) ||
-			 fid_is_last_id(fid))
+			 fid_is_last_id(fid) || fid_is_root(fid))
 			return osd_obj_spec_lookup(info, osd, fid, id);
 
 		rc = __osd_oi_lookup(info, osd, fid, id);
