@@ -118,6 +118,8 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 	else if (rc)
 		RETURN(rc);
 
+	CDEBUG(D_QUOTA, "%s: id:%s, ispace:"LPU64", bspace:"LPU64"\n",
+	       osd->od_svname, buf, rec->ispace, rec->bspace);
 	RETURN(+1);
 }
 
