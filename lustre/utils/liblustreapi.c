@@ -1799,6 +1799,117 @@ int llapi_lov_get_uuids(int fd, struct obd_uuid *uuidp, int *ost_count)
         return llapi_get_target_uuids(fd, uuidp, ost_count, LOV_TYPE);
 }
 
+/*
+ * Given a path, determines the Lustre filesystem name by examining
+ * entries in the mounted filesystem table. On success, stores up to
+ * \a n bytes of the filesystem name in \a fsname and returns 0.  On
+ * failure, the contents of \a fsname are undefined and -1 is returned.
+ */
+static int llapi_fsname_from_path(const char *path, char *fsname, size_t n)
+{
+	char resolved[PATH_MAX];
+	struct mntent *mnt;
+	FILE *fp;
+	char *p;
+	int rc = -1;
+
+	if (realpath(path, resolved) == NULL)
+		return -1;
+
+	fp = setmntent(MOUNTED, "r");
+	if (fp == NULL)
+		return -1;
+
+	while ((mnt = getmntent(fp)) != NULL) {
+		if (!llapi_is_lustre_mnt(mnt))
+			continue;
+		p = strstr(resolved, mnt->mnt_dir);
+		if (p != resolved)
+			continue;
+
+		/* The mount point is a prefix of path. The Lustre fsname is
+		 * the string following '/' in the mount fsname. */
+		p = strrchr(mnt->mnt_fsname, '/');
+		if (p == NULL)
+			break;
+		p = p + 1;
+		strncpy(fsname, p, n);
+		rc = 0;
+		break;
+	}
+	endmntent(fp);
+	return rc;
+}
+
+/*
+ * Given a Lustre filesystem name, determines the path to the LMV
+ * target_obd file in /proc.  This is a helper function for use in
+ * determining the number of OSTs in a Lustre fileysstem.  On success,
+ * stores up to \a n bytes of the target_obd path in \a target_obd and
+ * returns 0.  On failure, the contents of \a target_obd are undefined
+ * and -1 is returned.
+ */
+static int llapi_target_obd_from_fsname(const char *fsname, char *target_obd,
+				       size_t n)
+{
+	char clilov[PATH_MAX];
+	const char *lovdir = "/proc/fs/lustre/lov";
+	char *p;
+	DIR *dir;
+	struct dirent *dp;
+	int rc = -1;
+
+	dir = opendir(lovdir);
+	if (dir == NULL)
+		return rc;
+
+	snprintf(clilov, sizeof(clilov), "%s-clilov-", fsname);
+	while ((dp = readdir(dir)) != NULL) {
+		p = strstr(dp->d_name, clilov);
+		if (p == dp->d_name)
+			break;
+	}
+
+	if (dp == NULL)
+		return -1;
+
+	snprintf(target_obd, n, "/proc/fs/lustre/lov/%s/target_obd",
+		 dp->d_name);
+	return 0;
+}
+
+static int llapi_get_ost_count_from_proc(const char *path, int *count)
+{
+	int rc;
+	char fsname[PATH_MAX];
+	char target_obd[PATH_MAX];
+	char *line;
+	FILE *fp;
+	size_t n = LINE_MAX;
+
+	rc = llapi_fsname_from_path(path, fsname, sizeof(fsname));
+	if (rc < 0)
+		return rc;
+
+	rc = llapi_target_obd_from_fsname(fsname, target_obd,
+					  sizeof(target_obd));
+	if (rc < 0)
+		return rc;
+
+	fp = fopen(target_obd, "r");
+	if (fp == NULL)
+		return -1;
+
+	*count = 0;
+	line = malloc(n);
+	while (getline(&line, &n, fp) >= 0)
+		(*count)++;
+	free(line);
+
+	fclose(fp);
+	return 0;
+}
+
 int llapi_get_obd_count(char *mnt, int *count, int is_mdt)
 {
         DIR *root;
@@ -1815,8 +1926,11 @@ int llapi_get_obd_count(char *mnt, int *count, int is_mdt)
         rc = ioctl(dirfd(root), LL_IOC_GETOBDCOUNT, count);
         if (rc < 0)
                 rc = -errno;
-
         closedir(root);
+
+	if (rc == -EINVAL && is_mdt == 0)
+		rc = llapi_get_ost_count_from_proc(mnt, count);
+
         return rc;
 }
 
