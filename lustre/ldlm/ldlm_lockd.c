@@ -1480,13 +1480,19 @@ existing_lock:
 					 req, lock);
 				buflen = req_capsule_get_size(&req->rq_pill,
 						&RMF_DLM_LVB, RCL_SERVER);
-				buflen = ldlm_lvbo_fill(lock, buf, buflen);
-				if (buflen >= 0)
-					req_capsule_shrink(&req->rq_pill,
-							   &RMF_DLM_LVB,
-							   buflen, RCL_SERVER);
-				else
+				if (buflen > 0) {
+					buflen = ldlm_lvbo_fill(lock, buf,
+								buflen);
+					if (buflen >= 0)
+						req_capsule_shrink(
+							&req->rq_pill,
+							&RMF_DLM_LVB,
+							buflen, RCL_SERVER);
+					else
+						rc = buflen;
+				} else {
 					rc = buflen;
+				}
 			}
                 } else {
                         lock_res_and_lock(lock);
