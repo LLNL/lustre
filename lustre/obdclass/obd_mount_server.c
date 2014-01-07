@@ -1219,7 +1219,6 @@ static int server_start_targets(struct super_block *sb)
 						 0, 0, 0, 0);
 			if (rc) {
 				mutex_unlock(&server_start_lock);
-				CERROR("failed to start OSS: %d\n", rc);
 				RETURN(rc);
 			}
 		}
@@ -1685,8 +1684,8 @@ int server_fill_super(struct super_block *sb)
 	/* Start low level OSD */
 	rc = osd_start(lsi, sb->s_flags);
 	if (rc) {
-		CERROR("Unable to start osd on %s: %d\n",
-		       lsi->lsi_lmd->lmd_dev, rc);
+		LCONSOLE_WARN("%s: Unable to start osd: %d\n",
+			      lsi->lsi_svname, rc);
 		lustre_put_lsi(sb);
 		RETURN(rc);
 	}
@@ -1720,7 +1719,8 @@ int server_fill_super(struct super_block *sb)
 	    (IS_OST(lsi) || IS_MDT(lsi))) {
 		rc = server_start_targets(sb);
 		if (rc < 0) {
-			CERROR("Unable to start targets: %d\n", rc);
+			LCONSOLE_WARN("%s: Unable to start target: %d\n",
+				      lsi->lsi_svname, rc);
 			GOTO(out_mnt, rc);
 		}
 		/* FIXME overmount client here, or can we just start a

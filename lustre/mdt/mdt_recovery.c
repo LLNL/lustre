@@ -213,7 +213,7 @@ static int mdt_server_data_init(const struct lu_env *env,
 	last_rcvd_size = (unsigned long)la->la_size;
 
 	if (last_rcvd_size == 0) {
-		LCONSOLE_WARN("%s: new disk, initializing\n",
+		LCONSOLE_WARN("%s: Initializing new disk\n",
 			      mdt_obd_name(mdt));
 
 		memcpy(lsd->lsd_uuid, obd->obd_uuid.uuid,
@@ -230,7 +230,6 @@ static int mdt_server_data_init(const struct lu_env *env,
 					    OBD_INCOMPAT_MULTI_OI;
 		lsd->lsd_osd_index = index;
 	} else {
-		LCONSOLE_WARN("%s: used disk, loading\n", mdt_obd_name(mdt));
 		rc = tgt_server_data_read(env, &mdt->mdt_lut);
 		if (rc) {
 			CERROR("error reading MDS %s: rc %d\n", LAST_RCVD, rc);
