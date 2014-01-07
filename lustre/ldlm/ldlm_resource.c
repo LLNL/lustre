@@ -825,7 +825,7 @@ static int ldlm_resource_complain(cfs_hash_t *hs, cfs_hash_bd_t *bd,
 	       ldlm_ns_name(ldlm_res_to_ns(res)), PLDLMRES(res), res,
 	       cfs_atomic_read(&res->lr_refcount) - 1);
 
-	ldlm_resource_dump(D_ERROR, res);
+	ldlm_resource_dump(D_DLMTRACE, res);
 	unlock_res(res);
 	return 0;
 }
