@@ -382,6 +382,10 @@ ofd_write_attr_set(const struct lu_env *env, struct ofd_device *ofd,
 
 	/* set uid/gid */
 	if (la->la_valid) {
+		/* XXX debug for LU-4345 */
+		if ((la->la_valid & LA_UID) && (la->la_uid > 70000))
+			CERROR("LU-4345 set uid: %u\n", la->la_uid);
+
 		rc = dt_attr_set(env, dt_obj, la, th,
 				 ofd_object_capa(env, ofd_obj));
 		if (rc)
@@ -474,6 +478,10 @@ retry:
 		GOTO(out_stop, rc);
 
 	if (la->la_valid) {
+		/* XXX debug for LU-4345 */
+		if ((la->la_valid & LA_UID) && (la->la_uid > 70000))
+			CERROR("LU-4345 set uid: %u\n", la->la_uid);
+
 		rc = dt_attr_set(env, o, la, th, ofd_object_capa(env, fo));
 		if (rc)
 			GOTO(out_stop, rc);

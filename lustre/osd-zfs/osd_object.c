@@ -963,13 +963,14 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 		rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
 					la->la_uid, 1, oh->ot_tx);
 		if (rc)
-			CERROR("%s: failed to update accounting ZAP for user "
-				"%d (%d)\n", osd->od_svname, la->la_uid, rc);
+			CERROR("%s: failed to update accounting ZAP for new "
+			       "user %d (%d)\n", osd->od_svname, la->la_uid,
+			       rc);
 		rc = -zap_increment_int(osd->od_objset.os, osd->od_iusr_oid,
 					obj->oo_attr.la_uid, -1, oh->ot_tx);
 		if (rc)
-			CERROR("%s: failed to update accounting ZAP for user "
-				"%d (%d)\n", osd->od_svname,
+			CERROR("%s: failed to update accounting ZAP for "
+			       "original user %d (%d)\n", osd->od_svname,
 				obj->oo_attr.la_uid, rc);
 	}
 	if ((la->la_valid & LA_GID) && (la->la_gid != obj->oo_attr.la_gid)) {
@@ -978,13 +979,14 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 		rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
 					la->la_gid, 1, oh->ot_tx);
 		if (rc)
-			CERROR("%s: failed to update accounting ZAP for user "
-				"%d (%d)\n", osd->od_svname, la->la_gid, rc);
+			CERROR("%s: failed to update accounting ZAP for new "
+			       "group %d (%d)\n", osd->od_svname, la->la_gid,
+			       rc);
 		rc = -zap_increment_int(osd->od_objset.os, osd->od_igrp_oid,
 					obj->oo_attr.la_gid, -1, oh->ot_tx);
 		if (rc)
-			CERROR("%s: failed to update accounting ZAP for user "
-				"%d (%d)\n", osd->od_svname,
+			CERROR("%s: failed to update accounting ZAP for "
+			       "original group %d (%d)\n", osd->od_svname,
 				obj->oo_attr.la_gid, rc);
 	}
 

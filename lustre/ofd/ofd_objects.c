@@ -413,6 +413,10 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
 	if (rc)
 		GOTO(stop, rc);
 
+	/* XXX debug for LU-4345 */
+	if ((la->la_valid & LA_UID) && (la->la_uid > 70000))
+		CERROR("LU-4345 set uid: %u\n", la->la_uid);
+
 	rc = dt_attr_set(env, ofd_object_child(fo), la, th,
 			 ofd_object_capa(env, fo));
 	if (rc)
@@ -502,6 +506,10 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
 		      ofd_object_capa(env, fo));
 	if (rc)
 		GOTO(stop, rc);
+
+	/* XXX debug for LU-4345 */
+	if ((la->la_valid & LA_UID) && (la->la_uid > 7000))
+		CERROR("set uid: %u\n", la->la_uid);
 
 	rc = dt_attr_set(env, dob, la, th, ofd_object_capa(env, fo));
 	if (rc)
