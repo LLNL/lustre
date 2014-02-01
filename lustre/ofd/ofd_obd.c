@@ -882,6 +882,12 @@ int ofd_setattr(const struct lu_env *env, struct obd_export *exp,
 		ofd_prepare_fidea(ff, oa);
 	}
 
+	/* XXX debug for LU-4345 */
+	if ((info->fti_attr.la_valid & LA_UID) &&
+	    (info->fti_attr.la_uid > 7000)) {
+		CERROR("set uid: %u\n", info->fti_attr.la_uid);
+	}
+
 	/* setting objects attributes (including owner/group) */
 	rc = ofd_attr_set(env, fo, &info->fti_attr, ff);
 	if (rc)
