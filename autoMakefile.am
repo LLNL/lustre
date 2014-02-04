@@ -20,7 +20,7 @@ EXTRA_DIST += debian/*
 endif
 
 if LDISKFS_ENABLED
-if !LDISKFS_IN_KERNEL
+if LDISKFS_DEVEL
 
 EXTRA_DIST += @SYMVERFILE@
 
@@ -39,6 +39,13 @@ EXTRA_DIST += @SYMVERFILE@
 		"*** - @LDISKFS_OBJ@/ldiskfs/@SYMVERFILE@\n"; \
 		exit 1; \
 	fi
+else
+if !LDISKFS_IN_KERNEL
+@SYMVERFILE@: @LDISKFS_DIR@/@SYMVERFILE@
+	touch @SYMVERFILE@
+	-grep -v ldiskfs @SYMVERFILE@ > @SYMVERFILE@.old
+	cat @SYMVERFILE@.old @LDISKFS_DIR@/@SYMVERFILE@ > @SYMVERFILE@
+endif
 endif
 endif
 
