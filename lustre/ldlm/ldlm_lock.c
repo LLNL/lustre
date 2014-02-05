@@ -2528,7 +2528,7 @@ void _ldlm_lock_debug(struct ldlm_lock *lock,
                        " ns: %s lock: %p/"LPX64" lrc: %d/%d,%d mode: %s/%s "
                        "res: "LPU64"/"LPU64" bits "LPX64" rrc: %d type: %s "
                        "flags: "LPX64" nid: %s remote: "LPX64" expref: %d "
-                       "pid: %u timeout: %lu lvb_type: %d\n",
+                       "pid: %u timeout: %lu lvb_type: %d used %d\n",
                        ldlm_lock_to_ns_name(lock),
                        lock, lock->l_handle.h_cookie,
                        cfs_atomic_read (&lock->l_refc),
@@ -2542,7 +2542,8 @@ void _ldlm_lock_debug(struct ldlm_lock *lock,
                        ldlm_typename[resource->lr_type],
                        lock->l_flags, nid, lock->l_remote_handle.cookie,
                        exp ? cfs_atomic_read(&exp->exp_refcount) : -99,
-                       lock->l_pid, lock->l_callback_timeout, lock->l_lvb_type);
+                       lock->l_pid, lock->l_callback_timeout, lock->l_lvb_type,
+                       (int)lock->l_last_used);
                 break;
 
         default:
