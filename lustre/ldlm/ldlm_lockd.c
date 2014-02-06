@@ -302,15 +302,25 @@ static void waiting_locks_callback(unsigned long unused)
 {
 	struct ldlm_lock	*lock;
 	int			need_dump = 0;
+	int			processed = 0;
 
 	spin_lock_bh(&waiting_locks_spinlock);
         while (!cfs_list_empty(&waiting_locks_list)) {
+		processed++;
                 lock = cfs_list_entry(waiting_locks_list.next, struct ldlm_lock,
                                       l_pending_chain);
                 if (cfs_time_after(lock->l_callback_timeout,
-                                   cfs_time_current()) ||
-                    (lock->l_req_mode == LCK_GROUP))
-                        break;
+				   cfs_time_current())) {
+			int timeout = cfs_duration_sec(cfs_time_sub(lock->l_callback_timeout,
+						       cfs_time_current()));
+			if ((processed == 1) && (timeout > 65))
+					LDLM_ERROR(lock, "Long-waiting lock %d sec\n",
+						   timeout);
+
+			/* Should we move this towards the end of the list
+			 * instead? */
+			break;
+		}
 
                 if (ptlrpc_check_suspend()) {
                         /* there is a case when we talk to one mds, holding
@@ -361,7 +371,7 @@ static void waiting_locks_callback(unsigned long unused)
 
                 /* Check if we need to prolong timeout */
                 if (!OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_HPREQ_TIMEOUT) &&
-                    ldlm_lock_busy(lock)) {
+		    (ldlm_lock_busy(lock) || (lock->l_req_mode == LCK_GROUP))) {
                         int cont = 1;
 
                         if (lock->l_pending_chain.next == &waiting_locks_list)
@@ -371,6 +381,7 @@ static void waiting_locks_callback(unsigned long unused)
 
 			spin_unlock_bh(&waiting_locks_spinlock);
 			LDLM_DEBUG(lock, "prolong the busy lock");
+			lock->l_last_used++;
 			ldlm_refresh_waiting_lock(lock,
 						  ldlm_get_enq_timeout(lock));
 			spin_lock_bh(&waiting_locks_spinlock);
@@ -444,6 +455,10 @@ static int __ldlm_add_waiting_lock(struct ldlm_lock *lock, int seconds)
             OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_HPREQ_TIMEOUT))
                 seconds = 1;
 
+	if (seconds > at_max)
+		LDLM_ERROR(lock, "requested timeout %d, more than at_max %d\n",
+			   seconds, at_max);
+
         timeout = cfs_time_shift(seconds);
         if (likely(cfs_time_after(timeout, lock->l_callback_timeout)))
                 lock->l_callback_timeout = timeout;
@@ -457,6 +472,17 @@ static int __ldlm_add_waiting_lock(struct ldlm_lock *lock, int seconds)
         }
         /* if the new lock has a shorter timeout than something earlier on
            the list, we'll wait the longer amount of time; no big deal. */
+	/* Or is it? */
+	if (!list_empty(&waiting_locks_list)) {
+		struct ldlm_lock *tmp = cfs_list_entry(waiting_locks_list.next,
+						       struct ldlm_lock,
+						       l_pending_chain);
+		int t = cfs_duration_sec(cfs_time_sub(tmp->l_callback_timeout,
+				     cfs_time_current()));
+		if (t > at_max + 65 /* Safety margin */ )
+			LDLM_ERROR(tmp, "Adding a lock, but the front position "
+				    "is scheduled in %d seconds\n", t);
+	}
         /* FIFO */
         cfs_list_add_tail(&lock->l_pending_chain, &waiting_locks_list);
         return 1;
@@ -910,6 +936,8 @@ int ldlm_server_blocking_ast(struct ldlm_lock *lock,
         if (AT_OFF)
                 req->rq_timeout = ldlm_get_rq_timeout();
 
+	lock->l_last_activity = cfs_time_current_sec();
+
         if (lock->l_export && lock->l_export->exp_nid_stats &&
             lock->l_export->exp_nid_stats->nid_ldlm_stats)
                 lprocfs_counter_incr(lock->l_export->exp_nid_stats->nid_ldlm_stats,
@@ -1001,6 +1029,8 @@ int ldlm_server_completion_ast(struct ldlm_lock *lock, __u64 flags, void *data)
 
         LDLM_DEBUG(lock, "server preparing completion AST (after %lds wait)",
                    total_enqueue_wait);
+
+	lock->l_last_activity = cfs_time_current_sec();
 
         /* Server-side enqueue wait time estimate, used in
             __ldlm_add_waiting_lock to set future enqueue timers */
@@ -1117,6 +1147,8 @@ int ldlm_server_glimpse_ast(struct ldlm_lock *lock, void *data)
         /* ptlrpc_request_alloc_pack already set timeout */
         if (AT_OFF)
                 req->rq_timeout = ldlm_get_rq_timeout();
+
+	lock->l_last_activity = cfs_time_current_sec();
 
 	req->rq_interpret_reply = ldlm_cb_interpret;
 
