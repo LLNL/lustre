@@ -142,7 +142,6 @@ struct mdt_device {
         /* these values should be updated from lov if necessary.
          * or should be placed somewhere else. */
         int                        mdt_max_mdsize;
-        int                        mdt_max_cookiesize;
 
         struct upcall_cache        *mdt_identity_cache;
 
