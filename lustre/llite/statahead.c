@@ -987,8 +987,8 @@ static int ll_agl_thread(void *arg)
                 cfs_daemonize(pname);
         }
 
-        CDEBUG(D_READA, "agl thread started: [pid %d] [parent %.*s]\n",
-               cfs_curproc_pid(), parent->d_name.len, parent->d_name.name);
+        CDEBUG(D_READA, "agl thread started: sai %p, parent %.*s\n",
+               sai, parent->d_name.len, parent->d_name.name);
 
         atomic_inc(&sbi->ll_agl_total);
 	spin_lock(&plli->lli_agl_lock);
@@ -1033,8 +1033,8 @@ static int ll_agl_thread(void *arg)
 	spin_unlock(&plli->lli_agl_lock);
 	cfs_waitq_signal(&thread->t_ctl_waitq);
 	ll_sai_put(sai);
-	CDEBUG(D_READA, "agl thread stopped: [pid %d] [parent %.*s]\n",
-	       cfs_curproc_pid(), parent->d_name.len, parent->d_name.name);
+	CDEBUG(D_READA, "agl thread stopped: sai %p, parent %.*s\n",
+	       sai, parent->d_name.len, parent->d_name.name);
 	RETURN(0);
 }
 
@@ -1045,8 +1045,8 @@ static void ll_start_agl(struct dentry *parent, struct ll_statahead_info *sai)
         int                   rc;
         ENTRY;
 
-        CDEBUG(D_READA, "start agl thread: [pid %d] [parent %.*s]\n",
-               cfs_curproc_pid(), parent->d_name.len, parent->d_name.name);
+        CDEBUG(D_READA, "start agl thread: sai %p, parent %.*s\n",
+               sai, parent->d_name.len, parent->d_name.name);
 
         rc = cfs_create_thread(ll_agl_thread, parent, 0);
         if (rc < 0) {
@@ -1085,8 +1085,9 @@ static int ll_statahead_thread(void *arg)
                 cfs_daemonize(pname);
         }
 
-        CDEBUG(D_READA, "statahead thread started: [pid %d] [parent %.*s]\n",
-               cfs_curproc_pid(), parent->d_name.len, parent->d_name.name);
+        CDEBUG(D_READA, "statahead thread started: inode %p, sai %p, parent %.*s\n",
+	       &plli->lli_vfs_inode, sai,
+	       parent->d_name.len, parent->d_name.name);
 
         if (sbi->ll_flags & LL_SBI_AGL_ENABLED)
                 ll_start_agl(parent, sai);
@@ -1275,8 +1276,8 @@ out:
 		spin_unlock(&plli->lli_agl_lock);
                 cfs_waitq_signal(&agl_thread->t_ctl_waitq);
 
-                CDEBUG(D_READA, "stop agl thread: [pid %d]\n",
-                       cfs_curproc_pid());
+                CDEBUG(D_READA, "stop agl thread: sai %p pid %u\n",
+		       sai, agl_thread->t_pid);
                 l_wait_event(agl_thread->t_ctl_waitq,
                              thread_is_stopped(agl_thread),
                              &lwi);
@@ -1302,8 +1303,8 @@ out:
         cfs_waitq_signal(&thread->t_ctl_waitq);
         ll_sai_put(sai);
         dput(parent);
-        CDEBUG(D_READA, "statahead thread stopped: [pid %d] [parent %.*s]\n",
-               cfs_curproc_pid(), parent->d_name.len, parent->d_name.name);
+        CDEBUG(D_READA, "statahead thread stopped: [parent %.*s]\n",
+               parent->d_name.len, parent->d_name.name);
         return rc;
 }
 
@@ -1334,8 +1335,8 @@ void ll_stop_statahead(struct inode *dir, void *key)
 			spin_unlock(&lli->lli_sa_lock);
 			cfs_waitq_signal(&thread->t_ctl_waitq);
 
-			CDEBUG(D_READA, "stop statahead thread: [pid %d]\n",
-			       cfs_curproc_pid());
+			CDEBUG(D_READA, "stop statahead thread: inode %p, sai %p pid %u\n",
+			       &lli->lli_vfs_inode, lli->lli_sai, thread->t_pid);
 			l_wait_event(thread->t_ctl_waitq,
 				     thread_is_stopped(thread),
 				     &lwi);
@@ -1512,10 +1513,10 @@ ll_sai_unplug(struct ll_statahead_info *sai, struct ll_sa_entry *entry)
                         CDEBUG(D_READA, "Statahead for dir "DFID" hit "
                                "ratio too low: hit/miss "LPU64"/"LPU64
                                ", sent/replied "LPU64"/"LPU64", stopping "
-                               "statahead thread: pid %d\n",
+                               "statahead thread\n",
                                PFID(&lli->lli_fid), sai->sai_hit,
                                sai->sai_miss, sai->sai_sent,
-                               sai->sai_replied, cfs_curproc_pid());
+                               sai->sai_replied);
 			spin_lock(&lli->lli_sa_lock);
 			if (!thread_is_stopped(thread))
 				thread_set_flags(thread, SVC_STOPPING);
@@ -1689,8 +1690,10 @@ int do_statahead_enter(struct inode *dir, struct dentry **dentryp,
                 GOTO(out, rc = -EAGAIN);
         }
 
-        CDEBUG(D_READA, "start statahead thread: [pid %d] [parent %.*s]\n",
-               cfs_curproc_pid(), parent->d_name.len, parent->d_name.name);
+        CDEBUG(D_READA, "start statahead thread: inode %p, sai %p, name %.*s, parent %.*s\n",
+	       &lli->lli_vfs_inode, sai,
+	       (*dentryp)->d_name.len, (*dentryp)->d_name.name,
+               parent->d_name.len, parent->d_name.name);
 
         lli->lli_sai = sai;
         rc = cfs_create_thread(ll_statahead_thread, parent, 0);
