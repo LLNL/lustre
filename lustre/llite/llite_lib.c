@@ -773,6 +773,11 @@ void ll_kill_super(struct super_block *sb)
         if (!(sb->s_flags & MS_ACTIVE))
                 return;
 
+	LCONSOLE_WARN("Umount %s : kill_super %p\n", get_profile_name(sb), sb);
+
+	/* show where the umount begins */
+	dump_stack();
+
         sbi = ll_s2sbi(sb);
         /* we need restore s_dev from changed for clustred NFS before put_super
          * because new kernels have cached s_dev and change sb->s_dev in
@@ -1138,7 +1143,9 @@ void ll_put_super(struct super_block *sb)
 	int ccc_count, next, force = 1, rc = 0;
         ENTRY;
 
-        CDEBUG(D_VFSTRACE, "VFS Op: sb %p - %s\n", sb, profilenm);
+	LCONSOLE_WARN("Umount %s : put_super %p\n", profilenm, sb);
+
+	dump_stack();
 
         ll_print_capa_stat(sbi);
 
@@ -2118,8 +2125,10 @@ void ll_umount_begin(struct super_block *sb)
         }
 #endif
 
-        CDEBUG(D_VFSTRACE, "VFS Op: superblock %p count %d active %d\n", sb,
+        LCONSOLE_WARN("VFS Op: superblock %p count %d active %d\n", sb,
                sb->s_count, atomic_read(&sb->s_active));
+
+	dump_stack();
 
         obd = class_exp2obd(sbi->ll_md_exp);
         if (obd == NULL) {
