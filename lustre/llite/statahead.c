@@ -1705,6 +1705,7 @@ int do_statahead_enter(struct inode *dir, struct dentry **dentryp,
 	       (*dentryp)->d_name.len, (*dentryp)->d_name.name,
                parent->d_name.len, parent->d_name.name);
 
+        ll_sai_get(sai);
         lli->lli_sai = sai;
         rc = cfs_create_thread(ll_statahead_thread, parent, 0);
         thread = &sai->sai_thread;
@@ -1714,7 +1715,11 @@ int do_statahead_enter(struct inode *dir, struct dentry **dentryp,
                 lli->lli_opendir_key = NULL;
                 thread_set_flags(thread, SVC_STOPPED);
                 thread_set_flags(&sai->sai_agl_thread, SVC_STOPPED);
+		/* Drop both our own local reference and also the default
+		 * reference that would have been inherited by the
+		 * statahead that failed to start correctly. */
                 ll_sai_put(sai);
+ 		ll_sai_put(sai);
                 LASSERT(lli->lli_sai == NULL);
                 RETURN(-EAGAIN);
         }
@@ -1722,6 +1727,7 @@ int do_statahead_enter(struct inode *dir, struct dentry **dentryp,
         l_wait_event(thread->t_ctl_waitq,
                      thread_is_running(thread) || thread_is_stopped(thread),
                      &lwi);
+	ll_sai_put(sai);
 
         /*
          * We don't stat-ahead for the first dirent since we are already in
