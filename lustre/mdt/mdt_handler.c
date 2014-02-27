@@ -722,13 +722,15 @@ static int mdt_getattr_internal(struct mdt_thread_info *info,
 		GOTO(out, rc = 0);
 	}
 
-	buffer->lb_len = reqbody->eadatasize;
-	if (buffer->lb_len > 0) {
+	if (reqbody->eadatasize > 0) {
 		buffer->lb_buf = req_capsule_server_get(pill, &RMF_MDT_MD);
 		if (buffer->lb_buf == NULL)
 			GOTO(out, rc = -EPROTO);
+		buffer->lb_len = req_capsule_get_size(pill, &RMF_MDT_MD,
+						      RCL_SERVER);
 	} else {
 		buffer->lb_buf = NULL;
+		buffer->lb_len = 0;
 		ma_need &= ~(MA_LOV | MA_LMV);
 		CDEBUG(D_INFO, "%s: RPC from %s: does not need LOVEA.\n",
 		       mdt_obd_name(info->mti_mdt),
@@ -1004,11 +1006,9 @@ int mdt_getattr(struct mdt_thread_info *info)
 		   (reqbody->valid & OBD_MD_FLDIREA) &&
 		   (lustre_msg_get_opc(mdt_info_req(info)->rq_reqmsg) ==
 								 MDS_GETATTR)) {
-		/* While one might hope nobody would designate super wide
-		 * striping to be default one for entire fs, but you never
-		 * know */
-		rc = reqbody->eadatasize == 0 ? info->mti_mdt->mdt_max_mdsize :
-						reqbody->eadatasize;
+		/* Should the default strping be bigger, mdt_fix_reply
+		 * will reallocate */
+		rc = DEF_REP_MD_SIZE;
 	} else {
 		/* Hopefully no race in EA change for either file or directory?
 		 */
@@ -1795,7 +1795,7 @@ static int mdt_reint_internal(struct mdt_thread_info *info,
         /* for replay (no_create) lmm is not needed, client has it already */
         if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER))
                 req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER,
-                                     info->mti_rr.rr_eadatalen);
+				     DEF_REP_MD_SIZE);
 
 	/* llog cookies are always 0, the field is kept for compatibility */
         if (req_capsule_has_field(pill, &RMF_LOGCOOKIES, RCL_SERVER))
@@ -2950,7 +2950,7 @@ static int mdt_unpack_req_pack_rep(struct mdt_thread_info *info, __u32 flags)
                 /* Pack reply. */
                 if (req_capsule_has_field(pill, &RMF_MDT_MD, RCL_SERVER))
                         req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER,
-                                             info->mti_body->eadatasize);
+					     DEF_REP_MD_SIZE);
                 if (req_capsule_has_field(pill, &RMF_LOGCOOKIES, RCL_SERVER))
 			req_capsule_set_size(pill, &RMF_LOGCOOKIES,
 					     RCL_SERVER, 0);
