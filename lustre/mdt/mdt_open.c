@@ -1332,9 +1332,19 @@ int mdt_open_by_fid_lock(struct mdt_thread_info *info, struct ldlm_reply *rep,
         if (rc)
                 GOTO(out, rc);
 
-	rc = mdt_object_open_lock(info, o, lhc, &ibits);
-        if (rc)
-                GOTO(out, rc);
+	/* Check if this is a resend and we have the lock already from
+	 * previous request processing. */
+        if (lustre_handle_is_used(&lhc->mlh_reg_lh)) {
+                LASSERT(lustre_msg_get_flags(mdt_info_req(info)->rq_reqmsg) &
+			MSG_RESENT);
+
+                if (info->mti_spec.sp_cr_flags & MDS_OPEN_LOCK)
+                        mdt_set_disposition(info, rep, DISP_OPEN_LOCK);
+        } else {
+		rc = mdt_object_open_lock(info, o, lhc, &ibits);
+		if (rc)
+			GOTO(out, rc);
+	}
 
         if (ma->ma_valid & MA_PFID) {
                 parent = mdt_object_find(env, mdt, &ma->ma_pfid);
@@ -1705,10 +1715,11 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 		}
         }
 
+	/* Check if this is a resend and we have the lock already from
+	 * previous request processing. */
 	if (lustre_handle_is_used(&lhc->mlh_reg_lh)) {
-		/* the open lock might already be gotten in
-		 * mdt_intent_fixup_resent */
 		LASSERT(lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT);
+
 		if (create_flags & MDS_OPEN_LOCK)
 			mdt_set_disposition(info, ldlm_rep, DISP_OPEN_LOCK);
 	} else {
