@@ -1710,6 +1710,10 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 		/* the open lock might already be gotten in
 		 * mdt_intent_fixup_resent */
 		LASSERT(lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT);
+
+		/* take again a ref on old lock found to be resent */
+		ldlm_lock_addref(&lhc->mlh_reg_lh, lhc->mlh_reg_mode);
+
 		if (create_flags & MDS_OPEN_LOCK)
 			mdt_set_disposition(info, ldlm_rep, DISP_OPEN_LOCK);
 	} else {
