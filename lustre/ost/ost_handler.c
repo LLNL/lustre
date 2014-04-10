@@ -1934,45 +1934,51 @@ static void ost_prolong_lock_one(struct ost_prolong_data *opd,
 
 static void ost_prolong_locks(struct ost_prolong_data *data)
 {
-        struct obd_export *exp = data->opd_exp;
-        struct obdo       *oa  = data->opd_oa;
-        struct ldlm_lock  *lock;
-        ENTRY;
+	struct obd_export *exp = data->opd_exp;
+	struct obdo       *oa  = data->opd_oa;
+	struct ldlm_lock  *lock;
+	ENTRY;
 
-        if (oa->o_valid & OBD_MD_FLHANDLE) {
-                /* mostly a request should be covered by only one lock, try
-                 * fast path. */
-                lock = ldlm_handle2lock(&oa->o_handle);
-                if (lock != NULL) {
-                        /* Fast path to check if the lock covers the whole IO
-                         * region exclusively. */
-                        if (lock->l_granted_mode == LCK_PW &&
-                            ldlm_extent_contain(&lock->l_policy_data.l_extent,
-                                                &data->opd_extent)) {
-                                /* bingo */
-                                ost_prolong_lock_one(data, lock);
-                                LDLM_LOCK_PUT(lock);
-                                RETURN_EXIT;
-                        }
-                        LDLM_LOCK_PUT(lock);
-                }
-        }
+	if (oa->o_valid & OBD_MD_FLHANDLE) {
+		/* mostly a request should be covered by only one lock, try
+		 * fast path. */
+		lock = ldlm_handle2lock(&oa->o_handle);
+		if (lock != NULL) {
+			/* Fast path to check if the lock covers the whole IO
+			 * region exclusively. */
+			if (lock->l_export != data->opd_exp) {
+				LDLM_ERROR(lock,
+					   "LU-2232: lock export %p != req export "
+					   "%p, this lock is obsolete!\n",
+					   lock->l_export, data->opd_exp);
+			}
+			if (lock->l_granted_mode == LCK_PW &&
+			    ldlm_extent_contain(&lock->l_policy_data.l_extent,
+						&data->opd_extent)) {
+				/* bingo */
+				ost_prolong_lock_one(data, lock);
+				LDLM_LOCK_PUT(lock);
+				RETURN_EXIT;
+			}
+			LDLM_LOCK_PUT(lock);
+		}
+	}
 
 
 	spin_lock_bh(&exp->exp_bl_list_lock);
-        cfs_list_for_each_entry(lock, &exp->exp_bl_list, l_exp_list) {
-                LASSERT(lock->l_flags & LDLM_FL_AST_SENT);
-                LASSERT(lock->l_resource->lr_type == LDLM_EXTENT);
+	cfs_list_for_each_entry(lock, &exp->exp_bl_list, l_exp_list) {
+		LASSERT(lock->l_flags & LDLM_FL_AST_SENT);
+		LASSERT(lock->l_resource->lr_type == LDLM_EXTENT);
 
-                if (!ldlm_res_eq(&data->opd_resid, &lock->l_resource->lr_name))
-                        continue;
+		if (!ldlm_res_eq(&data->opd_resid, &lock->l_resource->lr_name))
+			continue;
 
-                if (!ldlm_extent_overlap(&lock->l_policy_data.l_extent,
-                                         &data->opd_extent))
-                        continue;
+		if (!ldlm_extent_overlap(&lock->l_policy_data.l_extent,
+					 &data->opd_extent))
+			continue;
 
-                ost_prolong_lock_one(data, lock);
-        }
+		ost_prolong_lock_one(data, lock);
+	}
 	spin_unlock_bh(&exp->exp_bl_list_lock);
 
 	EXIT;
