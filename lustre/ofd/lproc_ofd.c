@@ -469,6 +469,14 @@ int lprocfs_ofd_wr_grant_compat_disable(struct file *file, const char *buffer,
 	return count;
 }
 
+int lprocfs_ofd_rd_site_stats(char *page, char **start, off_t off,
+			      int count, int *eof, void *data)
+{
+	struct obd_device	*obd = data;
+
+	return lu_site_stats_print(obd->obd_lu_dev->ld_site, page, count);
+}
+
 static struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
 	{ "uuid",		 lprocfs_rd_uuid, 0, 0 },
 	{ "blocksize",		 lprocfs_rd_blksize, 0, 0 },
@@ -516,6 +524,7 @@ static struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
 	{ "capa_count",		 lprocfs_ofd_rd_capa_count, 0, 0 },
 	{ "job_cleanup_interval", lprocfs_rd_job_interval,
 				  lprocfs_wr_job_interval, 0},
+	{ "site_stats",		 lprocfs_ofd_rd_site_stats, 0, 0, },
 	{ 0 }
 };
 
