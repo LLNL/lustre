@@ -60,22 +60,6 @@
 #include <lu_ref.h>
 #include <libcfs/list.h>
 
-enum {
-	LU_CACHE_PERCENT_MAX     = 50,
-	LU_CACHE_PERCENT_DEFAULT = 20
-};
-
-#define	LU_CACHE_NR_MAX_ADJUST	128
-#define	LU_CACHE_NR_DEFAULT	0
-
-static unsigned int lu_cache_percent = LU_CACHE_PERCENT_DEFAULT;
-CFS_MODULE_PARM(lu_cache_percent, "i", int, 0644,
-		"Percentage of memory to be used as lu_object cache");
-
-static unsigned long lu_cache_nr = LU_CACHE_NR_DEFAULT;
-CFS_MODULE_PARM(lu_cache_nr, "ul", ulong, 0644,
-		"Maximum number of objects in lu_object cache");
-
 static void lu_object_free(const struct lu_env *env, struct lu_object *o);
 
 /**
@@ -602,30 +586,6 @@ struct lu_object *lu_object_find(const struct lu_env *env,
 }
 EXPORT_SYMBOL(lu_object_find);
 
-/*
- * Limit the lu_object cache to a maximum of lu_cache_nr objects.  Because
- * the calculation for the number of objects to reclaim is not covered by
- * a lock the maximum number of objects is capped by LU_CACHE_MAX_ADJUST.
- * This ensures that many concurrent threads will not accidentally purge
- * the entire cache.
- */
-static void lu_object_limit(const struct lu_env *env,
-			    struct lu_device *dev)
-{
-	__u64 size, nr;
-
-	if (lu_cache_nr == 0)
-		return;
-
-	size = cfs_hash_size_get(dev->ld_site->ls_obj_hash);
-	nr = lu_cache_nr;
-	if (size > nr)
-		lu_site_purge(env, dev->ld_site,
-			      MIN(size - nr, LU_CACHE_NR_MAX_ADJUST));
-
-	return;
-}
-
 static struct lu_object *lu_object_new(const struct lu_env *env,
                                        struct lu_device *dev,
                                        const struct lu_fid *f,
@@ -646,9 +606,6 @@ static struct lu_object *lu_object_new(const struct lu_env *env,
         cfs_hash_bd_add_locked(hs, &bd, &o->lo_header->loh_hash);
         bkt->lsb_busy++;
         cfs_hash_bd_unlock(hs, &bd, 1);
-
-	lu_object_limit(env, dev);
-
         return o;
 }
 
@@ -719,9 +676,6 @@ static struct lu_object *lu_object_find_try(const struct lu_env *env,
                 cfs_hash_bd_add_locked(hs, &bd, &o->lo_header->loh_hash);
                 bkt->lsb_busy++;
                 cfs_hash_bd_unlock(hs, &bd, 1);
-
-		lu_object_limit(env, dev);
-
                 return o;
         }
 
@@ -872,6 +826,15 @@ void lu_site_print(const struct lu_env *env, struct lu_site *s, void *cookie,
         cfs_hash_for_each(s->ls_obj_hash, lu_site_obj_print, &arg);
 }
 EXPORT_SYMBOL(lu_site_print);
+
+enum {
+        LU_CACHE_PERCENT_MAX     = 50,
+        LU_CACHE_PERCENT_DEFAULT = 20
+};
+
+static unsigned int lu_cache_percent = LU_CACHE_PERCENT_DEFAULT;
+CFS_MODULE_PARM(lu_cache_percent, "i", int, 0644,
+                "Percentage of memory to be used as lu_object cache");
 
 /**
  * Return desired hash table order.
@@ -1033,8 +996,7 @@ int lu_site_init(struct lu_site *s, struct lu_device *top)
                                                  CFS_HASH_SPIN_BKTLOCK |
                                                  CFS_HASH_NO_ITEMREF |
                                                  CFS_HASH_DEPTH |
-                                                 CFS_HASH_ASSERT_EMPTY |
-                                                 CFS_HASH_COUNTER);
+                                                 CFS_HASH_ASSERT_EMPTY);
                 if (s->ls_obj_hash != NULL)
                         break;
         }
