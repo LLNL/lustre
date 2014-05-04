@@ -731,6 +731,7 @@ enum {
         MDT_SOM_ENABLE  = 1,
 };
 
+int mdt_acl_valid(const void *value, size_t size);
 int mdt_attr_get_complex(struct mdt_thread_info *info,
 			 struct mdt_object *o, struct md_attr *ma);
 int mdt_ioepoch_open(struct mdt_thread_info *info, struct mdt_object *o,
