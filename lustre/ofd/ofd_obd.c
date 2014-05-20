@@ -1330,11 +1330,10 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 			       count, ostid_seq(&oa->o_oi), next_id);
 
 			if (cfs_time_after(jiffies, enough_time)) {
-				LCONSOLE_WARN("%s: Slow creates, %d/%d objects"
-					      " created at a rate of %d/s\n",
-					      ofd_obd(ofd)->obd_name,
-					      created, diff + created,
-					      created / DISK_TIMEOUT);
+				CDEBUG(D_HA, "%s: Slow creates, %d/%d objects"
+				       " created at a rate of %d/s\n",
+				       ofd_name(ofd), created, diff + created,
+				       created / DISK_TIMEOUT);
 				break;
 			}
 
