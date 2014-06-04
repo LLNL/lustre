@@ -1541,6 +1541,14 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 		 */
 		cond_resched();
 
+		/* This schedule point is mainly for the ptlrpcd caller of this
+		 * function.  Most ptlrpc sets are not long-lived and unbounded
+		 * in length, but at the least the set used by the ptlrpcd is.
+		 * Since the processing time is unbounded, we need to insert an
+		 * explicit schedule point to make the thread well-behaved.
+		 */
+		cond_resched();
+
                 if (req->rq_phase == RQ_PHASE_NEW &&
                     ptlrpc_send_new_req(req)) {
                         force_timer_recalc = 1;
