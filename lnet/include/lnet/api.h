@@ -138,6 +138,7 @@ int LNetMDBind(lnet_md_t         md_in,
 	       lnet_handle_md_t *handle_out);
 
 int LNetMDUnlink(lnet_handle_md_t md_in);
+void LNetMDCheck(void);
 /** @} lnet_md */
 
 /** \defgroup lnet_eq Events and event queues

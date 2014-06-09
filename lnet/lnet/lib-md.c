@@ -389,6 +389,28 @@ LNetMDBind(lnet_md_t umd, lnet_unlink_t unlink, lnet_handle_md_t *handle)
 }
 EXPORT_SYMBOL(LNetMDBind);
 
+void
+LNetMDCheck(void)
+{
+	int cpt;
+	cfs_list_t *tmp;
+	lnet_libmd_t *md;
+	struct lnet_res_container *container;
+
+	cpt = lnet_res_lock_current();
+	container = the_lnet.ln_md_containers[cpt];
+
+	cfs_list_for_each(tmp, &container->rec_active) {
+		md = cfs_list_entry(tmp, lnet_libmd_t, md_list);
+		if ((md->md_flags & LNET_MD_FLAG_ZOMBIE) != 0)
+			CERROR("LU-2522: md(%p)->md_flags has LNET_MD_FLAG_ZOMBIE set\n",
+			       md);
+	}
+
+	lnet_res_unlock(cpt);
+}
+EXPORT_SYMBOL(LNetMDCheck);
+
 /**
  * Unlink the memory descriptor from any ME it may be linked to and release
  * the internal resources associated with it. As a result, active messages
