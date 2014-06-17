@@ -887,10 +887,12 @@ EXPORT_SYMBOL(lprocfs_stats_collect);
  */
 #define flag2seqstr(flag)						\
 	do {								\
-		if (imp->imp_##flag)					\
+		if (imp->imp_##flag) {					\
 			seq_printf(m, "%s" #flag, first ? "" : ", ");	\
+			first = false;					\
+		}							\
 	} while (0)
-static int obd_import_flags2seqstr(struct obd_import *imp, struct seq_file *m)
+static void obd_import_flags2seqstr(struct obd_import *imp, struct seq_file *m)
 {
 	bool first = true;
 
@@ -902,10 +904,16 @@ static int obd_import_flags2seqstr(struct obd_import *imp, struct seq_file *m)
 	flag2seqstr(invalid);
 	flag2seqstr(deactive);
 	flag2seqstr(replayable);
+	flag2seqstr(delayed_recovery);
+	flag2seqstr(no_lock_replay);
+	flag2seqstr(vbr_failed);
 	flag2seqstr(pingable);
-	return 0;
+	flag2seqstr(resend_replay);
+	flag2seqstr(no_pinger_recover);
+	flag2seqstr(need_mne_swab);
+	flag2seqstr(connect_tried);
 }
-#undef flags2seqstr
+#undef flag2seqstr
 
 static const char *obd_connect_names[] = {
 	"read_only",
@@ -979,7 +987,7 @@ static void obd_connect_seq_flags2str(struct seq_file *m, __u64 flags, char *sep
 		}
 	}
 	if (flags & ~(mask - 1))
-		seq_printf(m, "%sunknown flags "LPX64,
+		seq_printf(m, "%sunknown_"LPX64,
 			   first ? "" : sep, flags & ~(mask - 1));
 }
 
@@ -995,7 +1003,7 @@ int obd_connect_flags2str(char *page, int count, __u64 flags, char *sep)
 	}
 	if (flags & ~(mask - 1))
 		ret += snprintf(page + ret, count - ret,
-				"%sunknown flags "LPX64,
+				"%sunknown_"LPX64,
 				ret ? sep : "", flags & ~(mask - 1));
 	return ret;
 }
@@ -1021,20 +1029,20 @@ int lprocfs_import_seq_show(struct seq_file *m, void *data)
 		     "    target: %s\n"
 		     "    state: %s\n"
 		     "    instance: %u\n"
-		     "    connect_flags: [",
+		     "    connect_flags: [ ",
 		     obd->obd_name,
 		     obd2cli_tgt(obd),
 		     ptlrpc_import_state_name(imp->imp_state),
 		     imp->imp_connect_data.ocd_instance);
 	obd_connect_seq_flags2str(m, imp->imp_connect_data.ocd_connect_flags,
 					", ");
-	seq_printf(m, "]\n"
-		      "    import_flags: [");
+	seq_printf(m, " ]\n"
+		      "    import_flags: [ ");
 	obd_import_flags2seqstr(imp, m);
 
-	seq_printf(m, "]\n"
+	seq_printf(m, " ]\n"
 		      "    connection:\n"
-		      "       failover_nids: [");
+		      "       failover_nids: [ ");
 	spin_lock(&imp->imp_lock);
 	j = 0;
 	list_for_each_entry(conn, &imp->imp_conn_list, oic_item) {
@@ -1042,7 +1050,7 @@ int lprocfs_import_seq_show(struct seq_file *m, void *data)
 			   libcfs_nid2str(conn->oic_conn->c_peer.nid));
 		j++;
 	}
-	seq_printf(m, "]\n"
+	seq_printf(m, " ]\n"
 		      "       current_connection: %s\n"
 		      "       connection_attempts: %u\n"
 		      "       generation: %u\n"
@@ -1155,7 +1163,7 @@ int lprocfs_state_seq_show(struct seq_file *m, void *data)
 			&imp->imp_state_hist[(k + j) % IMP_STATE_HIST_LEN];
 		if (ish->ish_state == 0)
 			continue;
-		seq_printf(m, " - ["CFS_TIME_T", %s]\n",
+		seq_printf(m, " - [ "CFS_TIME_T", %s ]\n",
 			   ish->ish_time,
 		ptlrpc_import_state_name(ish->ish_state));
 	}
