@@ -85,12 +85,13 @@ static int mdt_getxattr_pack_reply(struct mdt_thread_info * info)
                 RETURN(-EINVAL);
         }
 
-        if (size == -ENODATA) {
-                size = 0;
-        } else if (size < 0) {
-                CERROR("Error geting EA size: %d\n", size);
-                RETURN(size);
-        }
+	if (size == -ENODATA) {
+		size = 0;
+	} else if (size < 0) {
+		if (size != -EOPNOTSUPP)
+			CERROR("Error geting EA size: %d\n", size);
+		RETURN(size);
+	}
 
         if (info->mti_body->eadatasize != 0 &&
             info->mti_body->eadatasize < size)
