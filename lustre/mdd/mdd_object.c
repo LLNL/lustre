@@ -1010,6 +1010,8 @@ free:
 	return(rc);
 }
 
+static int mdd_xattr_del(const struct lu_env *env, struct md_object *obj,
+			 const char *name);
 
 /**
  * The caller should guarantee to update the object ctime
@@ -1028,6 +1030,20 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
 	rc = mdd_xattr_sanity_check(env, mdd_obj);
 	if (rc)
 		RETURN(rc);
+
+	if (strcmp(name, XATTR_NAME_ACL_ACCESS) == 0 ||
+	    strcmp(name, XATTR_NAME_ACL_DEFAULT) == 0) {
+		struct posix_acl *acl;
+
+		/* user may set empty ACL, which should be treated as removing
+		 * ACL. */
+		acl = posix_acl_from_xattr(buf->lb_buf, buf->lb_len);
+		if (acl == NULL) {
+			rc = mdd_xattr_del(env, obj, name);
+			RETURN(rc);
+		}
+		posix_acl_release(acl);
+	}
 
 	if (!strcmp(name, XATTR_NAME_ACL_ACCESS)) {
 		rc = mdd_acl_set(env, mdd_obj, buf, fl);
