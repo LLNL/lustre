@@ -170,59 +170,94 @@ int cfs_crypto_hash_final(struct cfs_crypto_hash_desc *hdesc,
 	int     err;
 	int     size = crypto_hash_digestsize(((struct hash_desc *)hdesc)->tfm);
 
-	if (hash_len == NULL) {
-		crypto_free_hash(((struct hash_desc *)hdesc)->tfm);
-		kfree(hdesc);
-		return 0;
+	if (hash == NULL || hash_len == NULL) {
+		err = 0;
+		goto free;
 	}
-	if (hash == NULL || *hash_len < size) {
-		*hash_len = size;
-		return -ENOSPC;
+	if (*hash_len < size) {
+		err = -EOVERFLOW;
+		goto free;
 	}
-	err = crypto_hash_final((struct hash_desc *) hdesc, hash);
 
-	if (err < 0) {
-		/* May be caller can fix error */
-		return err;
-	}
+	err = crypto_hash_final((struct hash_desc *)hdesc, hash);
+	if (err == 0)
+		*hash_len = size;
+free:
 	crypto_free_hash(((struct hash_desc *)hdesc)->tfm);
 	kfree(hdesc);
 	return err;
 }
 EXPORT_SYMBOL(cfs_crypto_hash_final);
 
-static void cfs_crypto_performance_test(unsigned char alg_id,
-					const unsigned char *buf,
-					unsigned int buf_len)
+/**
+ * Compute the speed of specified hash function
+ *
+ * Run a speed test on the given hash algorithm on buffer of the given size.
+ * The speed is stored internally in the cfs_crypto_hash_speeds[] array, and
+ * is available through the cfs_crypto_hash_speed() function.
+ *
+ * \param[in] hash_alg	hash algorithm id (CFS_HASH_ALG_*)
+ * \param[in] buf	data buffer on which to compute the hash
+ * \param[in] buf_len	length of \buf on which to compute hash
+ */
+static void cfs_crypto_performance_test(enum cfs_crypto_hash_alg hash_alg)
 {
-	unsigned long		   start, end;
-	int			     bcount, err = 0;
-	int			     sec = 1; /* do test only 1 sec */
-	unsigned char		   hash[64];
-	unsigned int		    hash_len = 64;
+	int			buf_len = max(PAGE_SIZE, 1048576UL);
+	void			*buf;
+	unsigned long		start, end;
+	int			bcount, err = 0;
+	struct page		*page;
+	unsigned char		hash[CFS_CRYPTO_HASH_DIGESTSIZE_MAX];
+	unsigned int		hash_len = sizeof(hash);
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
-	     time_before(jiffies, end); bcount++) {
-		err = cfs_crypto_hash_digest(alg_id, buf, buf_len, NULL, 0,
-					     hash, &hash_len);
-		if (err)
+	page = alloc_page(GFP_KERNEL);
+	if (page == NULL) {
+		err = -ENOMEM;
+		goto out_err;
+	}
+
+	buf = kmap(page);
+	memset(buf, 0xAD, PAGE_SIZE);
+	kunmap(page);
+
+	for (start = jiffies, end = start + HZ, bcount = 0;
+	     time_before(jiffies, end) && err == 0; bcount++) {
+		struct cfs_crypto_hash_desc *hdesc;
+		int i;
+
+		hdesc = cfs_crypto_hash_init(hash_alg, NULL, 0);
+		if (IS_ERR(hdesc)) {
+			err = PTR_ERR(hdesc);
 			break;
+		}
 
+		for (i = 0; i < buf_len / PAGE_SIZE; i++) {
+			err = cfs_crypto_hash_update_page(hdesc, page, 0,
+							  PAGE_SIZE);
+			if (err != 0)
+				break;
+		}
+
+		err = cfs_crypto_hash_final(hdesc, hash, &hash_len);
+		if (err != 0)
+			break;
 	}
 	end = jiffies;
-
-	if (err) {
-		cfs_crypto_hash_speeds[alg_id] =  -1;
-		CDEBUG(D_INFO, "Crypto hash algorithm %s, err = %d\n",
-		       cfs_crypto_hash_name(alg_id), err);
+	__free_page(page);
+out_err:
+	if (err != 0) {
+		cfs_crypto_hash_speeds[hash_alg] = err;
+		CDEBUG(D_INFO, "Crypto hash algorithm %s test error: rc = %d\n",
+		       cfs_crypto_hash_name(hash_alg), err);
 	} else {
 		unsigned long   tmp;
 		tmp = ((bcount * buf_len / jiffies_to_msecs(end - start)) *
 		       1000) / (1024 * 1024);
-		cfs_crypto_hash_speeds[alg_id] = (int)tmp;
+		cfs_crypto_hash_speeds[hash_alg] = (int)tmp;
 	}
 	CDEBUG(D_INFO, "Crypto hash algorithm %s speed = %d MB/s\n",
-	       cfs_crypto_hash_name(alg_id), cfs_crypto_hash_speeds[alg_id]);
+	       cfs_crypto_hash_name(hash_alg),
+	       cfs_crypto_hash_speeds[hash_alg]);
 }
 
 int cfs_crypto_hash_speed(unsigned char hash_alg)
@@ -239,26 +274,11 @@ EXPORT_SYMBOL(cfs_crypto_hash_speed);
  */
 static int cfs_crypto_test_hashes(void)
 {
-	unsigned char	   i;
-	unsigned char	   *data;
-	unsigned int	    j;
-	/* Data block size for testing hash. Maximum
-	 * kmalloc size for 2.6.18 kernel is 128K */
-	unsigned int	    data_len = 1 * 128 * 1024;
+	enum cfs_crypto_hash_alg hash_alg;
 
-	data = kmalloc(data_len, 0);
-	if (data == NULL) {
-		CERROR("Failed to allocate mem\n");
-		return -ENOMEM;
-	}
+	for (hash_alg = 0; hash_alg < CFS_HASH_ALG_MAX; hash_alg++)
+		cfs_crypto_performance_test(hash_alg);
 
-	for (j = 0; j < data_len; j++)
-		data[j] = j & 0xff;
-
-	for (i = 0; i < CFS_HASH_ALG_MAX; i++)
-		cfs_crypto_performance_test(i, data, data_len);
-
-	kfree(data);
 	return 0;
 }
 

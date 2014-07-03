@@ -261,21 +261,19 @@ int cfs_crypto_hash_final(struct cfs_crypto_hash_desc *desc,
 	int	size = (cfs_crypto_hash_type(d->hd_hash->ha_id))->cht_size;
 	int	err;
 
-	if (hash_len == NULL) {
-		kfree(d);
-		return 0;
+	if (hash == NULL || hash_len == NULL) {
+		err = 0;
+		goto free;
 	}
-	if (hash == NULL || *hash_len < size) {
-		*hash_len = d->hd_hash->ha_ctx_size;
-		return -ENOMEM;
+	if (*hash_len < size) {
+		err = -EOVERFLOW;
+		goto free;
 	}
 
 	LASSERT(d->hd_hash->final != NULL);
 	err = d->hd_hash->final(d->hd_ctx, hash, *hash_len);
-	if (err == 0) {
-		  /* If get final digest success free hash descriptor */
-		  kfree(d);
-	}
+free:
+	kfree(d);
 
 	return err;
 }

@@ -61,6 +61,9 @@ static struct cfs_crypto_hash_type hash_types[] = {
 	[CFS_HASH_ALG_SHA512]  = { "sha512",   0,     64 },
 };
 
+/* Maximum size of hash_types[].cht_size */
+#define CFS_CRYPTO_HASH_DIGESTSIZE_MAX 64
+
 /**    Return pointer to type of hash for valid hash algorithm identifier */
 static inline const struct cfs_crypto_hash_type *
 		    cfs_crypto_hash_type(unsigned char hash_alg)
@@ -88,7 +91,8 @@ static inline const char *cfs_crypto_hash_name(unsigned char hash_alg)
 }
 
 /**     Return digest size for valid algorithm identifier or 0 */
-static inline int cfs_crypto_hash_digestsize(unsigned char hash_alg)
+static inline
+unsigned int cfs_crypto_hash_digestsize(unsigned char hash_alg)
 {
 	const struct cfs_crypto_hash_type *ht;
 
