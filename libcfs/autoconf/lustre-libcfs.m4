@@ -431,11 +431,6 @@ AC_CHECK_FUNCS([strlcpy])
 # libcfs/libcfs/user-prim.c, missing for RHEL5 and earlier userspace
 AC_CHECK_FUNCS([strlcat])
 
-AC_CHECK_TYPE([umode_t],
-	[AC_DEFINE(HAVE_UMODE_T, 1, [umode_t is defined])],
-	[],
-	[#include <asm/types.h>])
-
 AC_CHECK_TYPE([__s8],
 	[AC_DEFINE(HAVE___S8, 1, [__s8 is defined])],
 	[],

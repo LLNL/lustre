@@ -44,10 +44,6 @@
 
 #include <asm/types.h>
 #include <stdbool.h> /* for bool */
-#ifndef HAVE_UMODE_T
-typedef unsigned short umode_t;
-#else
-#endif
 
 /*
  * __xx is ok: it doesn't pollute the POSIX namespace. Use these in the
