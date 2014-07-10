@@ -431,11 +431,6 @@ AC_CHECK_FUNCS([strlcpy])
 # libcfs/libcfs/user-prim.c, missing for RHEL5 and earlier userspace
 AC_CHECK_FUNCS([strlcat])
 
-AC_CHECK_TYPE([umode_t],
-	[AC_DEFINE(HAVE_UMODE_T, 1, [umode_t is defined])],
-	[],
-	[#include <asm/types.h>])
-
 # check userland __u64 type
 AC_MSG_CHECKING([userspace __u64 is long long type])
 tmp_flags="$CFLAGS"
