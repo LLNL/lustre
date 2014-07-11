@@ -97,13 +97,11 @@
 #endif
 
 #include <libcfs/list.h>
-#include <libcfs/posix/posix-types.h>
 #include <libcfs/user-time.h>
 #include <libcfs/user-prim.h>
 #include <libcfs/user-mem.h>
 #include <libcfs/user-lock.h>
 #include <libcfs/user-tcpip.h>
-#include <libcfs/posix/posix-wordsize.h>
 #include <libcfs/user-bitops.h>
 
 # define do_gettimeofday(tv) gettimeofday(tv, NULL);
@@ -218,6 +216,30 @@ typedef unsigned long long cfs_cycles_t;
 
 typedef __u32 kernel_cap_t;
 
+/******************************************************************************/
+/* Light-weight trace
+ * Support for temporary event tracing with minimal Heisenberg effect. */
+#define LWT_SUPPORT  0
+
+#define LWT_MEMORY   (16<<20)
+
+typedef struct {
+        long long   lwte_when;
+        char       *lwte_where;
+        void       *lwte_task;
+        long        lwte_p1;
+        long        lwte_p2;
+        long        lwte_p3;
+        long        lwte_p4;
+# if BITS_PER_LONG > 32
+        long        lwte_pad;
+# endif
+} lwt_event_t;
+
+#if LWT_SUPPORT
+#define LWT_EVENT(p1,p2,p3,p4)     /* no userland implementation yet */
+#endif /* LWT_SUPPORT */
+
 /**
  * Module support (probably shouldn't be used in generic code?)
  */
@@ -260,6 +282,8 @@ static inline int module_refcount(struct module *m)
 {
 	return 1;
 }
+
+#define CFS_MODULE_PARM(name, t, type, perm, desc)
 
 /***************************************************************************
  *
