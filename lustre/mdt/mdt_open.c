@@ -1819,19 +1819,20 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 			else
 				result = -EREMOTE;
                         GOTO(out_child, result);
+		} else if (mdt_object_exists(child)) {
+			/* We have to get attr & LOV EA & HSM for this
+			 * object. */
+			ma->ma_need |= MA_HSM;
+			result = mdt_attr_get_complex(info, child, ma);
+			if (result != 0)
+				GOTO(out_child, result);
 		} else {
-			if (mdt_object_exists(child)) {
-				/* We have to get attr & LOV EA & HSM for this
-				 * object */
-				ma->ma_need |= MA_HSM;
-				result = mdt_attr_get_complex(info, child, ma);
-			} else {
-				/*object non-exist!!! Likely an fs corruption*/
-				CERROR("%s: name %s present, but fid " DFID
-				       " invalid\n",mdt_obd_name(info->mti_mdt),
-				       rr->rr_name, PFID(child_fid));
-				GOTO(out_child, result = -EIO);
-			}
+			/* Object does not exist. Likely FS corruption. */
+			CERROR("%s: name '%s' present, but FID "
+			       DFID" is invalid\n",
+			       mdt_obd_name(info->mti_mdt),
+			       rr->rr_name, PFID(child_fid));
+			GOTO(out_child, result = -EIO);
 		}
         }
 
