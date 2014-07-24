@@ -2769,8 +2769,8 @@ static int mdt_object_lock0(struct mdt_thread_info *info, struct mdt_object *o,
 					  policy, res_id, dlmflags,
 					  info->mti_exp == NULL ? NULL :
 					  &info->mti_exp->exp_handle.h_cookie);
-                        if (unlikely(rc))
-                                RETURN(rc);
+			if (unlikely(rc != 0))
+				GOTO(out_unlock, rc);
                 }
 
                 /*
@@ -2791,15 +2791,15 @@ static int mdt_object_lock0(struct mdt_thread_info *info, struct mdt_object *o,
 			  res_id, LDLM_FL_LOCAL_ONLY | dlmflags,
 			  info->mti_exp == NULL ? NULL :
 			  &info->mti_exp->exp_handle.h_cookie);
-        if (rc)
-                mdt_object_unlock(info, o, lh, 1);
-        else if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_MDS_PDO_LOCK)) &&
-                 lh->mlh_pdo_hash != 0 &&
-                 (lh->mlh_reg_mode == LCK_PW || lh->mlh_reg_mode == LCK_EX)) {
-                OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_PDO_LOCK, 15);
-        }
+out_unlock:
+	if (rc != 0)
+		mdt_object_unlock(info, o, lh, 1);
+	else if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_MDS_PDO_LOCK)) &&
+		   lh->mlh_pdo_hash != 0 &&
+		   (lh->mlh_reg_mode == LCK_PW || lh->mlh_reg_mode == LCK_EX))
+		OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_PDO_LOCK, 15);
 
-        RETURN(rc);
+	RETURN(rc);
 }
 
 int mdt_object_lock(struct mdt_thread_info *info, struct mdt_object *o,
