@@ -1704,9 +1704,12 @@ static int mdd_open(const struct lu_env *env, struct md_object *obj,
         mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
 
         rc = mdd_open_sanity_check(env, mdd_obj, flags);
-        if (rc == 0)
-                mdd_obj->mod_count++;
+        if (rc != 0)
+		GOTO(out, rc);
 
+	mdd_obj->mod_count++;
+	EXIT;
+out:
         mdd_write_unlock(env, mdd_obj);
         return rc;
 }
