@@ -1788,6 +1788,33 @@ test_111 ()
 }
 run_test 111 "mdd setup fail should not cause umount oops"
 
+# LU-793
+test_112a() {
+	remote_ost_nodsh && skip "remote OST with nodsh" && return 0
+
+	local OST_VERSION=$(lustre_version_code ost1)
+
+	[[ $OST_VERSION -ge $(version_code 2.5.92) ||
+           ($OST_VERSION -lt $(version_code 2.4.50) &&
+	    $OST_VERSION -ge $(version_code 2.4.2)) ]] ||
+		{ skip "Need OST version that includes LU-793 fix"; return 0; }
+
+	do_facet_random_file client $TMP/$tfile 100K ||
+		error_noexit "Create random file $TMP/$tfile"
+
+	pause_bulk "cp $TMP/$tfile $DIR/$tfile" $TIMEOUT ||
+		error_noexit "Can't pause_bulk copy"
+
+	df $DIR
+	# expect cmp to succeed, client resent bulk
+	cmp $TMP/$tfile $DIR/$tfile ||
+		error_noexit "Wrong data has been written"
+	rm $DIR/$tfile ||
+		error_noexit "Can't remove file"
+	rm $TMP/$tfile
+}
+run_test 112a "bulk resend while orignal request is in progress"
+
 test_113() {
 	local server_version=$(lustre_version_code $SINGLEMDS)
 

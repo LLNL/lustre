@@ -979,21 +979,6 @@ no_export:
                               libcfs_nid2str(req->rq_peer.nid),
                               cfs_atomic_read(&export->exp_refcount));
                 GOTO(out, rc = -EBUSY);
-        } else if (req->rq_export != NULL &&
-                   (cfs_atomic_read(&export->exp_rpc_count) > 1)) {
-		/* The current connect RPC has increased exp_rpc_count. */
-                LCONSOLE_WARN("%s: Client %s (at %s) refused reconnection, "
-                              "still busy with %d active RPCs\n",
-                              target->obd_name, cluuid.uuid,
-                              libcfs_nid2str(req->rq_peer.nid),
-                              cfs_atomic_read(&export->exp_rpc_count) - 1);
-		spin_lock(&export->exp_lock);
-		if (req->rq_export->exp_conn_cnt <
-		    lustre_msg_get_conn_cnt(req->rq_reqmsg))
-			/* try to abort active requests */
-			req->rq_export->exp_abort_active_req = 1;
-		spin_unlock(&export->exp_lock);
-		GOTO(out, rc = -EBUSY);
         } else if (lustre_msg_get_conn_cnt(req->rq_reqmsg) == 1) {
                 if (!strstr(cluuid.uuid, "mdt"))
                         LCONSOLE_WARN("%s: Rejecting reconnect from the "
@@ -1016,7 +1001,7 @@ no_export:
               export, (long)cfs_time_current_sec(),
               export ? (long)export->exp_last_request_time : 0);
 
-        /* If this is the first time a client connects, reset the recovery
+	/* If this is the first time a client connects, reset the recovery
 	 * timer. Discard lightweight connections which might be local. */
 	if (!lw_client && rc == 0 && target->obd_recovering)
 		check_and_start_recovery_timer(target, req, export == NULL);
@@ -1137,7 +1122,6 @@ dont_check_exports:
         }
         LASSERT(lustre_msg_get_conn_cnt(req->rq_reqmsg) > 0);
         export->exp_conn_cnt = lustre_msg_get_conn_cnt(req->rq_reqmsg);
-        export->exp_abort_active_req = 0;
 
 	/* Don't evict liblustre clients for not pinging. */
         if (lustre_msg_get_op_flags(req->rq_reqmsg) & MSG_CONNECT_LIBCLIENT) {
@@ -2674,23 +2658,24 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc,
 	ENTRY;
 
 	/* If there is eviction in progress, wait for it to finish. */
-        if (unlikely(cfs_atomic_read(&exp->exp_obd->obd_evict_inprogress))) {
-                *lwi = LWI_INTR(NULL, NULL);
-                rc = l_wait_event(exp->exp_obd->obd_evict_inprogress_waitq,
-                                  !cfs_atomic_read(&exp->exp_obd->
-                                                   obd_evict_inprogress),
-                                  lwi);
-        }
+	if (unlikely(cfs_atomic_read(&exp->exp_obd->obd_evict_inprogress))) {
+		*lwi = LWI_INTR(NULL, NULL);
+		rc = l_wait_event(exp->exp_obd->obd_evict_inprogress_waitq,
+				  !cfs_atomic_read(&exp->exp_obd->
+					  	   obd_evict_inprogress),
+				  lwi);
+	}
 
-	/* Check if client was evicted or tried to reconnect already. */
-        if (exp->exp_failed || exp->exp_abort_active_req) {
-                rc = -ENOTCONN;
-        } else {
-                if (desc->bd_type == BULK_PUT_SINK)
-                        rc = sptlrpc_svc_wrap_bulk(req, desc);
-                if (rc == 0)
-                        rc = ptlrpc_start_bulk_transfer(desc);
-        }
+	/* Check if client was evicted or reconnected already. */
+	if (exp->exp_failed ||
+	    exp->exp_conn_cnt > lustre_msg_get_conn_cnt(req->rq_reqmsg)) {
+		rc = -ENOTCONN;
+	} else {
+		if (desc->bd_type == BULK_PUT_SINK)
+			rc = sptlrpc_svc_wrap_bulk(req, desc);
+		if (rc == 0)
+			rc = ptlrpc_start_bulk_transfer(desc);
+	}
 
 	if (rc < 0) {
 		DEBUG_REQ(D_ERROR, req, "bulk %s failed: rc %d",
@@ -2718,7 +2703,9 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc,
 		rc = l_wait_event(desc->bd_waitq,
 				  !ptlrpc_server_bulk_active(desc) ||
 				  exp->exp_failed ||
-				  exp->exp_abort_active_req, lwi);
+				  exp->exp_conn_cnt >
+				  lustre_msg_get_conn_cnt(req->rq_reqmsg),
+				  lwi);
 		LASSERT(rc == 0 || rc == -ETIMEDOUT);
 		/* Wait again if we changed rq_deadline. */
 		deadline = start + bulk_timeout;
@@ -2737,7 +2724,8 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc,
 			  bulk2type(desc));
 		rc = -ENOTCONN;
 		ptlrpc_abort_bulk(desc);
-	} else if (exp->exp_abort_active_req) {
+	} else if (exp->exp_conn_cnt >
+		   lustre_msg_get_conn_cnt(req->rq_reqmsg)) {
 		DEBUG_REQ(D_ERROR, req, "Reconnect on bulk %s",
 			  bulk2type(desc));
 		/* We don't reply anyway. */
