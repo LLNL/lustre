@@ -2698,7 +2698,7 @@ subr_36fh() {
 
 	DATESTR="Dec 20  2000"
 	test_mkdir -p $DIR/$tdir
-	lctl set_param fail_loc=$fl
+	lctl set_param fail_loc=$fl fail_val=0
 	date; date +%s
 	cp /etc/hosts $DIR/$tdir/$tfile
 	sync & # write RPC generated with "current" inode timestamp, but delayed
