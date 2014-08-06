@@ -518,7 +518,7 @@ int llog_cat_cancel_records(const struct lu_env *env,
 		}
 
 		lrc = llog_cancel_rec(env, loghandle, cookies->lgc_index);
-		if (lrc == 1) {          /* log has been destroyed */
+		if (lrc == LLOG_DEL_PLAIN) { /* log has been destroyed */
 			index = loghandle->u.phd.phd_cookie.lgc_index;
 			rc = llog_cat_cleanup(env, cathandle, loghandle,
 					      index);
@@ -582,6 +582,10 @@ int llog_cat_process_cb(const struct lu_env *env, struct llog_handle *cat_llh,
 					  NULL, false);
 	}
 
+	/* The empty plain log was destroyed while processing */
+	if (rc == LLOG_DEL_PLAIN)
+		rc = llog_cat_cleanup(env, cat_llh, llh,
+				      llh->u.phd.phd_cookie.lgc_index);
 	llog_handle_put(llh);
 
 	RETURN(rc);
@@ -613,11 +617,11 @@ int llog_cat_process_or_fork(const struct lu_env *env,
                 cd.lpcd_last_idx = 0;
 		rc = llog_process_or_fork(env, cat_llh, llog_cat_process_cb,
 					  &d, &cd, fork);
-                if (rc != 0)
-                        RETURN(rc);
+		if (rc != 0)
+			RETURN(rc);
 
-                cd.lpcd_first_idx = 0;
-                cd.lpcd_last_idx = cat_llh->lgh_last_idx;
+		cd.lpcd_first_idx = 0;
+		cd.lpcd_last_idx = cat_llh->lgh_last_idx;
 		rc = llog_process_or_fork(env, cat_llh, llog_cat_process_cb,
 					  &d, &cd, fork);
         } else {
@@ -663,6 +667,12 @@ static int llog_cat_reverse_process_cb(const struct lu_env *env,
 	}
 
 	rc = llog_reverse_process(env, llh, d->lpd_cb, d->lpd_data, NULL);
+
+	/* The empty plain was destroyed while processing */
+	if (rc == LLOG_DEL_PLAIN)
+		rc = llog_cat_cleanup(env, cat_llh, llh,
+				      llh->u.phd.phd_cookie.lgc_index);
+
 	llog_handle_put(llh);
 	RETURN(rc);
 }
@@ -690,11 +700,11 @@ int llog_cat_reverse_process(const struct lu_env *env,
 		rc = llog_reverse_process(env, cat_llh,
 					  llog_cat_reverse_process_cb,
 					  &d, &cd);
-                if (rc != 0)
-                        RETURN(rc);
+		if (rc != 0)
+			RETURN(rc);
 
-                cd.lpcd_first_idx = le32_to_cpu(llh->llh_cat_idx);
-                cd.lpcd_last_idx = 0;
+		cd.lpcd_first_idx = le32_to_cpu(llh->llh_cat_idx);
+		cd.lpcd_last_idx = 0;
 		rc = llog_reverse_process(env, cat_llh,
 					  llog_cat_reverse_process_cb,
 					  &d, &cd);
