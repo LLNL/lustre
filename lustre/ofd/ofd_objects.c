@@ -251,7 +251,10 @@ int ofd_precreate_objects(const struct lu_env *env, struct ofd_device *ofd,
 
 		rc = dt_declare_create(env, next, &info->fti_attr, NULL,
 				       &info->fti_dof, th);
-		if (rc) {
+		if (rc < 0) {
+			if (i == 0)
+				GOTO(trans_stop, rc);
+
 			nr = i;
 			break;
 		}
@@ -274,8 +277,13 @@ int ofd_precreate_objects(const struct lu_env *env, struct ofd_device *ofd,
 
 			rc = dt_create(env, next, &info->fti_attr, NULL,
 				       &info->fti_dof, th);
-			if (rc)
+			if (rc < 0) {
+				if (i == 0)
+					GOTO(trans_stop, rc);
+
+				rc = 0;
 				break;
+			}
 			LASSERT(ofd_object_exists(fo));
 		}
 		ofd_seq_last_oid_set(oseq, id + i);
