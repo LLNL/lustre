@@ -186,8 +186,6 @@ static inline struct osc_device *obd2osc_dev(const struct obd_device *d)
         return container_of0(d->obd_lu_dev, struct osc_device, od_cl.cd_lu_dev);
 }
 
-int osc_dlm_lock_pageref(struct ldlm_lock *dlm);
-
 extern cfs_mem_cache_t *osc_quota_kmem;
 struct osc_quota_info {
         /** linkage for quota hash table */
