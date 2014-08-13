@@ -688,41 +688,6 @@ out:
 	RETURN(rc);
 }
 
-/**
- * Verify the ACL header: the length, the version and the entries count.
- *
- * Under some bad cases, the ACL may contains some corrupt data which
- * may cause the client crash when interprets the corrupt ACL. As the
- * temporary solution, we will make the MDT to filter out the bad ACL
- * before returning it to client.
- *
- * \param[in] value	pointer to the ACL buffer
- * \param[in] size	the claimed ACL length
- *
- * \retval		0 for any invalid case
- * \retval		positive size of the ACL length
- */
-int mdt_acl_valid(const void *value, size_t size)
-{
-	posix_acl_xattr_header *header = (posix_acl_xattr_header *)value;
-	int count;
-
-	if (unlikely(value == NULL))
-		return 0;
-
-	if (unlikely(size < sizeof(posix_acl_xattr_header)))
-		return 0;
-
-	if (unlikely(header->a_version != cpu_to_le32(POSIX_ACL_XATTR_VERSION)))
-		return 0;
-
-	count = posix_acl_xattr_count(size);
-	if (unlikely(count <= 0))
-		return 0;
-
-	return size;
-}
-
 static int mdt_getattr_internal(struct mdt_thread_info *info,
                                 struct mdt_object *o, int ma_need)
 {
@@ -940,7 +905,6 @@ static int mdt_getattr_internal(struct mdt_thread_info *info,
 					       PFID(mdt_object_fid(o)), rc);
 				}
                         } else {
-				rc = mdt_acl_valid(buffer->lb_buf, rc);
                                 repbody->aclsize = rc;
                                 repbody->valid |= OBD_MD_FLACL;
                                 rc = 0;
