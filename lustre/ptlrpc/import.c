@@ -775,6 +775,149 @@ static int ptlrpc_busy_reconnect(int rc)
         return (rc == -EBUSY) || (rc == -EAGAIN);
 }
 
+static void ptlrpc_connect_set_flags(struct obd_import *imp,
+				     struct obd_connect_data *ocd,
+				     __u64 old_connect_flags,
+				     struct obd_export *exp, int init_connect)
+{
+	static bool warned;
+	struct client_obd *cli = &imp->imp_obd->u.cli;
+
+	spin_lock(&imp->imp_lock);
+
+	cfs_list_del(&imp->imp_conn_current->oic_item);
+	cfs_list_add(&imp->imp_conn_current->oic_item,
+		     &imp->imp_conn_list);
+	imp->imp_last_success_conn =
+		imp->imp_conn_current->oic_last_attempt;
+
+	spin_unlock(&imp->imp_lock);
+
+	if (!ocd->ocd_ibits_known &&
+	    ocd->ocd_connect_flags & OBD_CONNECT_IBITS)
+		CERROR("Inodebits aware server returned zero compatible"
+		       " bits?\n");
+
+	if (!warned && (ocd->ocd_connect_flags & OBD_CONNECT_VERSION) &&
+	    (ocd->ocd_version > LUSTRE_VERSION_CODE +
+				LUSTRE_VERSION_OFFSET_WARN ||
+	     ocd->ocd_version < LUSTRE_VERSION_CODE -
+				LUSTRE_VERSION_OFFSET_WARN)) {
+		/* Sigh, some compilers do not like #ifdef in the middle
+		   of macro arguments */
+		const char *older = "older than client. "
+				    "Consider upgrading server";
+#ifdef __KERNEL__
+		const char *newer = "newer than client. "
+				    "Consider recompiling application";
+#else
+		const char *newer = "newer than client. "
+				    "Consider upgrading client";
+#endif
+
+		LCONSOLE_WARN("Server %s version (%d.%d.%d.%d) "
+			      "is much %s (%s)\n",
+			      obd2cli_tgt(imp->imp_obd),
+			      OBD_OCD_VERSION_MAJOR(ocd->ocd_version),
+			      OBD_OCD_VERSION_MINOR(ocd->ocd_version),
+			      OBD_OCD_VERSION_PATCH(ocd->ocd_version),
+			      OBD_OCD_VERSION_FIX(ocd->ocd_version),
+			      ocd->ocd_version > LUSTRE_VERSION_CODE ?
+			      newer : older, LUSTRE_VERSION_STRING);
+		warned = true;
+	}
+
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(3, 2, 50, 0)
+	/* Check if server has LU-1252 fix applied to not always swab
+	 * the IR MNE entries. Do this only once per connection.  This
+	 * fixup is version-limited, because we don't want to carry the
+	 * OBD_CONNECT_MNE_SWAB flag around forever, just so long as we
+	 * need interop with unpatched 2.2 servers.  For newer servers,
+	 * the client will do MNE swabbing only as needed.  LU-1644 */
+	if (unlikely((ocd->ocd_connect_flags & OBD_CONNECT_VERSION) &&
+		     !(ocd->ocd_connect_flags & OBD_CONNECT_MNE_SWAB) &&
+		     OBD_OCD_VERSION_MAJOR(ocd->ocd_version) == 2 &&
+		     OBD_OCD_VERSION_MINOR(ocd->ocd_version) == 2 &&
+		     OBD_OCD_VERSION_PATCH(ocd->ocd_version) < 55 &&
+		     strcmp(imp->imp_obd->obd_type->typ_name,
+			    LUSTRE_MGC_NAME) == 0))
+		imp->imp_need_mne_swab = 1;
+	else /* clear if server was upgraded since last connect */
+		imp->imp_need_mne_swab = 0;
+#else
+#warning "LU-1644: Remove old OBD_CONNECT_MNE_SWAB fixup and imp_need_mne_swab"
+#endif
+
+	if (ocd->ocd_connect_flags & OBD_CONNECT_CKSUM) {
+		/* We sent to the server ocd_cksum_types with bits set
+		 * for algorithms we understand. The server masked off
+		 * the checksum types it doesn't support */
+		if ((ocd->ocd_cksum_types &
+		     cksum_types_supported_client()) == 0) {
+			LCONSOLE_WARN("The negotiation of the checksum "
+				      "alogrithm to use with server %s "
+				      "failed (%x/%x), disabling "
+				      "checksums\n",
+				      obd2cli_tgt(imp->imp_obd),
+				      ocd->ocd_cksum_types,
+				      cksum_types_supported_client());
+			cli->cl_checksum = 0;
+			cli->cl_supp_cksum_types = OBD_CKSUM_ADLER;
+		} else {
+			cli->cl_supp_cksum_types = ocd->ocd_cksum_types;
+		}
+	} else {
+		/* The server does not support OBD_CONNECT_CKSUM.
+		 * Enforce ADLER for backward compatibility*/
+		cli->cl_supp_cksum_types = OBD_CKSUM_ADLER;
+	}
+	cli->cl_cksum_type =cksum_type_select(cli->cl_supp_cksum_types);
+	if (ocd->ocd_connect_flags & OBD_CONNECT_BRW_SIZE)
+		cli->cl_max_pages_per_rpc =
+			min(ocd->ocd_brw_size >> PAGE_CACHE_SHIFT,
+			    cli->cl_max_pages_per_rpc);
+	else if (imp->imp_connect_op == MDS_CONNECT ||
+		 imp->imp_connect_op == MGS_CONNECT)
+		cli->cl_max_pages_per_rpc = 1;
+	/* Reset ns_connect_flags only for initial connect. It might be
+	 * changed in while using FS and if we reset it in reconnect
+	 * this leads to losing user settings done before such as
+	 * disable lru_resize, etc. */
+	if (old_connect_flags != exp_connect_flags(exp) || init_connect) {
+		CDEBUG(D_HA, "%s: Resetting ns_connect_flags to server "
+			     "flags: "LPX64"\n", imp->imp_obd->obd_name,
+			     ocd->ocd_connect_flags);
+		imp->imp_obd->obd_namespace->ns_connect_flags =
+			ocd->ocd_connect_flags;
+		imp->imp_obd->obd_namespace->ns_orig_connect_flags =
+			ocd->ocd_connect_flags;
+	}
+
+	if ((ocd->ocd_connect_flags & OBD_CONNECT_AT) &&
+		(imp->imp_msg_magic == LUSTRE_MSG_MAGIC_V2))
+		/* We need a per-message support flag, because
+		 * a. we don't know if the incoming connect reply
+		 *    supports AT or not (in reply_in_callback)
+		 *    until we unpack it.
+		 * b. failovered server means export and flags are gone
+		 *    (in ptlrpc_send_reply).
+		 *    Can only be set when we know AT is supported at
+		 *    both ends */
+		imp->imp_msghdr_flags |= MSGHDR_AT_SUPPORT;
+	else
+		imp->imp_msghdr_flags &= ~MSGHDR_AT_SUPPORT;
+
+	if ((ocd->ocd_connect_flags & OBD_CONNECT_FULL20) &&
+	    (imp->imp_msg_magic == LUSTRE_MSG_MAGIC_V2))
+		imp->imp_msghdr_flags |= MSGHDR_CKSUM_INCOMPAT18;
+	else
+		imp->imp_msghdr_flags &= ~MSGHDR_CKSUM_INCOMPAT18;
+
+	LASSERT((cli->cl_max_pages_per_rpc <= PTLRPC_MAX_BRW_PAGES) &&
+		(cli->cl_max_pages_per_rpc > 0));
+
+}
+
 /**
  * interpret_reply callback for connect RPCs.
  * Looks into returned status of connect operation and decides
@@ -787,7 +930,6 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 {
         struct ptlrpc_connect_async_args *aa = data;
         struct obd_import *imp = request->rq_import;
-        struct client_obd *cli = &imp->imp_obd->u.cli;
         struct lustre_handle old_hdl;
         __u64 old_connect_flags;
         int msg_flags;
@@ -895,8 +1037,10 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
                                obd2cli_tgt(imp->imp_obd));
                         IMPORT_SET_STATE(imp, LUSTRE_IMP_REPLAY_LOCKS);
                 } else {
-                        IMPORT_SET_STATE(imp, LUSTRE_IMP_FULL);
-                        ptlrpc_activate_import(imp);
+			/** Set RECOVER state here, and the FULL will be set
+			 * at ptlrpc_import_recovery_state_machine a bit later.
+			 * We need this hack to set import flags first. */
+			IMPORT_SET_STATE(imp, LUSTRE_IMP_RECOVER);
                 }
 
                 GOTO(finish, rc = 0);
@@ -1013,155 +1157,19 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
         }
 
 finish:
+	/* Import flags should be updated before waking import at FULL state */
+	ptlrpc_connect_set_flags(imp, ocd, old_connect_flags, exp,
+				 aa->pcaa_initial_connect);
 	rc = ptlrpc_import_recovery_state_machine(imp);
-	if (rc != 0) {
-		if (rc == -ENOTCONN) {
-			CDEBUG(D_HA, "evicted/aborted by %s@%s during recovery;"
-			       "invalidating and reconnecting\n",
-			       obd2cli_tgt(imp->imp_obd),
-			       imp->imp_connection->c_remote_uuid.uuid);
-			ptlrpc_connect_import(imp);
-			imp->imp_connect_tried = 1;
-			RETURN(0);
-		}
-	} else {
-		static bool warned;
-
-		spin_lock(&imp->imp_lock);
-		cfs_list_del(&imp->imp_conn_current->oic_item);
-		cfs_list_add(&imp->imp_conn_current->oic_item,
-			     &imp->imp_conn_list);
-		imp->imp_last_success_conn =
-			imp->imp_conn_current->oic_last_attempt;
-
-		spin_unlock(&imp->imp_lock);
-
-		if (!ocd->ocd_ibits_known &&
-		    ocd->ocd_connect_flags & OBD_CONNECT_IBITS)
-			CERROR("Inodebits aware server returned zero compatible"
-			       " bits?\n");
-
-		if (!warned && (ocd->ocd_connect_flags & OBD_CONNECT_VERSION) &&
-		    (ocd->ocd_version > LUSTRE_VERSION_CODE +
-					LUSTRE_VERSION_OFFSET_WARN ||
-		     ocd->ocd_version < LUSTRE_VERSION_CODE -
-					LUSTRE_VERSION_OFFSET_WARN)) {
-			/* Sigh, some compilers do not like #ifdef in the middle
-			   of macro arguments */
-			const char *older = "older than client. "
-					    "Consider upgrading server";
-#ifdef __KERNEL__
-			const char *newer = "newer than client. "
-					    "Consider recompiling application";
-#else
-			const char *newer = "newer than client. "
-					    "Consider upgrading client";
-#endif
-
-			LCONSOLE_WARN("Server %s version (%d.%d.%d.%d) "
-				      "is much %s (%s)\n",
-				      obd2cli_tgt(imp->imp_obd),
-				      OBD_OCD_VERSION_MAJOR(ocd->ocd_version),
-				      OBD_OCD_VERSION_MINOR(ocd->ocd_version),
-				      OBD_OCD_VERSION_PATCH(ocd->ocd_version),
-				      OBD_OCD_VERSION_FIX(ocd->ocd_version),
-				      ocd->ocd_version > LUSTRE_VERSION_CODE ?
-				      newer : older, LUSTRE_VERSION_STRING);
-			warned = true;
-		}
-
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(3, 2, 50, 0)
-		/* Check if server has LU-1252 fix applied to not always swab
-		 * the IR MNE entries. Do this only once per connection.  This
-		 * fixup is version-limited, because we don't want to carry the
-		 * OBD_CONNECT_MNE_SWAB flag around forever, just so long as we
-		 * need interop with unpatched 2.2 servers.  For newer servers,
-		 * the client will do MNE swabbing only as needed.  LU-1644 */
-		if (unlikely((ocd->ocd_connect_flags & OBD_CONNECT_VERSION) &&
-			     !(ocd->ocd_connect_flags & OBD_CONNECT_MNE_SWAB) &&
-			     OBD_OCD_VERSION_MAJOR(ocd->ocd_version) == 2 &&
-			     OBD_OCD_VERSION_MINOR(ocd->ocd_version) == 2 &&
-			     OBD_OCD_VERSION_PATCH(ocd->ocd_version) < 55 &&
-			     strcmp(imp->imp_obd->obd_type->typ_name,
-				    LUSTRE_MGC_NAME) == 0))
-			imp->imp_need_mne_swab = 1;
-		else /* clear if server was upgraded since last connect */
-			imp->imp_need_mne_swab = 0;
-#else
-#warning "LU-1644: Remove old OBD_CONNECT_MNE_SWAB fixup and imp_need_mne_swab"
-#endif
-
-		if (ocd->ocd_connect_flags & OBD_CONNECT_CKSUM) {
-			/* We sent to the server ocd_cksum_types with bits set
-			 * for algorithms we understand. The server masked off
-			 * the checksum types it doesn't support */
-			if ((ocd->ocd_cksum_types &
-			     cksum_types_supported_client()) == 0) {
-				LCONSOLE_WARN("The negotiation of the checksum "
-					      "alogrithm to use with server %s "
-					      "failed (%x/%x), disabling "
-					      "checksums\n",
-					      obd2cli_tgt(imp->imp_obd),
-					      ocd->ocd_cksum_types,
-					      cksum_types_supported_client());
-				cli->cl_checksum = 0;
-				cli->cl_supp_cksum_types = OBD_CKSUM_ADLER;
-			} else {
-				cli->cl_supp_cksum_types = ocd->ocd_cksum_types;
-			}
-		} else {
-			/* The server does not support OBD_CONNECT_CKSUM.
-			 * Enforce ADLER for backward compatibility*/
-			cli->cl_supp_cksum_types = OBD_CKSUM_ADLER;
-		}
-		cli->cl_cksum_type =cksum_type_select(cli->cl_supp_cksum_types);
-
-		if (ocd->ocd_connect_flags & OBD_CONNECT_BRW_SIZE)
-			cli->cl_max_pages_per_rpc =
-				min(ocd->ocd_brw_size >> PAGE_CACHE_SHIFT,
-				    cli->cl_max_pages_per_rpc);
-		else if (imp->imp_connect_op == MDS_CONNECT ||
-			 imp->imp_connect_op == MGS_CONNECT)
-			cli->cl_max_pages_per_rpc = 1;
-
-		/* Reset ns_connect_flags only for initial connect. It might be
-		 * changed in while using FS and if we reset it in reconnect
-		 * this leads to losing user settings done before such as
-		 * disable lru_resize, etc. */
-		if (old_connect_flags != exp_connect_flags(exp) ||
-		    aa->pcaa_initial_connect) {
-                        CDEBUG(D_HA, "%s: Resetting ns_connect_flags to server "
-                               "flags: "LPX64"\n", imp->imp_obd->obd_name,
-                              ocd->ocd_connect_flags);
-                        imp->imp_obd->obd_namespace->ns_connect_flags =
-                                ocd->ocd_connect_flags;
-                        imp->imp_obd->obd_namespace->ns_orig_connect_flags =
-                                ocd->ocd_connect_flags;
-                }
-
-                if ((ocd->ocd_connect_flags & OBD_CONNECT_AT) &&
-                    (imp->imp_msg_magic == LUSTRE_MSG_MAGIC_V2))
-                        /* We need a per-message support flag, because
-                           a. we don't know if the incoming connect reply
-                              supports AT or not (in reply_in_callback)
-                              until we unpack it.
-                           b. failovered server means export and flags are gone
-                              (in ptlrpc_send_reply).
-                           Can only be set when we know AT is supported at
-                           both ends */
-                        imp->imp_msghdr_flags |= MSGHDR_AT_SUPPORT;
-                else
-                        imp->imp_msghdr_flags &= ~MSGHDR_AT_SUPPORT;
-
-                if ((ocd->ocd_connect_flags & OBD_CONNECT_FULL20) &&
-                    (imp->imp_msg_magic == LUSTRE_MSG_MAGIC_V2))
-                        imp->imp_msghdr_flags |= MSGHDR_CKSUM_INCOMPAT18;
-                else
-                        imp->imp_msghdr_flags &= ~MSGHDR_CKSUM_INCOMPAT18;
-
-                LASSERT((cli->cl_max_pages_per_rpc <= PTLRPC_MAX_BRW_PAGES) &&
-                        (cli->cl_max_pages_per_rpc > 0));
-        }
+	if (rc == -ENOTCONN) {
+		CDEBUG(D_HA, "evicted/aborted by %s@%s during recovery;"
+		       "invalidating and reconnecting\n",
+		       obd2cli_tgt(imp->imp_obd),
+		       imp->imp_connection->c_remote_uuid.uuid);
+		ptlrpc_connect_import(imp);
+		imp->imp_connect_tried = 1;
+		RETURN(0);
+	}
 
 out:
 	imp->imp_connect_tried = 1;
