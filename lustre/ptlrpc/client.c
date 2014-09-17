@@ -2873,7 +2873,7 @@ ptlrpc_abort_cond_resched(struct obd_import *imp)
 
 	spin_unlock(&imp->imp_lock);
 
-	CDEBUG(D_RPCTRACE, "reschedule abort_inflight for %s:%s",
+	CDEBUG(D_RPCTRACE, "reschedule abort_inflight for %s:%s\n",
 	       imp->imp_obd->obd_uuid.uuid,
 	       imp->imp_connection == NULL ? "<NULL>" :
 	       libcfs_nid2str(imp->imp_connection->c_peer.nid));
