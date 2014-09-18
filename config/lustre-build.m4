@@ -230,22 +230,23 @@ AC_CONFIG_SUBDIRS([libsysio])
 ])
 
 #
-# LB_PATH_LUSTREIOKIT
+# LB_LUSTREIOKIT
 #
-# We no longer handle external lustre-iokit
-#
-AC_DEFUN([LB_PATH_LUSTREIOKIT],
-[AC_ARG_ENABLE([iokit],
+AC_DEFUN([LB_LUSTREIOKIT],
+[AC_MSG_CHECKING([whether to build iokit])
+AC_ARG_ENABLE([iokit],
 	AC_HELP_STRING([--disable-iokit],
 		[disable iokit (default is enable)]),
 	[],[
 		enable_iokit='yes'
 	])
-AC_MSG_CHECKING([whether to build iokit])
 AC_MSG_RESULT([$enable_iokit])
-AS_IF([test "x$enable_iokit" = xyes], [LUSTREIOKIT_SUBDIR="lustre-iokit"], [LUSTREIOKIT_SUBDIR=""])[]dnl
-AC_SUBST(LUSTREIOKIT_SUBDIR)
-AM_CONDITIONAL(BUILD_LUSTREIOKIT, [test "x$enable_iokit" = xyes])
+AS_IF([test x$enable_iokit = xyes], [
+	LUSTREIOKIT_SUBDIR="lustre-iokit"
+	AC_SUBST([LUSTREIOKIT_SUBDIR])
+	RPMBUILD_WITHOUT_LUSTRE_IOKIT="--without lustre_iokit"
+	AC_SUBST([RPMBUILD_WITHOUT_LUSTRE_IOKIT])
+	],[])
 ])
 
 # Define no libcfs by default.
@@ -348,6 +349,10 @@ AC_ARG_ENABLE([tests],
 		enable_tests='yes'
 	])
 AC_MSG_RESULT([$enable_tests])
+if test x$enable_tests != xyes ; then
+	RPMBUILD_WITHOUT_LUSTRE_TESTS="--without lustre_tests"
+        AC_SUBST([RPMBUILD_WITHOUT_LUSTRE_TESTS])
+fi
 ])
 
 #
@@ -622,7 +627,9 @@ AS_IF([test x$enable_ldiskfs = xno -a x$enable_zfs = xno],
 AC_MSG_CHECKING([whether to build Lustre server support])
 AC_MSG_RESULT([$enable_server])
 AS_IF([test x$enable_server = xyes],
-	[AC_DEFINE(HAVE_SERVER_SUPPORT, 1, [support server])]
+	[AC_DEFINE(HAVE_SERVER_SUPPORT, 1, [support server])],
+	[RPMBUILD_WITHOUT_SERVERS="--without servers"
+	AC_SUBST([RPMBUILD_WITHOUT_SERVERS])]
 )
 ])
 
@@ -665,7 +672,7 @@ LN_CONFIG_USERSPACE
 
 LB_PATH_LIBSYSIO
 LB_PATH_SNMP
-LB_PATH_LUSTREIOKIT
+LB_LUSTREIOKIT
 
 LB_DEFINE_E2FSPROGS_NAMES
 
