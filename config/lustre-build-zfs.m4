@@ -359,6 +359,8 @@ AC_DEFUN([LB_CONFIG_ZFS], [
 		dnl #
 		AS_IF([test x$enable_zfs = xyes], [
 			AC_DEFINE(HAVE_ZFS_OSD, 1, Enable zfs osd)
+			RPMBUILD_WITH_ZFS="--with zfs"
+			AC_SUBST([RPMBUILD_WITH_ZFS])
 		],[
 			AS_IF([test x$require_zfs = xyes], [
 				AC_MSG_ERROR([
