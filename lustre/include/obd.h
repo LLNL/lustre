@@ -312,6 +312,9 @@ enum {
 #define MDC_MAX_RIF_DEFAULT       8
 #define MDC_MAX_RIF_MAX         512
 
+#define OBD_MAX_DEFAULT_EA_SIZE		LU_PAGE_SIZE
+#define OBD_MAX_DEFAULT_COOKIE_SIZE	LU_PAGE_SIZE
+
 struct mdc_rpc_lock;
 struct obd_import;
 struct client_obd {
@@ -319,11 +322,36 @@ struct client_obd {
         struct obd_uuid          cl_target_uuid;
         struct obd_import       *cl_import; /* ptlrpc connection state */
         int                      cl_conn_count;
-	/* max_mds_easize is purely a performance thing so we don't have to
-	 * call obd_size_diskmd() all the time. */
+
+	/* Cache maximum and default values for easize and cookiesize. This is
+	 * strictly a performance optimization to minimize calls to
+	 * obd_size_diskmd(). The default values are used to calculate the
+	 * initial size of a request buffer. The ptlrpc layer will resize the
+	 * buffer as needed to accommodate a larger reply from the
+	 * server. The default values should be small enough to avoid wasted
+	 * memory and excessive use of vmalloc(), yet large enough to avoid
+	 * reallocating the buffer in the common use case. */
+
+	/* Default EA size for striping attributes. It is initialized at
+	 * mount-time based on the default stripe width of the filesystem,
+	 * then it tracks the largest observed EA size advertised by
+	 * the MDT, up to a maximum value of OBD_MAX_DEFAULT_EA_SIZE. */
 	int			 cl_default_mds_easize;
+
+	/* Maximum possible EA size computed at mount-time based on
+	 * the number of OSTs in the filesystem. May be increased at
+	 * run-time if a larger observed size is advertised by the MDT. */
 	int			 cl_max_mds_easize;
+
+	/* Default cookie size for llog cookies (see struct llog_cookie). It is
+	 * initialized to zero at mount-time, then it tracks the largest
+	 * observed cookie size advertised by the MDT, up to a maximum value of
+	 * OBD_MAX_DEFAULT_COOKIE_SIZE. */
 	int			 cl_default_mds_cookiesize;
+
+	/* Maximum possible cookie size computed at mount-time based on
+	 * the number of OSTs in the filesystem. May be increased at
+	 * run-time if a larger observed size is advertised by the MDT. */
 	int			 cl_max_mds_cookiesize;
 
         enum lustre_sec_part     cl_sp_me;
