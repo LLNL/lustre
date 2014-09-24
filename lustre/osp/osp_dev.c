@@ -705,7 +705,7 @@ static int osp_init0(const struct lu_env *env, struct osp_device *m,
 		 * connections as well. */
 		rc = osp_init_precreate(m);
 		if (rc)
-			GOTO(out_last_used, rc);
+			GOTO(out_fid, rc);
 		/*
 		 * Initialize synhronization mechanism taking
 		 * care of propogating changes to OST in near
@@ -739,6 +739,9 @@ out_precreat:
 	/* stop precreate thread */
 	if (!m->opd_connect_mdt)
 		osp_precreate_fini(m);
+out_fid:
+	if (!m->opd_connect_mdt)
+		obd_fid_fini(m->opd_obd);
 out_last_used:
 	if (!m->opd_connect_mdt)
 		osp_last_used_fini(env, m);
