@@ -1284,6 +1284,16 @@ int ofd_create(const struct lu_env *env, struct obd_export *exp,
 				       ofd_name(ofd), POSTID(&oa->o_oi), -EINVAL);
 				GOTO(out, rc = -EINVAL);
 			}
+
+			if (diff < 0) {
+				/* LU-5648 */
+				CERROR("%s: invalid precreate request for "
+				       DOSTID", last_id " LPU64 ". "
+				       "Likely MDS last_id corruption\n",
+				       ofd_name(ofd), POSTID(&oa->o_oi),
+				       ofd_seq_last_oid(oseq));
+				GOTO(out, rc = -EINVAL);
+			}
 		}
 	}
 	if (diff > 0) {
