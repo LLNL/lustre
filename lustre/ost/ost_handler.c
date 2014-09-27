@@ -730,38 +730,38 @@ static void ost_brw_lock_put(int mode,
 /* Allocate thread local buffers if needed */
 static struct ost_thread_local_cache *ost_tls_get(struct ptlrpc_request *r)
 {
-        struct ost_thread_local_cache *tls =
-                (struct ost_thread_local_cache *)(r->rq_svc_thread->t_data);
+	struct ost_thread_local_cache *tls =
+		(struct ost_thread_local_cache *)(r->rq_svc_thread->t_data);
 
-        /* In normal mode of operation an I/O request is serviced only
-         * by ll_ost_io threads each of them has own tls buffers allocated by
-         * ost_io_thread_init().
-         * During recovery, an I/O request may be queued until any of the ost
-         * service threads process it. Not necessary it should be one of
-         * ll_ost_io threads. In that case we dynamically allocating tls
-         * buffers for the request service time. */
-        if (unlikely(tls == NULL)) {
-                LASSERT(r->rq_export->exp_in_recovery);
-                OBD_ALLOC_PTR(tls);
-                if (tls != NULL) {
-                        tls->temporary = 1;
-                        r->rq_svc_thread->t_data = tls;
-                }
-        }
-        return  tls;
+	/* In normal mode of operation an I/O request is serviced only
+	 * by ll_ost_io threads each of them has own tls buffers allocated by
+	 * ost_io_thread_init().
+	 * During recovery, an I/O request may be queued until any of the ost
+	 * service threads process it. Not necessary it should be one of
+	 * ll_ost_io threads. In that case we dynamically allocating tls
+	 * buffers for the request service time. */
+	if (unlikely(tls == NULL)) {
+		LASSERT(r->rq_export->exp_in_recovery);
+		OBD_ALLOC_LARGE(tls, sizeof(*tls));
+		if (tls != NULL) {
+			tls->temporary = 1;
+			r->rq_svc_thread->t_data = tls;
+		}
+	}
+	return  tls;
 }
 
 /* Free thread local buffers if they were allocated only for servicing
  * this one request */
 static void ost_tls_put(struct ptlrpc_request *r)
 {
-        struct ost_thread_local_cache *tls =
-                (struct ost_thread_local_cache *)(r->rq_svc_thread->t_data);
+	struct ost_thread_local_cache *tls =
+		(struct ost_thread_local_cache *)(r->rq_svc_thread->t_data);
 
-        if (unlikely(tls->temporary)) {
-                OBD_FREE_PTR(tls);
-                r->rq_svc_thread->t_data = NULL;
-        }
+	if (unlikely(tls->temporary)) {
+		OBD_FREE_LARGE(tls, sizeof(*tls));
+		r->rq_svc_thread->t_data = NULL;
+	}
 }
 
 static int ost_brw_read(struct ptlrpc_request *req, struct obd_trans_info *oti)
@@ -2566,23 +2566,23 @@ EXPORT_SYMBOL(ost_handle);
  */
 static void ost_io_thread_done(struct ptlrpc_thread *thread)
 {
-        struct ost_thread_local_cache *tls; /* TLS stands for Thread-Local
-                                             * Storage */
+	struct ost_thread_local_cache *tls; /* TLS stands for Thread-Local
+					     * Storage */
 
-        ENTRY;
+	ENTRY;
 
-        LASSERT(thread != NULL);
+	LASSERT(thread != NULL);
 
-        /*
-         * be prepared to handle partially-initialized pools (because this is
-         * called from ost_io_thread_init() for cleanup.
-         */
-        tls = thread->t_data;
-        if (tls != NULL) {
-                OBD_FREE_PTR(tls);
-                thread->t_data = NULL;
-        }
-        EXIT;
+	/*
+	 * be prepared to handle partially-initialized pools (because this is
+	 * called from ost_io_thread_init() for cleanup.
+	 */
+	tls = thread->t_data;
+	if (tls != NULL) {
+		OBD_FREE_LARGE(tls, sizeof(*tls));
+		thread->t_data = NULL;
+	}
+	EXIT;
 }
 
 /*
@@ -2590,18 +2590,18 @@ static void ost_io_thread_done(struct ptlrpc_thread *thread)
  */
 static int ost_io_thread_init(struct ptlrpc_thread *thread)
 {
-        struct ost_thread_local_cache *tls;
+	struct ost_thread_local_cache *tls;
 
-        ENTRY;
+	ENTRY;
 
-        LASSERT(thread != NULL);
-        LASSERT(thread->t_data == NULL);
+	LASSERT(thread != NULL);
+	LASSERT(thread->t_data == NULL);
 
-        OBD_ALLOC_PTR(tls);
-        if (tls == NULL)
-                RETURN(-ENOMEM);
-        thread->t_data = tls;
-        RETURN(0);
+	OBD_ALLOC_LARGE(tls, sizeof(*tls));
+	if (tls == NULL)
+		RETURN(-ENOMEM);
+	thread->t_data = tls;
+	RETURN(0);
 }
 
 #define OST_WATCHDOG_TIMEOUT (obd_timeout * 1000)
