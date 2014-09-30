@@ -325,8 +325,13 @@ struct dt_object *__local_file_create(const struct lu_env *env,
 		GOTO(trans_stop, rc);
 
 	if (dti->dti_dof.dof_type == DFT_DIR) {
-		dt_declare_ref_add(env, dto, th);
-		dt_declare_ref_add(env, parent, th);
+		rc = dt_declare_ref_add(env, dto, th);
+		if (rc < 0)
+			GOTO(trans_stop, rc);
+
+		rc = dt_declare_ref_add(env, parent, th);
+		if (rc < 0)
+			GOTO(trans_stop, rc);
 	}
 
 	rc = dt_declare_insert(env, parent, (void *)fid, (void *)name, th);
