@@ -290,14 +290,32 @@ cd $RPM_BUILD_DIR/lustre-%{version}
 # build failures
 %define optflags -g -O2 -Werror
 CONFIGURE_ARGS="%{?configure_args} --with-release=%release"
+
+# Here we turn lustre options that were set on the rpmbuild command line
+# into configure options.
 %if %{with lustre_tests}
-CONFIGURE_ARGS="$CONFIGURE_ARGS --enable-tests --enable-liblustre-tests"
+%define conf_tests --enable-tests --enable-liblustre-tests
 %else
-CONFIGURE_ARGS="$CONFIGURE_ARGS --disable-tests --disable-liblustre-tests"
+%define conf_tests --disable-tests --disable-liblustre-tests
 %endif
 %if %{without lustre_iokit}
-CONFIGURE_ARGS="$CONFIGURE_ARGS --disable-iokit"
+%define conf_iokit --disable-iokit
 %endif
+%if %{without servers}
+  %define conf_disable_server --disable-server
+%else
+  %if %{with zfs}
+    %define conf_zfs --with-zfs
+  %else
+    %define conf_zfs --without-zfs
+  %endif
+  %if %{with ldiskfs}
+    %define conf_ldiskfs --with-ldiskfs
+  %else
+    %define conf_ldiskfs --without-ldiskfs
+  %endif
+%endif
+
 
 # if %%kdir was given, make sure it's not in the configure arguments
 if [ -n "%kdir" ]; then
@@ -319,6 +337,8 @@ CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-kmp-moddir=[^ ][^ ]*
 
 %eval_configure \
 	%{?kdir: --with-linux=%kdir} %{?kobjdir: --with-linux-obj=%kobjdir} \
+	%{?conf_tests} %{?conf_disable_server} %{?conf_zfs} %{?conf_ldiskfs} \
+	%{?conf_iokit} \
 	$CONFIGURE_ARGS --with-kmp-moddir=%{kmoddir}
 make -j $RPM_BUILD_NCPUS -s %{?make_args}
 
