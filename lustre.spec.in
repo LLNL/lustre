@@ -14,14 +14,29 @@
     %undefine with_zfs
 %endif
 
+# Helper macros
+%define empty_string() %(if [ -z "%{1}" ]; then echo 1; else echo 0; fi)
+%define nonempty_string() %(if [ -n "%{1}" ]; then echo 1; else echo 0; fi)
+
 %{!?version: %global version @VERSION@}
-%{!?kver: %global kver ""}
-%{!?kdir: %global kdir %(dir=$(echo "%configure_args" | sed -ne 's/.*--with-linux=\\([^ ][^ ]*\\).*$/\\1/p'); if [ -n "$dir" ]; then echo "$dir"; else if [ -n "%kver" ]; then kversion="%kver"; else kversion="$(uname -r)"; fi; echo "/lib/modules/$kversion/source"; fi)}
 
-%{!?kobjdir: %global kobjdir %(dir=$(echo "%configure_args" | sed -ne 's/.*--with-linux-obj=\\([^ ][^ ]*\\).*$/\\1/p'); if [ -n "$dir" ]; then echo "$dir"; else if [ -n "%kver" ]; then kversion="%kver"; else kversion="$(uname -r)"; fi; if [ "%kdir" = "/lib/modules/$kversion/source" ]; then echo "/lib/modules/$kversion/build"; else echo "%kdir"; fi; fi)}
-
-# as an alternative to this implementation we could simply "make -C $kdir kernelversion"
-%{!?kversion: %global kversion %(if test -s %kobjdir/include/generated/utsrelease.h ; then LINUXRELEASEHEADER=%kobjdir/include/generated/utsrelease.h ; elif test -s %kobjdir/include/linux/utsrelease.h ; then LINUXRELEASEHEADER=%kobjdir/include/linux/utsrelease.h ; else LINUXRELEASEHEADER=%kobjdir/include/linux/version.h; fi; sed -ne '/^#define UTS_RELEASE/s/.*"\\(.*\\)"$/\\1/p' $LINUXRELEASEHEADER)}
+# RHEL 6.x:
+%if %{defined el6}
+  %define klnk %{_usrsrc}/kernels/*/include/config
+  %{!?kversion: %global kversion %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
+  %{!?kverpkg: %global kverpkg %(echo %{kversion} | %{__sed} -e 's/.%{_target_cpu}$//g')}
+  %{!?kdir: %global kdir %{_usrsrc}/kernels/%{kversion}}
+  %{!?kobjdir: %global kobjdir %kdir}
+  %if %{undefined buildrequires}
+    %if %{with servers}
+      %define br_arg2 kernel-debuginfo-common-%{_target_cpu}
+    %endif
+    %global buildrequires kernel-devel %{?br_arg2}
+  %endif
+  %if %{undefined modules_requires} && %{nonempty_string %{kverpkg}}
+      %global modules_requires kernel = %{kverpkg}
+  %endif
+%endif
 
 %{!?downstream_release: %global downstream_release "@DOWNSTREAM_RELEASE@"}
 
@@ -52,10 +67,6 @@
 # response from them
 #%%global _use_internal_dependency_generator 0
 
-# for those uses that don't want the -smp/-bigsmp (or the .arch) on the end
-# of %kversion
-%define krequires %(bash -c "echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/-ppc64$//' -e 's/-default$//'")
-
 %define sles10 %(bash -c "if [ "%sles_version" = "10" ]; then echo -n '1'; else echo -n '0'; fi")
 
 %if %sles10
@@ -83,6 +94,15 @@
     %endif
 %endif
 
+# The kernel version should only be appended to a binary RPM.  When
+# building a source RPM it must be kernel version agnostic.  This means
+# the source RPM must never specify a required kernel version, but the
+# final RPM should be keyed to the kernel version it was built against.
+%if %{defined build_src_rpm}
+  %undefine buildrequires
+  %undefine modules_requires
+%endif
+
 %if %{defined cross_path} && %{defined post_script}
 %define rpm_post_base %(echo $(dirname %{cross_path})/%{lustre_name})
 %endif
@@ -99,6 +119,9 @@ BuildRoot: %{_tmppath}/lustre-%{version}-root
 Obsoletes: lustre-lite, lustre-lite-utils, lustre-ldap nfs-utils-lustre
 Provides: lustre-lite = %{version}, lustre-lite-utils = %{version}
 Requires: %{name}-modules = %{version}
+%if %{defined buildrequires}
+BuildRequires: %{buildrequires}
+%endif
 BuildRequires: libtool
 %if %{with servers}
 Requires: lustre-osd
@@ -128,13 +151,10 @@ AutoReqProv: no
 # for SLES10, we need (where %{flavor} is, i.e. smp):
 %if %sles10
 Requires: kernel-%{flavor}
-%else
-%if %{_vendor}=="redhat" || %{_vendor}=="fedora"
-# for RHEL we need to require the specific kernel still since weak-modules
-# support on RH is, well, weak, to be punny about it
-Requires: kernel = %{krequires}
 %endif
 %endif
+%if %{defined modules_requires}
+Requires: %{modules_requires}
 %endif
 Group: Development/Kernel
 
@@ -162,6 +182,11 @@ backing store of a Lustre server.
 %if %{with zfs}
 %package osd-zfs
 Summary: osd-zfs is the mandatory glue for ZFS support in Lustre.
+%if %{undefined zfs_buildrequires}
+BuildRequires: libzfs2-devel kmod-zfs-devel kmod-spl-devel
+%else
+BuildRequires: %{zfs_buildrequires}
+%endif
 Requires: lustre-modules = %{version}, zfs-kmod
 Provides: lustre-osd
 Group: Development/Kernel
