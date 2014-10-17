@@ -6,7 +6,7 @@
 # chkconfig: - 59 76
 # description:  Part of the lustre file system.
 # probe: true
-# config: /etc/sysconfig/lnet
+# config: /etc/sysconfig/lustre
 
 # Source function library.
 [ -f /etc/rc.d/init.d/functions ] && . /etc/rc.d/init.d/functions
