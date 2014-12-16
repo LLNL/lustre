@@ -693,7 +693,7 @@ int lastid_compat_check(const struct lu_env *env, struct dt_device *dev,
 		return PTR_ERR(root);
 
 	/* find old last_id file */
-	snprintf(dti->dti_buf, sizeof(dti->dti_buf), "seq-"LPX64"-lastid",
+	snprintf(dti->dti_buf, sizeof(dti->dti_buf), "seq-"LPX64i"-lastid",
 		 lastid_seq);
 	rc = dt_lookup_dir(env, root, dti->dti_buf, &dti->dti_fid);
 	lu_object_put_nocache(env, &root->do_lu);
@@ -731,12 +731,12 @@ int lastid_compat_check(const struct lu_env *env, struct dt_device *dev,
 	rc = dt_record_read(env, o, &dti->dti_lb, &dti->dti_off);
 	dt_read_unlock(env, o);
 	if (rc == 0 && le32_to_cpu(losd.lso_magic) != LOS_MAGIC) {
-		CERROR("%s: wrong content of seq-"LPX64"-lastid file, magic %x\n",
+		CERROR("%s: wrong content of seq-"LPX64i"-lastid file, magic %x\n",
 		       o->do_lu.lo_dev->ld_obd->obd_name, lastid_seq,
 		       le32_to_cpu(losd.lso_magic));
 		rc = -EINVAL;
 	} else if (rc < 0) {
-		CERROR("%s: failed to read seq-"LPX64"-lastid: rc = %d\n",
+		CERROR("%s: failed to read seq-"LPX64i"-lastid: rc = %d\n",
 		       o->do_lu.lo_dev->ld_obd->obd_name, lastid_seq, rc);
 	}
 	lu_object_put_nocache(env, &o->do_lu);
@@ -796,6 +796,13 @@ int local_oid_storage_init(const struct lu_env *env, struct dt_device *dev,
 	cfs_atomic_inc(&ls->ls_refcount);
 	cfs_list_add(&(*los)->los_list, &ls->ls_los_list);
 
+	/* filesystem formatted with pre-2.4.0 Lustre may use different
+	 * way to store last_id counter, try to read it to initialize
+	 * the new LAST_ID file with proper value */
+	rc = lastid_compat_check(env, dev, fid_seq(first_fid), &first_oid, ls);
+	if (rc < 0)
+		GOTO(out_los, rc);
+
 	/* Use {seq, 0, 0} to create the LAST_ID file for every
 	 * sequence.  OIDs start at LUSTRE_FID_INIT_OID.
 	 */
@@ -805,13 +812,7 @@ int local_oid_storage_init(const struct lu_env *env, struct dt_device *dev,
 	o = ls_locate(env, ls, &dti->dti_fid, NULL);
 	if (IS_ERR(o))
 		GOTO(out_los, rc = PTR_ERR(o));
-
 	if (!dt_object_exists(o)) {
-		rc = lastid_compat_check(env, dev, fid_seq(first_fid),
-					 &first_oid, ls);
-		if (rc < 0)
-			GOTO(out_los, rc);
-
 		th = dt_trans_create(env, dev);
 		if (IS_ERR(th))
 			GOTO(out_los, rc = PTR_ERR(th));
