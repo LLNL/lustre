@@ -55,9 +55,7 @@
 #endif
 
 #include <sys/arc.h>
-
 #include <sys/nvpair.h>
-
 #include <sys/zfs_znode.h>
 #include "udmu.h"
 
