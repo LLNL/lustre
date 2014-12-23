@@ -176,19 +176,20 @@ autodetect_target() {
 
     local target=""
     case ${distro} in
-          oel5) target="2.6-oel5";;
-         rhel5) target="2.6-rhel5";;
-         rhel6) target="2.6-rhel6";;
-        sles10) target="2.6-sles10";;
-        sles11) target="$(uname -r | cut -d . -f 1,2)-sles11"
-                local PLEV=$(sed -n -e 's/^PATCHLEVEL = //p' /etc/SuSE-release)
-                if [ "$PLEV" = "3" ]; then
-                        target=${target}sp3
-                fi
-                ;;
-          fc15) target="2.6-fc15";;
-          fc18) target="3.x-fc18";;
-            *) fatal 1 "I don't know what distro $distro is.\nEither update autodetect_target() or use the --target argument.";;
+	  oel5)   target="2.6-oel5";;
+	 rhel5)	  target="2.6-rhel5";;
+	 rhel6.6) target="2.6-rhel6.6";;
+	 rhel6)   target="2.6-rhel6";;
+	sles10)   target="2.6-sles10";;
+	sles11)   target="$(uname -r | cut -d . -f 1,2)-sles11"
+		  local PLEV=$(sed -n -e 's/^PATCHLEVEL = //p' /etc/SuSE-release)
+		  if [ "$PLEV" = "3" ]; then
+			target=${target}sp3
+		  fi
+		  ;;
+	  fc15)   target="2.6-fc15";;
+	  fc18)   target="3.x-fc18";;
+	    *)    fatal 1 "I don't know what distro $distro is.\nEither update autodetect_target() or use the --target argument.";;
     esac
 
     echo ${target}
