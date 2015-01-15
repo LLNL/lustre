@@ -158,6 +158,7 @@ static ssize_t mdt_rename_stats_seq_write(struct file *file, const char *buf,
 }
 
 LPROC_SEQ_FOPS(mdt_rename_stats);
+LPROC_SEQ_FOPS_RO(lprocfs_obd_hash);
 
 static int lproc_mdt_attach_rename_seqstat(struct mdt_device *mdt)
 {
@@ -254,6 +255,12 @@ int mdt_procfs_init(struct mdt_device *mdt, const char *name)
 	rc = lproc_mdt_attach_rename_seqstat(mdt);
 	if (rc)
 		CERROR("%s: MDT can not create rename stats rc = %d\n",
+		       mdt_obd_name(mdt), rc);
+
+	rc = lprocfs_obd_seq_create(obd, "hash_stats", 0400,
+				    &lprocfs_obd_hash_fops, obd);
+	if (rc != 0)
+		CERROR("%s: MDT can not create hash stats rc = %d\n",
 		       mdt_obd_name(mdt), rc);
 
 	RETURN(rc);
@@ -884,8 +891,6 @@ static struct lprocfs_vars lprocfs_mdt_obd_vars[] = {
 	{ "site_stats",			lprocfs_rd_site_stats, NULL,
 					NULL, NULL, 0 },
 	{ "evict_client",		NULL, lprocfs_mdt_wr_evict_client,
-					NULL, NULL, 0 },
-	{ "hash_stats",			lprocfs_obd_rd_hash, NULL,
 					NULL, NULL, 0 },
 	{ "sec_level",			lprocfs_rd_sec_level,
 					lprocfs_wr_sec_level,

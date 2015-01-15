@@ -128,6 +128,7 @@ static int mgsself_srpc_seq_show(struct seq_file *seq, void *v)
 }
 
 LPROC_SEQ_FOPS_RO(mgsself_srpc);
+LPROC_SEQ_FOPS_RO(lprocfs_obd_hash);
 
 int lproc_mgs_setup(struct mgs_device *mgs, const char *osd_name)
 {
@@ -149,6 +150,11 @@ int lproc_mgs_setup(struct mgs_device *mgs, const char *osd_name)
 
 	rc = lprocfs_obd_seq_create(obd, "srpc_rules", 0400,
 				    &mgsself_srpc_fops, obd);
+	if (rc != 0)
+		GOTO(out, rc);
+
+	rc = lprocfs_obd_seq_create(obd, "hash_stats", 0400,
+				    &lprocfs_obd_hash_fops, obd);
 	if (rc != 0)
 		GOTO(out, rc);
 
@@ -302,7 +308,6 @@ int lproc_mgs_del_live(struct mgs_device *mgs, struct fs_db *fsdb)
 struct lprocfs_vars lprocfs_mgs_obd_vars[] = {
         { "uuid",            lprocfs_rd_uuid,        0, 0 },
         { "num_exports",     lprocfs_rd_num_exports, 0, 0 },
-        { "hash_stats",      lprocfs_obd_rd_hash,    0, 0 },
         { "evict_client",    0, lprocfs_wr_evict_client, 0 },
         { "ir_timeout",      lprocfs_rd_ir_timeout, lprocfs_wr_ir_timeout, 0 },
         { 0 }

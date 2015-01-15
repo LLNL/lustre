@@ -841,9 +841,11 @@ static inline void __cfs_hash_set_theta(cfs_hash_t *hs, int min, int max)
         hs->hs_max_theta = (__u16)max;
 }
 
+#ifdef __KERNEL__
 /* Generic debug formatting routines mainly for proc handler */
-int cfs_hash_debug_header(char *str, int size);
-int cfs_hash_debug_str(cfs_hash_t *hs, char *str, int size);
+int cfs_hash_debug_header(struct seq_file *);
+int cfs_hash_debug_str(cfs_hash_t *hs, struct seq_file *);
+#endif
 
 /*
  * Generic djb2 hash algorithm for character arrays.

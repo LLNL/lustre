@@ -1941,40 +1941,30 @@ int lprocfs_exp_rd_uuid(char *page, char **start, off_t off, int count,
 }
 
 int lprocfs_exp_print_hash(cfs_hash_t *hs, cfs_hash_bd_t *bd,
-                           cfs_hlist_node_t *hnode, void *cb_data)
+                           cfs_hlist_node_t *hnode, void *data)
 
 {
-        struct exp_uuid_cb_data *data = cb_data;
-        struct obd_export       *exp = cfs_hash_object(hs, hnode);
+	struct seq_file   *m   = data;
+	struct obd_export *exp = cfs_hash_object(hs, hnode);
 
         if (exp->exp_lock_hash != NULL) {
-                if (!*data->len) {
-                        *data->len += cfs_hash_debug_header(data->page,
-                                                            data->count);
-                }
-                *data->len += cfs_hash_debug_str(hs, data->page + *data->len,
-                                                 data->count);
+		cfs_hash_debug_header(m);
+		cfs_hash_debug_str(hs, m);
         }
 
         return 0;
 }
 
-int lprocfs_exp_rd_hash(char *page, char **start, off_t off, int count,
-                        int *eof,  void *data)
+int lprocfs_exp_hash_seq_show(struct seq_file *m, void *v)
 {
-        struct nid_stat *stats = (struct nid_stat *)data;
-        struct exp_uuid_cb_data cb_data;
-        struct obd_device *obd = stats->nid_obd;
-        int len = 0;
+	struct nid_stat *stats = m->private;
+	struct obd_device *obd = stats->nid_obd;
 
-        *eof = 1;
-        page[0] = '\0';
-        lprocfs_exp_rd_cb_data_init(&cb_data, page, count, eof, &len);
-
-        cfs_hash_for_each_key(obd->obd_nid_hash, &stats->nid,
-                              lprocfs_exp_print_hash, &cb_data);
-        return (*cb_data.len);
+	cfs_hash_for_each_key(obd->obd_nid_hash, &stats->nid,
+			      lprocfs_exp_print_hash, m);
+	return 0;
 }
+LPROC_SEQ_FOPS_RO(lprocfs_exp_hash);
 
 int lprocfs_nid_stats_clear_read(char *page, char **start, off_t off,
                                         int count, int *eof,  void *data)
@@ -2113,11 +2103,10 @@ int lprocfs_exp_setup(struct obd_export *exp, lnet_nid_t *nid, int *newnid)
                 GOTO(destroy_new_ns, rc);
         }
 
-        entry = lprocfs_add_simple(new_stat->nid_proc, "hash",
-                                   lprocfs_exp_rd_hash, NULL, new_stat, NULL);
-        if (IS_ERR(entry)) {
+	rc = lprocfs_seq_create(new_stat->nid_proc, "hash", 0400,
+				&lprocfs_exp_hash_fops, new_stat);
+	if (rc != 0) {
                 CWARN("Error adding the hash file\n");
-                rc = PTR_ERR(entry);
                 GOTO(destroy_new_ns, rc);
         }
 
@@ -2458,23 +2447,22 @@ void lprocfs_oh_clear(struct obd_histogram *oh)
 }
 EXPORT_SYMBOL(lprocfs_oh_clear);
 
-int lprocfs_obd_rd_hash(char *page, char **start, off_t off,
-                        int count, int *eof, void *data)
+int lprocfs_obd_hash_seq_show(struct seq_file *m, void *data)
 {
-        struct obd_device *obd = data;
+	struct obd_device *obd = m->private;
         int c = 0;
 
         if (obd == NULL)
                 return 0;
 
-        c += cfs_hash_debug_header(page, count);
-        c += cfs_hash_debug_str(obd->obd_uuid_hash, page + c, count - c);
-        c += cfs_hash_debug_str(obd->obd_nid_hash, page + c, count - c);
-        c += cfs_hash_debug_str(obd->obd_nid_stats_hash, page+c, count-c);
+	c += cfs_hash_debug_header(m);
+	c += cfs_hash_debug_str(obd->obd_uuid_hash, m);
+	c += cfs_hash_debug_str(obd->obd_nid_hash, m);
+	c += cfs_hash_debug_str(obd->obd_nid_stats_hash, m);
 
         return c;
 }
-EXPORT_SYMBOL(lprocfs_obd_rd_hash);
+EXPORT_SYMBOL(lprocfs_obd_hash_seq_show);
 
 int lprocfs_obd_rd_recovery_status(char *page, char **start, off_t off,
                                    int count, int *eof, void *data)

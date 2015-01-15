@@ -802,6 +802,7 @@ int lprocfs_wr_root_squash(const char *buffer, unsigned long count,
 			   struct root_squash_info *squash, char *name);
 int lprocfs_wr_nosquash_nids(const char *buffer, unsigned long count,
 			     struct root_squash_info *squash, char *name);
+int lprocfs_obd_hash_seq_show(struct seq_file *, void *);
 
 
 /* all quota proc functions */
