@@ -380,27 +380,59 @@ static void mdt_pack_size2body(struct mdt_thread_info *info,
 void mdt_pack_attr2body(struct mdt_thread_info *info, struct mdt_body *b,
                         const struct lu_attr *attr, const struct lu_fid *fid)
 {
-        struct md_attr *ma = &info->mti_attr;
+	struct md_attr *ma = &info->mti_attr;
 
-        LASSERT(ma->ma_valid & MA_INODE);
+	LASSERT(ma->ma_valid & MA_INODE);
 
-        b->atime      = attr->la_atime;
-        b->mtime      = attr->la_mtime;
-        b->ctime      = attr->la_ctime;
-        b->mode       = attr->la_mode;
-        b->size       = attr->la_size;
-        b->blocks     = attr->la_blocks;
-        b->uid        = attr->la_uid;
-        b->gid        = attr->la_gid;
-        b->flags      = attr->la_flags;
-        b->nlink      = attr->la_nlink;
-        b->rdev       = attr->la_rdev;
+	if (attr->la_valid & LA_ATIME) {
+		b->atime = attr->la_atime;
+		b->valid |= OBD_MD_FLATIME;
+	}
+	if (attr->la_valid & LA_MTIME) {
+		b->mtime = attr->la_mtime;
+		b->valid |= OBD_MD_FLMTIME;
+	}
+	if (attr->la_valid & LA_CTIME) {
+		b->ctime = attr->la_ctime;
+		b->valid |= OBD_MD_FLCTIME;
+	}
+	if (attr->la_valid & LA_FLAGS) {
+		b->flags = attr->la_flags;
+		b->valid |= OBD_MD_FLFLAGS;
+	}
+	if (attr->la_valid & LA_NLINK) {
+		b->nlink = attr->la_nlink;
+		b->valid |= OBD_MD_FLNLINK;
+	}
+	if (attr->la_valid & LA_UID) {
+		b->uid = attr->la_uid;
+		b->valid |= OBD_MD_FLUID;
+	}
+	if (attr->la_valid & LA_GID) {
+		b->gid = attr->la_gid;
+		b->valid |= OBD_MD_FLGID;
+	}
+	b->mode = attr->la_mode;
+	if (attr->la_valid & LA_MODE)
+		b->valid |= OBD_MD_FLMODE;
+	if (attr->la_valid & LA_TYPE)
+		b->valid |= OBD_MD_FLTYPE;
 
-        /*XXX should pack the reply body according to lu_valid*/
-        b->valid |= OBD_MD_FLCTIME | OBD_MD_FLUID   |
-                    OBD_MD_FLGID   | OBD_MD_FLTYPE  |
-                    OBD_MD_FLMODE  | OBD_MD_FLNLINK | OBD_MD_FLFLAGS |
-                    OBD_MD_FLATIME | OBD_MD_FLMTIME ;
+	if (fid != NULL) {
+		b->fid1 = *fid;
+		b->valid |= OBD_MD_FLID;
+		CDEBUG(D_INODE, DFID": nlink=%d, mode=%o, valid="LPX64"\n",
+				PFID(fid), b->nlink, b->mode, b->valid);
+	}
+	if (info != NULL)
+		mdt_body_reverse_idmap(info, b);
+
+	if (!(attr->la_valid & LA_TYPE))
+		return;
+
+	b->rdev   = attr->la_rdev;
+	b->size   = attr->la_size;
+	b->blocks = attr->la_blocks;
 
         if (!S_ISREG(attr->la_mode)) {
                 b->valid |= OBD_MD_FLSIZE | OBD_MD_FLBLOCKS | OBD_MD_FLRDEV;
@@ -423,16 +455,6 @@ void mdt_pack_attr2body(struct mdt_thread_info *info, struct mdt_body *b,
 			b->blocks = 1;
 		b->valid |= OBD_MD_FLSIZE | OBD_MD_FLBLOCKS;
 	}
-
-        if (fid) {
-                b->fid1 = *fid;
-                b->valid |= OBD_MD_FLID;
-                CDEBUG(D_INODE, DFID": nlink=%d, mode=%o, size="LPU64"\n",
-                                PFID(fid), b->nlink, b->mode, b->size);
-        }
-
-        if (info)
-                mdt_body_reverse_idmap(info, b);
 
 	if (fid != NULL && (b->valid & OBD_MD_FLSIZE))
                 CDEBUG(D_VFSTRACE, DFID": returning size %llu\n",
