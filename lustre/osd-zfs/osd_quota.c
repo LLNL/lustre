@@ -103,7 +103,8 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 		if (rec->bspace != 0)
 			/* estimate #inodes in use */
 			rec->ispace = udmu_objset_user_iused(&osd->od_objset,
-							     rec->bspace);
+							     rec->bspace,
+							     osd->od_max_blksz);
 		RETURN(+1);
 	}
 
@@ -271,7 +272,8 @@ static int osd_it_acct_rec(const struct lu_env *env,
 		if (rec->bspace != 0)
 			/* estimate #inodes in use */
 			rec->ispace = udmu_objset_user_iused(&osd->od_objset,
-							     rec->bspace);
+							     rec->bspace,
+							     osd->od_max_blksz);
 		RETURN(0);
 	}
 

@@ -259,6 +259,7 @@ struct osd_device {
 	cfs_proc_dir_entry_t	*od_proc_entry;
 	struct lprocfs_stats	*od_stats;
 
+	uint64_t		 od_max_blksz;
 	uint64_t		 od_root;
 	uint64_t		 od_O_id;
 	struct osd_oi		**od_oi_table;
@@ -531,7 +532,15 @@ static inline void dsl_pool_config_enter(dsl_pool_t *dp, char *name)
 static inline void dsl_pool_config_exit(dsl_pool_t *dp, char *name)
 {
 }
+#endif
 
+#ifdef HAVE_SPA_MAXBLOCKSIZE
+#define	osd_spa_maxblocksize(spa)	spa_maxblocksize(spa)
+#define	osd_spa_maxblockshift(spa)	fls64(spa_maxblocksize(spa) - 1)
+#else
+#define	osd_spa_maxblocksize(spa)	SPA_MAXBLOCKSIZE
+#define	osd_spa_maxblockshift(spa)	SPA_MAXBLOCKSHIFT
+#define	SPA_OLD_MAXBLOCKSIZE		SPA_MAXBLOCKSIZE
 #endif
 
 #ifdef HAVE_SA_SPILL_ALLOC

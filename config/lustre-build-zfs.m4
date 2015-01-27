@@ -413,6 +413,21 @@ your distribution.
 		],[
 			AC_MSG_RESULT([no])
 		])
+		AC_MSG_CHECKING([if zfs defines spa_maxblocksize])
+		LB_LINUX_TRY_COMPILE([
+			#include <sys/spa.h>
+		],[
+			spa_t *spa = NULL;
+			int size;
+
+			size = spa_maxblocksize(spa);
+		],[
+			AC_MSG_RESULT([yes])
+			AC_DEFINE(HAVE_SPA_MAXBLOCKSIZE, 1,
+				[Have spa_maxblocksize in ZFS])
+		], [
+			AC_MSG_RESULT([no])
+		])
 	])
 
 	AM_CONDITIONAL(ZFS_ENABLED, test x$enable_zfs = xyes)

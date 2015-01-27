@@ -69,13 +69,13 @@ typedef struct udmu_objset {
 #define ZFS_DIRENT_MAKE(type, obj) (((uint64_t)type << 60) | obj)
 
 /* Statfs space reservation for grant, fragmentation, and unlink space. */
-#define OSD_STATFS_RESERVED_BLKS  (1ULL << (22 - SPA_MAXBLOCKSHIFT)) /* 4MB */
-#define OSD_STATFS_RESERVED_SHIFT (7)         /* reserve 0.78% of all space */
+#define OSD_STATFS_RESERVED_SIZE	(16ULL << 20) /* reserve 16MB minimum */
+#define OSD_STATFS_RESERVED_SHIFT	(7)     /* reserve 0.78% of all space */
 
 /* Statfs {minimum, safe estimate, and maximum} dnodes per block */
-#define OSD_DNODE_MIN_BLKSHIFT (SPA_MAXBLOCKSHIFT - DNODE_SHIFT) /* 17-9 =8 */
-#define OSD_DNODE_EST_BLKSHIFT (SPA_MAXBLOCKSHIFT - 12)          /* 17-12=5 */
-#define OSD_DNODE_EST_COUNT    1024
+#define OSD_DNODE_MIN_BLKSHIFT	(DNODES_PER_BLOCK_SHIFT)
+#define OSD_DNODE_EST_BLKSHIFT	(DNODES_PER_BLOCK_SHIFT >> 1)
+#define OSD_DNODE_EST_COUNT	1024
 
 #define OSD_GRANT_FOR_LOCAL_OIDS (2ULL << 20) /* 2MB for last_rcvd, ... */
 
@@ -85,11 +85,13 @@ void udmu_fini(void);
 /* udmu object-set API */
 int udmu_objset_open(char *osname, udmu_objset_t *uos);
 void udmu_objset_close(udmu_objset_t *uos);
-int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs);
-uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes);
+int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs,
+		       uint64_t max_blksz);
+uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes,
+				uint64_t max_blksz);
 int udmu_objset_root(udmu_objset_t *uos, dmu_buf_t **dbp, void *tag);
 uint64_t udmu_get_txg(udmu_objset_t *uos, dmu_tx_t *tx);
-int udmu_blk_insert_cost(void);
+int udmu_blk_insert_cost(int bshift);
 
 /* zap cursor apis */
 int udmu_zap_cursor_init(zap_cursor_t **zc, udmu_objset_t *uos,

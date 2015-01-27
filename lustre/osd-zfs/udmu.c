@@ -63,13 +63,13 @@
 
 #include "udmu.h"
 
-int udmu_blk_insert_cost(void)
+int udmu_blk_insert_cost(int bshift)
 {
 	int max_blockshift, nr_blkptrshift;
 
 	/* max_blockshift is the log2 of the number of blocks needed to reach
 	 * the maximum filesize (that's to say 2^64) */
-	max_blockshift = DN_MAX_OFFSET_SHIFT - SPA_MAXBLOCKSHIFT;
+	max_blockshift = DN_MAX_OFFSET_SHIFT - bshift;
 
 	/* nr_blkptrshift is the log2 of the number of block pointers that can
 	 * be stored in an indirect block */
@@ -178,7 +178,8 @@ void udmu_objset_close(udmu_objset_t *uos)
 /* Estimate the number of objects from a number of blocks */
 static uint64_t udmu_objs_count_estimate(uint64_t refdbytes,
 					uint64_t usedobjs,
-					uint64_t nrblocks)
+					uint64_t nrblocks,
+					uint64_t est_maxblockshift)
 {
 	uint64_t est_objs, est_refdblocks, est_usedobjs;
 
@@ -197,7 +198,7 @@ static uint64_t udmu_objs_count_estimate(uint64_t refdbytes,
 	CLASSERT(OSD_DNODE_MIN_BLKSHIFT > 0);
 	CLASSERT(OSD_DNODE_EST_BLKSHIFT > 0);
 
-	est_refdblocks = (refdbytes >> SPA_MAXBLOCKSHIFT) +
+	est_refdblocks = (refdbytes >> est_maxblockshift) +
 			 (OSD_DNODE_EST_COUNT >> OSD_DNODE_EST_BLKSHIFT);
 	est_usedobjs   = usedobjs + OSD_DNODE_EST_COUNT;
 
@@ -242,14 +243,16 @@ static uint64_t udmu_objs_count_estimate(uint64_t refdbytes,
 	return est_objs;
 }
 
-int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
+int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs,
+		       uint64_t max_blksz)
 {
+	struct objset *os = uos->os;
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
 	uint64_t est_availobjs;
 	uint64_t reserved;
+	uint64_t bshift;
 
-	dmu_objset_space(uos->os, &refdbytes, &availbytes, &usedobjs,
-			&availobjs);
+	dmu_objset_space(os, &refdbytes, &availbytes, &usedobjs, &availobjs);
 
 	/*
 	 * ZFS allows multiple block sizes.  For statfs, Linux makes no
@@ -259,10 +262,11 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
 	 * largest possible block size as IO size for the optimum performance
 	 * and scale the free and used blocks count appropriately.
 	 */
-	osfs->os_bsize = 1ULL << SPA_MAXBLOCKSHIFT;
+	osfs->os_bsize = max_blksz;
+	bshift = fls64(osfs->os_bsize) - 1;
 
-	osfs->os_blocks = (refdbytes + availbytes) >> SPA_MAXBLOCKSHIFT;
-	osfs->os_bfree = availbytes >> SPA_MAXBLOCKSHIFT;
+	osfs->os_blocks = (refdbytes + availbytes) >> bshift;
+	osfs->os_bfree = availbytes >> bshift;
 	osfs->os_bavail = osfs->os_bfree; /* no extra root reservation */
 
 	/* Take replication (i.e. number of copies) into account */
@@ -277,12 +281,11 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
 	 * Reserve 0.78% of total space, at least 4MB for small filesystems,
 	 * for internal files to be created/unlinked when space is tight.
 	 */
-	CLASSERT(OSD_STATFS_RESERVED_BLKS > 0);
-	if (likely(osfs->os_blocks >=
-			OSD_STATFS_RESERVED_BLKS << OSD_STATFS_RESERVED_SHIFT))
+	CLASSERT(OSD_STATFS_RESERVED_SIZE > 0);
+	if (likely(osfs->os_blocks >= OSD_STATFS_RESERVED_SIZE))
 		reserved = osfs->os_blocks >> OSD_STATFS_RESERVED_SHIFT;
 	else
-		reserved = OSD_STATFS_RESERVED_BLKS;
+		reserved = OSD_STATFS_RESERVED_SIZE >> bshift;
 
 	osfs->os_blocks -= reserved;
 	osfs->os_bfree  -= MIN(reserved, osfs->os_bfree);
@@ -296,7 +299,7 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
 	 * Compute a better estimate in udmu_objs_count_estimate().
 	 */
 	est_availobjs = udmu_objs_count_estimate(refdbytes, usedobjs,
-						osfs->os_bfree);
+						 osfs->os_bfree, bshift);
 
 	osfs->os_ffree = min(availobjs, est_availobjs);
 	osfs->os_files = osfs->os_ffree + uos->objects;
@@ -323,18 +326,20 @@ int udmu_objset_statfs(udmu_objset_t *uos, struct obd_statfs *osfs)
  * Helper function to estimate the number of inodes in use for a give uid/gid
  * from the block usage
  */
-uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes)
+uint64_t udmu_objset_user_iused(udmu_objset_t *uos, uint64_t uidbytes,
+				uint64_t max_blksz)
 {
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
-	uint64_t uidobjs;
+	uint64_t uidobjs, bshift;
 
 	/* get fresh statfs info */
 	dmu_objset_space(uos->os, &refdbytes, &availbytes, &usedobjs,
 			&availobjs);
 
 	/* estimate the number of objects based on the disk usage */
+	bshift = fls64(max_blksz) - 1;
 	uidobjs = udmu_objs_count_estimate(refdbytes, usedobjs,
-					uidbytes >> SPA_MAXBLOCKSHIFT);
+					uidbytes >> bshift, bshift);
 	if (uidbytes > 0)
 		/* if we have at least 1 byte, we have at least one dnode ... */
 		uidobjs = max_t(uint64_t, uidobjs, 1);
