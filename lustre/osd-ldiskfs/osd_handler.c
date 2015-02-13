@@ -5965,13 +5965,22 @@ struct lu_device_type osd_device_type = {
         .ldt_ctx_tags = LCT_LOCAL,
 };
 
+static int osd_health_check(const struct lu_env *env, struct obd_device *obd)
+{
+	struct osd_device *osd = osd_dev(obd->obd_lu_dev);
+	struct super_block *sb = osd_sb(osd);
+
+	return (osd->od_mnt == NULL || sb->s_flags & MS_RDONLY);
+}
+
 /*
  * lprocfs legacy support.
  */
 static struct obd_ops osd_obd_device_ops = {
 	.o_owner = THIS_MODULE,
 	.o_connect	= osd_obd_connect,
-	.o_disconnect	= osd_obd_disconnect
+	.o_disconnect	= osd_obd_disconnect,
+	.o_health_check = osd_health_check,
 };
 
 static int __init osd_mod_init(void)
