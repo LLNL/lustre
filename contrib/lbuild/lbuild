@@ -544,12 +544,12 @@ download_ofed() {
         OFED_BASE_VERSION=${OFED_VERSION%.*}
     fi
 
-    local location="http://www.openfabrics.org/downloads/OFED/ofed-${OFED_BASE_VERSION}/"
+    local location="https://www.openfabrics.org/downloads/OFED/ofed-${OFED_BASE_VERSION}/"
 
     if [[ $OFED_VERSION = *-[rR][cC][0-9] ]]; then
         local Mmv
         Mmv=${OFED_VERSION%%-[rR][cC][0-9]}
-        location="http://www.openfabrics.org/downloads/OFED/ofed-${Mmv}/"
+        location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}/"
     fi
 
     if [[ $OFED_VERSION = daily-* ]]; then
@@ -557,7 +557,7 @@ download_ofed() {
         OFED_VERSION=${OFED_VERSION/daily-/}
         Mmv=${OFED_VERSION%%-*}
         daily=${OFED_VERSION##$Mmv-}
-        location="http://www.openfabrics.org/downloads/OFED/ofed-${Mmv}-daily/"
+        location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}-daily/"
         # find the filename for the version for the date specified
         OFED_VERSION=$(curl -s "$location" | sed -nre "/${daily}-/s/.*href=\"OFED-(${Mmv//./\\.}-${daily}-[0-9]{4,4}).tgz.*$/\1/p" | tail -1)
         if [ -z "$OFED_VERSION" ]; then
