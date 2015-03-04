@@ -6,6 +6,7 @@
 %bcond_with zfs
 %bcond_without lustre_tests
 %bcond_without lustre_iokit
+%bcond_without lustre_modules
 
 %if %{without servers}
     # --without servers overrides --with {ldiskfs|zfs}
@@ -21,6 +22,7 @@
 %{!?version: %global version @VERSION@}
 
 # RHEL 6.x:
+%if %{with lustre_modules}
 %if %{defined el6}
   %define klnk %{_usrsrc}/kernels/*/include/config
   %{!?kversion: %global kversion %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
@@ -37,12 +39,17 @@
       %global modules_requires kernel = %{kverpkg}
   %endif
 %endif
+%endif
 
 %{!?downstream_release: %global downstream_release "@DOWNSTREAM_RELEASE@"}
 
 %define buildid %(if [ -n "@BUILDID@" ]; then echo "_@BUILDID@"; fi)
 
-%{!?myrelease: %global myrelease %(if [ -n "%downstream_release" ]; then echo -n "%{downstream_release}_"; fi; echo %kversion | tr '-' '_')}
+%if %{with lustre_modules}
+  %{!?myrelease: %global myrelease %(if [ -n "%downstream_release" ]; then echo -n "%{downstream_release}_"; fi; echo %kversion | tr '-' '_')}
+%else
+  %{!?myrelease: %global myrelease %(if [ -n "%downstream_release" ]; then echo -n "%{downstream_release}"; fi;)}
+%endif
 
 # always append the buildid, even when the caller defines %release
 %define fullrelease %{myrelease}%{buildid}
@@ -141,6 +148,7 @@ Requires: libselinux
 %description
 Userspace tools and files for the Lustre file system.
 
+%if %{with lustre_modules}
 %package modules
 Summary: Kernel Lustre modules for Linux %{kversion}
 %if %{defined cross_requires}
@@ -160,6 +168,7 @@ Group: Development/Kernel
 
 %description modules
 Lustre file system, server and network drivers for Linux %{kversion}.
+%endif
 
 %if %{with ldiskfs}
 %package osd-ldiskfs
@@ -184,7 +193,10 @@ backing store of a Lustre server.
 %package osd-zfs
 Summary: osd-zfs is the mandatory glue for ZFS support in Lustre.
 %if %{undefined zfs_buildrequires}
-BuildRequires: libzfs2-devel kmod-zfs-devel kmod-spl-devel
+BuildRequires: libzfs2-devel
+%if %{with lustre_modules}
+BuildRequires: kmod-zfs-devel kmod-spl-devel
+%endif
 %else
 BuildRequires: %{zfs_buildrequires}
 %endif
@@ -341,6 +353,11 @@ CONFIGURE_ARGS="%{?configure_args} --with-release=%release"
     %define conf_ldiskfs --without-ldiskfs
   %endif
 %endif
+%if %{with lustre_modules}
+%define conf_modules --enable-modules
+%else
+%define conf_modules --disable-modules
+%endif
 
 
 # if %%kdir was given, make sure it's not in the configure arguments
@@ -364,7 +381,7 @@ CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-kmp-moddir=[^ ][^ ]*
 %eval_configure \
 	%{?kdir: --with-linux=%kdir} %{?kobjdir: --with-linux-obj=%kobjdir} \
 	%{?conf_tests} %{?conf_disable_server} %{?conf_zfs} %{?conf_ldiskfs} \
-	%{?conf_iokit} \
+	%{?conf_iokit} %{?conf_modules} \
 	$CONFIGURE_ARGS --with-kmp-moddir=%{kmoddir}
 make -j $RPM_BUILD_NCPUS -s %{?make_args}
 
@@ -460,7 +477,9 @@ find $RPM_BUILD_ROOT%{_libdir}/@PACKAGE@/ -name \*.la -delete
 echo '%attr(-, root, root) %{_libdir}/lustre/tests/*' >lustre-tests.files
 echo '%attr(-, root, root) %{_bindir}/mcreate' >>lustre-tests.files
 echo '%attr(-, root, root) %{_bindir}/munlink' >>lustre-tests.files
+%if %{with lustre_modules}
 echo '%attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/llog_test.ko' >>lustre-tests.files
+%endif
 if [ -d $RPM_BUILD_ROOT%{_libdir}/lustre/liblustre/tests ] ; then
   echo '%attr(-, root, root) %{_libdir}/lustre/liblustre/tests/*' >>lustre-tests.files
 fi
@@ -493,6 +512,7 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} -name "*.ko" 
 
 %files -f lustre.files
 
+%if %{with lustre_modules}
 %files modules
 %attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/*
 %if %{with lustre_tests}
@@ -512,12 +532,15 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} -name "*.ko" 
 %attr(-, root, root) %doc COPYING
 %attr(-, root, root) %doc ChangeLog-lustre
 %attr(-, root, root) %doc ChangeLog-lnet
+%endif
 
 %if %{with ldiskfs}
 %files osd-ldiskfs
+%if %{with lustre_modules}
 %attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/ldiskfs.ko
 %attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/fsfilt_ldiskfs.ko
 %attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_ldiskfs.ko
+%endif
 %attr(-, root, root) %{_libdir}/@PACKAGE@/mount_osd_ldiskfs.so
 %if %{defined rpm_post_base}
 %attr(0555, root, root) %{rpm_post_base}-osd-ldiskfs.sh
@@ -527,7 +550,9 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} -name "*.ko" 
 %if %{with zfs}
 %files osd-zfs
 %defattr(-,root,root)
+%if %{with lustre_modules}
 %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_zfs.ko
+%endif
 %{_libdir}/@PACKAGE@/mount_osd_zfs.so
 %if %{defined rpm_post_base}
 %attr(0555, root, root) %{rpm_post_base}-osd-zfs.sh
@@ -580,6 +605,7 @@ if [ -x %{rpm_post_base}.sh ]; then
 fi
 %endif
 
+%if %{with lustre_modules}
 %post modules
 %if %{defined rpm_post_base}
 if [ -x %{rpm_post_base}-modules.sh ]; then
@@ -804,6 +830,7 @@ if [ -x /sbin/weak-modules ]; then
         /sbin/weak-modules --remove-modules
 fi
 rm /var/run/%{name}-osd-zfs
+%endif
 %endif
 %endif
 
