@@ -253,7 +253,7 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
 	if (ctxt == NULL)
 		RETURN(-ENOMEM);
 	rc = llog_add(env, ctxt->loc_handle, &osi->osi_hdr, &osi->osi_cookie,
-		      NULL, th);
+		      th);
 	llog_ctxt_put(ctxt);
 
 	CDEBUG(D_OTHER, "%s: new record "DOSTID":%lu/%lu: %d\n",
@@ -998,8 +998,7 @@ static int osp_sync_llog_init(const struct lu_env *env, struct osp_device *d)
 	memcpy(&osi->osi_gen.lgr_gen, &d->opd_syn_generation,
 	       sizeof(osi->osi_gen.lgr_gen));
 
-	rc = llog_cat_add(env, lgh, &osi->osi_gen.lgr_hdr, &osi->osi_cookie,
-			  NULL);
+	rc = llog_cat_add(env, lgh, &osi->osi_gen.lgr_hdr, &osi->osi_cookie);
 	if (rc < 0)
 		GOTO(out_close, rc);
 	llog_ctxt_put(ctxt);
