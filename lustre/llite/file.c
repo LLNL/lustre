@@ -1124,18 +1124,48 @@ ll_file_io_generic(const struct lu_env *env, struct vvp_io_args *args,
 		   struct file *file, enum cl_io_type iot,
 		   loff_t *ppos, size_t count)
 {
-	struct ll_inode_info *lli = ll_i2info(file->f_dentry->d_inode);
-	struct ll_file_data  *fd  = LUSTRE_FPRIVATE(file);
-        struct cl_io         *io;
-        ssize_t               result;
-        ENTRY;
+	struct vvp_io		*vio = vvp_env_io(env);
+	struct inode		*inode = file->f_dentry->d_inode;
+	struct ll_inode_info	*lli = ll_i2info(inode);
+	loff_t			end;
+	struct ll_file_data	*fd  = LUSTRE_FPRIVATE(file);
+	struct cl_io		*io;
+	struct iovec		*local_iov = NULL;
+	unsigned long		nrsegs = args->u.normal.via_nrsegs;
+	ssize_t			result = 0;
+	int			rc = 0;
+
+	ENTRY;
+
+	CDEBUG(D_VFSTRACE, "file: %s, type: %d ppos: "LPU64", count: %zu\n",
+		file->f_dentry->d_name.name, iot, *ppos, count);
+
+	OBD_ALLOC(local_iov, sizeof(struct iovec) * nrsegs);
+	if (local_iov == NULL) {
+		rc = -ENOMEM;
+		RETURN(rc);
+	}
+	memcpy(local_iov, args->u.normal.via_iov,
+	       sizeof(struct iovec) * nrsegs);
 
 restart:
-        io = ccc_env_thread_io(env);
-        ll_io_init(io, file, iot == CIT_WRITE);
+	io = ccc_env_thread_io(env);
+	ll_io_init(io, file, iot == CIT_WRITE);
 
-        if (cl_io_rw_init(env, io, iot, *ppos, count) == 0) {
-                struct vvp_io *vio = vvp_env_io(env);
+	/* The maximum Lustre file size is variable, based on the
+	 * OST maximum object size and number of stripes.  This
+	 * needs another check in addition to the VFS checks earlier. */
+	end = (io->u.ci_wr.wr_append ? i_size_read(inode) : *ppos) + count;
+	if (end > ll_file_maxbytes(inode)) {
+		rc = -EFBIG;
+		CDEBUG(D_INODE, "%s: file "DFID" offset %llu > maxbytes "LPU64
+		       ": rc = %d\n", ll_get_fsname(inode->i_sb, NULL, 0),
+		       PFID(&lli->lli_fid), end, ll_file_maxbytes(inode),
+		       rc);
+		RETURN(rc);
+	}
+
+	if (cl_io_rw_init(env, io, iot, *ppos, count) == 0) {
                 struct ccc_io *cio = ccc_env_io(env);
                 int write_mutex_locked = 0;
 
@@ -1144,8 +1174,8 @@ restart:
 
                 switch (vio->cui_io_subtype) {
                 case IO_NORMAL:
-                        cio->cui_iov = args->u.normal.via_iov;
-                        cio->cui_nrsegs = args->u.normal.via_nrsegs;
+                        cio->cui_iov = local_iov;
+                        cio->cui_nrsegs = nrsegs;
                         cio->cui_tot_nrsegs = cio->cui_nrsegs;
                         cio->cui_iocb = args->u.normal.via_iocb;
                         if ((iot == CIT_WRITE) &&
@@ -1179,36 +1209,83 @@ restart:
                 result = io->ci_result;
         }
 
-        if (io->ci_nob > 0) {
-                result = io->ci_nob;
-                *ppos = io->u.ci_wr.wr.crw_pos;
-        }
-        GOTO(out, result);
+	if (io->ci_nob > 0) {
+		result += io->ci_nob;
+		*ppos = io->u.ci_wr.wr.crw_pos;
+	}
+	GOTO(out, rc);
 out:
         cl_io_fini(env, io);
-	/* If any bit been read/written (result != 0), we just return
-	 * short read/write instead of restart io. */
 	if ((result == 0 || result == -ENODATA) && io->ci_need_restart) {
-		CDEBUG(D_VFSTRACE, "Restart %s on %s from %lld, count:%zd\n",
+		CDEBUG(D_VFSTRACE, "Restart %s on %s from %lld, count:%zu\n",
 		       iot == CIT_READ ? "read" : "write",
 		       file->f_dentry->d_name.name, *ppos, count);
 		LASSERTF(io->ci_nob == 0, "%zd", io->ci_nob);
 		goto restart;
 	}
 
-        if (iot == CIT_READ) {
-                if (result >= 0)
-                        ll_stats_ops_tally(ll_i2sbi(file->f_dentry->d_inode),
-                                           LPROC_LL_READ_BYTES, result);
-        } else if (iot == CIT_WRITE) {
-                if (result >= 0) {
-                        ll_stats_ops_tally(ll_i2sbi(file->f_dentry->d_inode),
-                                           LPROC_LL_WRITE_BYTES, result);
+	if (rc < 0)
+		GOTO(cleanup, result = rc);
+
+	/**
+	 * Restart non-error normal IO for short read/write from where it has
+	 * accomplished, since the layout lock of the file could possibly be
+	 * revoked.
+	 */
+	if (rc == 0 && vio->cui_io_subtype == IO_NORMAL &&
+	    result > 0 && io->u.ci_wr.wr.crw_count > 0 &&
+	    (iot == CIT_WRITE ||
+	    (iot == CIT_READ && *ppos < i_size_read(inode)))) {
+		struct iovec	*iov = args->u.normal.via_iov;
+		ssize_t		nob = result;
+
+		CDEBUG(D_VFSTRACE, "Restart %s on %s(%lld) from %lld, "
+		       "count:%zu, done %zd, left %zd\n",
+		       iot == CIT_READ ? "read" : "write",
+		       file->f_dentry->d_name.name, i_size_read(inode),
+		       *ppos, count, result, io->u.ci_wr.wr.crw_count);
+		/**
+		 * adjust local_iovec and nrsegs to read/write remaining bytes
+		 */
+		nrsegs = args->u.normal.via_nrsegs;
+		while (nob > 0) {
+			if (iov->iov_len > nob) {
+				memmove(local_iov, iov, sizeof(*iov) * nrsegs);
+				local_iov->iov_len  -= nob;
+				local_iov->iov_base += nob;
+				break;
+			}
+
+			nob -= iov->iov_len;
+			nrsegs--;
+			iov++;
+		}
+
+		/* adjust total bytes to be read/write */
+		count = io->u.ci_wr.wr.crw_count;
+		goto restart;
+	}
+
+	if (iot == CIT_READ) {
+		if (result >= 0)
+			ll_stats_ops_tally(ll_i2sbi(file->f_dentry->d_inode),
+					   LPROC_LL_READ_BYTES, result);
+	} else if (iot == CIT_WRITE) {
+		if (result >= 0) {
+			ll_stats_ops_tally(ll_i2sbi(file->f_dentry->d_inode),
+					   LPROC_LL_WRITE_BYTES, result);
 			fd->fd_write_failed = false;
 		} else if (result != -ERESTARTSYS) {
 			fd->fd_write_failed = true;
 		}
 	}
+
+cleanup:
+	CDEBUG(D_VFSTRACE, "iotype: %d, result: %zd\n", iot, result);
+
+	if (local_iov != NULL)
+		OBD_FREE(local_iov, sizeof(struct iovec) *
+			 args->u.normal.via_nrsegs);
 
 	return result;
 }
