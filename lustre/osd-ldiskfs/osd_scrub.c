@@ -498,14 +498,19 @@ osd_scrub_check_update(struct osd_thread_info *info, struct osd_device *dev,
 	    (!scrub->os_convert_igif || OBD_FAIL_CHECK(OBD_FAIL_FID_NOLMA)))
 		GOTO(out, rc = 0);
 
-	if ((oii != NULL && oii->oii_insert) || (val == SCRUB_NEXT_NOLMA))
+	if ((oii != NULL && oii->oii_insert) || (val == SCRUB_NEXT_NOLMA)) {
+		ops = DTO_INDEX_INSERT;
+
 		goto iget;
+	}
 
 	rc = osd_oi_lookup(info, dev, fid, lid2,
 		(val == SCRUB_NEXT_OSTOBJ ||
 		 val == SCRUB_NEXT_OSTOBJ_OLD) ? OI_KNOWN_ON_OST : 0);
 	if (rc != 0) {
-		if (rc != -ENOENT)
+		if (rc == -ENOENT)
+			ops = DTO_INDEX_INSERT;
+		else if (rc != -ESTALE)
 			GOTO(out, rc);
 
 iget:
@@ -521,7 +526,6 @@ iget:
 		}
 
 		scrub->os_full_speed = 1;
-		ops = DTO_INDEX_INSERT;
 		idx = osd_oi_fid2idx(dev, fid);
 		switch (val) {
 		case SCRUB_NEXT_NOLMA:
@@ -1174,22 +1178,22 @@ static int osd_inode_iteration(struct osd_thread_info *info,
 	limit = le32_to_cpu(LDISKFS_SB(param.sb)->s_es->s_inodes_count);
 
 	while (*pos <= limit && *count < max) {
-		struct osd_idmap_cache *oic = NULL;
-
 		param.bg = (*pos - 1) / LDISKFS_INODES_PER_GROUP(param.sb);
 		param.offset = (*pos - 1) % LDISKFS_INODES_PER_GROUP(param.sb);
 		param.gbase = 1 + param.bg * LDISKFS_INODES_PER_GROUP(param.sb);
 		param.bitmap = ldiskfs_read_inode_bitmap(param.sb, param.bg);
 		if (param.bitmap == NULL) {
 			CERROR("%.16s: fail to read bitmap for %u, "
-			       "scrub will stop, urgent mode\n",
+			       "scrub will stop, preload %s\n",
 			       LDISKFS_SB(param.sb)->s_es->s_volume_name,
-			       (__u32)param.bg);
+			       (__u32)param.bg, preload ? "yes" : "no");
 			RETURN(-EIO);
 		}
 
 		while (param.offset < LDISKFS_INODES_PER_GROUP(param.sb) &&
 		       *count < max) {
+			struct osd_idmap_cache *oic = NULL;
+
 			rc = next(info, dev, &param, &oic, noslot);
 			switch (rc) {
 			case SCRUB_NEXT_BREAK:

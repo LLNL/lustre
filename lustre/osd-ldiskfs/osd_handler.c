@@ -471,7 +471,7 @@ static int osd_check_lma(const struct lu_env *env, struct osd_object *obj)
 			      PFID(lu_object_fid(&obj->oo_dt.do_lu)),
 			      inode->i_ino);
 			rc = -EOPNOTSUPP;
-		} else if (!(lma->lma_compat & LMAC_NOT_IN_OI)) {
+		} else {
 			fid = &lma->lma_self_fid;
 		}
 	}
