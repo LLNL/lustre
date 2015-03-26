@@ -568,6 +568,7 @@ AC_DEFUN([LB_CONFIG_FILES],
 		[Rules:build/Rules.in]
 		AC_PACKAGE_TARNAME[.spec]
 		AC_PACKAGE_TARNAME[-dkms.spec]
+		AC_PACKAGE_TARNAME[-kmod.spec]
 		contrib/Makefile
 		contrib/lbuild/Makefile
 		contrib/scripts/Makefile

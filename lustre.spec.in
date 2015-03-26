@@ -3,10 +3,10 @@
 # Declare rpmbuild --with/--without parameters
 %bcond_without servers
 %bcond_without ldiskfs
-%bcond_with zfs
+%bcond_without zfs
 %bcond_without lustre_tests
 %bcond_without lustre_iokit
-%bcond_without lustre_modules
+%bcond_with lustre_modules
 
 %if %{without servers}
     # --without servers overrides --with {ldiskfs|zfs}
@@ -130,9 +130,6 @@ Requires: %{name}-modules = %{version}
 BuildRequires: %{buildrequires}
 %endif
 BuildRequires: libtool
-%if %{with servers}
-Requires: lustre-osd
-%endif
 %if %{defined cross_requires}
 Requires: %{cross_requires}
 AutoReqProv: no
@@ -173,7 +170,7 @@ Lustre file system, server and network drivers for Linux %{kversion}.
 %if %{with ldiskfs}
 %package osd-ldiskfs
 Summary: osd-ldiskfs contains both ldiskfs and its osd interface in Lustre.
-Requires: lustre-modules = %{version}
+Requires: lustre-osd-ldiskfs-kmod = %{version}
 Requires: modutils >= 2.4.10
 Requires: ldiskfsprogs >= 1.42.7.wc1
 Provides: lustre-osd
@@ -200,7 +197,7 @@ BuildRequires: kmod-zfs-devel kmod-spl-devel
 %else
 BuildRequires: %{zfs_buildrequires}
 %endif
-Requires: lustre-modules = %{version}, zfs-kmod
+Requires: lustre-osd-zfs-kmod = %{version}
 Provides: lustre-osd
 Group: Development/Kernel
 

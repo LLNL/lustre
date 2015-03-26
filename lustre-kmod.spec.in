@@ -1,0 +1,128 @@
+%define module  @PACKAGE@
+%define buildid 1
+%define rel_down @DOWNSTREAM_RELEASE@
+%define debug_package %{nil}
+
+Name:           %{module}-kmod
+
+Version:        @VERSION@
+Release:        %{rel_down}%{?dist}
+Summary:        Kernel module(s)
+
+Group:          System Environment/Kernel
+License:        GPLv2+
+URL:            http://lustre.opensfs.org/
+BuildRequires:  %kernel_module_package_buildreqs
+BuildRequires:  kmod-zfs-devel libzfs2-devel
+BuildRequires:  kernel-debuginfo
+Source0:        %{module}-%{version}.tar.gz
+BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
+
+%description
+This package contains the Lustre kernel modules.
+
+# kmod-lustre subpackage
+%define kmodpath /lib/modules/%{kverrel}/extra/%{module}
+%define kpreamble %{_sourcedir}/kmod-preamble
+%define kfiles %{_sourcedir}/kmod-files
+
+%(/bin/echo -e "\
+Requires:       %{module}\n\
+Provides:       %{module}-modules = %{version}\n\
+Conflicts:      %{module}-dkms\n\n" > %{kpreamble})
+
+%(/bin/echo -e "\
+%defattr(644,root,root,755)\n\
+%{kmodpath}\n" > %{kfiles})
+
+%kernel_module_package -n %{module} -p %{kpreamble} -f %{kfiles}
+
+
+# kmod-lustre-osd-zfs sub-package.
+%define kpreamble %{_sourcedir}/kmod-preamble-zfs
+%define kfiles %{_sourcedir}/kmod-files-zfs
+
+%(/bin/echo -e "\
+Requires:       kmod-%{module}\n\
+Requires:       kmod-zfs\n\
+Provides:       kmod-%{module}-osd = %{version}\n\
+Provides:       kmod-%{module}-osd-zfs = %{version}\n\
+Conflicts:      %{module}-dkms\n\n" > %{kpreamble})
+
+%(/bin/echo -e "\
+%defattr(644,root,root,755)\n\
+%{kmodpath}-osd-zfs\n" > %{kfiles})
+
+%kernel_module_package -n %{module}-osd-zfs -p %{kpreamble} -f %{kfiles}
+
+
+# kmod-lustre-osd-ldiskfs sub-package.
+%define kpreamble %{_sourcedir}/kmod-preamble-ldiskfs
+%define kfiles %{_sourcedir}/kmod-files-ldiskfs
+
+%(/bin/echo -e "\
+Requires:       kmod-%{module}\n\
+Requires:       kmod-ldiskfs\n\
+Provides:       kmod-%{module}-osd = %{version}\n\
+Provides:       kmod-%{module}-osd-ldiskfs = %{version}\n\
+Conflicts:      %{module}-dkms\n\n" > %{kpreamble})
+
+%(/bin/echo -e "\
+%defattr(644,root,root,755)\n\
+%{kmodpath}-osd-ldiskfs\n" > %{kfiles})
+
+%kernel_module_package -n %{module}-osd-ldiskfs -p %{kpreamble} -f %{kfiles}
+
+
+# common build
+%define ksrc %{_usrsrc}/kernels/%{kverrel}
+%define kobj %{ksrc}
+%define splver %(tail -1 %{_usrsrc}/spl*/%{kverrel}/spl.release 2>/dev/null | cut -f1 -d'-')
+%define splsrc %{_usrsrc}/spl-%{splver}
+%define splobj %{splsrc}/%{kverrel}
+%define zfsver %(tail -1 %{_usrsrc}/zfs*/%{kverrel}/zfs.release 2>/dev/null | cut -f1 -d'-')
+%define zfssrc %{_usrsrc}/zfs-%{zfsver}
+%define zfsobj %{zfssrc}/%{kverrel}
+
+%prep
+if ! [ -d "%{ksrc}"  ]; then
+        echo "Kernel build directory isn't set properly, cannot continue"
+        exit 1
+fi
+
+%setup -n %{module}-%{version}
+%build
+%configure \
+        --with-linux=%{ksrc} \
+        --with-linux-obj=%{kobj} \
+        --with-spl="%{splsrc}" \
+        --with-spl-obj="%{splobj}" \
+        --with-zfs="%{zfssrc}" \
+        --with-zfs-obj="%{zfsobj}" \
+        --enable-zfs \
+        --enable-ldiskfs \
+        --disable-iokit \
+        --disable-utils \
+        --disable-liblustre \
+        --disable-snmp \
+        --disable-doc \
+        --disable-utils \
+        --disable-tests \
+        --disable-maintainer-mode
+make %{?_smp_mflags}
+
+# Unfortunately there is no easy way to get Lustre to install all the modules
+# in the preferred diretories.  Therefore, the files must be moved manually.
+# Unwanted unconditionally installed files are removed.
+%install
+make install DESTDIR=${RPM_BUILD_ROOT}
+%{__mv}  %{buildroot}/lib/modules/*/*/*/*/*/*.ko %{buildroot}/
+%{__rm} -Rf %{buildroot}/lib
+%{__rm} -Rf %{buildroot}/usr
+%{__rm} -Rf %{buildroot}/etc
+%{__install} -d %{buildroot}%{kmodpath}/
+%{__install} -d %{buildroot}%{kmodpath}-osd-zfs/
+%{__install} -d %{buildroot}%{kmodpath}-osd-ldiskfs/
+%{__mv} %{buildroot}/osd_zfs.ko %{buildroot}/%{kmodpath}-osd-zfs/
+%{__mv} %{buildroot}/osd_ldiskfs.ko %{buildroot}%{kmodpath}-osd-ldiskfs/
+%{__mv} %{buildroot}/*.ko %{buildroot}%{kmodpath}/
