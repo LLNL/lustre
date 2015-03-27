@@ -225,7 +225,7 @@ if test -e "$linux_src/fs/ext4/super.c"; then
 	EXT4_SRC_DIR=$linux_src/fs/ext4
 else
 	# Kernel ext source provided by kernel-debuginfo-common package
-	linux_src=$(ls -1d /usr/src/debug/*/linux-$LINUXRELEASE \
+	linux_src=$(ls -1d /usr/src/debug/*/linux-${LINUXRELEASE%.*}* \
 		2>/dev/null | tail -1)
 	if test -e "$linux_src/fs/ext4/super.c"; then
 		EXT4_SRC_DIR=$linux_src/fs/ext4
