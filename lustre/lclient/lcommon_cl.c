@@ -801,6 +801,7 @@ void ccc_io_advance(const struct lu_env *env,
 	struct ccc_io    *cio = cl2ccc_io(env, ios);
 	struct cl_io     *io  = ios->cis_io;
 	struct cl_object *obj = ios->cis_io->ci_obj;
+	struct iovec     *iov;
 
 	CLOBINVRNT(env, obj, ccc_object_invariant(obj));
 
@@ -810,27 +811,28 @@ void ccc_io_advance(const struct lu_env *env,
 	LASSERT(cio->cui_tot_nrsegs >= cio->cui_nrsegs);
 	LASSERT(cio->cui_tot_count  >= nob);
 
-	cio->cui_iov        += cio->cui_nrsegs;
-	cio->cui_tot_nrsegs -= cio->cui_nrsegs;
-	cio->cui_tot_count  -= nob;
-
-	/* update the iov */
+	/* Restore the iov changed in ccc_io_update_iov() */
 	if (cio->cui_iov_olen > 0) {
-		struct iovec *iv;
-
-		cio->cui_iov--;
-		cio->cui_tot_nrsegs++;
-		iv = &cio->cui_iov[0];
-		if (io->ci_continue) {
-			iv->iov_base += iv->iov_len;
-			LASSERT(cio->cui_iov_olen > iv->iov_len);
-			iv->iov_len = cio->cui_iov_olen - iv->iov_len;
-		} else {
-			/* restore the iov_len, in case of restart io. */
-			iv->iov_len = cio->cui_iov_olen;
-		}
+		cio->cui_iov[cio->cui_nrsegs - 1].iov_len = cio->cui_iov_olen;
 		cio->cui_iov_olen = 0;
 	}
+
+	/* advance iov */
+	iov = cio->cui_iov;
+	while (nob > 0) {
+		if (iov->iov_len > nob) {
+			iov->iov_len -= nob;
+			iov->iov_base += nob;
+			break;
+		}
+
+		nob -= iov->iov_len;
+		iov++;
+		cio->cui_tot_nrsegs--;
+	}
+
+	cio->cui_iov = iov;
+	cio->cui_tot_count -= nob;
 }
 
 /**

@@ -83,9 +83,10 @@ static bool can_populate_pages(const struct lu_env *env, struct cl_io *io,
 	case CIT_WRITE:
 		/* don't need lock here to check lli_layout_gen as we have held
 		 * extent lock and GROUP lock has to hold to swap layout */
-		if (ll_layout_version_get(lli) != cio->cui_layout_gen) {
+		if (ll_layout_version_get(lli) != cio->cui_layout_gen ||
+		    OBD_FAIL_CHECK_RESET(OBD_FAIL_LLITE_LOST_LAYOUT, 0)) {
 			io->ci_need_restart = 1;
-			/* this will return application a short read/write */
+			/* this will cause a short read/write */
 			io->ci_continue = 0;
 			rc = false;
 		}
@@ -612,6 +613,18 @@ static int vvp_io_write_start(const struct lu_env *env,
         }
 
         CDEBUG(D_VFSTRACE, "write: [%lli, %lli)\n", pos, pos + (long long)cnt);
+
+	/* The maximum Lustre file size is variable, based on the OST maximum
+	 * object size and number of stripes.  This needs another check in
+	 * addition to the VFS checks earlier. */
+	if (pos + cnt > ll_file_maxbytes(inode)) {
+		CDEBUG(D_INODE,
+		       "%s: file "DFID" offset %llu > maxbytes "LPU64"\n",
+		       ll_get_fsname(inode->i_sb, NULL, 0),
+		       PFID(ll_inode2fid(inode)), pos + cnt,
+		       ll_file_maxbytes(inode));
+		RETURN(-EFBIG);
+	}
 
         if (cio->cui_iov == NULL) /* from a temp io in ll_cl_init(). */
                 result = 0;
