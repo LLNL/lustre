@@ -776,18 +776,20 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
         }
 
 	spin_lock(&request->rq_lock);
-        /* If the MD attach succeeds, there _will_ be a reply_in callback */
-        request->rq_receiving_reply = !noreply;
-        /* We are responsible for unlinking the reply buffer */
-        request->rq_must_unlink = !noreply;
-        /* Clear any flags that may be present from previous sends. */
+	request->rq_no_reply = noreply;
+	/* We are responsible for unlinking the reply buffer */
+	request->rq_reply_unlinked = noreply;
+	/* If the MD attach succeeds, there _will_ be a reply_in callback */
+	request->rq_receiving_reply = !noreply;
+	/* Clear any flags that may be present from previous sends. */
+	request->rq_req_unlinked = 0;
         request->rq_replied = 0;
         request->rq_err = 0;
         request->rq_timedout = 0;
         request->rq_net_err = 0;
         request->rq_resend = 0;
         request->rq_restart = 0;
-        request->rq_reply_truncate = 0;
+	request->rq_reply_truncated = 0;
 	spin_unlock(&request->rq_lock);
 
         if (!noreply) {
@@ -802,8 +804,8 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
                 reply_md.user_ptr  = &request->rq_reply_cbid;
                 reply_md.eq_handle = ptlrpc_eq_h;
 
-                /* We must see the unlink callback to unset rq_must_unlink,
-                   so we can't auto-unlink */
+		/* We must see the unlink callback to set rq_reply_unlinked,
+		 * so we can't auto-unlink */
                 rc = LNetMDAttach(reply_me_h, reply_md, LNET_RETAIN,
                                   &request->rq_reply_md_h);
                 if (rc != 0) {
@@ -812,7 +814,9 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 			spin_lock(&request->rq_lock);
 			/* ...but the MD attach didn't succeed... */
 			request->rq_receiving_reply = 0;
+			request->rq_reply_unlinked = 1;
 			spin_unlock(&request->rq_lock);
+
                         GOTO(cleanup_me, rc = -ENOMEM);
                 }
 
@@ -847,9 +851,10 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
                           connection,
                           request->rq_request_portal,
                           request->rq_xid, 0);
-        if (rc == 0)
-                GOTO(out, rc);
+	if (likely(rc == 0))
+		GOTO(out, rc);
 
+	request->rq_req_unlinked = 1;
         ptlrpc_req_finished(request);
         if (noreply)
                 GOTO(out, rc);
@@ -861,7 +866,7 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
         rc2 = LNetMEUnlink(reply_me_h);
         LASSERT (rc2 == 0);
         /* UNLINKED callback called synchronously */
-        LASSERT(!request->rq_receiving_reply);
+	LASSERT(!request->rq_receiving_reply && request->rq_reply_unlinked);
 
  cleanup_bulk:
         /* We do sync unlink here as there was no real transfer here so

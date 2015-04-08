@@ -57,34 +57,39 @@ lnet_handle_eq_t   ptlrpc_eq_h;
  */
 void request_out_callback(lnet_event_t *ev)
 {
-        struct ptlrpc_cb_id   *cbid = ev->md.user_ptr;
-        struct ptlrpc_request *req = cbid->cbid_arg;
-        ENTRY;
+	struct ptlrpc_cb_id   *cbid = ev->md.user_ptr;
+	struct ptlrpc_request *req = cbid->cbid_arg;
+	bool		       wakeup = false;
+	ENTRY;
 
-        LASSERT (ev->type == LNET_EVENT_SEND ||
-                 ev->type == LNET_EVENT_UNLINK);
-        LASSERT (ev->unlinked);
+	LASSERT(ev->type == LNET_EVENT_SEND || ev->type == LNET_EVENT_UNLINK);
+	LASSERT(ev->unlinked);
 
-        DEBUG_REQ(D_NET, req, "type %d, status %d", ev->type, ev->status);
+	DEBUG_REQ(D_NET, req, "type %d, status %d", ev->type, ev->status);
 
-        sptlrpc_request_out_callback(req);
-        req->rq_real_sent = cfs_time_current_sec();
+	sptlrpc_request_out_callback(req);
 
-        if (ev->type == LNET_EVENT_UNLINK || ev->status != 0) {
+	spin_lock(&req->rq_lock);
+	req->rq_real_sent = cfs_time_current_sec();
+	req->rq_req_unlinked = 1;
+	/* reply_in_callback happened before request_out_callback? */
+	if (req->rq_reply_unlinked)
+		wakeup = true;
 
-                /* Failed send: make it seem like the reply timed out, just
-                 * like failing sends in client.c does currently...  */
-
-		spin_lock(&req->rq_lock);
+	if (ev->type == LNET_EVENT_UNLINK || ev->status != 0) {
+		/* Failed send: make it seem like the reply timed out, just
+		 * like failing sends in client.c does currently...  */
 		req->rq_net_err = 1;
-		spin_unlock(&req->rq_lock);
+		wakeup = true;
+	}
 
-                ptlrpc_client_wake_req(req);
-        }
+	if (wakeup)
+		ptlrpc_client_wake_req(req);
 
-        ptlrpc_req_finished(req);
+	spin_unlock(&req->rq_lock);
 
-        EXIT;
+	ptlrpc_req_finished(req);
+	EXIT;
 }
 
 /*
@@ -107,10 +112,10 @@ void reply_in_callback(lnet_event_t *ev)
 
 	spin_lock(&req->rq_lock);
 
-        req->rq_receiving_reply = 0;
-        req->rq_early = 0;
-        if (ev->unlinked)
-                req->rq_must_unlink = 0;
+	req->rq_receiving_reply = 0;
+	req->rq_early = 0;
+	if (ev->unlinked)
+		req->rq_reply_unlinked = 1;
 
         if (ev->status)
                 goto out_wake;
@@ -124,7 +129,7 @@ void reply_in_callback(lnet_event_t *ev)
         if (ev->mlength < ev->rlength ) {
                 CDEBUG(D_RPCTRACE, "truncate req %p rpc %d - %d+%d\n", req,
                        req->rq_replen, ev->rlength, ev->offset);
-                req->rq_reply_truncate = 1;
+		req->rq_reply_truncated = 1;
                 req->rq_replied = 1;
                 req->rq_status = -EOVERFLOW;
                 req->rq_nob_received = ev->rlength + ev->offset;

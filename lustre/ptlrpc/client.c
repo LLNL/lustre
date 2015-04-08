@@ -649,6 +649,7 @@ static int __ptlrpc_request_bufs_pack(struct ptlrpc_request *request,
 	init_waitqueue_head(&request->rq_set_waitq);
 	request->rq_xid = ptlrpc_next_xid();
 	cfs_atomic_set(&request->rq_refcount, 1);
+	request->rq_req_unlinked = request->rq_reply_unlinked = 1;
 
 	lustre_msg_set_opc(request->rq_reqmsg, opcode);
 
@@ -1238,9 +1239,9 @@ static int after_reply(struct ptlrpc_request *req)
 
         LASSERT(obd != NULL);
         /* repbuf must be unlinked */
-        LASSERT(!req->rq_receiving_reply && !req->rq_must_unlink);
+	LASSERT(!req->rq_receiving_reply && req->rq_reply_unlinked);
 
-        if (req->rq_reply_truncate) {
+	if (req->rq_reply_truncated) {
                 if (ptlrpc_no_resend(req)) {
                         DEBUG_REQ(D_ERROR, req, "reply buffer overflow,"
                                   " expected: %d, actual size: %d",
@@ -2453,9 +2454,11 @@ int ptlrpc_unregister_reply(struct ptlrpc_request *request, int async)
                 }
 
                 LASSERT(rc == -ETIMEDOUT);
-                DEBUG_REQ(D_WARNING, request, "Unexpectedly long timeout "
-                          "rvcng=%d unlnk=%d", request->rq_receiving_reply,
-                          request->rq_must_unlink);
+		DEBUG_REQ(D_WARNING, request, "Unexpectedly long timeout "
+			  "receiving_reply=%d req_ulinked=%d reply_unlinked=%d",
+			  request->rq_receiving_reply,
+			  request->rq_req_unlinked,
+			  request->rq_reply_unlinked);
         }
         RETURN(0);
 }
@@ -3150,8 +3153,8 @@ void *ptlrpcd_alloc_work(struct obd_import *imp,
         req->rq_interpret_reply = work_interpreter;
         /* don't want reply */
         req->rq_receiving_reply = 0;
-        req->rq_must_unlink = 0;
         req->rq_no_delay = req->rq_no_resend = 1;
+	req->rq_req_unlinked = req->rq_reply_unlinked = 1;
 	req->rq_pill.rc_fmt = (void *)&worker_format;
 
 	spin_lock_init(&req->rq_lock);
