@@ -4061,7 +4061,7 @@ static int mdt_intent_reint(enum mdt_it_code opcode,
 	/* the open lock or the lock for cross-ref object should be
 	 * returned to the client */
 	if (lustre_handle_is_used(&lhc->mlh_reg_lh) &&
-	    (rc == 0 || rc == -EREMOTE)) {
+	    (rc == 0 || rc == -MDT_EREMOTE_OPEN)) {
 		rep->lock_policy_res2 = 0;
 		rc = mdt_intent_lock_replace(info, lockp, lhc, flags);
 		RETURN(rc);
