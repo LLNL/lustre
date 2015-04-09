@@ -862,7 +862,7 @@ int dt_index_read(const struct lu_env *env, struct dt_device *dev,
 
 	/* rp_count shouldn't be null and should be a multiple of the container
 	 * size */
-	if (rdpg->rp_count <= 0 && (rdpg->rp_count & (LU_PAGE_SIZE - 1)) != 0)
+	if (rdpg->rp_count == 0 || (rdpg->rp_count & (LU_PAGE_SIZE - 1)) != 0)
 		RETURN(-EFAULT);
 
 	if (fid_seq(&ii->ii_fid) >= FID_SEQ_NORMAL)
