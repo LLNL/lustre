@@ -186,4 +186,7 @@ DEST_MODULE_LOCATION[27]="/extra/lustre/"
 BUILT_MODULE_NAME[28]="lfsck"
 BUILT_MODULE_LOCATION[28]="lustre/lfsck/"
 DEST_MODULE_LOCATION[28]="/extra/lustre/"
+BUILT_MODULE_NAME[29]="osd_ldiskfs"
+BUILT_MODULE_LOCATION[29]="lustre/osd-ldiskfs/"
+DEST_MODULE_LOCATION[29]="/extra/lustre/"
 EOF
