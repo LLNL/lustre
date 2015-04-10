@@ -2,6 +2,7 @@
 
 # Declare rpmbuild --with/--without parameters
 %bcond_without servers
+%bcond_without ldiskfsprogs
 %bcond_without ldiskfs
 %bcond_without zfs
 %bcond_without lustre_tests
@@ -349,6 +350,11 @@ CONFIGURE_ARGS="%{?configure_args} --with-release=%release"
   %else
     %define conf_ldiskfs --without-ldiskfs
   %endif
+  %if %{with ldiskfsprogs}
+    %define conf_ldiskfsprogs --with-ldiskfsprogs
+  %else
+    %define conf_ldiskfsprogs --without-ldiskfsprogs
+  %endif
 %endif
 %if %{with lustre_modules}
 %define conf_modules --enable-modules
@@ -378,7 +384,7 @@ CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-kmp-moddir=[^ ][^ ]*
 %eval_configure \
 	%{?kdir: --with-linux=%kdir} %{?kobjdir: --with-linux-obj=%kobjdir} \
 	%{?conf_tests} %{?conf_disable_server} %{?conf_zfs} %{?conf_ldiskfs} \
-	%{?conf_iokit} %{?conf_modules} \
+	%{?conf_ldiskfsprogs} %{?conf_iokit} %{?conf_modules} \
 	$CONFIGURE_ARGS --with-kmp-moddir=%{kmoddir}
 make -j $RPM_BUILD_NCPUS -s %{?make_args}
 
