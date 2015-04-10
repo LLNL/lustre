@@ -24,6 +24,8 @@ Requires:       kernel-devel
 Provides:       %{module}-kmod = %{version}
 Provides:       %{module}-modules = %{version}
 Provides:       %{module}-osd = %{version}
+Provides:       %{module}-osd-zfs-kmod
+Provides:       %{module}-osd-ldiskfs-kmod
 
 %description
 This package contains the dkms Lustre kernel modules.
