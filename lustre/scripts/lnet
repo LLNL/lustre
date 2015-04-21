@@ -18,10 +18,6 @@
 # Check for and source configuration file otherwise set defaults
 [ -f /etc/sysconfig/lnet ] && . /etc/sysconfig/lnet
 
-declare -r awkprog='BEGIN { rc = -1 }
-		       { if ( $1 == module_name ) { rc = $3; exit; } }
-		    END { print rc }'
-
 # Usage: run_preexec_check [ start | restart | condrestart ]
 # The single parameter will be passed to the PREEXEC_SCRIPT
 run_preexec_check ()
@@ -126,8 +122,9 @@ case "$1" in
 	;;
   stop)
 	run_preexec_check "stop"
+	lustre_rmmod ptlrpc || exit 1
 	stop_lnet || exit 1
-	lustre_rmmod || exit 1
+	lustre_rmmod libcfs ldiskfs || exit 1
 	rm -f /var/lock/subsys/lnet
 	run_postexec_check "stop"
 	;;
