@@ -111,7 +111,8 @@ int mdd_lookup(const struct lu_env *env,
 {
         int rc;
         ENTRY;
-	rc = __mdd_lookup(env, pobj, lname, fid, MAY_EXEC);
+	rc = __mdd_lookup(env, pobj, lname, fid,
+			  (spec != NULL && spec->sp_permitted) ? 0 : MAY_EXEC);
         RETURN(rc);
 }
 

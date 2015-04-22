@@ -1234,43 +1234,32 @@ out:
 }
 
 static int mdt_raw_lookup(struct mdt_thread_info *info,
-                          struct mdt_object *parent,
-                          const struct lu_name *lname,
-                          struct ldlm_reply *ldlm_rep)
+			  struct mdt_object *parent,
+			  const struct lu_name *lname,
+			  struct ldlm_reply *ldlm_rep)
 {
-        struct md_object *next = mdt_object_child(info->mti_object);
-        const struct mdt_body *reqbody = info->mti_body;
-        struct lu_fid *child_fid = &info->mti_tmp_fid1;
-        struct mdt_body *repbody;
-        int rc;
-        ENTRY;
+	struct lu_fid *child_fid = &info->mti_tmp_fid1;
+	int rc;
+	ENTRY;
 
-        if (reqbody->valid != OBD_MD_FLID)
-                RETURN(0);
+	LASSERT(!info->mti_cross_ref);
 
-        LASSERT(!info->mti_cross_ref);
+	/* Only got the fid of this obj by name */
+	fid_zero(child_fid);
+	rc = mdo_lookup(info->mti_env, mdt_object_child(info->mti_object),
+			lname, child_fid, &info->mti_spec);
+	if (rc == 0) {
+		struct mdt_body *repbody;
 
-        /* Only got the fid of this obj by name */
-        fid_zero(child_fid);
-        rc = mdo_lookup(info->mti_env, next, lname, child_fid,
-                        &info->mti_spec);
-#if 0
-        /* XXX is raw_lookup possible as intent operation? */
-        if (rc != 0) {
-                if (rc == -ENOENT)
-                        mdt_set_disposition(info, ldlm_rep, DISP_LOOKUP_NEG);
-                RETURN(rc);
-        } else
-                mdt_set_disposition(info, ldlm_rep, DISP_LOOKUP_POS);
+		repbody = req_capsule_server_get(info->mti_pill, &RMF_MDT_BODY);
+		repbody->fid1 = *child_fid;
+		repbody->valid = OBD_MD_FLID;
+		mdt_set_disposition(info, ldlm_rep, DISP_LOOKUP_POS);
+	} else if (rc == -ENOENT) {
+		mdt_set_disposition(info, ldlm_rep, DISP_LOOKUP_NEG);
+	}
 
-        repbody = req_capsule_server_get(info->mti_pill, &RMF_MDT_BODY);
-#endif
-        if (rc == 0) {
-                repbody = req_capsule_server_get(info->mti_pill, &RMF_MDT_BODY);
-                repbody->fid1 = *child_fid;
-                repbody->valid = OBD_MD_FLID;
-        }
-        RETURN(1);
+	RETURN(rc);
 }
 
 /*
@@ -1354,12 +1343,16 @@ static int mdt_getattr_name_lock(struct mdt_thread_info *info,
 			 PFID(mdt_object_fid(parent)));
 	}
         if (lname) {
-                rc = mdt_raw_lookup(info, parent, lname, ldlm_rep);
-                if (rc != 0) {
-                        if (rc > 0)
-                                rc = 0;
-                        RETURN(rc);
-                }
+		/* Always allow to lookup ".." */
+		if (unlikely(lname->ln_namelen == 2 &&
+			     lname->ln_name[0] == '.' &&
+			     lname->ln_name[1] == '.'))
+			info->mti_spec.sp_permitted = 1;
+
+		if (info->mti_body->valid == OBD_MD_FLID) {
+			rc = mdt_raw_lookup(info, parent, lname, ldlm_rep);
+			RETURN(rc);
+		}
         }
 
         if (info->mti_cross_ref) {
@@ -3272,6 +3265,7 @@ void mdt_thread_info_init(struct ptlrpc_request *req,
         /* To not check for split by default. */
         info->mti_spec.no_create = 0;
 	info->mti_spec.sp_rm_entry = 0;
+	info->mti_spec.sp_permitted = 0;
 }
 
 void mdt_thread_info_fini(struct mdt_thread_info *info)
