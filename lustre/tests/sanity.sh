@@ -1,5 +1,5 @@
 #!/bin/bash
-# -*- tab-width: 4; indent-tabs-mode: t; -*-
+# -*- tab-width: 8; indent-tabs-mode: t; -*-
 #
 # Run select tests by setting ONLY, or as arguments to the script.
 # Skip specific tests by setting EXCEPT.
@@ -7501,7 +7501,7 @@ run_test 119d "The DIO path should try to send a new rpc once one is completed"
 
 test_120a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
-        test_mkdir -p $DIR/$tdir
+	test_mkdir -p $DIR/$tdir
         [ -z "`lctl get_param -n mdc.*.connect_flags | grep early_lock_cancel`" ] && \
                skip "no early lock cancel on server" && return 0
 
@@ -7511,83 +7511,107 @@ test_120a() {
 	# asynchronous object destroy at MDT could cause bl ast to client
 	cancel_lru_locks osc
 
-        stat $DIR/$tdir > /dev/null
-        can1=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk1=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        test_mkdir $DIR/$tdir/d1
-        can2=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk2=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        [ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
-        [ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
-        lru_resize_enable mdc
-        lru_resize_enable osc
+	stat $DIR/$tdir > /dev/null
+	can1=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	test_mkdir $DIR/$tdir/d1
+	can2=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	[ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
+	[ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
+	lru_resize_enable mdc
+	lru_resize_enable osc
 }
 run_test 120a "Early Lock Cancel: mkdir test"
 
 test_120b() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
         test_mkdir -p $DIR/$tdir
-        [ -z "`lctl get_param -n mdc.*.connect_flags | grep early_lock_cancel`" ] && \
+        [ -z "$(lctl get_param -n mdc.*.connect_flags | grep early_lock_cancel)" ] && \
                skip "no early lock cancel on server" && return 0
         lru_resize_disable mdc
         lru_resize_disable osc
         cancel_lru_locks mdc
         stat $DIR/$tdir > /dev/null
-        can1=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk1=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        touch $DIR/$tdir/f1
-        can2=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk2=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        [ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
-        [ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
-        lru_resize_enable mdc
-        lru_resize_enable osc
+	can1=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	touch $DIR/$tdir/f1
+	can2=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	[ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
+	[ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
+	lru_resize_enable mdc
+	lru_resize_enable osc
 }
 run_test 120b "Early Lock Cancel: create test"
 
 test_120c() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
-        test_mkdir -p $DIR/$tdir
-        [ -z "`lctl get_param -n mdc.*.connect_flags | grep early_lock_cancel`" ] && \
-               skip "no early lock cancel on server" && return 0
+	test_mkdir -p $DIR/$tdir
+	[ -z "$(lctl get_param -n mdc.*.connect_flags | grep early_lock_cancel)" ] && \
+	       skip "no early lock cancel on server" && return 0
         lru_resize_disable mdc
         lru_resize_disable osc
 	test_mkdir -p $DIR/$tdir/d1
 	test_mkdir -p $DIR/$tdir/d2
-        touch $DIR/$tdir/d1/f1
-        cancel_lru_locks mdc
-        stat $DIR/$tdir/d1 $DIR/$tdir/d2 $DIR/$tdir/d1/f1 > /dev/null
-        can1=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk1=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        ln $DIR/$tdir/d1/f1 $DIR/$tdir/d2/f2
-        can2=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk2=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        [ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
-        [ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
-        lru_resize_enable mdc
-        lru_resize_enable osc
+	touch $DIR/$tdir/d1/f1
+	cancel_lru_locks mdc
+	stat $DIR/$tdir/d1 $DIR/$tdir/d2 $DIR/$tdir/d1/f1 > /dev/null
+	can1=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	ln $DIR/$tdir/d1/f1 $DIR/$tdir/d2/f2
+	can2=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	[ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
+	[ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
+	lru_resize_enable mdc
+	lru_resize_enable osc
 }
 run_test 120c "Early Lock Cancel: link test"
 
 test_120d() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
-        test_mkdir -p $DIR/$tdir
-        [ -z "`lctl get_param -n mdc.*.connect_flags | grep early_lock_cancel`" ] && \
-               skip "no early lock cancel on server" && return 0
-        lru_resize_disable mdc
-        lru_resize_disable osc
-        touch $DIR/$tdir
-        cancel_lru_locks mdc
-        stat $DIR/$tdir > /dev/null
-        can1=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk1=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        chmod a+x $DIR/$tdir
-        can2=`lctl get_param -n ldlm.services.ldlm_canceld.stats | awk '/ldlm_cancel/ {print $2}'`
-        blk2=`lctl get_param -n ldlm.services.ldlm_cbd.stats | awk '/ldlm_bl_callback/ {print $2}'`
-        [ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
-        [ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
-        lru_resize_enable mdc
-        lru_resize_enable osc
+	test_mkdir -p $DIR/$tdir
+	[ -z "$(lctl get_param -n mdc.*.connect_flags | grep early_lock_cancel)" ] && \
+	       skip "no early lock cancel on server" && return 0
+	lru_resize_disable mdc
+	lru_resize_disable osc
+	touch $DIR/$tdir
+	cancel_lru_locks mdc
+	stat $DIR/$tdir > /dev/null
+	can1=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	chmod a+x $DIR/$tdir
+	can2=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	[ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
+	[ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
+	lru_resize_enable mdc
+	lru_resize_enable osc
 }
 run_test 120d "Early Lock Cancel: setattr test"
 
@@ -7603,19 +7627,21 @@ test_120e() {
         cancel_lru_locks osc
         dd if=$DIR/$tdir/f1 of=/dev/null
         stat $DIR/$tdir $DIR/$tdir/f1 > /dev/null
-        can1=`lctl get_param -n ldlm.services.ldlm_canceld.stats |
-              awk '/ldlm_cancel/ {print $2}'`
-        blk1=`lctl get_param -n ldlm.services.ldlm_cbd.stats |
-              awk '/ldlm_bl_callback/ {print $2}'`
-        unlink $DIR/$tdir/f1
-        can2=`lctl get_param -n ldlm.services.ldlm_canceld.stats |
-              awk '/ldlm_cancel/ {print $2}'`
-        blk2=`lctl get_param -n ldlm.services.ldlm_cbd.stats |
-              awk '/ldlm_bl_callback/ {print $2}'`
-        [ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
-        [ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
-        lru_resize_enable mdc
-        lru_resize_enable osc
+	can1=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	unlink $DIR/$tdir/f1
+	can2=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	[ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
+	[ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
+	lru_resize_enable mdc
+	lru_resize_enable osc
 }
 run_test 120e "Early Lock Cancel: unlink test"
 
@@ -7635,19 +7661,21 @@ test_120f() {
         dd if=$DIR/$tdir/d1/f1 of=/dev/null
         dd if=$DIR/$tdir/d2/f2 of=/dev/null
         stat $DIR/$tdir/d1 $DIR/$tdir/d2 $DIR/$tdir/d1/f1 $DIR/$tdir/d2/f2 > /dev/null
-        can1=`lctl get_param -n ldlm.services.ldlm_canceld.stats |
-              awk '/ldlm_cancel/ {print $2}'`
-        blk1=`lctl get_param -n ldlm.services.ldlm_cbd.stats |
-              awk '/ldlm_bl_callback/ {print $2}'`
-        mv $DIR/$tdir/d1/f1 $DIR/$tdir/d2/f2
-        can2=`lctl get_param -n ldlm.services.ldlm_canceld.stats |
-              awk '/ldlm_cancel/ {print $2}'`
-        blk2=`lctl get_param -n ldlm.services.ldlm_cbd.stats |
-              awk '/ldlm_bl_callback/ {print $2}'`
-        [ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
-        [ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
-        lru_resize_enable mdc
-        lru_resize_enable osc
+	can1=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	mv $DIR/$tdir/d1/f1 $DIR/$tdir/d2/f2
+	can2=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	[ $can1 -eq $can2 ] || error $((can2-can1)) "cancel RPC occured."
+	[ $blk1 -eq $blk2 ] || error $((blk2-blk1)) "blocking RPC occured."
+	lru_resize_enable mdc
+	lru_resize_enable osc
 }
 run_test 120f "Early Lock Cancel: rename test"
 
@@ -7664,32 +7692,35 @@ test_120g() {
         cancel_lru_locks osc
         t0=`date +%s`
 
-        can0=`lctl get_param -n ldlm.services.ldlm_canceld.stats |
-              awk '/ldlm_cancel/ {print $2}'`
-        blk0=`lctl get_param -n ldlm.services.ldlm_cbd.stats |
-              awk '/ldlm_bl_callback/ {print $2}'`
-        createmany -o $DIR/$tdir/f $count
-        sync
-        can1=`lctl get_param -n ldlm.services.ldlm_canceld.stats |
-              awk '/ldlm_cancel/ {print $2}'`
-        blk1=`lctl get_param -n ldlm.services.ldlm_cbd.stats |
-              awk '/ldlm_bl_callback/ {print $2}'`
-        t1=`date +%s`
-        echo total: $((can1-can0)) cancels, $((blk1-blk0)) blockings
-        echo rm $count files
-        rm -r $DIR/$tdir
-        sync
-        can2=`lctl get_param -n ldlm.services.ldlm_canceld.stats |
-              awk '/ldlm_cancel/ {print $2}'`
-        blk2=`lctl get_param -n ldlm.services.ldlm_cbd.stats |
-              awk '/ldlm_bl_callback/ {print $2}'`
-        t2=`date +%s`
-        echo total: $count removes in $((t2-t1))
-        echo total: $((can2-can1)) cancels, $((blk2-blk1)) blockings
-        sleep 2
-        # wait for commitment of removal
-        lru_resize_enable mdc
-        lru_resize_enable osc
+	can0=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk0=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	createmany -o $DIR/$tdir/f $count
+	sync
+	can1=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	t1=$(date +%s)
+	echo total: $((can1-can0)) cancels, $((blk1-blk0)) blockings
+	echo rm $count files
+	rm -r $DIR/$tdir
+	sync
+	can2=$(do_facet $SINGLEMDS \
+	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
+	       awk '/ldlm_cancel/ {print $2}')
+	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
+	       awk '/ldlm_bl_callback/ {print $2}')
+	t2=$(date +%s)
+	echo total: $count removes in $((t2-t1))
+	echo total: $((can2-can1)) cancels, $((blk2-blk1)) blockings
+	sleep 2
+	# wait for commitment of removal
+	lru_resize_enable mdc
+	lru_resize_enable osc
 }
 run_test 120g "Early Lock Cancel: performance test"
 
