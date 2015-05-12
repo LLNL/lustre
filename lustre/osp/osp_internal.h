@@ -188,7 +188,6 @@ struct osp_object {
 	struct lu_object_header	opo_header;
 	struct dt_object	opo_obj;
 	unsigned int		opo_reserved:1,
-				opo_new:1,
 				opo_empty:1;
 
 	/* read/write lock for md osp object */
