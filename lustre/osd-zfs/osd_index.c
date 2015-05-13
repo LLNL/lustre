@@ -480,8 +480,8 @@ static int osd_mdt_seq_exists(const struct lu_env *env, struct osd_device *osd,
 	int			rc;
 	ENTRY;
 
-	if (ss == NULL)
-		RETURN(1);
+	LASSERT(ss != NULL);
+	LASSERT(ss->ss_server_fld != NULL);
 
 	/* XXX: currently, each MDT only store avaible sequence on disk,
 	 * and no allocated sequences information on disk, so it has to
@@ -500,9 +500,16 @@ static int osd_mdt_seq_exists(const struct lu_env *env, struct osd_device *osd,
 static int osd_remote_fid(const struct lu_env *env, struct osd_device *osd,
 			  struct lu_fid *fid)
 {
+	struct seq_server_site  *ss = osd_seq_site(osd);
 	ENTRY;
 
 	if (!fid_is_norm(fid) && !fid_is_root(fid))
+		RETURN(0);
+
+	/* If FLD is not being initialized yet, it only happens during the
+	 * initialization, likely during mgs initialization, and we assume
+	 * this is local FID. */
+	if (ss == NULL || ss->ss_server_fld == NULL)
 		RETURN(0);
 
 	/* Currently, it only used to check FID on MDT */
