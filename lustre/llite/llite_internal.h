@@ -515,7 +515,7 @@ struct ll_sb_info {
 
         struct lprocfs_stats     *ll_stats; /* lprocfs stats counter */
 
-	struct cl_client_cache    ll_cache;
+	struct cl_client_cache   *ll_cache;
 
         struct lprocfs_stats     *ll_ra_stats;
 

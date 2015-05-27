@@ -554,7 +554,8 @@ static int osc_cache_too_much(struct client_obd *cli)
 	if (cfs_atomic_read(cli->cl_lru_left) < cache->ccc_lru_max >> 4) {
 		unsigned long tmp;
 
-		tmp = cache->ccc_lru_max / cfs_atomic_read(&cache->ccc_users);
+		tmp = cache->ccc_lru_max /
+			(cfs_atomic_read(&cache->ccc_users) - 2);
 		if (pages > tmp)
 			return min(pages, lru_shrink_max);
 
@@ -788,7 +789,7 @@ static int osc_lru_reclaim(struct client_obd *cli)
 	cache->ccc_lru_shrinkers++;
 	cfs_list_move_tail(&cli->cl_lru_osc, &cache->ccc_lru);
 
-	max_scans = cfs_atomic_read(&cache->ccc_users);
+	max_scans = cfs_atomic_read(&cache->ccc_users) - 2;
 	while (--max_scans > 0 && !cfs_list_empty(&cache->ccc_lru)) {
 		cli = cfs_list_entry(cache->ccc_lru.next, struct client_obd,
 					cl_lru_osc);

@@ -401,7 +401,7 @@ static int ll_rd_max_cached_mb(char *page, char **start, off_t off,
 {
 	struct super_block     *sb    = data;
 	struct ll_sb_info      *sbi   = ll_s2sbi(sb);
-	struct cl_client_cache *cache = &sbi->ll_cache;
+	struct cl_client_cache *cache = sbi->ll_cache;
 	int shift = 20 - PAGE_CACHE_SHIFT;
 	int max_cached_mb;
 	int unused_mb;
@@ -427,7 +427,7 @@ static int ll_wr_max_cached_mb(struct file *file, const char *buffer,
 {
 	struct super_block *sb = data;
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
-	struct cl_client_cache *cache = &sbi->ll_cache;
+	struct cl_client_cache *cache = sbi->ll_cache;
 	int mult, rc, pages_number;
 	int diff = 0;
 	int nrpages = 0;

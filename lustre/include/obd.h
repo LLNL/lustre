@@ -574,7 +574,7 @@ struct lov_obd {
         enum lustre_sec_part    lov_sp_me;
 
 	/* Cached LRU pages from upper layer */
-	void		       *lov_cache;
+	struct cl_client_cache *lov_cache;
 
 	struct rw_semaphore     lov_notify_lock;
 };
