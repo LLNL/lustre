@@ -50,12 +50,8 @@
 #include <md_object.h>
 #include <lustre_quota.h>
 
-#define _SPL_KMEM_H
-#include <sys/kstat.h>
-#define kmem_zalloc(a, b)	kzalloc(a, b)
-#define kmem_free(ptr, sz)	((void)(sz), kfree(ptr))
-#ifndef KM_SLEEP
-#define KM_SLEEP		GFP_KERNEL
+#ifdef SHRINK_STOP
+#undef SHRINK_STOP
 #endif
 
 #include <sys/arc.h>
@@ -64,6 +60,27 @@
 
 #include <sys/zfs_znode.h>
 #include "udmu.h"
+
+/**
+ * By design including kmem.h overrides the Linux slab interfaces to provide
+ * the Illumos kmem cache interfaces.  To override this and gain access to
+ * the Linux interfaces these preprocessor macros must be undefined.
+ */
+#ifdef kmem_cache_destroy
+#undef kmem_cache_destroy
+#endif
+
+#ifdef kmem_cache_create
+#undef kmem_cache_create
+#endif
+
+#ifdef kmem_cache_alloc
+#undef kmem_cache_alloc
+#endif
+
+#ifdef kmem_cache_free
+#undef kmem_cache_free
+#endif
 
 #define LUSTRE_ROOT_FID_SEQ	0
 #define DMU_OSD_SVNAME		"svname"
