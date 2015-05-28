@@ -6589,6 +6589,21 @@ test_102q() {
 }
 run_test 102q "flistxattr should not return trusted.link EAs for orphans"
 
+test_102r() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.6.93) ]] ||
+	[[ $server_version -ge $(version_code 2.5.4) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version at least 2.6.93 or 2.5.5"; return; }
+
+	touch $DIR/$tfile || error "touch"
+	setfattr -n user.$(basename $tfile) $DIR/$tfile || error "setfattr"
+	getfattr -n user.$(basename $tfile) $DIR/$tfile || error "getfattr"
+	rm $DIR/$tfile || error "rm"
+}
+run_test 102r "set EAs with empty values"
+
 run_acl_subtest()
 {
     $LUSTRE/tests/acl/run $LUSTRE/tests/acl/$1.test
