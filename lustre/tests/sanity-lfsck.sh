@@ -765,6 +765,9 @@ test_9a() {
 		return 0
 	fi
 
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.50) ]] &&
+		{ skip "Need MDS version < 2.7.50"; return; }
+
 	lfsck_prep 70 70
 
 	local BASE_SPEED1=100
@@ -824,6 +827,9 @@ test_9b() {
 		skip "Testing on UP system, the speed may be inaccurate."
 		return 0
 	fi
+
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.50) ]] &&
+		{ skip "Need MDS version < 2.7.50"; return; }
 
 	lfsck_prep 0 0
 
