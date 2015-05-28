@@ -395,6 +395,22 @@ your distribution.
 		],[
 			AC_MSG_RESULT([no])
 		])
+		AC_MSG_CHECKING([if zfs defines sa_spill_alloc])
+		LB_LINUX_TRY_COMPILE([
+			#include <sys/kmem.h>
+			#include <sys/sa.h>
+		],[
+			void *ptr;
+
+			ptr = sa_spill_alloc(KM_SLEEP);
+			sa_spill_free(ptr);
+		],[
+			AC_MSG_RESULT([yes])
+				AC_DEFINE(HAVE_SA_SPILL_ALLOC, 1,
+					  [Have sa_spill_alloc in ZFS])
+		],[
+			AC_MSG_RESULT([no])
+		])
 	])
 
 	AM_CONDITIONAL(ZFS_ENABLED, test x$enable_zfs = xyes)
