@@ -752,10 +752,10 @@ int osd_xattr_del(const struct lu_env *env, struct dt_object *dt,
 
 static int
 osd_sa_xattr_list(const struct lu_env *env, struct osd_object *obj,
-		struct lu_buf *lb)
+		  const struct lu_buf *lb)
 {
 	nvpair_t *nvp = NULL;
-	int       len, counted = 0, remain = lb->lb_len;
+	int       len, counted = 0;
 	int       rc = 0;
 
 	if (obj->oo_sa_xattr == NULL) {
@@ -774,16 +774,12 @@ osd_sa_xattr_list(const struct lu_env *env, struct osd_object *obj,
 		     strcmp(name, POSIX_ACL_XATTR_DEFAULT) == 0))
 			continue;
 
-		len = strlen(nvpair_name(nvp));
+		len = strlen(name);
 		if (lb->lb_buf != NULL) {
-			if (len + 1 > remain)
+			if (counted + len + 1 > lb->lb_len)
 				return -ERANGE;
 
-			memcpy(lb->lb_buf, name, len);
-			lb->lb_buf += len;
-			*((char *)lb->lb_buf) = '\0';
-			lb->lb_buf++;
-			remain -= len + 1;
+			memcpy(lb->lb_buf + counted, name, len + 1);
 		}
 		counted += len + 1;
 	}
@@ -791,14 +787,14 @@ osd_sa_xattr_list(const struct lu_env *env, struct osd_object *obj,
 }
 
 int osd_xattr_list(const struct lu_env *env, struct dt_object *dt,
-		struct lu_buf *lb, struct lustre_capa *capa)
+		   const struct lu_buf *lb, struct lustre_capa *capa)
 {
 	struct osd_thread_info *oti = osd_oti_get(env);
 	struct osd_object      *obj = osd_dt_obj(dt);
 	struct osd_device      *osd = osd_obj2dev(obj);
 	udmu_objset_t          *uos = &osd->od_objset;
 	zap_cursor_t           *zc;
-	int                    rc, counted = 0, remain = lb->lb_len;
+	int                    rc, counted;
 	ENTRY;
 
 	LASSERT(obj->oo_db != NULL);
@@ -810,8 +806,8 @@ int osd_xattr_list(const struct lu_env *env, struct dt_object *dt,
 	rc = osd_sa_xattr_list(env, obj, lb);
 	if (rc < 0)
 		GOTO(out, rc);
+
 	counted = rc;
-	remain -= counted;
 
 	/* continue with dnode xattr if any */
 	if (obj->oo_xattr == ZFS_NO_OBJECT)
@@ -832,14 +828,10 @@ int osd_xattr_list(const struct lu_env *env, struct dt_object *dt,
 
 		rc = strlen(oti->oti_key);
 		if (lb->lb_buf != NULL) {
-			if (rc + 1 > remain)
+			if (counted + rc + 1 > lb->lb_len)
 				RETURN(-ERANGE);
 
-			memcpy(lb->lb_buf, oti->oti_key, rc);
-			lb->lb_buf += rc;
-			*((char *)lb->lb_buf) = '\0';
-			lb->lb_buf++;
-			remain -= rc + 1;
+			memcpy(lb->lb_buf + counted, oti->oti_key, rc + 1);
 		}
 		counted += rc + 1;
 
