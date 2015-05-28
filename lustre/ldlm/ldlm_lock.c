@@ -2171,10 +2171,7 @@ void ldlm_lock_cancel(struct ldlm_lock *lock)
         /* Releases cancel callback. */
         ldlm_cancel_callback(lock);
 
-	/* Yes, second time, just in case it was added again while we were
-	 * running with no res lock in ldlm_cancel_callback */
-	if (lock->l_flags & LDLM_FL_WAITED)
-		ldlm_del_waiting_lock(lock);
+	LASSERT(!ldlm_is_waited(lock));
 
         ldlm_resource_unlink_lock(lock);
         ldlm_lock_destroy_nolock(lock);
