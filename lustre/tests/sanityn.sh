@@ -2852,6 +2852,34 @@ test_76() { #LU-946
 }
 run_test 76 "Verify open file for 2048 files"
 
+test_82() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.6.92) ]] ||
+	[[ $server_version -ge $(version_code 2.5.4) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version at least 2.6.92 or 2.5.5"; return; }
+
+	# Client 1 creates a file.
+	multiop_bg_pause $DIR1/$tfile O_ac || error "multiop_bg_pause 1"
+	pid1=$!
+	# Client 2 opens the file.
+	multiop_bg_pause $DIR2/$tfile o_Ac || error "multiop_bg_pause 2"
+	pid2=$!
+	# Client 1 makes the file an orphan.
+	rm $DIR1/$tfile || error "rm"
+	# Client 2 sets EA "user.multiop".
+	kill -s USR1 $pid2
+	wait $pid2 || error "multiop 2"
+	# Client 1 gets EA "user.multiop".  This used to fail because the EA
+	# cache refill would get "trusted.link" from mdd_xattr_list() but
+	# -ENOENT when trying to get "trusted.link"'s value.  See also sanity
+	# 102q.
+	kill -s USR1 $pid1
+	wait $pid1 || error "multiop 1"
+}
+run_test 82 "fsetxattr and fgetxattr on orphan files"
+
 log "cleanup: ======================================================"
 
 [ "$(mount | grep $MOUNT2)" ] && umount $MOUNT2

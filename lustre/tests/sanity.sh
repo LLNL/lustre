@@ -6577,6 +6577,18 @@ test_102n() { # LU-4101 mdt: protect internal xattrs
 }
 run_test 102n "silently ignore setxattr on internal trusted xattrs"
 
+test_102q() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.6.92) ]] ||
+	[[ $server_version -ge $(version_code 2.5.4) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version at least 2.6.92 or 2.5.5"; return; }
+
+	orphan_linkea_check $DIR/$tfile || error "orphan_linkea_check"
+}
+run_test 102q "flistxattr should not return trusted.link EAs for orphans"
+
 run_acl_subtest()
 {
     $LUSTRE/tests/acl/run $LUSTRE/tests/acl/$1.test
