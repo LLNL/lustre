@@ -1076,7 +1076,7 @@ int mdt_getattr(struct mdt_thread_info *info)
 	}
 
 	if (rc < 0)
-		GOTO(out_shrink, rc);
+		GOTO(out_shrink, rc = err_serious(rc));
 
 	/* old clients may not report needed easize, use max value then */
 	req_capsule_set_size(pill, &RMF_MDT_MD, RCL_SERVER, rc);
