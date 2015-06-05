@@ -2830,6 +2830,35 @@ test_93() {
 }
 run_test 93 "replay + reconnect"
 
+test_101() { #LU-5648
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.6.93) ]] ||
+	[[ $server_version -ge $(version_code 2.5.5) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version at least 2.6.93 or 2.5.5"; return; }
+
+	mkdir -p $DIR/$tdir/d1
+	mkdir -p $DIR/$tdir/d2
+	touch $DIR/$tdir/file0
+	num=1000
+
+	replay_barrier $SINGLEMDS
+	for i in $(seq $num) ; do
+		echo test$i > $DIR/$tdir/d1/file$i
+	done
+
+	fail_abort $SINGLEMDS
+	for i in $(seq $num) ; do
+		touch $DIR/$tdir/d2/file$i
+		test -s $DIR/$tdir/d2/file$i &&
+			ls -al $DIR/$tdir/d2/file$i && error "file$i's size > 0"
+	done
+
+	rm -rf $DIR/$tdir
+}
+run_test 101 "Shouldn't reassign precreated objs to other files after recovery"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
