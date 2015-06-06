@@ -3922,9 +3922,9 @@ static int mdt_intent_getattr(enum mdt_it_code opcode,
                 GOTO(out_shrink, rc = -EINVAL);
         }
 
-        rc = mdt_init_ucred(info, reqbody);
-        if (rc)
-                GOTO(out_shrink, rc);
+	rc = mdt_init_ucred_intent_getattr(info, reqbody);
+	if (rc)
+		GOTO(out_shrink, rc);
 
         req = info->mti_pill->rc_req;
         ldlm_rep = req_capsule_server_get(info->mti_pill, &RMF_DLM_REP);
