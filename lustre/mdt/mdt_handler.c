@@ -2677,6 +2677,8 @@ int mdt_remote_object_lock(struct mdt_thread_info *mti,
 
 	LASSERT(mdt_object_remote(o));
 
+	LASSERT(ibits & MDS_INODELOCK_UPDATE);
+
 	memset(einfo, 0, sizeof(*einfo));
 	einfo->ei_type = LDLM_IBITS;
 	einfo->ei_mode = mode;

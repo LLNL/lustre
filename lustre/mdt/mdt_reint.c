@@ -685,7 +685,6 @@ static int mdt_reint_unlink(struct mdt_thread_info *info,
         struct mdt_object       *mc;
         struct mdt_lock_handle  *parent_lh;
         struct mdt_lock_handle  *child_lh;
-        __u64                   lock_ibits;
         struct lu_name          *lname;
         int                      rc;
 	int			 no_name = 0;
@@ -832,20 +831,9 @@ static int mdt_reint_unlink(struct mdt_thread_info *info,
 	/* We used to acquire MDS_INODELOCK_FULL here but we can't do
 	 * this now because a running HSM restore on the child (unlink
 	 * victim) will hold the layout lock. See LU-4002. */
-	lock_ibits = MDS_INODELOCK_LOOKUP | MDS_INODELOCK_UPDATE;
-	if (mdt_object_remote(mp)) {
-		/* Enqueue lookup lock from parent MDT */
-		rc = mdt_remote_object_lock(info, mp,
-					    &child_lh->mlh_rreg_lh,
-					    child_lh->mlh_rreg_mode,
-					    MDS_INODELOCK_LOOKUP);
-		if (rc != ELDLM_OK)
-			GOTO(put_child, rc);
-
-		lock_ibits &= ~MDS_INODELOCK_LOOKUP;
-	}
-
-	rc = mdt_object_lock(info, mc, child_lh, lock_ibits, MDT_CROSS_LOCK);
+	rc = mdt_object_lock(info, mc, child_lh,
+			     MDS_INODELOCK_LOOKUP | MDS_INODELOCK_UPDATE,
+			     MDT_CROSS_LOCK);
 	if (rc != 0)
 		GOTO(put_child, rc);
 
