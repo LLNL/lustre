@@ -72,6 +72,8 @@ struct ofd_mod_data {
 #define OFD_FMD_MAX_NUM_DEFAULT 128
 #define OFD_FMD_MAX_AGE_DEFAULT ((obd_timeout + 10) * HZ)
 
+#define OFD_SOFT_SYNC_LIMIT_DEFAULT 16
+
 enum {
 	LPROC_OFD_READ_BYTES = 0,
 	LPROC_OFD_WRITE_BYTES = 1,
@@ -186,6 +188,8 @@ struct ofd_device {
 				  * supporting OBD_CONNECT_GRANT_PARAM? */
 				 ofd_grant_compat_disable:1;
 	struct seq_server_site	 ofd_seq_site;
+	/* the limit of SOFT_SYNC RPCs that will trigger a soft sync */
+	unsigned int		 ofd_soft_sync_limit;
 };
 
 static inline struct ofd_device *ofd_dev(struct lu_device *d)
