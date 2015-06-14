@@ -740,22 +740,67 @@ static int ll_wr_lazystatfs(struct file *file, const char *buffer,
 }
 
 static int ll_rd_maxea_size(char *page, char **start, off_t off,
-                            int count, int *eof, void *data)
+			    int count, int *eof, void *data)
 {
-        struct super_block *sb = data;
-        struct ll_sb_info *sbi = ll_s2sbi(sb);
-        unsigned int ealen;
-        int rc;
+	struct super_block *sb = data;
+	struct ll_sb_info *sbi = ll_s2sbi(sb);
+	unsigned int ealen;
+	int rc;
 
-        rc = ll_get_max_mdsize(sbi, &ealen);
-        if (rc)
-                return rc;
+	rc = ll_get_max_mdsize(sbi, &ealen);
+	if (rc)
+		return rc;
 
-        return snprintf(page, count, "%u\n", ealen);
+	return snprintf(page, count, "%u\n", ealen);
+}
+
+static int ll_rd_defaultea_size(char *page, char **start, off_t off,
+				int count, int *eof, void *data)
+{
+	struct super_block *sb = data;
+	struct ll_sb_info *sbi = ll_s2sbi(sb);
+	unsigned int ealen;
+	int rc;
+
+	rc = ll_get_default_mdsize(sbi, &ealen);
+	if (rc)
+		return rc;
+
+	return snprintf(page, count, "%u\n", ealen);
+}
+
+static int ll_rd_maxcookie_size(char *page, char **start, off_t off,
+				int count, int *eof, void *data)
+{
+	struct super_block *sb = data;
+	struct ll_sb_info *sbi = ll_s2sbi(sb);
+	unsigned int cookielen;
+	int rc;
+
+	rc = ll_get_max_cookiesize(sbi, &cookielen);
+	if (rc)
+		return rc;
+
+	return snprintf(page, count, "%u\n", cookielen);
+}
+
+static int ll_rd_defaultcookie_size(char *page, char **start, off_t off,
+				    int count, int *eof, void *data)
+{
+	struct super_block *sb = data;
+	struct ll_sb_info *sbi = ll_s2sbi(sb);
+	unsigned int cookielen;
+	int rc;
+
+	rc = ll_get_default_cookiesize(sbi, &cookielen);
+	if (rc)
+		return rc;
+
+	return snprintf(page, count, "%u\n", cookielen);
 }
 
 static int ll_rd_sbi_flags(char *page, char **start, off_t off,
-				int count, int *eof, void *data)
+			   int count, int *eof, void *data)
 {
 	const char *str[] = LL_SBI_FLAGS;
 	struct super_block *sb = data;
@@ -871,6 +916,9 @@ static struct lprocfs_vars lprocfs_llite_obd_vars[] = {
         { "statahead_stats",  ll_rd_statahead_stats, 0, 0 },
         { "lazystatfs",       ll_rd_lazystatfs, ll_wr_lazystatfs, 0 },
         { "max_easize",       ll_rd_maxea_size, 0, 0 },
+	{ "default_easize",   ll_rd_defaultea_size, 0, 0 },
+	{ "max_cookiesize",   ll_rd_maxcookie_size, 0, 0 },
+	{ "default_cookiesize", ll_rd_defaultcookie_size, 0, 0 },
 	{ "sbi_flags",        ll_rd_sbi_flags, 0, 0 },
 	{ "xattr_cache",      ll_rd_xattr_cache, ll_wr_xattr_cache, 0 },
 	{ "root_squash",      ll_rd_root_squash, ll_wr_root_squash, 0 },

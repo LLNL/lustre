@@ -83,9 +83,9 @@ struct inode *search_inode_for_lustre(struct super_block *sb,
         if (inode)
                 RETURN(inode);
 
-        rc = ll_get_max_mdsize(sbi, &eadatalen);
-        if (rc)
-                RETURN(ERR_PTR(rc));
+	rc = ll_get_default_mdsize(sbi, &eadatalen);
+	if (rc)
+		RETURN(ERR_PTR(rc));
 
         /* Because inode is NULL, ll_prep_md_op_data can not
          * be used here. So we allocate op_data ourselves */
@@ -302,7 +302,7 @@ static struct dentry *ll_get_parent(struct dentry *dchild)
         CDEBUG(D_INFO, "getting parent for (%lu,"DFID")\n",
                         dir->i_ino, PFID(ll_inode2fid(dir)));
 
-	rc = ll_get_max_mdsize(sbi, &lmmsize);
+	rc = ll_get_default_mdsize(sbi, &lmmsize);
 	if (rc != 0)
 		RETURN(ERR_PTR(rc));
 
