@@ -111,7 +111,6 @@ typedef struct
 	int		 *kib_ib_mtu;		/* IB MTU */
 	int              *kib_map_on_demand;    /* map-on-demand if RD has more fragments
 						 * than this value, 0 disable map-on-demand */
-	int              *kib_pmr_pool_size;    /* # physical MR in pool */
 	int              *kib_fmr_pool_size;    /* # FMRs in pool */
 	int              *kib_fmr_flush_trigger; /* When to trigger FMR flush */
 	int              *kib_fmr_cache;        /* enable FMR pool cache? */
@@ -177,7 +176,6 @@ kiblnd_concurrent_sends_v1(void)
 /* Pools (shared by connections on each CPT) */
 /* These pools can grow at runtime, so don't need give a very large value */
 #define IBLND_TX_POOL			256
-#define IBLND_PMR_POOL			256
 #define IBLND_FMR_POOL			256
 #define IBLND_FMR_POOL_FLUSH		192
 
@@ -229,8 +227,7 @@ typedef struct kib_hca_dev
         __u64                ibh_page_mask;     /* page mask of current HCA */
         int                  ibh_mr_shift;      /* bits shift of max MR size */
         __u64                ibh_mr_size;       /* size of MR */
-        int                  ibh_nmrs;          /* # of global MRs */
-        struct ib_mr       **ibh_mrs;           /* global MR */
+	struct ib_mr        *ibh_mrs;           /* global MR */
         struct ib_pd        *ibh_pd;            /* PD */
         kib_dev_t           *ibh_dev;           /* owner */
         cfs_atomic_t         ibh_ref;           /* refcount */
@@ -246,17 +243,6 @@ typedef struct
         int                     ibp_npages;             /* # pages */
         struct page            *ibp_pages[0];           /* page array */
 } kib_pages_t;
-
-struct kib_pmr_pool;
-
-typedef struct {
-        cfs_list_t              pmr_list;               /* chain node */
-        struct ib_phys_buf     *pmr_ipb;                /* physical buffer */
-        struct ib_mr           *pmr_mr;                 /* IB MR */
-        struct kib_pmr_pool    *pmr_pool;               /* owner of this MR */
-        __u64                   pmr_iova;               /* Virtual I/O address */
-        int                     pmr_refcount;           /* reference count */
-} kib_phys_mr_t;
 
 struct kib_pool;
 struct kib_poolset;
@@ -312,15 +298,6 @@ typedef struct {
         kib_pages_t            *tpo_tx_pages;           /* premapped tx msg pages */
 } kib_tx_pool_t;
 
-typedef struct {
-        kib_poolset_t           pps_poolset;            /* pool-set */
-} kib_pmr_poolset_t;
-
-typedef struct kib_pmr_pool {
-        struct kib_hca_dev     *ppo_hdev;               /* device for this pool */
-        kib_pool_t              ppo_pool;               /* pool */
-} kib_pmr_pool_t;
-
 typedef struct
 {
 	spinlock_t		fps_lock;		/* serialize */
@@ -365,7 +342,6 @@ typedef struct kib_net
 
 	kib_tx_poolset_t	**ibn_tx_ps;	/* tx pool-set */
 	kib_fmr_poolset_t	**ibn_fmr_ps;	/* fmr pool-set */
-	kib_pmr_poolset_t	**ibn_pmr_ps;	/* pmr pool-set */
 
 	kib_dev_t		*ibn_dev;	/* underlying IB device */
 } kib_net_t;
@@ -584,10 +560,8 @@ typedef struct kib_tx                           /* transmit message */
         int                       tx_nfrags;    /* # entries in... */
         struct scatterlist       *tx_frags;     /* dma_map_sg descriptor */
         __u64                    *tx_pages;     /* rdma phys page addrs */
-        union {
-                kib_phys_mr_t      *pmr;        /* MR for physical buffer */
-                kib_fmr_t           fmr;        /* FMR */
-        }                         tx_u;
+	/* FMR */
+	kib_fmr_t		fmr;
         int                       tx_dmadir;    /* dma direction */
 } kib_tx_t;
 
@@ -1044,8 +1018,6 @@ static inline unsigned int kiblnd_sg_dma_len(struct ib_device *dev,
 
 struct ib_mr *kiblnd_find_rd_dma_mr(kib_hca_dev_t *hdev,
                                     kib_rdma_desc_t *rd);
-struct ib_mr *kiblnd_find_dma_mr(kib_hca_dev_t *hdev,
-                                 __u64 addr, __u64 size);
 void kiblnd_map_rx_descs(kib_conn_t *conn);
 void kiblnd_unmap_rx_descs(kib_conn_t *conn);
 int kiblnd_map_tx(lnet_ni_t *ni, kib_tx_t *tx,
@@ -1057,10 +1029,6 @@ cfs_list_t *kiblnd_pool_alloc_node(kib_poolset_t *ps);
 int  kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, __u64 *pages,
                          int npages, __u64 iov, kib_fmr_t *fmr);
 void kiblnd_fmr_pool_unmap(kib_fmr_t *fmr, int status);
-
-int  kiblnd_pmr_pool_map(kib_pmr_poolset_t *pps, kib_hca_dev_t *hdev,
-                         kib_rdma_desc_t *rd, __u64 *iova, kib_phys_mr_t **pp_pmr);
-void kiblnd_pmr_pool_unmap(kib_phys_mr_t *pmr);
 
 int  kiblnd_startup (lnet_ni_t *ni);
 void kiblnd_shutdown (lnet_ni_t *ni);
