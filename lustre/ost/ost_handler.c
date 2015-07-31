@@ -1951,6 +1951,7 @@ static void ost_prolong_locks(struct ost_prolong_data *data)
                  * fast path. */
                 lock = ldlm_handle2lock(&oa->o_handle);
                 if (lock != NULL) {
+			lock->l_last_used = cfs_time_current();
                         /* Fast path to check if the lock covers the whole IO
                          * region exclusively. */
                         if (lock->l_granted_mode == LCK_PW &&

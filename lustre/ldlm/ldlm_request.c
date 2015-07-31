@@ -2003,11 +2003,11 @@ int ldlm_cli_cancel_unused(struct ldlm_namespace *ns,
                 RETURN(ldlm_cli_cancel_unused_resource(ns, res_id, NULL,
                                                        LCK_MINMODE, flags,
                                                        opaque));
-        } else {
-                cfs_hash_for_each_nolock(ns->ns_rs_hash,
-                                         ldlm_cli_hash_cancel_unused, &arg);
-                RETURN(ELDLM_OK);
-        }
+	} else {
+		cfs_hash_for_each_nolock(ns->ns_rs_hash,
+					 ldlm_cli_hash_cancel_unused, &arg, 0);
+		RETURN(ELDLM_OK);
+	}
 }
 EXPORT_SYMBOL(ldlm_cli_cancel_unused);
 
@@ -2079,8 +2079,8 @@ void ldlm_namespace_foreach(struct ldlm_namespace *ns,
 {
         struct iter_helper_data helper = { iter: iter, closure: closure };
 
-        cfs_hash_for_each_nolock(ns->ns_rs_hash,
-                                 ldlm_res_iter_helper, &helper);
+	cfs_hash_for_each_nolock(ns->ns_rs_hash,
+				 ldlm_res_iter_helper, &helper, 0);
 
 }
 EXPORT_SYMBOL(ldlm_namespace_foreach);

@@ -351,6 +351,9 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_LDLM_ENQUEUE_HANG	 0x31d
 #define OBD_FAIL_LDLM_PAUSE_CANCEL2	 0x31f
 
+#define OBD_FAIL_LDLM_WATERMARK_LOW	 0x327
+#define OBD_FAIL_LDLM_WATERMARK_HIGH	 0x328
+
 /* LOCKLESS IO */
 #define OBD_FAIL_LDLM_SET_CONTENTION     0x385
 
