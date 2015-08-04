@@ -105,14 +105,20 @@ AC_DEFUN([LB_SPL], [
 	dnl # The existence of the spl_config.h is used to identify a valid
 	dnl # spl object directory.  In many cases the object and source
 	dnl # directory are the same, however the objects may also reside
-	dnl # is a subdirectory named after the kernel version.
+	dnl # is a subdirectory named after the kernel version.  When
+	dnl # weak modules are used, the kernel version may not be the
+	dnl # same as the LINUXRELEASE against which we are building lustre.
 	dnl #
 	AC_MSG_CHECKING([spl build directory])
 	AS_IF([test -z "$splobj"], [
+		last_spl_obj_dir=$(ls -d ${splsrc}/[[0-9]]*/ | tail -n 1 | sed 's|/$||')
+		AC_MSG_NOTICE([last_spl_obj_dir is $last_spl_obj_dir])
 		AS_IF([test -e "${splsrc}/${LINUXRELEASE}/spl_config.h"], [
 			splobj="${splsrc}/${LINUXRELEASE}"
 		], [test -e "${splsrc}/spl_config.h"], [
 			splobj="${splsrc}"
+		], [test -e "${last_spl_obj_dir}/spl_config.h"], [
+			splobj="${last_spl_obj_dir}"
 		], [
 			splobj="[Not found]"
 		])
@@ -211,14 +217,19 @@ AC_DEFUN([LB_ZFS], [
 	dnl # The existence of the zfs_config.h is used to identify a valid
 	dnl # zfs object directory.  In many cases the object and source
 	dnl # directory are the same, however the objects may also reside
-	dnl # is a subdirectory named after the kernel version.
+	dnl # is a subdirectory named after the kernel version.  When
+	dnl # weak modules are used, the kernel version may not be the
+	dnl # same as the LINUXRELEASE against which we are building lustre.
 	dnl #
 	AC_MSG_CHECKING([zfs build directory])
 	AS_IF([test -z "$zfsobj"], [
+		last_zfs_obj_dir=$(ls -d ${zfssrc}/[[0-9]]*/ | tail -n 1 | sed 's|/$||')
 		AS_IF([test -e "${zfssrc}/${LINUXRELEASE}/zfs_config.h"], [
 			zfsobj="${zfssrc}/${LINUXRELEASE}"
 		], [test -e "${zfssrc}/zfs_config.h"], [
 			zfsobj="${zfssrc}"
+		], [test -e "${last_zfs_obj_dir}/zfs_config.h"], [
+			zfsobj="${last_zfs_obj_dir}"
 		], [
 			zfsobj="[Not found]"
 		])
