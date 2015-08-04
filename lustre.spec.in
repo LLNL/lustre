@@ -348,9 +348,9 @@ CONFIGURE_ARGS="%{?configure_args} --with-release=%release"
     %define conf_zfs --without-zfs
   %endif
   %if %{with ldiskfs}
-    %define conf_ldiskfs --with-ldiskfs
+    %define conf_ldiskfs --enable-ldiskfs
   %else
-    %define conf_ldiskfs --without-ldiskfs
+    %define conf_ldiskfs --disable-ldiskfs
   %endif
 %endif
 %if %{with lustre_modules}
