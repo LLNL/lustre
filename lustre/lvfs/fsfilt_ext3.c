@@ -184,7 +184,7 @@ static int ext3_ext_new_extent_cb(struct ext3_ext_base *base,
         struct bpointers *bp = cbdata;
         struct inode *inode = ext3_ext_base2inode(base);
         struct ext3_extent nex;
-        unsigned long pblock;
+	unsigned long pblock = 0;
         unsigned long tgen;
         int err, i;
         unsigned long count;
@@ -311,12 +311,7 @@ map:
                                         i, cex->ec_len);
                 for (; i < cex->ec_len && bp->num; i++) {
                         *(bp->blocks) = cex->ec_start + i;
-#ifdef EXT3_EXT_CACHE_EXTENT
-			if (cex->ec_type != EXT3_EXT_CACHE_EXTENT)
-#else
-			if ((cex->ec_len == 0) || (cex->ec_start == 0))
-#endif
-									{
+			if (pblock != 0) {
                                 /* unmap any possible underlying metadata from
                                  * the block device mapping.  bug 6998. */
                                 ll_unmap_underlying_metadata(inode->i_sb,
