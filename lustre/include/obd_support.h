@@ -709,38 +709,21 @@ do {									      \
 
 #ifdef __KERNEL__
 
-/* Allocations above this size are considered too big and could not be done
- * atomically.
- *
- * Be very careful when changing this value, especially when decreasing it,
- * since vmalloc in Linux doesn't perform well on multi-cores system, calling
- * vmalloc in critical path would hurt peformance badly. See LU-66.
- */
-#define OBD_ALLOC_BIG (4 * PAGE_CACHE_SIZE)
-
 #define OBD_ALLOC_LARGE(ptr, size)                                            \
 do {                                                                          \
-        if (size > OBD_ALLOC_BIG)                                             \
+	OBD_ALLOC_GFP(ptr, size, GFP_NOFS | __GFP_NOWARN);                    \
+	if (ptr == NULL)                                                      \
                 OBD_VMALLOC(ptr, size);                                       \
-        else                                                                  \
-                OBD_ALLOC(ptr, size);                                         \
 } while (0)
 
 #define OBD_CPT_ALLOC_LARGE(ptr, cptab, cpt, size)			      \
 do {									      \
-	if (size > OBD_ALLOC_BIG)					      \
+	OBD_CPT_ALLOC_GFP(ptr, cptab, cpt, size, GFP_NOFS | __GFP_NOWARN);    \
+	if (ptr == NULL)                                                      \
 		OBD_CPT_VMALLOC(ptr, cptab, cpt, size);			      \
-	else								      \
-		OBD_CPT_ALLOC(ptr, cptab, cpt, size);			      \
 } while (0)
 
-#define OBD_FREE_LARGE(ptr, size)                                             \
-do {                                                                          \
-        if (size > OBD_ALLOC_BIG)                                             \
-                OBD_VFREE(ptr, size);                                         \
-        else                                                                  \
-                OBD_FREE(ptr, size);                                          \
-} while (0)
+#define OBD_FREE_LARGE(ptr, size) OBD_FREE(ptr, size)
 
 #else /* !__KERNEL__ */
 
@@ -771,11 +754,15 @@ do {                                                                          \
 #ifdef __KERNEL__
 #define OBD_FREE(ptr, size)                                                   \
 do {                                                                          \
-        OBD_FREE_PRE(ptr, size, "kfreed");                                    \
-	kfree(ptr);                                                        \
-        POISON_PTR(ptr);                                                      \
+	if (is_vmalloc_addr(ptr)) {                                           \
+		OBD_FREE_PRE(ptr, size, "vfreed");			      \
+		vfree(ptr);		                                      \
+	} else {                                                              \
+		OBD_FREE_PRE(ptr, size, "kfreed");                            \
+		kfree(ptr);                                                   \
+	}                                                                     \
+	POISON_PTR(ptr);                                                      \
 } while(0)
-
 
 #define OBD_FREE_RCU(ptr, size, handle)					      \
 do {									      \
@@ -792,13 +779,6 @@ do {									      \
 #define OBD_FREE(ptr, size) ((void)(size), free((ptr)))
 #define OBD_FREE_RCU(ptr, size, handle) (OBD_FREE(ptr, size))
 #endif /* ifdef __KERNEL__ */
-
-#define OBD_VFREE(ptr, size)				\
-	do {						\
-		OBD_FREE_PRE(ptr, size, "vfreed");	\
-		vfree(ptr);			\
-		POISON_PTR(ptr);			\
-	} while (0)
 
 /* we memset() the slab object to 0 when allocation succeeds, so DO NOT
  * HAVE A CTOR THAT DOES ANYTHING.  its work will be cleared here.  we'd
