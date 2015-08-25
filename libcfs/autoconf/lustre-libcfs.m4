@@ -364,6 +364,27 @@ LB_CHECK_SYMBOL_EXPORT([sock_alloc_file], [net/socket.c],[
 ])
 
 #
+# Kernel version 4.2 changed topology_thread_cpumask
+# to topology_sibling_cpumask
+#
+AC_DEFUN([LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK],[
+AC_MSG_CHECKING([does function 'topology_sibling_cpumask' exist])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/topology.h>
+],[
+	const struct cpumask *mask;
+
+	mask = topology_sibling_cpumask(0);
+],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_TOPOLOGY_SIBLING_CPUMASK, 1,
+		[topology_sibling_cpumask is available])
+],[
+	AC_MSG_RESULT([no])
+])
+]) # LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK
+
+#
 # LIBCFS_PROG_LINUX
 #
 # LNet linux kernel checks
@@ -394,6 +415,8 @@ LC_SHRINK_CONTROL
 LIBCFS_PROCESS_NAMESPACE
 # 3.7
 LIBCFS_SOCK_ALLOC_FILE
+# 4.2
+LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK
 ])
 
 #

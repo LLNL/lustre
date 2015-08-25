@@ -105,7 +105,7 @@ EXPORT_SYMBOL(cfs_cpu_core_nsiblings);
 void
 cfs_cpu_ht_siblings(int cpu, cpumask_t *mask)
 {
-	cpumask_copy(mask, topology_thread_cpumask(cpu));
+	cpumask_copy(mask, topology_sibling_cpumask(cpu));
 }
 EXPORT_SYMBOL(cfs_cpu_ht_siblings);
 
