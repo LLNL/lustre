@@ -532,7 +532,29 @@ if test $ENABLEO2IB -ne 0; then
 		AC_MSG_RESULT([no])
 	])
 fi
+#
+# 4.2 introduced struct ib_cq_init_attr
+#
+AS_IF([test $ENABLEO2IB != "no"], [
+	AC_MSG_CHECKING([if 'struct ib_cq_init_attr' exist])
+	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		struct ib_cq_init_attr cq_attr;
+
+		cq_attr.comp_vector = NULL;
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_IB_CQ_INIT_ATTR, 1,
+			[struct ib_cq_init_attr exist])
+	],[
+		AC_MSG_RESULT([no])
+	])
 ])
+]) # LN_CONFIG_O2IB
 
 #
 # LN_CONFIG_RALND

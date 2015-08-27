@@ -18,23 +18,6 @@ AC_DEFUN([LN_CONFIG_OFED_SPEC],
 		AC_MSG_RESULT(no)
 	])
 
-	AC_MSG_CHECKING([if ib_create_cq wants comp_vector])
-	LB_LINUX_TRY_COMPILE([
-		#include <linux/version.h>
-		#include <linux/pci.h>
-		#include <linux/gfp.h>
-		#include <rdma/ib_verbs.h>
-	],[
-		ib_create_cq(NULL, NULL, NULL, NULL, 0, 0);
-		return 0;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_OFED_IB_COMP_VECTOR, 1,
-			  [has completion vector])
-	],[
-		AC_MSG_RESULT(no)
-	])
-
 	AC_MSG_CHECKING([if OFED has RDMA_CM_EVENT_ADDR_CHANGE])
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/version.h>
