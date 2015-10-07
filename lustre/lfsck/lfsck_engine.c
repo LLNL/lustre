@@ -606,6 +606,23 @@ static int lfsck_post(const struct lu_env *env, struct lfsck_instance *lfsck,
 			       (__u32)com->lc_type, rc);
 	}
 
+	list_for_each_entry_safe(com, next, &lfsck->li_list_scan, lc_link) {
+		rc = com->lc_ops->lfsck_query(env, com);
+		if (rc != LS_SCANNING_PHASE2) {
+			struct lfsck_assistant_data *lad = com->lc_data;
+
+			CDEBUG(D_LFSCK, "%s: the component %s status after "
+			       "post is %d, not the phase2 %d\n",
+			       lfsck_lfsck2name(lfsck), lad->lad_name, rc,
+			       LS_SCANNING_PHASE2);
+
+			if (result > 0)
+				result = 0;
+
+			break;
+		}
+	}
+
 	lfsck->li_time_last_checkpoint = cfs_time_current();
 	lfsck->li_time_next_checkpoint = lfsck->li_time_last_checkpoint +
 				cfs_time_seconds(LFSCK_CHECKPOINT_INTERVAL);
