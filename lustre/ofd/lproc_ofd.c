@@ -488,6 +488,14 @@ int lprocfs_ofd_wr_soft_sync_limit(struct file *file, const char *buffer,
 	return lprocfs_wr_uint(file, buffer, count, &ofd->ofd_soft_sync_limit);
 }
 
+int lprocfs_ofd_rd_site_stats(char *page, char **start, off_t off,
+			      int count, int *eof, void *data)
+{
+	struct obd_device	*obd = data;
+
+	return lu_site_stats_print(obd->obd_lu_dev->ld_site, page, count);
+}
+
 static struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
 	{ "uuid",		 lprocfs_rd_uuid, 0, 0 },
 	{ "blocksize",		 lprocfs_rd_blksize, 0, 0 },
@@ -537,6 +545,7 @@ static struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
 				  lprocfs_wr_job_interval, 0},
 	{ "soft_sync_limit",	 lprocfs_ofd_rd_soft_sync_limit,
 				 lprocfs_ofd_wr_soft_sync_limit, 0},
+	{ "site_stats",		 lprocfs_ofd_rd_site_stats, 0, 0, },
 	{ 0 }
 };
 
