@@ -8,6 +8,7 @@
 /cmknod
 /copy_attr
 /copytool
+/llapi_layout_test
 /createdestroy
 /createmany
 /createtest
