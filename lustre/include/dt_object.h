@@ -521,7 +521,7 @@ struct dt_body_operations {
         int (*dbo_read_prep)(const struct lu_env *env, struct dt_object *dt,
                              struct niobuf_local *lnb, int nr);
         int (*dbo_fiemap_get)(const struct lu_env *env, struct dt_object *dt,
-                              struct ll_user_fiemap *fm);
+                              struct fiemap *fm);
         /**
          * Punch object's content
          * precondition: regular object, not index
@@ -1247,7 +1247,7 @@ static inline int dt_punch(const struct lu_env *env, struct dt_object *dt,
 }
 
 static inline int dt_fiemap_get(const struct lu_env *env, struct dt_object *d,
-                                struct ll_user_fiemap *fm)
+				struct fiemap *fm)
 {
         LASSERT(d);
         if (d->do_body_ops == NULL)

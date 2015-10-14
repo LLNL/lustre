@@ -595,11 +595,11 @@ static int ofd_get_info(const struct lu_env *env, struct obd_export *exp,
 
 		if (val == NULL) {
 			*vallen = fiemap_count_to_size(
-					       fm_key->fiemap.fm_extent_count);
+				       fm_key->lfik_fiemap.fm_extent_count);
 			GOTO(out, rc = 0);
 		}
 
-		rc = ostid_to_fid(&fid, &fm_key->oa.o_oi, 0);
+		rc = ostid_to_fid(&fid, &fm_key->lfik_oa.o_oi, 0);
 		if (rc != 0)
 			GOTO(out, rc);
 		CDEBUG(D_INODE, "get FIEMAP of object "DFID"\n",
@@ -611,11 +611,11 @@ static int ofd_get_info(const struct lu_env *env, struct obd_export *exp,
 			       exp->exp_obd->obd_name, PFID(&fid));
 			rc = PTR_ERR(fo);
 		} else {
-			struct ll_user_fiemap *fiemap = val;
+			struct fiemap *fiemap = val;
 
 			ofd_read_lock(env, fo);
 			if (ofd_object_exists(fo)) {
-				*fiemap = fm_key->fiemap;
+				*fiemap = fm_key->lfik_fiemap;
 				rc = dt_fiemap_get(env,
 						   ofd_object_child(fo),
 						   fiemap);

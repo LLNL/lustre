@@ -200,7 +200,6 @@ static int osc_object_glimpse(const struct lu_env *env,
         RETURN(0);
 }
 
-
 void osc_object_set_contended(struct osc_object *obj)
 {
         obj->oo_contention_time = cfs_time_current();

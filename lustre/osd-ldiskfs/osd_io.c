@@ -1694,32 +1694,32 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
 }
 
 static int osd_fiemap_get(const struct lu_env *env, struct dt_object *dt,
-                          struct ll_user_fiemap *fm)
+			  struct fiemap *fm)
 {
-        struct inode *inode = osd_dt_obj(dt)->oo_inode;
-        struct osd_thread_info *info   = osd_oti_get(env);
-        struct dentry          *dentry = &info->oti_obj_dentry;
-        struct file            *file   = &info->oti_file;
-        mm_segment_t            saved_fs;
-        int rc;
+	struct inode *inode = osd_dt_obj(dt)->oo_inode;
+	struct osd_thread_info *info   = osd_oti_get(env);
+	struct dentry          *dentry = &info->oti_obj_dentry;
+	struct file            *file   = &info->oti_file;
+	mm_segment_t            saved_fs;
+	int rc;
 
-        LASSERT(inode);
-        dentry->d_inode = inode;
+	LASSERT(inode);
+	dentry->d_inode = inode;
 	dentry->d_sb = inode->i_sb;
-        file->f_dentry = dentry;
-        file->f_mapping = inode->i_mapping;
-        file->f_op = inode->i_fop;
+	file->f_dentry = dentry;
+	file->f_mapping = inode->i_mapping;
+	file->f_op = inode->i_fop;
 
-        saved_fs = get_fs();
-        set_fs(get_ds());
-        /* ldiskfs_ioctl does not have a inode argument */
-        if (inode->i_fop->unlocked_ioctl)
-                rc = inode->i_fop->unlocked_ioctl(file, FSFILT_IOC_FIEMAP,
-                                                  (long)fm);
-        else
-                rc = -ENOTTY;
-        set_fs(saved_fs);
-        return rc;
+	saved_fs = get_fs();
+	set_fs(get_ds());
+	/* ldiskfs_ioctl does not have a inode argument */
+	if (inode->i_fop->unlocked_ioctl)
+		rc = inode->i_fop->unlocked_ioctl(file, FS_IOC_FIEMAP,
+						 (long)fm);
+	else
+		rc = -ENOTTY;
+	set_fs(saved_fs);
+	return rc;
 }
 
 /*

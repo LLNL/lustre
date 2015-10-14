@@ -1380,13 +1380,12 @@ static int lock_region(struct obd_export *exp, struct obdo *oa,
 }
 
 static int lock_zero_regions(struct obd_export *exp, struct obdo *oa,
-			     struct ll_user_fiemap *fiemap,
-			     cfs_list_t *locked)
+			     struct fiemap *fiemap, cfs_list_t *locked)
 {
 	__u64 begin = fiemap->fm_start;
 	unsigned int i;
 	int rc = 0;
-	struct ll_fiemap_extent *fiemap_start = fiemap->fm_extents;
+	struct fiemap_extent *fiemap_start = fiemap->fm_extents;
 	ENTRY;
 
 	CDEBUG(D_OTHER, "extents count %u\n", fiemap->fm_mapped_extents);
@@ -1426,43 +1425,43 @@ static void unlock_zero_regions(struct obd_export *exp, cfs_list_t *locked)
 
 static int ost_get_info(struct obd_export *exp, struct ptlrpc_request *req)
 {
-        void *key, *reply;
-        int keylen, replylen, rc = 0;
-        struct req_capsule *pill = &req->rq_pill;
+	void *key, *reply;
+	int keylen, replylen, rc = 0;
+	struct req_capsule *pill = &req->rq_pill;
 	cfs_list_t locked = CFS_LIST_HEAD_INIT(locked);
 	struct ll_fiemap_info_key *fm_key = NULL;
-	struct ll_user_fiemap *fiemap;
-        ENTRY;
+	struct fiemap *fiemap;
+	ENTRY;
 
-        /* this common part for get_info rpc */
-        key = req_capsule_client_get(pill, &RMF_SETINFO_KEY);
-        if (key == NULL) {
-                DEBUG_REQ(D_HA, req, "no get_info key");
-                RETURN(-EFAULT);
-        }
-        keylen = req_capsule_get_size(pill, &RMF_SETINFO_KEY, RCL_CLIENT);
+	/* this common part for get_info rpc */
+	key = req_capsule_client_get(pill, &RMF_SETINFO_KEY);
+	if (key == NULL) {
+		DEBUG_REQ(D_HA, req, "no get_info key");
+		RETURN(-EFAULT);
+	}
+	keylen = req_capsule_get_size(pill, &RMF_SETINFO_KEY, RCL_CLIENT);
 
-        if (KEY_IS(KEY_FIEMAP)) {
+	if (KEY_IS(KEY_FIEMAP)) {
 		fm_key = key;
-                rc = ost_validate_obdo(exp, &fm_key->oa, NULL);
-                if (rc)
-                        RETURN(rc);
+		rc = ost_validate_obdo(exp, &fm_key->lfik_oa, NULL);
+		if (rc)
+			RETURN(rc);
 	}
 
-        rc = obd_get_info(req->rq_svc_thread->t_env, exp, keylen, key,
-                          &replylen, NULL, NULL);
-        if (rc)
+	rc = obd_get_info(req->rq_svc_thread->t_env, exp, keylen, key,
+			  &replylen, NULL, NULL);
+	if (rc)
 		RETURN(rc);
 
-        req_capsule_set_size(pill, &RMF_GENERIC_DATA,
-                             RCL_SERVER, replylen);
+	req_capsule_set_size(pill, &RMF_GENERIC_DATA,
+			     RCL_SERVER, replylen);
 
-        rc = req_capsule_server_pack(pill);
-        if (rc)
+	rc = req_capsule_server_pack(pill);
+	if (rc)
 		RETURN(rc);
 
-        reply = req_capsule_server_get(pill, &RMF_GENERIC_DATA);
-        if (reply == NULL)
+	reply = req_capsule_server_get(pill, &RMF_GENERIC_DATA);
+	if (reply == NULL)
 		RETURN(-ENOMEM);
 
 	if (KEY_IS(KEY_LAST_FID)) {
@@ -1488,12 +1487,12 @@ static int ost_get_info(struct obd_export *exp, struct ptlrpc_request *req)
 
 	/* LU-3219: Lock the sparse areas to make sure dirty flushed back
 	 * from client, then call fiemap again. */
-	if (KEY_IS(KEY_FIEMAP) && (fm_key->oa.o_valid & OBD_MD_FLFLAGS) &&
-	    (fm_key->oa.o_flags & OBD_FL_SRVLOCK)) {
-		fiemap = (struct ll_user_fiemap *)reply;
+	if (KEY_IS(KEY_FIEMAP) && (fm_key->lfik_oa.o_valid & OBD_MD_FLFLAGS) &&
+	    (fm_key->lfik_oa.o_flags & OBD_FL_SRVLOCK)) {
+		fiemap = (struct fiemap *)reply;
 		fm_key = key;
 
-		rc = lock_zero_regions(exp, &fm_key->oa, fiemap, &locked);
+		rc = lock_zero_regions(exp, &fm_key->lfik_oa, fiemap, &locked);
 		if (rc == 0 && !cfs_list_empty(&locked))
 			rc = obd_get_info(req->rq_svc_thread->t_env, exp,
 					  keylen, key, &replylen, reply, NULL);

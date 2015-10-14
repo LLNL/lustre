@@ -2142,7 +2142,7 @@ static int lov_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
  * \param fm_end logical end of mapping
  * \param start_stripe starting stripe will be returned in this
  */
-obd_size fiemap_calc_fm_end_offset(struct ll_user_fiemap *fiemap,
+obd_size fiemap_calc_fm_end_offset(struct fiemap *fiemap,
                                    struct lov_stripe_md *lsm, obd_size fm_start,
                                    obd_size fm_end, int *start_stripe)
 {
@@ -2240,22 +2240,22 @@ int fiemap_calc_last_stripe(struct lov_stripe_md *lsm, obd_size fm_start,
  * \param ext_count number of extents to be copied
  * \param current_extent where to start copying in main extent array
  */
-void fiemap_prepare_and_copy_exts(struct ll_user_fiemap *fiemap,
-                                  struct ll_fiemap_extent *lcl_fm_ext,
-                                  int ost_index, unsigned int ext_count,
-                                  int current_extent)
+void fiemap_prepare_and_copy_exts(struct fiemap *fiemap,
+				  struct fiemap_extent *lcl_fm_ext,
+				  int ost_index, unsigned int ext_count,
+				  int current_extent)
 {
-        char *to;
-        int ext;
+	char *to;
+	int ext;
 
-        for (ext = 0; ext < ext_count; ext++) {
-                lcl_fm_ext[ext].fe_device = ost_index;
-                lcl_fm_ext[ext].fe_flags |= FIEMAP_EXTENT_NET;
-        }
+	for (ext = 0; ext < ext_count; ext++) {
+		lcl_fm_ext[ext].fe_device = ost_index;
+		lcl_fm_ext[ext].fe_flags |= FIEMAP_EXTENT_NET;
+	}
 
-        /* Copy fm_extent's from fm_local to return buffer */
-        to = (char *)fiemap + fiemap_count_to_size(current_extent);
-        memcpy(to, lcl_fm_ext, ext_count * sizeof(struct ll_fiemap_extent));
+	/* Copy fm_extent's from fm_local to return buffer */
+	to = (char *)fiemap + fiemap_count_to_size(current_extent);
+	memcpy(to, lcl_fm_ext, ext_count * sizeof(struct fiemap_extent));
 }
 
 /**
@@ -2264,41 +2264,42 @@ void fiemap_prepare_and_copy_exts(struct ll_user_fiemap *fiemap,
  * the available number of extents in single call.
  */
 static int lov_fiemap(struct lov_obd *lov, __u32 keylen, void *key,
-                      __u32 *vallen, void *val, struct lov_stripe_md *lsm)
+		      __u32 *vallen, void *val, struct lov_stripe_md *lsm)
 {
-        struct ll_fiemap_info_key *fm_key = key;
-        struct ll_user_fiemap *fiemap = val;
-        struct ll_user_fiemap *fm_local = NULL;
-        struct ll_fiemap_extent *lcl_fm_ext;
-        int count_local;
-        unsigned int get_num_extents = 0;
-        int ost_index = 0, actual_start_stripe, start_stripe;
+	struct ll_fiemap_info_key *fmkey = key;
+	struct fiemap *fiemap = val;
+	struct fiemap *fm_local = NULL;
+	struct fiemap_extent *lcl_fm_ext;
+	int count_local;
+	unsigned int get_num_extents = 0;
+	int ost_index = 0, actual_start_stripe, start_stripe;
 	obd_size fm_start, fm_end, fm_length, fm_end_offset;
-        obd_size curr_loc;
-        int current_extent = 0, rc = 0, i;
-        int ost_eof = 0; /* EOF for object */
-        int ost_done = 0; /* done with required mapping for this OST? */
-        int last_stripe;
-        int cur_stripe = 0, cur_stripe_wrap = 0, stripe_count;
-        unsigned int buffer_size = FIEMAP_BUFFER_SIZE;
+	obd_size curr_loc;
+	int current_extent = 0, rc = 0, i;
+	int ost_eof = 0; /* EOF for object */
+	int ost_done = 0; /* done with required mapping for this OST? */
+	int last_stripe;
+	int cur_stripe = 0, cur_stripe_wrap = 0, stripe_count;
+	unsigned int buffer_size = FIEMAP_BUFFER_SIZE;
 
 	if (!lsm_has_objects(lsm)) {
-		if (lsm && lsm_is_released(lsm) && (fm_key->fiemap.fm_start <
-		    fm_key->oa.o_size)) {
+		if (lsm && lsm_is_released(lsm) &&
+		    (fmkey->lfik_fiemap.fm_start < fmkey->lfik_oa.o_size)) {
 			/* released file, return a minimal FIEMAP if
 			 * request fits in file-size.
 			 */
 			fiemap->fm_mapped_extents = 1;
 			fiemap->fm_extents[0].fe_logical =
-						fm_key->fiemap.fm_start;
-			if (fm_key->fiemap.fm_start + fm_key->fiemap.fm_length <
-			    fm_key->oa.o_size)
+						fmkey->lfik_fiemap.fm_start;
+			if (fmkey->lfik_fiemap.fm_start +
+			    fmkey->lfik_fiemap.fm_length <
+			    fmkey->lfik_oa.o_size)
 				fiemap->fm_extents[0].fe_length =
-						fm_key->fiemap.fm_length;
+						fmkey->lfik_fiemap.fm_length;
 			else
 				fiemap->fm_extents[0].fe_length =
-						fm_key->oa.o_size -
-						fm_key->fiemap.fm_start;
+						fmkey->lfik_oa.o_size -
+						fmkey->lfik_fiemap.fm_start;
 			fiemap->fm_extents[0].fe_flags |=
 						(FIEMAP_EXTENT_UNKNOWN |
 						 FIEMAP_EXTENT_LAST);
@@ -2306,29 +2307,32 @@ static int lov_fiemap(struct lov_obd *lov, __u32 keylen, void *key,
 		GOTO(out, rc = 0);
 	}
 
-        if (fiemap_count_to_size(fm_key->fiemap.fm_extent_count) < buffer_size)
-                buffer_size = fiemap_count_to_size(fm_key->fiemap.fm_extent_count);
+	if (fiemap_count_to_size(fmkey->lfik_fiemap.fm_extent_count) <
+	    buffer_size)
+		buffer_size = fiemap_count_to_size(
+				fmkey->lfik_fiemap.fm_extent_count);
 
-        OBD_ALLOC_LARGE(fm_local, buffer_size);
-        if (fm_local == NULL)
-                GOTO(out, rc = -ENOMEM);
-        lcl_fm_ext = &fm_local->fm_extents[0];
+	OBD_ALLOC_LARGE(fm_local, buffer_size);
+	if (fm_local == NULL)
+		GOTO(out, rc = -ENOMEM);
+	lcl_fm_ext = &fm_local->fm_extents[0];
 
-        count_local = fiemap_size_to_count(buffer_size);
+	count_local = fiemap_size_to_count(buffer_size);
 
-        memcpy(fiemap, &fm_key->fiemap, sizeof(*fiemap));
-        fm_start = fiemap->fm_start;
-        fm_length = fiemap->fm_length;
-        /* Calculate start stripe, last stripe and length of mapping */
-        actual_start_stripe = start_stripe = lov_stripe_number(lsm, fm_start);
-        fm_end = (fm_length == ~0ULL ? fm_key->oa.o_size :
-                                                fm_start + fm_length - 1);
-        /* If fm_length != ~0ULL but fm_start+fm_length-1 exceeds file size */
-        if (fm_end > fm_key->oa.o_size)
-                fm_end = fm_key->oa.o_size;
+	memcpy(fiemap, &fmkey->lfik_fiemap, sizeof(*fiemap));
+	fm_start = fiemap->fm_start;
+	fm_length = fiemap->fm_length;
+	/* Calculate start stripe, last stripe and length of mapping */
+	actual_start_stripe = start_stripe = lov_stripe_number(lsm, fm_start);
+	fm_end = (fm_length == ~0ULL ? fmkey->lfik_oa.o_size :
+				       fm_start + fm_length - 1);
+	/* If fm_length != ~0ULL but fm_start+fm_length-1 exceeds file size */
+	if (fm_end > fmkey->lfik_oa.o_size)
+		fm_end = fmkey->lfik_oa.o_size;
 
-        last_stripe = fiemap_calc_last_stripe(lsm, fm_start, fm_end,
-                                            actual_start_stripe, &stripe_count);
+	last_stripe = fiemap_calc_last_stripe(lsm, fm_start, fm_end,
+					      actual_start_stripe,
+					      &stripe_count);
 
 	fm_end_offset = fiemap_calc_fm_end_offset(fiemap, lsm, fm_start,
 						  fm_end, &start_stripe);
@@ -2402,7 +2406,8 @@ static int lov_fiemap(struct lov_obd *lov, __u32 keylen, void *key,
                         fm_local->fm_mapped_extents = 0;
                         fm_local->fm_flags = fiemap->fm_flags;
 
-			fm_key->oa.o_oi = lsm->lsm_oinfo[cur_stripe]->loi_oi;
+			fmkey->lfik_oa.o_oi =
+					lsm->lsm_oinfo[cur_stripe]->loi_oi;
                         ost_index = lsm->lsm_oinfo[cur_stripe]->loi_ost_idx;
 
                         if (ost_index < 0 || ost_index >=lov->desc.ld_tgt_count)
@@ -2421,9 +2426,10 @@ static int lov_fiemap(struct lov_obd *lov, __u32 keylen, void *key,
                                 goto inactive_tgt;
                         }
 
-                        fm_local->fm_start = lun_start;
-                        fm_local->fm_flags &= ~FIEMAP_FLAG_DEVICE_ORDER;
-                        memcpy(&fm_key->fiemap, fm_local, sizeof(*fm_local));
+			fm_local->fm_start = lun_start;
+			fm_local->fm_flags &= ~FIEMAP_FLAG_DEVICE_ORDER;
+			memcpy(&fmkey->lfik_fiemap, fm_local,
+			       sizeof(*fm_local));
                         *vallen=fiemap_count_to_size(fm_local->fm_extent_count);
                         rc = obd_get_info(NULL,
                                           lov->lov_tgts[ost_index]->ltd_exp,
@@ -2450,8 +2456,9 @@ inactive_tgt:
                                 break;
                         }
 
-                        len_mapped_single_call = lcl_fm_ext[ext_count-1].fe_logical -
-                                  lun_start + lcl_fm_ext[ext_count - 1].fe_length;
+			len_mapped_single_call =
+				lcl_fm_ext[ext_count - 1].fe_logical -
+				lun_start + lcl_fm_ext[ext_count - 1].fe_length;
 
                         /* Have we finished mapping on this device? */
                         if (req_fm_len <= len_mapped_single_call)
@@ -2467,8 +2474,8 @@ inactive_tgt:
                                            lcl_fm_ext[ext_count - 1].fe_logical+
                                            lcl_fm_ext[ext_count - 1].fe_length,
                                            cur_stripe);
-                        if (curr_loc >= fm_key->oa.o_size)
-                                ost_eof = 1;
+			if (curr_loc >= fmkey->lfik_oa.o_size)
+				ost_eof = 1;
 
                         fiemap_prepare_and_copy_exts(fiemap, lcl_fm_ext,
                                                      ost_index, ext_count,
