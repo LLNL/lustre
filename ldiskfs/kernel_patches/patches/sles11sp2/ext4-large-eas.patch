@@ -473,13 +473,13 @@ diff -ur linux-stage.orig/fs/ext4/xattr.c linux-stage/fs/ext4/xattr.c
  			void *first_val = s->base + min_offs;
  			size_t offs = le16_to_cpu(s->here->e_value_offs);
  			void *val = s->base + offs;
-@@ -607,13 +885,17 @@
+@@ -607,13 +885,18 @@
  			last = s->first;
  			while (!IS_LAST_ENTRY(last)) {
  				size_t o = le16_to_cpu(last->e_value_offs);
 -				if (!last->e_value_block &&
--				    last->e_value_size && o < offs)
-+				if (last->e_value_size > 0 && o < offs)
++				if (!last->e_value_inum &&
+ 				    last->e_value_size && o < offs)
  					last->e_value_offs =
  						cpu_to_le16(o + size);
  				last = EXT4_XATTR_NEXT(last);
