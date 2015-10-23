@@ -2755,7 +2755,7 @@ static int osd_declare_object_ref_del(const struct lu_env *env,
 {
         struct osd_thandle *oh;
 
-	LASSERT(dt_object_exists(dt) && !dt_object_remote(dt));
+	LASSERT(!dt_object_remote(dt));
         LASSERT(handle != NULL);
 
         oh = container_of0(handle, struct osd_thandle, ot_super);

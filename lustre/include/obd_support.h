@@ -248,6 +248,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_MDS_RENAME2             0x154
 #define OBD_FAIL_MDS_RENAME3             0x155
 #define OBD_FAIL_MDS_RENAME4             0x156
+#define OBD_FAIL_MDS_LLOG_CREATE_FAILED2 0x15b
 
 /* layout lock */
 #define OBD_FAIL_MDS_NO_LL_GETATTR	 0x170

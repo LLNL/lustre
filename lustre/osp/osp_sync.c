@@ -261,16 +261,14 @@ static int osp_sync_add_rec(const struct lu_env *env, struct osp_device *d,
 	       (unsigned long) osi->osi_cookie.lgc_lgl.lgl_ogen,
 	       (unsigned long) osi->osi_cookie.lgc_index, rc);
 
-	if (rc > 0)
-		rc = 0;
-
-	if (likely(rc == 0)) {
+	if (likely(rc >= 0)) {
 		spin_lock(&d->opd_syn_lock);
 		d->opd_syn_changes++;
 		spin_unlock(&d->opd_syn_lock);
 	}
 
-	RETURN(rc);
+	/* return 0 always here, error case just cause no llog record */
+	RETURN(0);
 }
 
 int osp_sync_add(const struct lu_env *env, struct osp_object *o,

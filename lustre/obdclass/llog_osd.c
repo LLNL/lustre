@@ -110,6 +110,23 @@ static int llog_osd_create_new_object(const struct lu_env *env,
 				   &lgi->lgi_dof, th);
 }
 
+ /**
+ * Implementation of the llog_operations::lop_exist
+ *
+ * This function checks that llog exists on storage.
+ *
+ * \param[in] handle	llog handle of the current llog
+ *
+ * \retval		true if llog object exists and is not just destroyed
+ * \retval		false if llog doesn't exist or just destroyed
+ */
+static int llog_osd_exist(struct llog_handle *handle)
+{
+	LASSERT(handle->lgh_obj);
+	return dt_object_exists(handle->lgh_obj) &&
+		!lu_object_is_dying(handle->lgh_obj->do_lu.lo_header);
+}
+
 /**
  * Write a padding record to the llog
  *
@@ -355,6 +372,9 @@ static int llog_osd_write_rec(const struct lu_env *env,
 	CDEBUG(D_OTHER, "new record %x to "DFID"\n",
 	       rec->lrh_type, PFID(lu_object_fid(&o->do_lu)));
 
+	if (!llog_osd_exist(loghandle))
+		RETURN(-ENOENT);
+
 	/* record length should not bigger than LLOG_CHUNK_SIZE */
 	if (reclen > LLOG_CHUNK_SIZE)
 		RETURN(-E2BIG);
@@ -468,6 +488,13 @@ static int llog_osd_write_rec(const struct lu_env *env,
 	 * process them page-at-a-time if needed.  If it will cross a chunk
 	 * boundary, write in a fake (but referenced) entry to pad the chunk.
 	 */
+
+	/* simulate ENOSPC when new plain llog is being added to the
+	 * catalog */
+	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_LLOG_CREATE_FAILED2) &&
+	    llh->llh_flags & LLOG_F_IS_CAT)
+		RETURN(-ENOSPC);
+
 	LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
 	lgi->lgi_off = lgi->lgi_attr.la_size;
 	left = LLOG_CHUNK_SIZE - (lgi->lgi_off & (LLOG_CHUNK_SIZE - 1));
@@ -1001,23 +1028,6 @@ out_name:
 out:
 	dt_los_put(los);
 	RETURN(rc);
-}
-
-/**
- * Implementation of the llog_operations::lop_exist
- *
- * This function checks that llog exists on storage.
- *
- * \param[in] handle	llog handle of the current llog
- *
- * \retval		true if llog object exists and is not just destroyed
- * \retval		false if llog doesn't exist or just destroyed
- */
-static int llog_osd_exist(struct llog_handle *handle)
-{
-	LASSERT(handle->lgh_obj);
-	return (dt_object_exists(handle->lgh_obj) &&
-		!lu_object_is_dying(handle->lgh_obj->do_lu.lo_header));
 }
 
 /**
