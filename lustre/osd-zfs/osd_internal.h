@@ -205,6 +205,7 @@ static inline struct osd_thread_info *osd_oti_get(const struct lu_env *env)
 struct osd_thandle {
 	struct thandle		 ot_super;
 	cfs_list_t		 ot_dcb_list;
+	cfs_list_t		 ot_unlinked_list;
 	cfs_list_t		 ot_sa_list;
 	struct semaphore	 ot_sa_lock;
 	dmu_tx_t		*ot_tx;
@@ -295,6 +296,12 @@ struct osd_device {
 	arc_prune_t		*arc_prune_cb;
 };
 
+enum osd_destroy_type {
+	OSD_DESTROY_NONE = 0,
+	OSD_DESTROY_SYNC = 1,
+	OSD_DESTROY_ASYNC = 2,
+};
+
 struct osd_object {
 	struct dt_object	 oo_dt;
 	/*
@@ -308,6 +315,7 @@ struct osd_object {
 	sa_handle_t		*oo_sa_hdl;
 	nvlist_t		*oo_sa_xattr;
 	cfs_list_t		 oo_sa_linkage;
+	cfs_list_t		 oo_unlinked_linkage;
 
 	struct rw_semaphore	 oo_sem;
 
@@ -315,9 +323,10 @@ struct osd_object {
 	rwlock_t		 oo_attr_lock;
 	struct lu_attr		 oo_attr;
 
-	/* protects extended attributes */
+	/* protects extended attributes and oo_unlinked_linkage */
 	struct semaphore	 oo_guard;
 	uint64_t		 oo_xattr;
+	enum osd_destroy_type	 oo_destroy;
 
 	/* record size for index file */
 	int			 oo_recsize;
@@ -480,6 +489,12 @@ int osd_declare_xattr_del(const struct lu_env *env, struct dt_object *dt,
 int osd_xattr_del(const struct lu_env *env, struct dt_object *dt,
 		  const char *name, struct thandle *handle,
 		  struct lustre_capa *capa);
+void osd_declare_xattrs_destroy(const struct lu_env *env,
+				struct osd_object *obj,
+				struct osd_thandle *oh);
+int osd_xattrs_destroy(const struct lu_env *env,
+		       struct osd_object *obj, struct osd_thandle *oh);
+
 int osd_xattr_list(const struct lu_env *env, struct dt_object *dt,
 		   const struct lu_buf *lb, struct lustre_capa *capa);
 void __osd_xattr_declare_set(const struct lu_env *env, struct osd_object *obj,

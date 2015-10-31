@@ -130,6 +130,15 @@ int udmu_objset_open(char *osname, udmu_objset_t *uos)
 	}
 	ASSERT(uos->root != 0);
 
+	error = -zap_lookup(uos->os, MASTER_NODE_OBJ, ZFS_UNLINKED_SET,
+			    8, 1, &uos->unlinkedid);
+
+	if (error) {
+		CERROR("%s: lookup for %s failed: rc = %d\n",
+		       osname, ZFS_UNLINKED_SET, error);
+		goto out;
+	}
+
 	/* Check that user/group usage tracking is supported */
 	if (!dmu_objset_userused_enabled(uos->os) ||
 		DMU_USERUSED_DNODE(uos->os)->dn_type != DMU_OT_USERGROUP_USED ||
@@ -152,8 +161,10 @@ int udmu_objset_open(char *osname, udmu_objset_t *uos)
 	spin_lock_init(&uos->lock);
 
 out:
-	if (error && uos->os != NULL)
+	if (error && uos->os != NULL) {
 		dmu_objset_disown(uos->os, uos);
+		uos->os = NULL;
+	}
 
 	return error;
 }

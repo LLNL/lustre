@@ -54,6 +54,7 @@
 typedef struct udmu_objset {
 	struct objset	*os;
 	uint64_t	root;  /* id of root znode */
+	uint64_t	unlinkedid; /* id of unlinked zapobj */
 	spinlock_t	lock;  /* protects objects below */
 	uint64_t	objects; /* in-core counter of objects */
 	/* SA attr mapping->id,
