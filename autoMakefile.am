@@ -219,11 +219,9 @@ checkstack-clean:
 	rm -f ${CSTK} ${CSTKO}
 
 module-dist-hook:
-	if [ -d .git ]; then \
-		perl lustre/scripts/version_tag.pl --make_META > $(distdir)/META; \
-	elif [ -f META ]; then \
+	@if [ -f META ]; then \
 		cp META $(distdir)/META; \
 	else \
-		echo -e "I have no idea how to create a META file in $(distdir).\nPlease file a bug at http://bugzilla.lustre.org/"; \
-		exit 1; \
+		perl lustre/scripts/version_tag.pl \
+			--make_META > $(distdir)/META; \
 	fi

@@ -87,7 +87,10 @@ sub generate_ver($$$$$$$)
         print "-$local_version";
     }
 
-    print "-$buildid";
+    if ($buildid ne "") {
+        print "-$buildid";
+    }
+
     # if we want to get rid of the PRISTINE/CHANGED thing, get rid of these
     # lines.  maybe we only want to print -CHANGED when something is changed
     # and print nothing when it's pristine
@@ -131,18 +134,22 @@ if ($ARGV[0]) {
 
 if (-d ".git") {
     require "version_tag-git.pl";
-} else {
-    die("a tree status can only be determined in an source code control system checkout\n")
-        if ($make_meta);
+    my $tag = get_tag();
+    my $pristine = is_pristine();
+    my $buildid = get_buildid();
+} elsif (-f "META") {
     require "version_tag-none.pl";
+    my $tag = get_tag();
+    my $pristine = is_pristine();
+    my $buildid = get_buildid();
+} else {
+    my $tag = "";
+    my $pristine = 1;
+    my $buildid = "";
 }
 
 ($am_linuxdir, $am_linuxobjdir, $am_modules, $am_version, $local_version,
  $am_buildid) = read_autoMakefile();
-
-my $tag = get_tag();
-my $pristine = is_pristine();
-my $buildid = get_buildid();
 
 if (!$make_meta) {
     my $kernver = "";

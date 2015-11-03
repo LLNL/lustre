@@ -106,7 +106,7 @@ elif test -f META; then
 	msg="$BUILDID (from META file)"
 	AC_MSG_RESULT([$msg])
 else
-	AC_MSG_WARN([FIXME: I don't know how to deal with source trees outside of git that don't have a META file.  Not setting a buildid.])
+	AC_MSG_WARN([Not setting buildid from git.])
 fi
 AC_SUBST(BUILDID)
 ])
