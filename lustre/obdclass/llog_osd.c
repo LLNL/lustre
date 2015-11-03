@@ -480,9 +480,17 @@ static int llog_osd_write_rec(const struct lu_env *env,
 			RETURN(rc);
 		loghandle->lgh_last_idx++; /* for pad rec */
 	}
-	/* if it's the last idx in log file, then return -ENOSPC */
-	if (loghandle->lgh_last_idx >= LLOG_BITMAP_SIZE(llh) - 1)
-		RETURN(-ENOSPC);
+	/* if it's the last idx in log file, then return -ENOSPC
+	 * or wrap around if a catalog */
+	if ((loghandle->lgh_last_idx >= LLOG_BITMAP_SIZE(llh) - 1) ||
+	    unlikely(llh->llh_flags & LLOG_F_IS_CAT &&
+		     OBD_FAIL_PRECHECK(OBD_FAIL_CAT_RECORDS) &&
+		     loghandle->lgh_last_idx >= cfs_fail_val)) {
+		if (llh->llh_flags & LLOG_F_IS_CAT)
+			loghandle->lgh_last_idx = 0;
+		else
+			RETURN(-ENOSPC);
+	}
 
 	/* increment the last_idx along with llh_tail index, they should
 	 * be equal for a llog lifetime */
@@ -520,12 +528,19 @@ static int llog_osd_write_rec(const struct lu_env *env,
 		GOTO(out, rc);
 
 	header_is_updated = true;
-	rc = dt_attr_get(env, o, &lgi->lgi_attr, NULL);
-	if (rc)
-		GOTO(out, rc);
+	/* computed index can be used to determine offset for fixed-size
+	 * records. This also allows to handle Catalog wrap around case */
+	if (llh->llh_size != 0) {
+		lgi->lgi_off = llh->llh_hdr.lrh_len + (index - 1) * reclen;
+	} else {
+		rc = dt_attr_get(env, o, &lgi->lgi_attr, NULL);
+		if (rc)
+			GOTO(out, rc);
 
-	LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
-	lgi->lgi_off = lgi->lgi_attr.la_size;
+		LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
+		lgi->lgi_off = lgi->lgi_attr.la_size;
+	}
+
 	lgi->lgi_buf.lb_len = reclen;
 	lgi->lgi_buf.lb_buf = rec;
 	rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off, th);
@@ -555,7 +570,11 @@ out:
 	spin_unlock(&loghandle->lgh_hdr_lock);
 
 	/* restore llog last_idx */
-	loghandle->lgh_last_idx--;
+	if (--loghandle->lgh_last_idx == 0 &&
+	    (llh->llh_flags & LLOG_F_IS_CAT) && llh->llh_cat_idx != 0) {
+		/* catalog had just wrap-around case */
+		loghandle->lgh_last_idx = LLOG_BITMAP_SIZE(llh) - 1;
+	}
 	llh->llh_tail.lrt_index = loghandle->lgh_last_idx;
 
 	/* restore the header on disk if it was written */
