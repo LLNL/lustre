@@ -41,18 +41,58 @@
 %endif
 %endif
 
+# RHEL 7.x:
+%if %{with lustre_modules}
+%if %{defined el7}
+  # WARNING: lustre 2.5.4 is a serverless build, but we still want the package
+  # name to be "lustre", not "lustre-client"
+  %undefine with_servers
+  %undefine with_ldiskfs
+  %undefine with_zfs
+  %undefine with_lustre_tests
+  %global lustre_name lustre
+
+  %define klnk %{_usrsrc}/kernels/*/include/config
+  %{!?kversion: %global kversion %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
+  %{!?kverpkg: %global kverpkg %(echo %{kversion} | %{__sed} -e 's/.%{_target_cpu}$//g')}
+  %{!?kdir: %global kdir %{_usrsrc}/kernels/%{kversion}}
+  %{!?kobjdir: %global kobjdir %kdir}
+  %if %{undefined buildrequires}
+    %if %{with servers}
+      %define br_arg2 kernel-debuginfo-common-%{_target_cpu}
+    %endif
+    %global buildrequires kernel-devel %{?br_arg2}
+  %endif
+  %if %{undefined modules_requires} && %{nonempty_string %{kverpkg}}
+      %global modules_requires kernel = %{kverpkg}
+  %endif
+%endif
+%endif
+
 %{!?downstream_release: %global downstream_release "@DOWNSTREAM_RELEASE@"}
 
 %define buildid %(if [ -n "@BUILDID@" ]; then echo "_@BUILDID@"; fi)
 
-%if %{with lustre_modules}
+# The koji build system doesn't allow the source rpm's release field to be
+# different from the eventual binary rpms' release field.  Unfortunately,
+# koji builds the source rpm under noarch, so we aren't picking up the
+# kernel string during the first .src.rpm generation.  So to make koji
+# happy, we can't put the kernel string in the release field.  We only
+# use koji for EL7 thus far, so we'll key off of the el7 macro to make
+# koji happy.
+%if %{with lustre_modules} && !%{defined el7}
   %{!?myrelease: %global myrelease %(if [ -n "%downstream_release" ]; then echo -n "%{downstream_release}_"; fi; echo %kversion | tr '-' '_')}
 %else
   %{!?myrelease: %global myrelease %(if [ -n "%downstream_release" ]; then echo -n "%{downstream_release}"; fi;)}
 %endif
 
 # always append the buildid, even when the caller defines %release
+%if %{defined el7}
+# koji needs dist appended, we only use koji starting with el7
+%define fullrelease %{myrelease}%{buildid}%{?dist}
+%else
 %define fullrelease %{myrelease}%{buildid}
+%endif
 
 # in order to get kernel symset and/or kernel module dependencies into
 # the RPM, in order to support weak-modules, the internal dependency gen-
@@ -99,15 +139,6 @@
             %global kmoddir extra
         %endif
     %endif
-%endif
-
-# The kernel version should only be appended to a binary RPM.  When
-# building a source RPM it must be kernel version agnostic.  This means
-# the source RPM must never specify a required kernel version, but the
-# final RPM should be keyed to the kernel version it was built against.
-%if %{defined build_src_rpm}
-  %undefine buildrequires
-  %undefine modules_requires
 %endif
 
 %if %{defined cross_path} && %{defined post_script}
@@ -382,7 +413,9 @@ CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-kmp-moddir=[^ ][^ ]*
 	%{?kdir: --with-linux=%kdir} %{?kobjdir: --with-linux-obj=%kobjdir} \
 	%{?conf_tests} %{?conf_disable_server} %{?conf_zfs} %{?conf_ldiskfs} \
 	%{?conf_iokit} %{?conf_modules} \
-	$CONFIGURE_ARGS --with-kmp-moddir=%{kmoddir}
+	$CONFIGURE_ARGS --with-kmp-moddir=%{kmoddir} \
+	--with-obd-buffer-size=32768 --disable-liblustre --disable-snmp \
+	--disable-doc --enable-panic_dumplog --with-ldiskfsprogs --with-o2ib=yes
 make -j $RPM_BUILD_NCPUS -s %{?make_args}
 
 %install
