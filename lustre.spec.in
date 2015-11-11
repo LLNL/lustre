@@ -515,7 +515,7 @@ if [ -f $RPM_BUILD_DIR/lustre-%{version}/lustre/include/linux/lustre_types.h ] ;
   echo '%attr(-, root, root) %{_includedir}/linux/lustre_types.h' >>lustre.files
 fi
 
-find $RPM_BUILD_ROOT%{_libdir}/@PACKAGE@/ -name \*.la -delete
+find $RPM_BUILD_ROOT%{_libdir}/@PACKAGE@/ -name \*.la -delete || /bin/true
 
 %if %{with lustre_tests}
 echo '%attr(-, root, root) %{_libdir}/lustre/tests/*' >lustre-tests.files
