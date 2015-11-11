@@ -310,6 +310,13 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
+# 3.4 introduced process namespace
+AC_DEFUN([LIBCFS_PROCESS_NAMESPACE],[
+LB_CHECK_LINUX_HEADER([linux/uidgid.h], [
+	AC_DEFINE(HAVE_UIDGID_HEADER, 1, [uidgid.h is present])
+])
+])
+
 #
 # FC18 3.7.2-201 unexport sock_map_fd() change to
 # use sock_alloc_file().
@@ -361,6 +368,8 @@ LIBCFS_ADD_WAIT_QUEUE_EXCLUSIVE
 LC_SK_SLEEP
 # 2.6.40 fc15
 LC_SHRINK_CONTROL
+# 3.4
+LIBCFS_PROCESS_NAMESPACE
 # 3.7
 LIBCFS_SOCK_ALLOC_FILE
 ])
