@@ -6009,8 +6009,10 @@ static int __init osd_mod_init(void)
 	if (rc)
 		return rc;
 
-	rc = class_register_type(&osd_obd_device_ops, NULL,
+	rc = class_register_type(&osd_obd_device_ops, NULL, NULL,
+#ifndef HAVE_ONLY_PROCFS_SEQ
 				 lprocfs_osd_module_vars,
+#endif
 				 LUSTRE_OSD_LDISKFS_NAME, &osd_device_type);
 	if (rc)
 		lu_kmem_fini(ldiskfs_caches);
