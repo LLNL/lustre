@@ -462,7 +462,6 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} -name "*.ko" 
 %endif
 %if %{with ldiskfs}
 %exclude %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/ldiskfs.ko
-%exclude %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/fsfilt_ldiskfs.ko
 %exclude %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_ldiskfs.ko
 %endif
 %if %{with zfs}
@@ -478,7 +477,6 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} -name "*.ko" 
 %if %{with ldiskfs}
 %files osd-ldiskfs
 %attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/ldiskfs.ko
-%attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/fsfilt_ldiskfs.ko
 %attr(-, root, root) %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_ldiskfs.ko
 %attr(-, root, root) %{_libdir}/@PACKAGE@/mount_osd_ldiskfs.so
 %if %{defined rpm_post_base}
