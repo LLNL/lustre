@@ -1439,6 +1439,26 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# LC_VFS_RENAME_6ARGS
+#
+# 3.15 has vfs_rename with 6 args
+#
+AC_DEFUN([LC_VFS_RENAME_6ARGS],
+[AC_MSG_CHECKING([if Linux kernel has 'vfs_rename' with 6 args])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/fs.h>
+],[
+	vfs_rename(NULL, NULL, NULL, NULL, NULL, NULL);
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_VFS_RENAME_6ARGS, 1,
+		[kernel has vfs_rename with 6 args])
+],[
+	AC_MSG_RESULT([no])
+])
+]) # LC_VFS_RENAME_6ARGS
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -1554,6 +1574,9 @@ AC_DEFUN([LC_PROG_LINUX],
 
 	 # 3.13
 	 LC_VFS_RENAME_5ARGS
+
+	 # 3.15
+	 LC_VFS_RENAME_6ARGS
 
 	 #
 	 if test x$enable_server != xno ; then
