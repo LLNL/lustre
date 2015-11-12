@@ -1422,6 +1422,22 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
+# 3.13 has vfs_renane with 5 args
+AC_DEFUN([LC_VFS_RENAME_5ARGS],
+[AC_MSG_CHECKING([if kernel has vfs_rename with 5 args])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/fs.h>
+],[
+	vfs_rename(NULL, NULL, NULL, NULL, NULL);
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_VFS_RENAME_5ARGS, 1,
+		[kernel has vfs_rename with 5 args])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
 #
 # LC_PROG_LINUX
 #
@@ -1535,6 +1551,9 @@ AC_DEFUN([LC_PROG_LINUX],
 
 	 # 3.12
 	 LC_OLDSIZE_TRUNCATE_PAGECACHE
+
+	 # 3.13
+	 LC_VFS_RENAME_5ARGS
 
 	 #
 	 if test x$enable_server != xno ; then
