@@ -61,9 +61,9 @@
 
 #define loff_t long long
 #define ERESTART 2001
-typedef unsigned short umode_t;
 
 #endif
+typedef unsigned short umode_t;
 
 #ifndef page_private
 #define page_private(page) ((page)->private)

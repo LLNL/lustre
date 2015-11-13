@@ -283,7 +283,7 @@ extern struct dirent *SYSIO_INTERFACE_NAME(readdir)(DIR *dir);
 extern int SYSIO_INTERFACE_NAME(scandir)(const char *dir,
 					 struct dirent ***namelist,
 					 int(*filter)(const struct dirent *),
-#ifdef HAVE_POSIX2008_SCANDIR
+#if defined(HAVE_POSIX2008_SCANDIR) || _POSIX_C_SOURCE >= 200809L
 					 int(*compar)(const struct dirent **,
 					              const struct dirent **)
 #else
