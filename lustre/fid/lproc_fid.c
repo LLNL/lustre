@@ -338,7 +338,10 @@ static int fldb_seq_open(struct inode *inode, struct file *file)
 	fld = ss->lss_site->ss_server_fld;
 	LASSERT(fld != NULL);
 
-	LPROCFS_ENTRY_CHECK(PDE(inode));
+	rc = LPROCFS_ENTRY_CHECK(inode);
+	if (rc < 0)
+		return rc;
+
 	rc = seq_open(file, &fldb_sops);
 	if (rc)
 		GOTO(out, rc);

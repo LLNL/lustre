@@ -41,11 +41,16 @@
 #define __PARAMS_TREE_H__
 
 #include <libcfs/libcfs.h>
-
-#undef LPROCFS
-#if (defined(__KERNEL__) && defined(CONFIG_PROC_FS))
-# define LPROCFS
+#ifdef __KERNEL__
+#include <linux/fs.h>
+#include <linux/proc_fs.h>
+#include <linux/rwsem.h>
+#include <linux/spinlock.h>
 #endif
+
+#ifdef CONFIG_PROC_FS
+# define LPROCFS
+#endif /* CONFIG_PROC_FS */
 
 #ifdef LPROCFS
 typedef struct inode                            cfs_inode_t;
@@ -55,13 +60,13 @@ typedef struct poll_table_struct                cfs_poll_table_t;
 #define CFS_PARAM_MODULE                        THIS_MODULE
 #define cfs_file_private(file)                  (file->private_data)
 
-#ifndef HAVE_ONLY_PROCFS_SEQ
+# ifndef HAVE_ONLY_PROCFS_SEQ
 /* in lprocfs_stat.c, to protect the private data for proc entries */
 extern struct rw_semaphore		_lprocfs_lock;
 
-static inline
-int LPROCFS_ENTRY_CHECK(struct proc_dir_entry *dp)
+static inline int LPROCFS_ENTRY_CHECK(struct inode *inode)
 {
+	struct proc_dir_entry *dp = PDE(inode);
 	int deleted = 0;
 
 	spin_lock(&(dp)->pde_unload_lock);
@@ -72,37 +77,32 @@ int LPROCFS_ENTRY_CHECK(struct proc_dir_entry *dp)
 		return -ENODEV;
 	return 0;
 }
-#define LPROCFS_SRCH_ENTRY()            \
-do {                                    \
-        down_read(&_lprocfs_lock);      \
-} while(0)
 
-#define LPROCFS_SRCH_EXIT()             \
-do {                                    \
-        up_read(&_lprocfs_lock);        \
-} while(0)
+#  define LPROCFS_SRCH_ENTRY()			\
+	do {					\
+		down_read(&_lprocfs_lock);	\
+	} while (0)
 
-#define LPROCFS_WRITE_ENTRY()		\
-do {					\
-	down_write(&_lprocfs_lock);	\
-} while(0)
+#  define LPROCFS_SRCH_EXIT()			\
+	do {					\
+		up_read(&_lprocfs_lock);	\
+	} while (0)
 
-#define LPROCFS_WRITE_EXIT()		\
-do {					\
-	up_write(&_lprocfs_lock);	\
-} while(0)
+#  define LPROCFS_WRITE_ENTRY()			\
+	do {					\
+		down_write(&_lprocfs_lock);	\
+	} while (0)
 
-#define PDE_DATA(inode)		PDE(inode)->data
+#  define LPROCFS_WRITE_EXIT()			\
+	do {					\
+		up_write(&_lprocfs_lock);	\
+	} while (0)
 
-#else /* New proc api */
+#  define PDE_DATA(inode)	(PDE(inode)->data)
 
-static inline cfs_param_dentry_t* PDE(struct inode *inode)
-{
-	return NULL;
-}
+# else /* HAVE_ONLY_PROCFS_SEQ */
 
-static inline
-int LPROCFS_ENTRY_CHECK(cfs_param_dentry_t *dp)
+static inline int LPROCFS_ENTRY_CHECK(struct inode *inode)
 {
 	return 0;
 }
@@ -110,7 +110,7 @@ int LPROCFS_ENTRY_CHECK(cfs_param_dentry_t *dp)
 #define LPROCFS_WRITE_ENTRY() do {} while(0)
 #define LPROCFS_WRITE_EXIT()  do {} while(0)
 
-#endif
+# endif /* !HAVE_ONLY_PROCFS_SEQ */
 
 #else /* !LPROCFS */
 
@@ -201,7 +201,7 @@ static inline cfs_param_dentry_t *PDE(cfs_inode_t *inode)
 }
 
 static inline
-int LPROCFS_ENTRY_CHECK(cfs_param_dentry_t *dp)
+int LPROCFS_ENTRY_CHECK(cfs_inode_t *dp)
 {
 	return 0;
 }
@@ -212,7 +212,4 @@ int seq_printf(struct seq_file *, const char *, ...)
 	__attribute__ ((format (printf,2,3)));
 
 #endif /* LPROCFS */
-
-/* XXX: params_tree APIs */
-
 #endif  /* __PARAMS_TREE_H__ */

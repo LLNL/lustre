@@ -513,7 +513,7 @@ static int lprocfs_open_hsm_actions(struct inode *inode, struct file *file)
 	struct mdt_device		*mdt;
 	ENTRY;
 
-	if (LPROCFS_ENTRY_CHECK(PDE(inode)))
+	if (LPROCFS_ENTRY_CHECK(inode))
 		RETURN(-ENOENT);
 
 	rc = seq_open(file, &mdt_hsm_actions_proc_ops);

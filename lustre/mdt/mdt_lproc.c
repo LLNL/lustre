@@ -982,21 +982,18 @@ int lprocfs_mdt_open_files_seq_show(struct seq_file *seq, void *v)
 
 int lprocfs_mdt_open_files_seq_open(struct inode *inode, struct file *file)
 {
-	struct proc_dir_entry	*dp = PDE(inode);
-	struct seq_file		*seq;
-	struct nid_stat		*tmp;
-	int			rc;
+	struct seq_file *seq;
+	int		rc;
 
-	if (LPROCFS_ENTRY_CHECK(dp))
+	if (LPROCFS_ENTRY_CHECK(inode))
 		return -ENOENT;
 
-	tmp = dp->data;
 	rc = single_open(file, &lprocfs_mdt_open_files_seq_show, NULL);
 	if (rc != 0)
 		return rc;
 
 	seq = file->private_data;
-	seq->private = tmp;
+	seq->private = PDE_DATA(inode);
 
 	return 0;
 }
