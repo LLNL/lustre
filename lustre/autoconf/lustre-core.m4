@@ -1419,6 +1419,24 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# LC_HAVE_TRUNCATE_IPAGE_FINAL
+#
+# 3.14 bring truncate_inode_pages_final for evict_inode
+#
+AC_DEFUN([LC_HAVE_TRUNCATE_IPAGES_FINAL],
+[AC_MSG_CHECKING([if Linux kernel has truncate_inode_pages_final])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/mm.h>
+],[
+	truncate_inode_pages_final(NULL);
+], [
+	AC_DEFINE(HAVE_TRUNCATE_INODE_PAGES_FINAL, 1,
+		[kernel has truncate_inode_pages_final])
+],[
+	AC_MSG_RESULT([no])
+])
+]) # LC_HAVE_TRUNCATE_IPAGES_FINAL
+#
 # LC_VFS_RENAME_6ARGS
 #
 # 3.15 has vfs_rename with 6 args
@@ -1551,6 +1569,9 @@ AC_DEFUN([LC_PROG_LINUX],
 
 	 # 3.13
 	 LC_VFS_RENAME_5ARGS
+
+ 	 # 3.14
+	 LC_HAVE_TRUNCATE_IPAGES_FINAL
 
 	 # 3.15
 	 LC_VFS_RENAME_6ARGS
