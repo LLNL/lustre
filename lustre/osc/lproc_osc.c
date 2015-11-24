@@ -504,6 +504,22 @@ static ssize_t osc_obd_max_pages_per_rpc_seq_write(struct file *file,
 }
 LPROC_SEQ_FOPS(osc_obd_max_pages_per_rpc);
 
+static int osc_unstable_stats_seq_show(struct seq_file *m, void *v)
+{
+        struct obd_device *dev = m->private;
+        struct client_obd *cli = &dev->u.cli;
+        int pages;
+        int mb;
+
+        pages = cfs_atomic_read(&cli->cl_unstable_count);
+        mb    = (pages * PAGE_CACHE_SIZE) >> 20;
+
+        return seq_printf(m, "unstable_pages: %8d\n"
+                          "unstable_mb:    %8d\n",
+                        pages, mb);
+}
+LPROC_SEQ_FOPS_RO(osc_unstable_stats);
+
 LPROC_SEQ_FOPS_RO_TYPE(osc, uuid);
 LPROC_SEQ_FOPS_RO_TYPE(osc, connect_flags);
 LPROC_SEQ_FOPS_RO_TYPE(osc, blksize);
@@ -553,6 +569,7 @@ struct lprocfs_seq_vars lprocfs_osc_obd_vars[] = {
 	{ "import",		&osc_import_fops		},
 	{ "state",		&osc_state_fops			},
 	{ "pinger_recov",	&osc_pinger_recov_fops		},
+	{ "unstable_stats",	&osc_unstable_stats_fops	},
 	{ 0 }
 };
 
