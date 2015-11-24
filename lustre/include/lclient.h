@@ -433,35 +433,46 @@ struct lov_stripe_md *ccc_inode_lsm_get(struct inode *inode);
 void ccc_inode_lsm_put(struct inode *inode, struct lov_stripe_md *lsm);
 
 /**
- * Data structure managing a client's cached clean pages. An LRU of
- * pages is maintained, along with other statistics.
+ * Data structure managing a client's cached pages. A count of
+ * "unstable" pages is maintained, and an LRU of clean pages is
+ * maintained. "unstable" pages are pages pinned by the ptlrpc
+ * layer for recovery purposes.
  */
 struct cl_client_cache {
 	/**
 	 * # of client cache refcount
 	 * # of users (OSCs) + 2 (held by llite and lov)
 	 */
-	cfs_atomic_t    ccc_users;
+	cfs_atomic_t		ccc_users;
 	/**
-	 * List of entities(OSCs) for this LRU cache
+	 * # of threads are doing shrinking
 	 */
-	cfs_list_t	ccc_lru;
-	/**
-	 * Lock to protect ccc_lru list
-	 */
-	spinlock_t	ccc_lru_lock;
+	unsigned int		ccc_lru_shrinkers;
 	/**
 	 * # of LRU entries available
 	 */
-	cfs_atomic_t	ccc_lru_left;
+	cfs_atomic_t		ccc_lru_left;
 	/**
-	 * Max # of LRU entries possible
+	 * List of entities(OSCs) for this LRU cache
 	 */
-	unsigned long	ccc_lru_max;
+	cfs_list_t		ccc_lru;
 	/**
-	 * # of threads reclaiming
+	 * Max # of LRU entries
 	 */
-	unsigned int	ccc_lru_shrinkers;
+	unsigned long		ccc_lru_max;
+	/**
+	 * Lock to protect ccc_lru list
+	 */
+	spinlock_t		ccc_lru_lock;
+	/**
+	 * # of unstable pages for this mount point
+	 */
+	cfs_atomic_t		ccc_unstable_nr;
+	/**
+	 * Waitq for awaiting unstable pages to reach zero.
+	 * Used at umounting time and signaled on BRW commit
+	 */
+	wait_queue_head_t	ccc_unstable_waitq;
 };
 
 /**

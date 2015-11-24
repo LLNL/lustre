@@ -1646,6 +1646,9 @@ struct cl_client_cache *cl_cache_init(unsigned long lru_page_max)
 	spin_lock_init(&cache->ccc_lru_lock);
 	CFS_INIT_LIST_HEAD(&cache->ccc_lru);
 
+	cfs_atomic_set(&cache->ccc_unstable_nr, 0);
+	init_waitqueue_head(&cache->ccc_unstable_waitq);
+
 	RETURN(cache);
 }
 EXPORT_SYMBOL(cl_cache_init);

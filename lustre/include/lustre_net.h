@@ -1846,8 +1846,9 @@ struct ptlrpc_request {
 		rq_no_retry_einprogress:1,
 		/* allow the req to be sent if the import is in recovery
 		 * status */
-		rq_allow_replay:1;
+		rq_allow_replay:1,
 		/* bulk request, sent to server, but uncommitted */
+		rq_unstable:1;
 	/** @} */
 
 	/** server-side flags @{ */

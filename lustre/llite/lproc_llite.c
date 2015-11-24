@@ -920,6 +920,22 @@ static ssize_t ll_nosquash_nids_seq_write(struct file *file,
 }
 LPROC_SEQ_FOPS(ll_nosquash_nids);
 
+static int ll_unstable_stats_seq_show(struct seq_file *m, void *v)
+{
+	struct super_block *sb = m->private;
+	struct ll_sb_info *sbi = ll_s2sbi(sb);
+	struct cl_client_cache *cache = sbi->ll_cache;
+	int pages;
+	int mb;
+
+	pages = cfs_atomic_read(&cache->ccc_unstable_nr);
+	mb    = (pages * PAGE_CACHE_SIZE) >> 20;
+
+	return seq_printf(m, "unstable_pages: %8d\n"
+			  "unstable_mb:    %8d\n", pages, mb);
+}
+LPROC_SEQ_FOPS_RO(ll_unstable_stats);
+
 struct lprocfs_seq_vars lprocfs_llite_obd_vars[] = {
 	{ .name	=	"uuid",
 	  .fops	=	&ll_sb_uuid_fops			},
@@ -983,6 +999,8 @@ struct lprocfs_seq_vars lprocfs_llite_obd_vars[] = {
 	  .fops	=	&ll_root_squash_fops			},
 	{ .name =	"nosquash_nids",
 	  .fops	=	&ll_nosquash_nids_fops			},
+	{ .name =	"unstable_stats",
+	  .fops =	&ll_unstable_stats_fops			},
 	{ 0 }
 };
 
