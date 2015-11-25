@@ -4,12 +4,6 @@ SUBDIRS += darwin
 endif
 DIST_SUBDIRS = linux posix util darwin
 
-libcfsdir = $(includedir)/libcfs
-
-if UTILS
-libcfs_HEADERS = types.h
-endif
-
 EXTRA_DIST = \
 	bitmap.h \
 	curproc.h \
@@ -34,7 +28,6 @@ EXTRA_DIST = \
 	list.h \
 	lucache.h \
 	params_tree.h \
-	types.h \
 	user-bitops.h \
 	user-crypto.h \
 	user-lock.h \

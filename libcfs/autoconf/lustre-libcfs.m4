@@ -59,6 +59,29 @@ else
 fi
 ])
 
+# check kernel __u64 type
+AC_DEFUN([LIBCFS_U64_LONG_LONG_LINUX],
+[
+AC_MSG_CHECKING([kernel __u64 is long long type])
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="$EXTRA_KCFLAGS -Werror"
+LB_LINUX_TRY_COMPILE([
+	#include <linux/types.h>
+	#include <linux/stddef.h>
+],[
+	unsigned long long *data;
+
+	data = (__u64*)sizeof(data);
+],[
+	AC_MSG_RESULT([yes])
+        AC_DEFINE(HAVE_KERN__U64_LONG_LONG, 1,
+                  [kernel __u64 is long long type])
+],[
+	AC_MSG_RESULT([no])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+])
+
 # check cpumask_size (2.6.28)
 AC_DEFUN([LIBCFS_CPUMASK_SIZE],
 [AC_MSG_CHECKING([whether have cpumask_size()])
@@ -94,8 +117,6 @@ LB_LINUX_TRY_COMPILE([
 
 #
 # LIBCFS_FUNC_DUMP_TRACE
-#
-# LIBCFS_STACKTRACE_OPS_HAVE_WALK_STACK
 #
 # 2.6.23 exports dump_trace() so we can dump_stack() on any task
 # 2.6.24 has stacktrace_ops.address with "reliable" parameter
@@ -351,6 +372,7 @@ AC_DEFUN([LIBCFS_PROG_LINUX],
 [
 LIBCFS_CONFIG_PANIC_DUMPLOG
 
+LIBCFS_U64_LONG_LONG_LINUX
 # 2.6.24
 LIBCFS_SYSCTL_UNNUMBERED
 LIBCFS_FUNC_DUMP_TRACE

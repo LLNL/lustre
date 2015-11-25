@@ -46,12 +46,9 @@
  * @{
  */
 
-#include <libcfs/types.h>
-
-#ifdef __KERNEL__
-# include <linux/string.h> /* snprintf() */
-#else
-# include <stdio.h> /* snprintf() */
+#ifndef __KERNEL__
+#include <stdio.h>
+#include <libcfs/posix/posix-types.h>
 #endif
 #include <lustre/ll_fiemap.h>
 #if defined(__linux__)
