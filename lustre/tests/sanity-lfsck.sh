@@ -129,6 +129,33 @@ run_e2fsck_on_mdt0() {
 		error "(3) Fail to start MDT0"
 }
 
+wait_all_targets_blocked() {
+	local com=$1
+	local status=$2
+	local err=$3
+
+	local count=$(do_facet mds1 \
+		     "$LCTL lfsck_query -t $com -M ${FSNAME}-MDT0000 -w |
+		      awk '/^${com}_mdts_${status}/ { print \\\$2 }'")
+	[[ $count -eq $MDSCOUNT ]] || {
+		do_facet mds1 "$LCTL lfsck_query -t $com -M ${FSNAME}-MDT0000"
+		error "($err) only $count of $MDSCOUNT MDTs are in ${status}"
+	}
+}
+
+wait_all_targets() {
+	local com=$1
+	local status=$2
+	local err=$3
+
+	wait_update_facet mds1 "$LCTL lfsck_query -t $com -M ${FSNAME}-MDT0000 |
+		awk '/^${com}_mdts_${status}/ { print \\\$2 }'" \
+		"$MDSCOUNT" $LTIME || {
+		do_facet mds1 "$LCTL lfsck_query -t $com -M ${FSNAME}-MDT0000"
+		error "($err) some MDTs are not in ${status}"
+	}
+}
+
 test_0() {
 	lfsck_prep 3 3
 
@@ -440,12 +467,8 @@ test_2e()
 	do_facet $SINGLEMDS $LCTL set_param fail_loc=0
 
 	$START_NAMESPACE -r -A || error "(3) Fail to start LFSCK for namespace!"
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(4) unexpected status"
-	}
+
+	wait_all_targets_blocked namespace completed 4
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^linkea_repaired/ { print $2 }')
@@ -1375,38 +1398,21 @@ test_12() {
 		-s 1 -r || error "(2) Fail to start LFSCK on all devices!"
 
 	echo "All the LFSCK targets should be in 'scanning-phase1' status."
-	for k in $(seq $MDSCOUNT); do
-		local STATUS=$(do_facet mds${k} $LCTL get_param -n \
-				mdd.$(facet_svc mds${k}).lfsck_namespace |
-				awk '/^status/ { print $2 }')
-		[ "$STATUS" == "scanning-phase1" ] ||
-		error "(3) MDS${k} Expect 'scanning-phase1', but got '$STATUS'"
-	done
+	wait_all_targets namespace scanning-phase1 3
 
 	echo "Stop namespace LFSCK on all targets by single lctl command."
 	do_facet mds1 $LCTL lfsck_stop -M ${FSNAME}-MDT0000 -A ||
 		error "(4) Fail to stop LFSCK on all devices!"
 
 	echo "All the LFSCK targets should be in 'stopped' status."
-	for k in $(seq $MDSCOUNT); do
-		local STATUS=$(do_facet mds${k} $LCTL get_param -n \
-				mdd.$(facet_svc mds${k}).lfsck_namespace |
-				awk '/^status/ { print $2 }')
-		[ "$STATUS" == "stopped" ] ||
-			error "(5) MDS${k} Expect 'stopped', but got '$STATUS'"
-	done
+	wait_all_targets_blocked namespace stopped 5
 
 	echo "Re-start namespace LFSCK on all targets by single command (-s 0)."
 	do_facet mds1 $LCTL lfsck_start -M ${FSNAME}-MDT0000 -t namespace -A \
 		-s 0 -r || error "(6) Fail to start LFSCK on all devices!"
 
 	echo "All the LFSCK targets should be in 'completed' status."
-	for k in $(seq $MDSCOUNT); do
-		wait_update_facet mds${k} "$LCTL get_param -n \
-			mdd.$(facet_svc mds${k}).lfsck_namespace |
-			awk '/^status/ { print \\\$2 }'" "completed" 8 ||
-			error "(7) MDS${k} is not the expected 'completed'"
-	done
+	wait_all_targets_blocked namespace completed 7
 
 	start_full_debug_logging
 
@@ -1415,26 +1421,14 @@ test_12() {
 		-s 1 -r || error "(8) Fail to start LFSCK on all devices!"
 
 	echo "All the LFSCK targets should be in 'scanning-phase1' status."
-	for k in $(seq $MDSCOUNT); do
-		local STATUS=$(do_facet mds${k} $LCTL get_param -n \
-				mdd.$(facet_svc mds${k}).lfsck_layout |
-				awk '/^status/ { print $2 }')
-		[ "$STATUS" == "scanning-phase1" ] ||
-		error "(9) MDS${k} Expect 'scanning-phase1', but got '$STATUS'"
-	done
+	wait_all_targets layout scanning-phase1 9
 
 	echo "Stop layout LFSCK on all targets by single lctl command."
 	do_facet mds1 $LCTL lfsck_stop -M ${FSNAME}-MDT0000 -A ||
 		error "(10) Fail to stop LFSCK on all devices!"
 
 	echo "All the LFSCK targets should be in 'stopped' status."
-	for k in $(seq $MDSCOUNT); do
-		local STATUS=$(do_facet mds${k} $LCTL get_param -n \
-				mdd.$(facet_svc mds${k}).lfsck_layout |
-				awk '/^status/ { print $2 }')
-		[ "$STATUS" == "stopped" ] ||
-			error "(11) MDS${k} Expect 'stopped', but got '$STATUS'"
-	done
+	wait_all_targets_blocked layout stopped 11
 
 	for k in $(seq $OSTCOUNT); do
 		local STATUS=$(do_facet ost${k} $LCTL get_param -n \
@@ -1449,15 +1443,7 @@ test_12() {
 		-s 0 -r || error "(13) Fail to start LFSCK on all devices!"
 
 	echo "All the LFSCK targets should be in 'completed' status."
-	for k in $(seq $MDSCOUNT); do
-		# The LFSCK status query internal is 30 seconds. For the case
-		# of some LFSCK_NOTIFY RPCs failure/lost, we will wait enough
-		# time to guarantee the status sync up.
-		wait_update_facet mds${k} "$LCTL get_param -n \
-			mdd.$(facet_svc mds${k}).lfsck_layout |
-			awk '/^status/ { print \\\$2 }'" "completed" 32 ||
-			error "(14) MDS${k} is not the expected 'completed'"
-	done
+	wait_all_targets_blocked layout completed 14
 
 	stop_full_debug_logging
 }
@@ -1681,15 +1667,7 @@ test_15c() {
 	echo "Trigger layout LFSCK to race with the migration"
 	$START_LAYOUT -A -r || error "(1) Fail to start layout LFSCK!"
 
-	for k in $(seq $MDSCOUNT); do
-		# The LFSCK status query internal is 30 seconds. For the case
-		# of some LFSCK_NOTIFY RPCs failure/lost, we will wait enough
-		# time to guarantee the status sync up.
-		wait_update_facet mds${k} "$LCTL get_param -n \
-			mdd.$(facet_svc mds${k}).lfsck_layout |
-			awk '/^status/ { print \\\$2 }'" "completed" $LTIME ||
-			error "(2) MDS${k} is not the expected 'completed'"
-	done
+	wait_all_targets_blocked layout completed 2
 
 	do_facet mds2 $LCTL set_param fail_loc=0 fail_val=0
 	local repaired=$($SHOW_LAYOUT |
@@ -2995,12 +2973,7 @@ test_22a() {
 	$START_NAMESPACE -A -r ||
 		error "(5) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(6) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 6
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^unmatched_pairs_repaired/ { print $2 }')
@@ -3049,12 +3022,7 @@ test_22b() {
 	$START_NAMESPACE -A -r ||
 		error "(5) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(6) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 6
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^unmatched_pairs_repaired/ { print $2 }')
@@ -3096,12 +3064,7 @@ test_23a() {
 	$START_NAMESPACE -A -r ||
 		error "(5) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(6) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 6
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^dangling_repaired/ { print $2 }')
@@ -3115,12 +3078,7 @@ test_23a() {
 	$START_NAMESPACE -A -r -C ||
 		error "(9) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(10) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 10
 
 	repaired=$($SHOW_NAMESPACE |
 		   awk '/^dangling_repaired/ { print $2 }')
@@ -3316,12 +3274,7 @@ test_24() {
 	$START_NAMESPACE -A -r ||
 		error "(7) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(8) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 8
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^multiple_referenced_repaired/ { print $2 }')
@@ -3410,12 +3363,7 @@ test_26a() {
 	$START_NAMESPACE -r -A ||
 		error "(6) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(7) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 7
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^lost_dirent_repaired/ { print $2 }')
@@ -3462,12 +3410,7 @@ test_26b() {
 	$START_NAMESPACE -r -A ||
 		error "(5) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(6) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 6
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^lost_dirent_repaired/ { print $2 }')
@@ -3516,12 +3459,7 @@ test_27a() {
 	$START_NAMESPACE -r -A ||
 		error "(6) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(7) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 7
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^lost_dirent_repaired/ { print $2 }')
@@ -3573,12 +3511,7 @@ test_27b() {
 	$START_NAMESPACE -r -A ||
 		error "(6) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(7) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 7
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^lost_dirent_repaired/ { print $2 }')
@@ -3678,15 +3611,7 @@ test_28() {
 	$START_NAMESPACE -r -A ||
 		error "(8) Fail to start LFSCK for namespace"
 
-	for k in $(seq $MDSCOUNT); do
-		# The LFSCK status query internal is 30 seconds. For the case
-		# of some LFSCK_NOTIFY RPCs failure/lost, we will wait enough
-		# time to guarantee the status sync up.
-		wait_update_facet mds${k} "$LCTL get_param -n \
-			mdd.$(facet_svc mds${k}).lfsck_namespace |
-			awk '/^status/ { print \\\$2 }'" "completed" 32 ||
-			error "(9) MDS${k} is not the expected 'completed'"
-	done
+	wait_all_targets_blocked namespace completed 9
 
 	local repaired=$(do_facet mds1 $LCTL get_param -n \
 			 mdd.$(facet_svc mds1).lfsck_namespace |
@@ -3731,12 +3656,7 @@ test_29a() {
 	$START_NAMESPACE -r -A ||
 		error "(5) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(6) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 6
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^nlinks_repaired/ { print $2 }')
@@ -3781,12 +3701,7 @@ test_29b() {
 	$START_NAMESPACE -r -A ||
 		error "(5) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(6) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 6
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^nlinks_repaired/ { print $2 }')
@@ -3864,12 +3779,7 @@ test_29c()
 	$START_NAMESPACE -r -A ||
 		error "(6) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(7) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 8
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^linkea_overflow_cleared/ { print $2 }')
@@ -3954,12 +3864,7 @@ test_30() {
 	$START_NAMESPACE -r -A ||
 		error "(14) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(15) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 15
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^local_lost_found_moved/ { print $2 }')
@@ -4015,12 +3920,7 @@ test_31a() {
 	$START_NAMESPACE -r -A ||
 		error "(3) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(4) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 4
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^name_hash_repaired/ { print $2 }')
@@ -4071,10 +3971,7 @@ test_31b() {
 	$START_NAMESPACE -r -A ||
 		error "(3) Fail to start LFSCK for namespace"
 
-	wait_update_facet mds2 "$LCTL get_param -n \
-		mdd.$(facet_svc mds2).lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 ||
-		error "(4) unexpected status"
+	wait_all_targets_blocked namespace completed 4
 
 	local repaired=$(do_facet mds2 $LCTL get_param -n \
 			 mdd.$(facet_svc mds2).lfsck_namespace |
@@ -4123,12 +4020,7 @@ test_31c() {
 	$START_NAMESPACE -r -A ||
 		error "(2) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(3) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 3
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^striped_dirs_repaired/ { print $2 }')
@@ -4180,12 +4072,7 @@ test_31d() {
 	$START_NAMESPACE -r -A ||
 		error "(5) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(6) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 6
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^striped_dirs_repaired/ { print $2 }')
@@ -4232,12 +4119,7 @@ test_31e() {
 	$START_NAMESPACE -r -A ||
 		error "(2) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(3) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 3
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^striped_shards_repaired/ { print $2 }')
@@ -4275,10 +4157,7 @@ test_31f() {
 	$START_NAMESPACE -r -A ||
 		error "(2) Fail to start LFSCK for namespace"
 
-	wait_update_facet mds2 "$LCTL get_param -n \
-		mdd.$(facet_svc mds2).lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 ||
-		error "(3) unexpected status"
+	wait_all_targets_blocked namespace completed 3
 
 	local repaired=$(do_facet mds2 $LCTL get_param -n \
 			 mdd.$(facet_svc mds2).lfsck_namespace |
@@ -4316,12 +4195,7 @@ test_31g() {
 	$START_NAMESPACE -r -A ||
 		error "(2) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(3) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 3
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^striped_shards_repaired/ { print $2 }')
@@ -4368,12 +4242,7 @@ test_31h() {
 	$START_NAMESPACE -r -A ||
 		error "(2) Fail to start LFSCK for namespace"
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
-		$SHOW_NAMESPACE
-		error "(3) unexpected status"
-	}
+	wait_all_targets_blocked namespace completed 3
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^dirent_repaired/ { print $2 }')

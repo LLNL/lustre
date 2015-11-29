@@ -2201,6 +2201,7 @@ static void check_lfsck_request(void)
 	CHECK_VALUE_X(LEF_SET_LMV_HASH);
 	CHECK_VALUE_X(LEF_SET_LMV_ALL);
 	CHECK_VALUE_X(LEF_RECHECK_NAME_HASH);
+	CHECK_VALUE_X(LEF_QUERY_ALL);
 }
 
 static void check_lfsck_reply(void)
@@ -2209,7 +2210,7 @@ static void check_lfsck_reply(void)
 	CHECK_STRUCT(lfsck_reply);
 	CHECK_MEMBER(lfsck_reply, lr_status);
 	CHECK_MEMBER(lfsck_reply, lr_padding_1);
-	CHECK_MEMBER(lfsck_reply, lr_padding_2);
+	CHECK_MEMBER(lfsck_reply, lr_repaired);
 }
 
 static void check_update_params(void)

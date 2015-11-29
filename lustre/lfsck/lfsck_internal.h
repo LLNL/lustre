@@ -434,7 +434,10 @@ struct lfsck_operations {
 			       struct thandle *th);
 
 	int (*lfsck_query)(const struct lu_env *env,
-			   struct lfsck_component *com);
+			   struct lfsck_component *com,
+			   struct lfsck_request *req,
+			   struct lfsck_reply *rep,
+			   struct lfsck_query *que, int idx);
 
 	int (*lfsck_join)(const struct lu_env *env,
 			  struct lfsck_component *com,
@@ -453,6 +456,10 @@ struct lfsck_tgt_desc {
 	struct list_head   ltd_layout_phase_list;
 	struct list_head   ltd_namespace_list;
 	struct list_head   ltd_namespace_phase_list;
+	__u32		   ltd_layout_status;
+	__u32		   ltd_namespace_status;
+	__u64		   ltd_layout_repaired;
+	__u64		   ltd_namespace_repaired;
 	atomic_t	   ltd_ref;
 	__u32              ltd_index;
 	__u32		   ltd_layout_gen;
@@ -807,7 +814,7 @@ struct lfsck_assistant_data {
 	/* list for the ost targets in phase1 scanning. */
 	struct list_head			 lad_ost_phase1_list;
 
-	/* list for the ost targets in phase1 scanning. */
+	/* list for the ost targets in phase2 scanning. */
 	struct list_head			 lad_ost_phase2_list;
 
 	/* list for the mdt targets involve LFSCK. */
@@ -816,7 +823,7 @@ struct lfsck_assistant_data {
 	/* list for the mdt targets in phase1 scanning. */
 	struct list_head			 lad_mdt_phase1_list;
 
-	/* list for the mdt targets in phase1 scanning. */
+	/* list for the mdt targets in phase2 scanning. */
 	struct list_head			 lad_mdt_phase2_list;
 
 	const char				*lad_name;
@@ -916,7 +923,6 @@ struct lfsck_instance *lfsck_instance_find(struct dt_device *key, bool ref,
 					   bool unlink);
 struct lfsck_component *lfsck_component_find(struct lfsck_instance *lfsck,
 					     __u16 type);
-const char *lfsck_status2names(enum lfsck_status status);
 void lfsck_component_cleanup(const struct lu_env *env,
 			     struct lfsck_component *com);
 void lfsck_instance_cleanup(const struct lu_env *env,
@@ -951,6 +957,7 @@ int lfsck_async_request(const struct lu_env *env, struct obd_export *exp,
 			struct ptlrpc_request_set *set,
 			ptlrpc_interpterer_t interpterer,
 			void *args, int request);
+int lfsck_query_all(const struct lu_env *env, struct lfsck_component *com);
 int lfsck_start_assistant(const struct lu_env *env, struct lfsck_component *com,
 			  struct lfsck_start_param *lsp);
 int lfsck_checkpoint_generic(const struct lu_env *env,
