@@ -722,13 +722,6 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
         lustre_msghdr_set_flags(request->rq_reqmsg,
                                 request->rq_import->imp_msghdr_flags);
 
-	/** For enabled AT all request should have AT_SUPPORT in the
-	 * FULL import state when OBD_CONNECT_AT is set */
-	LASSERT(AT_OFF || request->rq_import->imp_state != LUSTRE_IMP_FULL ||
-		(request->rq_import->imp_msghdr_flags & MSGHDR_AT_SUPPORT) ||
-		!(request->rq_import->imp_connect_data.ocd_connect_flags &
-		OBD_CONNECT_AT));
-
         if (request->rq_resend)
                 lustre_msg_add_flags(request->rq_reqmsg, MSG_RESENT);
 
