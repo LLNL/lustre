@@ -8,14 +8,6 @@
 %bcond_without lustre_iokit
 %bcond_without lustre_modules
 
-# When koji builds the source rpm, it sets the arch to noarch.
-# We won't be building modules during srpm creation, and unseting
-# the lustre_modules value option will fix the srpm version string
-# set later in this spec file.
-%ifarch noarch
-    %undefine with_lustre_modules
-%endif
-
 %if %{without servers}
     # --without servers overrides --with {ldiskfs|zfs}
     # so undefine the internal variables set by bcond_*
@@ -32,34 +24,6 @@
 # RHEL 6.x:
 %if %{with lustre_modules}
 %if %{defined el6}
-  %define klnk %{_usrsrc}/kernels/*/include/config
-  %{!?kversion: %global kversion %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
-  %{!?kverpkg: %global kverpkg %(echo %{kversion} | %{__sed} -e 's/.%{_target_cpu}$//g')}
-  %{!?kdir: %global kdir %{_usrsrc}/kernels/%{kversion}}
-  %{!?kobjdir: %global kobjdir %kdir}
-  %if %{undefined buildrequires}
-    %if %{with servers}
-      %define br_arg2 kernel-debuginfo-common-%{_target_cpu}
-    %endif
-    %global buildrequires kernel-devel %{?br_arg2}
-  %endif
-  %if %{undefined modules_requires} && %{nonempty_string %{kverpkg}}
-      %global modules_requires kernel = %{kverpkg}
-  %endif
-%endif
-%endif
-
-# RHEL 7.x:
-%if %{with lustre_modules}
-%if %{defined el7}
-  # WARNING: lustre 2.5.4 is a serverless build, but we still want the package
-  # name to be "lustre", not "lustre-client"
-  %undefine with_servers
-  %undefine with_ldiskfs
-  %undefine with_zfs
-  %undefine with_lustre_tests
-  %global lustre_name lustre
-
   %define klnk %{_usrsrc}/kernels/*/include/config
   %{!?kversion: %global kversion %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
   %{!?kverpkg: %global kverpkg %(echo %{kversion} | %{__sed} -e 's/.%{_target_cpu}$//g')}
@@ -142,12 +106,6 @@
 # the source RPM must never specify a required kernel version, but the
 # final RPM should be keyed to the kernel version it was built against.
 %if %{defined build_src_rpm}
-  %undefine buildrequires
-  %undefine modules_requires
-%endif
-# The same thing applies for noarch, which is the architecture used
-# by koji during the srpm generation phase.
-%ifarch noarch
   %undefine buildrequires
   %undefine modules_requires
 %endif
@@ -424,9 +382,7 @@ CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-kmp-moddir=[^ ][^ ]*
 	%{?kdir: --with-linux=%kdir} %{?kobjdir: --with-linux-obj=%kobjdir} \
 	%{?conf_tests} %{?conf_disable_server} %{?conf_zfs} %{?conf_ldiskfs} \
 	%{?conf_iokit} %{?conf_modules} \
-	$CONFIGURE_ARGS --with-kmp-moddir=%{kmoddir} \
-	--with-obd-buffer-size=32768 --disable-liblustre --disable-snmp \
-	--disable-doc --enable-panic_dumplog --with-ldiskfsprogs --with-o2ib=yes
+	$CONFIGURE_ARGS --with-kmp-moddir=%{kmoddir}
 make -j $RPM_BUILD_NCPUS -s %{?make_args}
 
 %install
