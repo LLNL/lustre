@@ -423,7 +423,16 @@ typedef struct
 	/* connections to setup/teardown */
 	cfs_list_t		kib_connd_conns;
 	/* connections with zero refcount */
-	cfs_list_t		kib_connd_zombies;
+	struct list_head	kib_connd_zombies;
+	/* connections to reconnect */
+	struct list_head	kib_reconn_list;
+	/* peers wait for reconnection */
+	struct list_head	kib_reconn_wait;
+	/*
+	 * The second that peers are pulled out from \a kib_reconn_wait
+	 * for reconnection.
+	 */
+	unsigned int		kib_reconn_sec;
 	/* connection daemon sleeps here */
 	wait_queue_head_t		kib_connd_waitq;
 	spinlock_t		kib_connd_lock;	/* serialise */
@@ -616,6 +625,8 @@ typedef struct kib_conn
         cfs_list_t           ibc_list;          /* stash on peer's conn list */
         cfs_list_t           ibc_sched_list;    /* schedule for attention */
         __u16                ibc_version;       /* version of connection */
+	/* reconnect later */
+	__u16                   ibc_reconnect:1;
         __u64                ibc_incarnation;   /* which instance of the peer */
         cfs_atomic_t         ibc_refcount;      /* # users */
         int                  ibc_state;         /* what's happening */
@@ -662,15 +673,24 @@ typedef struct kib_peer
         cfs_list_t           ibp_list;           /* stash on global peer list */
         lnet_nid_t           ibp_nid;            /* who's on the other end(s) */
         lnet_ni_t           *ibp_ni;             /* LNet interface */
-        cfs_atomic_t         ibp_refcount;       /* # users */
         cfs_list_t           ibp_conns;          /* all active connections */
         cfs_list_t           ibp_tx_queue;       /* msgs waiting for a conn */
-        __u16                ibp_version;        /* version of peer */
         __u64                ibp_incarnation;    /* incarnation of peer */
-        int                  ibp_connecting;     /* current active connection attempts */
-        int                  ibp_accepting;      /* current passive connection attempts */
+        /* when (in jiffies) I was last alive */
+	cfs_time_t              ibp_last_alive;
+	/* # users */
+	atomic_t                ibp_refcount;
+	/* version of peer */
+	__u16                   ibp_version;
+        /* current passive connection attempts */
+	unsigned short          ibp_accepting;
+	/* current active connection attempts */
+	unsigned short          ibp_connecting;
+	/* reconnect this peer later */
+	unsigned short          ibp_reconnecting:1;
+	/* # consecutive reconnection attempts to this peer */
+	unsigned int            ibp_reconnected;
         int                  ibp_error;          /* errno on closing this peer */
-        cfs_time_t           ibp_last_alive;     /* when (in jiffies) I was last alive */
 } kib_peer_t;
 
 #ifndef HAVE_IB_INC_RKEY
@@ -760,6 +780,20 @@ do {                                                            \
         if (cfs_atomic_dec_and_test(&(peer)->ibp_refcount))     \
                 kiblnd_destroy_peer(peer);                      \
 } while (0)
+
+static inline bool
+kiblnd_peer_connecting(kib_peer_t *peer)
+{
+	return peer->ibp_connecting != 0 ||
+	       peer->ibp_reconnecting != 0 ||
+	       peer->ibp_accepting != 0;
+}
+
+static inline bool
+kiblnd_peer_idle(kib_peer_t *peer)
+{
+	return !kiblnd_peer_connecting(peer) && list_empty(&peer->ibp_conns);
+}
 
 static inline cfs_list_t *
 kiblnd_nid2peerlist (lnet_nid_t nid)
@@ -1106,6 +1140,7 @@ int  kiblnd_translate_mtu(int value);
 int  kiblnd_dev_failover(kib_dev_t *dev);
 int  kiblnd_create_peer (lnet_ni_t *ni, kib_peer_t **peerp, lnet_nid_t nid);
 void kiblnd_destroy_peer (kib_peer_t *peer);
+bool kiblnd_reconnect_peer(kib_peer_t *peer);
 void kiblnd_destroy_dev (kib_dev_t *dev);
 void kiblnd_unlink_peer_locked (kib_peer_t *peer);
 void kiblnd_peer_alive (kib_peer_t *peer);
@@ -1118,7 +1153,7 @@ int  kiblnd_close_peer_conns_locked (kib_peer_t *peer, int why);
 void kiblnd_connreq_done(kib_conn_t *conn, int status);
 kib_conn_t *kiblnd_create_conn (kib_peer_t *peer, struct rdma_cm_id *cmid,
                                 int state, int version);
-void kiblnd_destroy_conn (kib_conn_t *conn);
+void kiblnd_destroy_conn(kib_conn_t *conn, bool free_conn);
 void kiblnd_close_conn (kib_conn_t *conn, int error);
 void kiblnd_close_conn_locked (kib_conn_t *conn, int error);
 
