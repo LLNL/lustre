@@ -687,7 +687,9 @@ typedef struct kib_peer
 	/* current active connection attempts */
 	unsigned short          ibp_connecting;
 	/* reconnect this peer later */
-	unsigned short          ibp_reconnecting:1;
+	unsigned short		ibp_reconnecting:1;
+	/* counter of how many times we triggered a conn race */
+	unsigned char		ibp_races;
 	/* # consecutive reconnection attempts to this peer */
 	unsigned int            ibp_reconnected;
         int                  ibp_error;          /* errno on closing this peer */
