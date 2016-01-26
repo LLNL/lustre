@@ -751,6 +751,36 @@ EXTRA_KCFLAGS="$tmp_flags"
 ])
 
 #
+# LN_CONFIG_IB_INC_RKEY
+#
+AC_DEFUN([LN_CONFIG_IB_INC_RKEY], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+AC_MSG_CHECKING([if function 'ib_inc_rkey' is defined])
+LB_LINUX_TRY_COMPILE([
+	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
+	#include <linux/compat-2.6.h>
+	#endif
+	#include <rdma/ib_verbs.h>
+],[
+	(void)ib_inc_rkey(0);
+],[
+        AC_MSG_RESULT(yes)
+	AC_DEFINE(HAVE_IB_INC_RKEY, 1,
+		  [function ib_inc_rkey exist])
+],[
+        AC_MSG_RESULT(no)
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LN_CONFIG_IB_INC_RKEY
+
+#
 # LN_PROG_LINUX
 #
 # LNet linux kernel checks
@@ -768,6 +798,7 @@ LN_CONFIG_PTLLND
 LN_CONFIG_MX
 # 2.6.32
 LN_5ARGS_SYSCTL_PROC_HANDLER
+LN_CONFIG_IB_INC_RKEY
 # 2.6.36
 LN_CONFIG_TCP_SENDPAGE
 ])
