@@ -63,7 +63,12 @@
 #define ERESTART 2001
 
 #endif
+
+#ifdef __powerpc64__
+typedef unsigned int umode_t;
+#else
 typedef unsigned short umode_t;
+#endif
 
 #ifndef page_private
 #define page_private(page) ((page)->private)
