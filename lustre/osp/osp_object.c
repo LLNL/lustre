@@ -59,23 +59,19 @@
  *	char			 oxe_buf[0];
  * };
  *
- * struct osp_object_attr {
- *	struct lu_attr		ooa_attr;
- *	struct list_head	ooa_xattr_list;
- * };
- *
  * struct osp_object {
  *	...
- *	struct osp_object_attr *opo_ooa;
+ *	struct lu_attr		opo_attr;
+ *	struct list_head	opo_xattr_list;
  *	spinlock_t		opo_lock;
  *	...
  * };
  *
  * The basic attributes, such as owner/mode/flags, are stored in the
- * osp_object_attr::ooa_attr. The extended attributes will be stored
+ * osp_object::opo_attr. The extended attributes will be stored
  * as osp_xattr_entry. Every extended attribute has an independent
  * osp_xattr_entry, and all the osp_xattr_entry are linked into the
- * osp_object_attr::ooa_xattr_list. The OSP object attributes cache
+ * osp_object::opo_xattr_list. The OSP object attributes cache
  * is protected by the osp_object::opo_lock.
  *
  * Not all OSP objects have an attributes cache because maintaining
@@ -162,41 +158,12 @@ static void osp_object_assign_fid(const struct lu_env *env,
 }
 
 /**
- * Initialize the OSP object attributes cache.
- *
- * \param[in] obj	pointer to the OSP object
- *
- * \retval		0 for success
- * \retval		negative error number on failure
- */
-int osp_oac_init(struct osp_object *obj)
-{
-	struct osp_object_attr *ooa;
-
-	OBD_ALLOC_PTR(ooa);
-	if (ooa == NULL)
-		return -ENOMEM;
-
-	INIT_LIST_HEAD(&ooa->ooa_xattr_list);
-	spin_lock(&obj->opo_lock);
-	if (likely(obj->opo_ooa == NULL)) {
-		obj->opo_ooa = ooa;
-		spin_unlock(&obj->opo_lock);
-	} else {
-		spin_unlock(&obj->opo_lock);
-		OBD_FREE_PTR(ooa);
-	}
-
-	return 0;
-}
-
-/**
  * Find the named extended attribute in the OSP object attributes cache.
  *
  * The caller should take the osp_object::opo_lock before calling
  * this function.
  *
- * \param[in] ooa	pointer to the OSP object attributes cache
+ * \param[in] obj	pointer to the OSP object
  * \param[in] name	the name of the extended attribute
  * \param[in] namelen	the name length of the extended attribute
  *
@@ -205,12 +172,12 @@ int osp_oac_init(struct osp_object *obj)
  *			in the cache
  */
 static struct osp_xattr_entry *
-osp_oac_xattr_find_locked(struct osp_object_attr *ooa,
-			  const char *name, size_t namelen)
+osp_oac_xattr_find_locked(struct osp_object *obj, const char *name,
+			  size_t namelen)
 {
 	struct osp_xattr_entry *oxe;
 
-	list_for_each_entry(oxe, &ooa->ooa_xattr_list, oxe_list) {
+	list_for_each_entry(oxe, &obj->opo_xattr_list, oxe_list) {
 		if (namelen == oxe->oxe_namelen &&
 		    strncmp(name, oxe->oxe_buf, namelen) == 0)
 			return oxe;
@@ -239,15 +206,12 @@ static struct osp_xattr_entry *osp_oac_xattr_find(struct osp_object *obj,
 	struct osp_xattr_entry *oxe = NULL;
 
 	spin_lock(&obj->opo_lock);
-	if (obj->opo_ooa != NULL) {
-		oxe = osp_oac_xattr_find_locked(obj->opo_ooa, name,
-						strlen(name));
-		if (oxe != NULL) {
-			if (unlink)
-				list_del_init(&oxe->oxe_list);
-			else
-				atomic_inc(&oxe->oxe_ref);
-		}
+	oxe = osp_oac_xattr_find_locked(obj, name, strlen(name));
+	if (oxe != NULL) {
+		if (unlink)
+			list_del_init(&oxe->oxe_list);
+		else
+			atomic_inc(&oxe->oxe_ref);
 	}
 	spin_unlock(&obj->opo_lock);
 
@@ -272,13 +236,10 @@ static struct osp_xattr_entry *osp_oac_xattr_find(struct osp_object *obj,
 static struct osp_xattr_entry *
 osp_oac_xattr_find_or_add(struct osp_object *obj, const char *name, size_t len)
 {
-	struct osp_object_attr *ooa	= obj->opo_ooa;
 	struct osp_xattr_entry *oxe;
 	struct osp_xattr_entry *tmp	= NULL;
 	size_t			namelen = strlen(name);
 	size_t			size	= sizeof(*oxe) + namelen + 1 + len;
-
-	LASSERT(ooa != NULL);
 
 	oxe = osp_oac_xattr_find(obj, name, false);
 	if (oxe != NULL)
@@ -297,9 +258,9 @@ osp_oac_xattr_find_or_add(struct osp_object *obj, const char *name, size_t len)
 	atomic_set(&oxe->oxe_ref, 2);
 
 	spin_lock(&obj->opo_lock);
-	tmp = osp_oac_xattr_find_locked(ooa, name, namelen);
+	tmp = osp_oac_xattr_find_locked(obj, name, namelen);
 	if (tmp == NULL)
-		list_add_tail(&oxe->oxe_list, &ooa->ooa_xattr_list);
+		list_add_tail(&oxe->oxe_list, &obj->opo_xattr_list);
 	else
 		atomic_inc(&tmp->oxe_ref);
 	spin_unlock(&obj->opo_lock);
@@ -333,12 +294,9 @@ static struct osp_xattr_entry *
 osp_oac_xattr_replace(struct osp_object *obj,
 		      struct osp_xattr_entry **poxe, size_t len)
 {
-	struct osp_object_attr *ooa	= obj->opo_ooa;
 	struct osp_xattr_entry *oxe;
 	size_t			namelen = (*poxe)->oxe_namelen;
 	size_t			size	= sizeof(*oxe) + namelen + 1 + len;
-
-	LASSERT(ooa != NULL);
 
 	OBD_ALLOC(oxe, size);
 	if (unlikely(oxe == NULL))
@@ -353,11 +311,11 @@ osp_oac_xattr_replace(struct osp_object *obj,
 	atomic_set(&oxe->oxe_ref, 2);
 
 	spin_lock(&obj->opo_lock);
-	*poxe = osp_oac_xattr_find_locked(ooa, oxe->oxe_buf, namelen);
+	*poxe = osp_oac_xattr_find_locked(obj, oxe->oxe_buf, namelen);
 	LASSERT(*poxe != NULL);
 
 	list_del_init(&(*poxe)->oxe_list);
-	list_add_tail(&oxe->oxe_list, &ooa->ooa_xattr_list);
+	list_add_tail(&oxe->oxe_list, &obj->opo_xattr_list);
 	spin_unlock(&obj->opo_lock);
 
 	return oxe;
@@ -421,15 +379,9 @@ static int osp_get_attr_from_reply(const struct lu_env *env,
 
 	lustre_get_wire_obdo(NULL, lobdo, wobdo);
 	spin_lock(&obj->opo_lock);
-	if (obj->opo_ooa != NULL) {
-		la_from_obdo(&obj->opo_ooa->ooa_attr, lobdo, lobdo->o_valid);
-		if (attr != NULL)
-			*attr = obj->opo_ooa->ooa_attr;
-	} else {
-		LASSERT(attr != NULL);
-
-		la_from_obdo(attr, lobdo, lobdo->o_valid);
-	}
+	la_from_obdo(&obj->opo_attr, lobdo, lobdo->o_valid);
+	if (attr != NULL)
+		*attr = obj->opo_attr;
 	spin_unlock(&obj->opo_lock);
 
 	return 0;
@@ -459,8 +411,6 @@ static int osp_attr_get_interpterer(const struct lu_env *env,
 				    void *data, int index, int rc)
 {
 	struct lu_attr *attr = data;
-
-	LASSERT(obj->opo_ooa != NULL);
 
 	if (rc == 0) {
 		osp2lu_obj(obj)->lo_header->loh_attr |= LOHA_EXISTS;
@@ -504,16 +454,9 @@ static int osp_declare_attr_get(const struct lu_env *env, struct dt_object *dt)
 	struct osp_device	*osp	= lu2osp_dev(dt->do_lu.lo_dev);
 	int			 rc	= 0;
 
-	if (obj->opo_ooa == NULL) {
-		rc = osp_oac_init(obj);
-		if (rc != 0)
-			return rc;
-	}
-
 	mutex_lock(&osp->opd_async_requests_mutex);
 	rc = osp_insert_async_request(env, OUT_ATTR_GET, obj, 0, NULL, NULL,
-				      &obj->opo_ooa->ooa_attr,
-				      sizeof(struct obdo),
+				      &obj->opo_attr, sizeof(struct obdo),
 				      osp_attr_get_interpterer);
 	mutex_unlock(&osp->opd_async_requests_mutex);
 
@@ -552,16 +495,14 @@ int osp_attr_get(const struct lu_env *env, struct dt_object *dt,
 	if (is_ost_obj(&dt->do_lu) && obj->opo_non_exist)
 		RETURN(-ENOENT);
 
-	if (obj->opo_ooa != NULL) {
-		spin_lock(&obj->opo_lock);
-		if (obj->opo_ooa->ooa_attr.la_valid != 0 && !obj->opo_stale) {
-			*attr = obj->opo_ooa->ooa_attr;
-			spin_unlock(&obj->opo_lock);
-
-			RETURN(0);
-		}
+	spin_lock(&obj->opo_lock);
+	if (obj->opo_attr.la_valid != 0 && !obj->opo_stale) {
+		*attr = obj->opo_attr;
 		spin_unlock(&obj->opo_lock);
+
+		RETURN(0);
 	}
+	spin_unlock(&obj->opo_lock);
 
 	update = osp_update_request_create(dev);
 	if (IS_ERR(update))
@@ -604,8 +545,7 @@ int osp_attr_get(const struct lu_env *env, struct dt_object *dt,
 		GOTO(out, rc);
 
 	spin_lock(&obj->opo_lock);
-	if (obj->opo_stale)
-		obj->opo_stale = 0;
+	obj->opo_stale = 0;
 	spin_unlock(&obj->opo_lock);
 
 	GOTO(out, rc);
@@ -727,11 +667,11 @@ static int osp_attr_set(const struct lu_env *env, struct dt_object *dt,
 		CDEBUG(D_INFO, "(1) set attr "DFID": rc = %d\n",
 		       PFID(&dt->do_lu.lo_header->loh_fid), rc);
 
-		if (rc != 0 || o->opo_ooa == NULL)
+		if (rc != 0)
 			RETURN(rc);
 
 		/* Update the OSP object attributes cache. */
-		la = &o->opo_ooa->ooa_attr;
+		la = &o->opo_attr;
 		spin_lock(&o->opo_lock);
 		if (attr->la_valid & LA_UID) {
 			la->la_uid = attr->la_uid;
@@ -771,11 +711,8 @@ static int osp_xattr_get_interpterer(const struct lu_env *env,
 				     struct osp_object *obj,
 				     void *data, int index, int rc)
 {
-	struct osp_object_attr	*ooa  = obj->opo_ooa;
 	struct osp_xattr_entry	*oxe  = data;
 	struct lu_buf		*rbuf = &osp_env_info(env)->osi_lb2;
-
-	LASSERT(ooa != NULL);
 
 	if (rc == 0) {
 		size_t len = sizeof(*oxe) + oxe->oxe_namelen + 1;
@@ -845,12 +782,6 @@ static int osp_declare_xattr_get(const struct lu_env *env, struct dt_object *dt,
 	/* If only for xattr size, return directly. */
 	if (unlikely(buf->lb_len == 0))
 		return 0;
-
-	if (obj->opo_ooa == NULL) {
-		rc = osp_oac_init(obj);
-		if (rc != 0)
-			return rc;
-	}
 
 	oxe = osp_oac_xattr_find_or_add(obj, name, buf->lb_len);
 	if (oxe == NULL)
@@ -943,34 +874,31 @@ int osp_xattr_get(const struct lu_env *env, struct dt_object *dt,
 	if (unlikely(obj->opo_non_exist))
 		RETURN(-ENOENT);
 
-	/* Only cache xattr for OST object */
-	if (!osp->opd_connect_mdt) {
-		oxe = osp_oac_xattr_find(obj, name, false);
-		if (oxe != NULL) {
-			spin_lock(&obj->opo_lock);
-			if (oxe->oxe_ready) {
-				if (!oxe->oxe_exist)
-					GOTO(unlock, rc = -ENODATA);
+	oxe = osp_oac_xattr_find(obj, name, false);
+	if (oxe != NULL) {
+		spin_lock(&obj->opo_lock);
+		if (oxe->oxe_ready) {
+			if (!oxe->oxe_exist)
+				GOTO(unlock, rc = -ENODATA);
 
-				if (buf->lb_buf == NULL)
-					GOTO(unlock, rc = oxe->oxe_vallen);
-
-				if (buf->lb_len < oxe->oxe_vallen)
-					GOTO(unlock, rc = -ERANGE);
-
-				memcpy(buf->lb_buf, oxe->oxe_value,
-				       oxe->oxe_vallen);
-
+			if (buf->lb_buf == NULL)
 				GOTO(unlock, rc = oxe->oxe_vallen);
 
-unlock:
-				spin_unlock(&obj->opo_lock);
-				osp_oac_xattr_put(oxe);
+			if (buf->lb_len < oxe->oxe_vallen)
+				GOTO(unlock, rc = -ERANGE);
 
-				return rc;
-			}
+			memcpy(buf->lb_buf, oxe->oxe_value,
+			       oxe->oxe_vallen);
+
+			GOTO(unlock, rc = oxe->oxe_vallen);
+
+unlock:
 			spin_unlock(&obj->opo_lock);
+			osp_oac_xattr_put(oxe);
+
+			return rc;
 		}
+		spin_unlock(&obj->opo_lock);
 	}
 	update = osp_update_request_create(dev);
 	if (IS_ERR(update))
@@ -990,9 +918,6 @@ unlock:
 			dt->do_lu.lo_header->loh_attr &= ~LOHA_EXISTS;
 			obj->opo_non_exist = 1;
 		}
-
-		if (obj->opo_ooa == NULL)
-			GOTO(out, rc);
 
 		if (oxe == NULL)
 			oxe = osp_oac_xattr_find_or_add(obj, name, buf->lb_len);
@@ -1039,8 +964,6 @@ unlock:
 		GOTO(out, rc = -ERANGE);
 
 	memcpy(buf->lb_buf, rbuf->lb_buf, rbuf->lb_len);
-	if (obj->opo_ooa == NULL || osp->opd_connect_mdt)
-		GOTO(out, rc);
 
 	if (oxe == NULL) {
 		oxe = osp_oac_xattr_find_or_add(obj, name, rbuf->lb_len);
@@ -1153,7 +1076,6 @@ int osp_xattr_set(const struct lu_env *env, struct dt_object *dt,
 		  struct thandle *th)
 {
 	struct osp_object	*o = dt2osp_obj(dt);
-	struct osp_device	*osp = lu2osp_dev(dt->do_lu.lo_dev);
 	struct osp_update_request *update;
 	struct osp_xattr_entry	*oxe;
 	int			rc;
@@ -1167,7 +1089,7 @@ int osp_xattr_set(const struct lu_env *env, struct dt_object *dt,
 
 	rc = osp_update_rpc_pack(env, xattr_set, update, OUT_XATTR_SET,
 				 lu_object_fid(&dt->do_lu), buf, name, fl);
-	if (rc != 0 || o->opo_ooa == NULL || osp->opd_connect_mdt)
+	if (rc != 0)
 		RETURN(rc);
 
 	/* Do not cache linkEA that may be self-adjusted by peers
@@ -1279,7 +1201,7 @@ int osp_xattr_del(const struct lu_env *env, struct dt_object *dt,
 
 	rc = osp_update_rpc_pack(env, xattr_del, update, OUT_XATTR_DEL,
 				 fid, name);
-	if (rc != 0 || o->opo_ooa == NULL)
+	if (rc != 0)
 		return rc;
 
 	oxe = osp_oac_xattr_find(o, name, true);
@@ -1288,6 +1210,37 @@ int osp_xattr_del(const struct lu_env *env, struct dt_object *dt,
 		osp_oac_xattr_put(oxe);
 
 	return 0;
+}
+
+/**
+ * Implement OSP layer dt_object_operations::do_invalidate() interface.
+ *
+ * Invalidate attributes cached on the specified MDT/OST object.
+ *
+ * \param[in] env	pointer to the thread context
+ * \param[in] dt	pointer to the OSP layer dt_object
+ *
+ * \retval		0 for success
+ * \retval		negative error number on failure
+ */
+int osp_invalidate(const struct lu_env *env, struct dt_object *dt)
+{
+	struct osp_object *obj = dt2osp_obj(dt);
+	struct osp_xattr_entry *oxe;
+	struct osp_xattr_entry *tmp;
+	ENTRY;
+
+	spin_lock(&obj->opo_lock);
+	list_for_each_entry_safe(oxe, tmp, &obj->opo_xattr_list, oxe_list) {
+		oxe->oxe_ready = 0;
+		list_del_init(&oxe->oxe_list);
+		osp_oac_xattr_put(oxe);
+	}
+	obj->opo_attr.la_valid = 0;
+	obj->opo_stale = 1;
+	spin_unlock(&obj->opo_lock);
+
+	RETURN(0);
 }
 
 /**
@@ -2134,6 +2087,7 @@ static int osp_object_init(const struct lu_env *env, struct lu_object *o,
 
 	spin_lock_init(&po->opo_lock);
 	o->lo_header->loh_attr |= LOHA_REMOTE;
+	INIT_LIST_HEAD(&po->opo_xattr_list);
 
 	if (is_ost_obj(o)) {
 		po->opo_obj.do_ops = &osp_obj_ops;
@@ -2142,6 +2096,7 @@ static int osp_object_init(const struct lu_env *env, struct lu_object *o,
 
 		po->opo_obj.do_ops = &osp_md_obj_ops;
 		po->opo_obj.do_body_ops = &osp_md_body_ops;
+
 		if (conf != NULL && conf->loc_flags & LOC_F_NEW) {
 			po->opo_non_exist = 1;
 		} else {
@@ -2175,26 +2130,20 @@ static void osp_object_free(const struct lu_env *env, struct lu_object *o)
 {
 	struct osp_object	*obj = lu2osp_obj(o);
 	struct lu_object_header	*h = o->lo_header;
+	struct osp_xattr_entry *oxe;
+	struct osp_xattr_entry *tmp;
+	int			count;
 
 	dt_object_fini(&obj->opo_obj);
 	lu_object_header_fini(h);
-	if (obj->opo_ooa != NULL) {
-		struct osp_xattr_entry *oxe;
-		struct osp_xattr_entry *tmp;
-		int			count;
+	list_for_each_entry_safe(oxe, tmp, &obj->opo_xattr_list, oxe_list) {
+		list_del(&oxe->oxe_list);
+		count = atomic_read(&oxe->oxe_ref);
+		LASSERTF(count == 1,
+			 "Still has %d users on the xattr entry %.*s\n",
+			 count-1, (int)oxe->oxe_namelen, oxe->oxe_buf);
 
-		list_for_each_entry_safe(oxe, tmp,
-					 &obj->opo_ooa->ooa_xattr_list,
-					 oxe_list) {
-			list_del(&oxe->oxe_list);
-			count = atomic_read(&oxe->oxe_ref);
-			LASSERTF(count == 1,
-				 "Still has %d users on the xattr entry %.*s\n",
-				 count-1, (int)oxe->oxe_namelen, oxe->oxe_buf);
-
-			OBD_FREE(oxe, oxe->oxe_buflen);
-		}
-		OBD_FREE_PTR(obj->opo_ooa);
+		OBD_FREE(oxe, oxe->oxe_buflen);
 	}
 	OBD_SLAB_FREE_PTR(obj, osp_object_kmem);
 }
