@@ -159,6 +159,7 @@ rpms: srpm
 	$(MAKE) $(AM_MAKEFLAGS) \
 		rpmbuilddir="$$rpmbuilddir" rpm-local || exit 1; \
 	$(RPMBUILD) \
+		$${FIND_REQUIRES:+--define "__find_requires $$FIND_REQUIRES"} \
 		--define "_tmppath $$rpmbuilddir/TMP" \
 		--define "_topdir $$rpmbuilddir" \
 		@RPMBUILD_BINARY_ARGS@ \
