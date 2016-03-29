@@ -634,6 +634,31 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_MSG_RESULT([no])
 	])
 ])
+
+# 4.3 removed ib_alloc_fast_reg_mr()
+AS_IF([test $ENABLEO2IB != "no"], [
+	AC_MSG_CHECKING([if 'ib_alloc_fast_reg_mr' exists])
+	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		ib_alloc_fast_reg_mr(NULL, 0);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_IB_ALLOC_FAST_REG_MR, 1,
+			[ib_alloc_fast_reg_mr is defined])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
 ]) # LN_CONFIG_O2IB
 
 #
