@@ -68,7 +68,7 @@
  */
 static void ll_cl_fini(struct ll_cl_context *lcc)
 {
-        struct lu_env  *env  = lcc->lcc_env;
+        const struct lu_env  *env  = lcc->lcc_env;
         struct cl_io   *io   = lcc->lcc_io;
         struct cl_page *page = lcc->lcc_page;
 
@@ -80,13 +80,13 @@ static void ll_cl_fini(struct ll_cl_context *lcc)
                 cl_page_put(env, page);
         }
 
-        if (io && lcc->lcc_created) {
+        if (io) {
                 cl_io_end(env, io);
                 cl_io_unlock(env, io);
                 cl_io_iter_fini(env, io);
                 cl_io_fini(env, io);
         }
-        cl_env_put(env, &lcc->lcc_refcheck);
+        cl_env_put((struct lu_env *)env, &lcc->lcc_refcheck);
 }
 
 /**
@@ -94,7 +94,7 @@ static void ll_cl_fini(struct ll_cl_context *lcc)
  * point.
  */
 static struct ll_cl_context *ll_cl_init(struct file *file,
-                                        struct page *vmpage, int create)
+                                        struct page *vmpage)
 {
         struct ll_cl_context *lcc;
         struct lu_env    *env;
@@ -120,7 +120,7 @@ static struct ll_cl_context *ll_cl_init(struct file *file,
 
         cio = ccc_env_io(env);
         io = cio->cui_cl.cis_io;
-        if (io == NULL && create) {
+        if (io == NULL) {
 		struct inode *inode = vmpage->mapping->host;
 		loff_t pos;
 
@@ -171,7 +171,6 @@ static struct ll_cl_context *ll_cl_init(struct file *file,
                         }
                 } else
                         result = io->ci_result;
-                lcc->lcc_created = 1;
         }
 
         lcc->lcc_io = io;
@@ -203,21 +202,48 @@ static struct ll_cl_context *ll_cl_init(struct file *file,
         return lcc;
 }
 
-static struct ll_cl_context *ll_cl_get(void)
+struct ll_cl_context *ll_cl_find(struct file *file)
 {
-        struct ll_cl_context *lcc;
-        struct lu_env *env;
-        int refcheck;
+	struct ll_file_data *fd = LUSTRE_FPRIVATE(file);
+	struct ll_cl_context *lcc;
+	struct ll_cl_context *found = NULL;
 
-        env = cl_env_get(&refcheck);
-        LASSERT(!IS_ERR(env));
-        lcc = &vvp_env_info(env)->vti_io_ctx;
-        LASSERT(env == lcc->lcc_env);
-        LASSERT(current == lcc->lcc_cookie);
-        cl_env_put(env, &refcheck);
+	read_lock(&fd->fd_lock);
+	list_for_each_entry(lcc, &fd->fd_lccs, lcc_list) {
+		if (lcc->lcc_cookie == current) {
+			found = lcc;
+			break;
+		}
+	}
+	read_unlock(&fd->fd_lock);
 
-        /* env has got in ll_cl_init, so it is still usable. */
-        return lcc;
+	return found;
+}
+
+void ll_cl_add(struct file *file, const struct lu_env *env, struct cl_io *io)
+{
+	struct ll_file_data *fd = LUSTRE_FPRIVATE(file);
+	struct ll_cl_context *lcc = &vvp_env_info(env)->vti_io_ctx;
+
+	memset(lcc, 0, sizeof(*lcc));
+	INIT_LIST_HEAD(&lcc->lcc_list);
+	lcc->lcc_cookie = current;
+	lcc->lcc_env = env;
+	lcc->lcc_io = io;
+
+	write_lock(&fd->fd_lock);
+	list_add(&lcc->lcc_list, &fd->fd_lccs);
+	write_unlock(&fd->fd_lock);
+}
+
+void ll_cl_remove(struct file *file, const struct lu_env *env)
+{
+	struct ll_file_data *fd = LUSTRE_FPRIVATE(file);
+	struct ll_cl_context *lcc = &vvp_env_info(env)->vti_io_ctx;
+
+	write_lock(&fd->fd_lock);
+	list_del_init(&lcc->lcc_list);
+	write_unlock(&fd->fd_lock);
 }
 
 /**
@@ -227,36 +253,65 @@ static struct ll_cl_context *ll_cl_get(void)
 int ll_prepare_write(struct file *file, struct page *vmpage, unsigned from,
 		     unsigned to)
 {
+	struct cl_object *clob = ll_i2info(file->f_dentry->d_inode)->lli_clob;
 	struct ll_cl_context *lcc;
+	const struct lu_env *env;
+	struct cl_io *io;
+	struct cl_page *page;
+	bool new_lcc = false;
 	int result;
 	ENTRY;
 
-	lcc = ll_cl_init(file, vmpage, 1);
-	if (!IS_ERR(lcc)) {
-		struct lu_env  *env = lcc->lcc_env;
-		struct cl_io   *io  = lcc->lcc_io;
-		struct cl_page *page = lcc->lcc_page;
-
-		cl_page_assume(env, io, page);
-
-		result = cl_io_prepare_write(env, io, page, from, to);
-		if (result == 0) {
-			/*
-			 * Add a reference, so that page is not evicted from
-			 * the cache until ->commit_write() is called.
-			 */
-			cl_page_get(page);
-			lu_ref_add(&page->cp_reference, "prepare_write",
-				   current);
-		} else {
-			cl_page_unassume(env, io, page);
-			ll_cl_fini(lcc);
-		}
-		/* returning 0 in prepare assumes commit must be called
-		 * afterwards */
+	/* it is called from ll_write_begin */
+	lcc = ll_cl_find(file);
+	if (lcc != NULL) {
+		env = lcc->lcc_env;
+		io = lcc->lcc_io;
+		page = cl_page_find(env, clob, vmpage->index, vmpage,
+				    CPT_CACHEABLE);
 	} else {
-		result = PTR_ERR(lcc);
+		/* it is called directly from VFS */
+		lcc = ll_cl_init(file, vmpage);
+		if (IS_ERR(lcc))
+			RETURN(PTR_ERR(lcc));
+
+		new_lcc = true;
+		env = lcc->lcc_env;
+		io = lcc->lcc_io;
+		page = lcc->lcc_page;
 	}
+	if (IS_ERR(page))
+		RETURN(PTR_ERR(page));
+
+	if (new_lcc) {
+		struct ll_file_data *fd = LUSTRE_FPRIVATE(file);
+
+		write_lock(&fd->fd_lock);
+		list_add(&lcc->lcc_list, &fd->fd_lccs);
+		write_unlock(&fd->fd_lock);
+	} else {
+		lcc->lcc_page = page;
+		lu_ref_add(&page->cp_reference, "cl_io", io);
+	}
+
+	cl_page_assume(env, io, page);
+
+	result = cl_io_prepare_write(env, io, page, from, to);
+	if (result == 0) {
+		/*
+		 * Add a reference, so that page is not evicted from
+		 * the cache until ->commit_write() is called.
+		 */
+		cl_page_get(page);
+		lu_ref_add(&page->cp_reference, "prepare_write",
+			   current);
+	} else {
+		cl_page_unassume(env, io, page);
+		if (new_lcc)
+			ll_cl_fini(lcc);
+	}
+	/* returning 0 in prepare assumes commit must be called
+	 * afterwards */
 	RETURN(result);
 }
 
@@ -264,13 +319,16 @@ int ll_commit_write(struct file *file, struct page *vmpage, unsigned from,
 		    unsigned to)
 {
 	struct ll_cl_context *lcc;
-	struct lu_env    *env;
+	const struct lu_env    *env;
 	struct cl_io     *io;
 	struct cl_page   *page;
 	int result = 0;
 	ENTRY;
 
-	lcc  = ll_cl_get();
+	lcc  = ll_cl_find(file);
+	if (lcc == NULL)
+		RETURN(-EIO);
+
 	env  = lcc->lcc_env;
 	page = lcc->lcc_page;
 	io   = lcc->lcc_io;
@@ -287,7 +345,16 @@ int ll_commit_write(struct file *file, struct page *vmpage, unsigned from,
 	 */
 	lu_ref_del(&page->cp_reference, "prepare_write", current);
 	cl_page_put(env, page);
-	ll_cl_fini(lcc);
+
+	/* if it's called from VFS, lcc is created in ll_prepare_write() */
+	if (lcc->lcc_refcheck != 0) {
+		ll_cl_remove(file, env);
+		ll_cl_fini(lcc);
+	} else {
+		lcc->lcc_page = NULL;
+		lu_ref_del(&page->cp_reference, "cl_io", io);
+		cl_page_put(env, page);
+	}
 	RETURN(result);
 }
 
@@ -1300,30 +1367,40 @@ int ll_writepages(struct address_space *mapping, struct writeback_control *wbc)
 
 int ll_readpage(struct file *file, struct page *vmpage)
 {
-        struct ll_cl_context *lcc;
-        int result;
-        ENTRY;
+	struct cl_object *clob = ll_i2info(file->f_dentry->d_inode)->lli_clob;
+	struct ll_cl_context *lcc;
+	const struct lu_env *env;
+	struct cl_io *io;
+	struct cl_page *page;
+	int result;
+	ENTRY;
 
-        lcc = ll_cl_init(file, vmpage, 0);
-        if (!IS_ERR(lcc)) {
-                struct lu_env  *env  = lcc->lcc_env;
-                struct cl_io   *io   = lcc->lcc_io;
-                struct cl_page *page = lcc->lcc_page;
+	lcc = ll_cl_find(file);
+	if (lcc == NULL) {
+		unlock_page(vmpage);
+		RETURN(-EIO);
+	}
 
-                LASSERT(page->cp_type == CPT_CACHEABLE);
-                if (likely(!PageUptodate(vmpage))) {
-                        cl_page_assume(env, io, page);
-                        result = cl_io_read_page(env, io, page);
-                } else {
-                        /* Page from a non-object file. */
-                        unlock_page(vmpage);
-                        result = 0;
-                }
-                ll_cl_fini(lcc);
-        } else {
-                unlock_page(vmpage);
-                result = PTR_ERR(lcc);
-        }
-        RETURN(result);
+	env = lcc->lcc_env;
+	io = lcc->lcc_io;
+	LASSERT(io != NULL);
+	LASSERT(io->ci_state == CIS_IO_GOING);
+	page = cl_page_find(env, clob, vmpage->index, vmpage, CPT_CACHEABLE);
+	if (!IS_ERR(page)) {
+		LASSERT(page->cp_type == CPT_CACHEABLE);
+		if (likely(!PageUptodate(vmpage))) {
+			cl_page_assume(env, io, page);
+			result = cl_io_read_page(env, io, page);
+		} else {
+			/* Page from a non-object file. */
+			unlock_page(vmpage);
+			result = 0;
+		}
+		cl_page_put(env, page);
+	} else {
+		unlock_page(vmpage);
+		result = PTR_ERR(lcc);
+	}
+	RETURN(result);
 }
 

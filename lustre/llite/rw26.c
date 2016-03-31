@@ -507,11 +507,16 @@ static int ll_write_begin(struct file *file, struct address_space *mapping,
                          loff_t pos, unsigned len, unsigned flags,
                          struct page **pagep, void **fsdata)
 {
+	struct ll_cl_context *lcc;
         pgoff_t index = pos >> PAGE_CACHE_SHIFT;
         struct page *page;
         int rc;
         unsigned from = pos & (PAGE_CACHE_SIZE - 1);
         ENTRY;
+
+	lcc = ll_cl_find(file);
+	if (lcc == NULL)
+		RETURN(-EIO);
 
         page = grab_cache_page_write_begin(mapping, index, flags);
         if (!page)
