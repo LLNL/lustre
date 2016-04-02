@@ -554,6 +554,31 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_MSG_RESULT([no])
 	])
 ])
+
+# 4.4 added network namespace parameter for rdma_create_id()
+AS_IF([test $ENABLEO2IB != "no"], [
+	AC_MSG_CHECKING([if 'rdma_create_id' wants five args])
+	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/rdma_cm.h>
+	],[
+		rdma_create_id(NULL, NULL, NULL, 0, 0);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_RDMA_CREATE_ID_5ARG, 1,
+			[rdma_create_id wants 5 args])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
 ]) # LN_CONFIG_O2IB
 
 #
