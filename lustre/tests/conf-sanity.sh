@@ -6388,6 +6388,35 @@ test_91() {
 }
 run_test 91 "evict-by-nid support"
 
+test_93() {
+	[ $MDSCOUNT -lt 3 ] && skip "needs >= 3 MDTs" && return
+
+	reformat
+	#start mgs or mgs/mdt0
+	if ! combined_mgs_mds ; then
+		start_mgs
+		start_mdt 1
+	else
+		start_mdt 1
+	fi
+
+	start_ost || error "OST0 start fail"
+
+	#define OBD_FAIL_MGS_WRITE_TARGET_DELAY	 0x90e
+	do_facet mgs "$LCTL set_param fail_val = 10 fail_loc=0x8000090e"
+	for num in $(seq 2 $MDSCOUNT); do
+		start_mdt $num &
+	done
+
+	mount_client $MOUNT || error "mount client fails"
+	wait_osc_import_state mds ost FULL
+	wait_osc_import_state client ost FULL
+	check_mount || error "check_mount failed"
+
+	cleanup || error "cleanup failed with $?"
+}
+run_test 93 "register mulitple MDT at the same time"
+
 test_101() {
 	local createmany_oid
 	local dev=$FSNAME-OST0000-osc-MDT0000
