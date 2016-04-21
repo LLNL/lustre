@@ -113,7 +113,7 @@ static int osp_syn_in_flight_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%u\n", osp->opd_syn_rpc_in_flight);
+	return seq_printf(m, "%u\n", atomic_read(&osp->opd_syn_rpc_in_flight));
 }
 LPROC_SEQ_FOPS_RO(osp_syn_in_flight);
 
@@ -133,7 +133,8 @@ static int osp_syn_in_prog_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%u\n", osp->opd_syn_rpc_in_progress);
+	return seq_printf(m, "%u\n",
+			  atomic_read(&osp->opd_syn_rpc_in_progress));
 }
 LPROC_SEQ_FOPS_RO(osp_syn_in_prog);
 
@@ -153,7 +154,7 @@ static int osp_syn_changes_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%lu\n", osp->opd_syn_changes);
+	return seq_printf(m, "%u\n", atomic_read(&osp->opd_syn_changes));
 }
 
 /**
@@ -620,8 +621,9 @@ static int osp_destroys_in_flight_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%lu\n",
-			  osp->opd_syn_rpc_in_progress + osp->opd_syn_changes);
+	return seq_printf(m, "%u\n",
+			  atomic_read(&osp->opd_syn_rpc_in_progress) +
+			  atomic_read(&osp->opd_syn_changes));
 }
 LPROC_SEQ_FOPS_RO(osp_destroys_in_flight);
 
