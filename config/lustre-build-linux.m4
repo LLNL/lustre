@@ -75,18 +75,6 @@ AC_SUBST(LINUXRELEASE)
 AC_DEFUN([LB_LINUX_RELEASE], [
 LB_LINUX_UTSRELEASE
 
-# ------------ RELEASE --------------------------------
-AC_MSG_CHECKING([for Lustre release])
-AC_ARG_WITH([release],
-	AC_HELP_STRING([--with-release=string],
-		[set the release string (default=$kvers_YYYYMMDDhhmm)]),
-	[RELEASE=$withval], [
-	RELEASE=""
-	AS_IF([test "$DOWNSTREAM_RELEASE"], [RELEASE="${DOWNSTREAM_RELEASE}_"])
-	RELEASE="$RELEASE$(echo $LINUXRELEASE | tr '-' '_')_$BUILDID"])
-AC_MSG_RESULT($RELEASE)
-AC_SUBST(RELEASE)
-
 # check if the kernel is one from RHEL or SUSE
 AC_CACHE_CHECK([for RedHat kernel release number], lb_cv_rhel_kernel_version, [
 lb_cv_rhel_kernel_version=""
