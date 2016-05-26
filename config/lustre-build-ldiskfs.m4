@@ -7,6 +7,7 @@ SER=
 AS_IF([test x$RHEL_KERNEL = xyes], [
 	case $RHEL_RELEASE_NO in
 	70)	SER="3.10-rhel7.series"	;;
+	68)	SER="2.6-rhel6.8.series"	;;
 	67)	SER="2.6-rhel6.7.series"	;;
 	66)	SER="2.6-rhel6.6.series"	;;
 	65)	SER="2.6-rhel6.5.series"	;;
