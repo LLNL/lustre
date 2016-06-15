@@ -451,10 +451,7 @@ int osp_remote_sync(const struct lu_env *env, struct osp_device *osp,
 	if (rc != 0)
 		RETURN(rc);
 
-	/* This will only be called with read-only update, and these updates
-	 * might be used to retrieve update log during recovery process, so
-	 * it will be allowed to send during recovery process */
-	req->rq_allow_replay = 1;
+	osp_set_req_replay(osp, req);
 	req->rq_allow_intr = 1;
 
 	/* Note: some dt index api might return non-zero result here, like
@@ -1091,7 +1088,6 @@ static int osp_send_update_req(const struct lu_env *env,
 {
 	struct osp_update_args	*args;
 	struct ptlrpc_request	*req;
-	struct lu_device *top_device;
 	struct osp_thandle	*oth = our->our_th;
 	int	rc = 0;
 	ENTRY;
@@ -1145,9 +1141,7 @@ static int osp_send_update_req(const struct lu_env *env,
 		 * status, in case the other target is being recoveried
 		 * at the same time, and if we wait here for the import
 		 * to be recoveryed, it might cause deadlock */
-		top_device = osp->opd_dt_dev.dd_lu_dev.ld_site->ls_top_dev;
-		if (top_device->ld_obd->obd_recovering)
-			req->rq_allow_replay = 1;
+		osp_set_req_replay(osp, req);
 
 		if (osp->opd_connect_mdt)
 			osp_get_rpc_lock(osp);
