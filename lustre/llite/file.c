@@ -1905,7 +1905,7 @@ static int ll_do_fiemap(struct inode *inode, struct fiemap *fiemap,
         rc = obd_get_info(NULL, exp, sizeof(fmkey), &fmkey, &vallen,
                           fiemap, lsm);
         if (rc)
-                CERROR("obd_get_info failed: rc = %d\n", rc);
+		CDEBUG(D_IOCTL, "obd_get_info failed: rc = %d\n", rc);
 
 out:
 	ccc_inode_lsm_put(inode, lsm);
