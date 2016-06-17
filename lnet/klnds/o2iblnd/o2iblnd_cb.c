@@ -2520,12 +2520,14 @@ kiblnd_passive_connect(struct rdma_cm_id *cmid, void *priv, int priv_nob)
         return 0;
 
  failed:
-        if (ni != NULL)
-                lnet_ni_decref(ni);
+	if (ni != NULL) {
+		rej.ibr_cp.ibcp_queue_depth =
+			kiblnd_msg_queue_size(version, ni);
+		rej.ibr_cp.ibcp_max_frags   = kiblnd_rdma_frags(version, ni);
+		lnet_ni_decref(ni);
+	}
 
 	rej.ibr_version = version;
-	rej.ibr_cp.ibcp_queue_depth = kiblnd_msg_queue_size(version, ni);
-	rej.ibr_cp.ibcp_max_frags   = kiblnd_rdma_frags(version, ni);
 	kiblnd_reject(cmid, &rej);
 
 	return -ECONNREFUSED;
