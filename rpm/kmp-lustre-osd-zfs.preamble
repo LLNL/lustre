@@ -2,3 +2,4 @@ Requires:       zfs-kmod
 Requires:       %{name}-osd-zfs-mount = %{version}
 Provides:       %{name}-osd = %{version}
 Obsoletes:      %{name}-osd-zfs < %{version}
+BuildRequires:  libzfs2-devel kmod-zfs-devel kmod-spl-devel
