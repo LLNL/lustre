@@ -3,12 +3,12 @@
 # Declare rpmbuild --with/--without parameters
 %bcond_without servers
 %bcond_without ldiskfs
-%bcond_with zfs
+%bcond_without zfs
 %bcond_without lustre_tests
 %bcond_without lustre_utils
 %bcond_without lustre_iokit
 %bcond_without lustre_modules
-%bcond_with lnet_dlc
+%bcond_without lnet_dlc
 %bcond_without manpages
 %bcond_without shared
 %bcond_without static
@@ -21,12 +21,11 @@
 %endif
 
 %{!?version: %global version @VERSION@}
-%{!?kver:    %global kver    %(uname -r)}
-%{!?kdir:    %global kdir    /lib/modules/%{kver}/source}
-%{!?kobjdir: %global kobjdir %(if [ "%{kdir}" = "/lib/modules/%{kver}/source" ]; then echo "/lib/modules/%{kver}/build"; else echo "%{kdir}"; fi)}
 
-# as an alternative to this implementation we could simply "make -C $kdir kernelversion"
-%{!?kversion: %global kversion %(files="include/generated/utsrelease.h include/linux/utsrelease.h include/linux/version.h"; for f in $files; do if test -r %{kobjdir}/$f && grep UTS_RELEASE %{kobjdir}/$f >/dev/null; then sed -ne '/^#define UTS_RELEASE/s/.*"\\(.*\\)"$/\\1/p' %{kobjdir}/$f; break; fi; done)}
+%define klnk %{_usrsrc}/kernels/*/include/config
+%{!?kversion: %global kversion %((echo ""; %{__cat} %{klnk}/kernel.release 2>/dev/null) | tail -1)}
+%{!?kdir: %global kdir %{_usrsrc}/kernels/%{kversion}}
+%{!?kobjdir: %global kobjdir %kdir}
 
 # We set this because kernel_module_package has its own method of identifying
 # which kernel to build against, and it is unlikely that its decision will
@@ -111,6 +110,10 @@ Obsoletes: lustre-lite, lustre-lite-utils, lustre-ldap nfs-utils-lustre
 Provides: lustre-lite = %{version}, lustre-lite-utils = %{version}
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
 BuildRequires: libtool
+%if %{with lnet_dlc}
+Requires: libyaml
+BuildRequires: libyaml-devel
+%endif
 %if %{with servers}
 Requires: lustre-osd
 Requires: lustre-osd-mount
@@ -121,6 +124,7 @@ Provides: lustre-client = %{version}-%{release}
 #suse don't support selinux
 BuildRequires: libselinux-devel
 Requires: libselinux
+Buildrequires: kernel-debuginfo
 %endif
 %if %{with lustre_modules}
 %if %{_vendor}=="redhat"
@@ -295,7 +299,9 @@ fi
 	%{!?with_lustre_iokit:--disable-iokit} \
 	%{!?with_ldiskfs:--disable-ldiskfs} \
 	%{!?with_servers:--disable-server} \
+	%{?with_zfs:--with-zfs} \
 	%{!?with_zfs:--without-zfs} \
+	%{?with_lnet_dlc:--enable-dlc} \
 	%{!?with_lnet_dlc:--disable-dlc} \
 	%{!?with_manpages:--disable-manpages} \
 	--with-linux=%{kdir} \
