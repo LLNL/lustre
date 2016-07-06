@@ -44,6 +44,10 @@
 #include <lnet/socklnd.h>
 #include <lnet/lnet-sysctl.h>
 
+#ifndef NETIF_F_CSUM_MASK
+# define NETIF_F_CSUM_MASK NETIF_F_ALL_CSUM
+#endif
+
 #define SOCKNAL_PEER_HASH_SIZE  101             /* # peer lists */
 #define SOCKNAL_RESCHED         100             /* # scheduler loops before reschedule */
 #define SOCKNAL_INSANITY_RECONN 5000            /* connd is trying on reconn infinitely */
