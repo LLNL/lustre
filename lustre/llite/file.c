@@ -1070,9 +1070,6 @@ restart:
 		switch (vio->vui_io_subtype) {
 		case IO_NORMAL:
 			vio->vui_iter = args->u.normal.via_iter;
-#ifndef HAVE_FILE_OPERATIONS_READ_WRITE_ITER
-			vio->vui_tot_nrsegs = vio->vui_iter->nr_segs;
-#endif /* !HAVE_FILE_OPERATIONS_READ_WRITE_ITER */
 			vio->vui_iocb = args->u.normal.via_iocb;
 			/* Direct IO reads must also take range lock,
 			 * or multiple reads will try to work on the same pages
@@ -1118,12 +1115,8 @@ restart:
 		*ppos = io->u.ci_wr.wr.crw_pos; /* for splice */
 
 		/* prepare IO restart */
-		if (count > 0 && args->via_io_subtype == IO_NORMAL) {
+		if (count > 0 && args->via_io_subtype == IO_NORMAL)
 			args->u.normal.via_iter = vio->vui_iter;
-#ifndef HAVE_FILE_OPERATIONS_READ_WRITE_ITER
-			args->u.normal.via_iter->nr_segs = vio->vui_tot_nrsegs;
-#endif /* !HAVE_FILE_OPERATIONS_READ_WRITE_ITER */
-		}
 	}
 	GOTO(out, rc);
 out:
@@ -1246,54 +1239,22 @@ static int ll_file_get_iov_count(const struct iovec *iov,
 static ssize_t ll_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 				unsigned long nr_segs, loff_t pos)
 {
-	struct iovec *local_iov;
-	struct iov_iter	*to;
+	struct iov_iter	to;
 	size_t iov_count;
 	ssize_t result;
-	struct lu_env *env = NULL;
-	__u16 refcheck;
 	ENTRY;
 
 	result = ll_file_get_iov_count(iov, &nr_segs, &iov_count);
 	if (result)
 		RETURN(result);
 
-	if (nr_segs == 1) {
-
-		env = cl_env_get(&refcheck);
-		if (IS_ERR(env))
-			RETURN(PTR_ERR(env));
-
-		local_iov = &ll_env_info(env)->lti_local_iov;
-		*local_iov = *iov;
-
-	} else {
-		OBD_ALLOC(local_iov, sizeof(*iov) * nr_segs);
-		if (local_iov == NULL)
-			RETURN(-ENOMEM);
-
-		memcpy(local_iov, iov, sizeof(*iov) * nr_segs);
-	}
-
-	OBD_ALLOC_PTR(to);
-	if (to == NULL) {
-		result = -ENOMEM;
-		goto out;
-	}
 # ifdef HAVE_IOV_ITER_INIT_DIRECTION
-	iov_iter_init(to, READ, local_iov, nr_segs, iov_count);
+	iov_iter_init(&to, READ, iov, nr_segs, iov_count);
 # else /* !HAVE_IOV_ITER_INIT_DIRECTION */
-	iov_iter_init(to, local_iov, nr_segs, iov_count, 0);
+	iov_iter_init(&to, iov, nr_segs, iov_count, 0);
 # endif /* HAVE_IOV_ITER_INIT_DIRECTION */
 
-	result = ll_file_read_iter(iocb, to);
-
-	OBD_FREE_PTR(to);
-out:
-	if (nr_segs == 1)
-		cl_env_put(env, &refcheck);
-	else
-		OBD_FREE(local_iov, sizeof(*iov) * nr_segs);
+	result = ll_file_read_iter(iocb, &to);
 
 	RETURN(result);
 }
@@ -1335,52 +1296,22 @@ static ssize_t ll_file_read(struct file *file, char __user *buf, size_t count,
 static ssize_t ll_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 				 unsigned long nr_segs, loff_t pos)
 {
-	struct iovec *local_iov;
-	struct iov_iter *from;
+	struct iov_iter from;
 	size_t iov_count;
 	ssize_t result;
-	struct lu_env *env = NULL;
-	__u16 refcheck;
 	ENTRY;
 
 	result = ll_file_get_iov_count(iov, &nr_segs, &iov_count);
 	if (result)
 		RETURN(result);
 
-	if (nr_segs == 1) {
-		env = cl_env_get(&refcheck);
-		if (IS_ERR(env))
-			RETURN(PTR_ERR(env));
-
-		local_iov = &ll_env_info(env)->lti_local_iov;
-		*local_iov = *iov;
-	} else {
-		OBD_ALLOC(local_iov, sizeof(*iov) * nr_segs);
-		if (local_iov == NULL)
-			RETURN(-ENOMEM);
-
-		memcpy(local_iov, iov, sizeof(*iov) * nr_segs);
-	}
-
-	OBD_ALLOC_PTR(from);
-	if (from == NULL) {
-		result = -ENOMEM;
-		goto out;
-	}
 # ifdef HAVE_IOV_ITER_INIT_DIRECTION
-	iov_iter_init(from, WRITE, local_iov, nr_segs, iov_count);
+	iov_iter_init(&from, WRITE, iov, nr_segs, iov_count);
 # else /* !HAVE_IOV_ITER_INIT_DIRECTION */
-	iov_iter_init(from, local_iov, nr_segs, iov_count, 0);
+	iov_iter_init(&from, iov, nr_segs, iov_count, 0);
 # endif /* HAVE_IOV_ITER_INIT_DIRECTION */
 
-	result = ll_file_write_iter(iocb, from);
-
-	OBD_FREE_PTR(from);
-out:
-	if (nr_segs == 1)
-		cl_env_put(env, &refcheck);
-	else
-		OBD_FREE(local_iov, sizeof(*iov) * nr_segs);
+	result = ll_file_write_iter(iocb, &from);
 
 	RETURN(result);
 }
