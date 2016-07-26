@@ -1763,7 +1763,6 @@ static int lfs_getstripe_internal(int argc, char **argv,
 	};
 	int c, rc;
 
-	param->fp_max_depth = 1;
 	while ((c = getopt_long(argc, argv, "cdDghiLMoO:pqrRsSv",
 				long_opts, NULL)) != -1) {
 		switch (c) {
@@ -1924,6 +1923,8 @@ static int lfs_tgts(int argc, char **argv)
 static int lfs_getstripe(int argc, char **argv)
 {
 	struct find_param param = { 0 };
+
+	param.fp_max_depth = 1;
 	return lfs_getstripe_internal(argc, argv, &param);
 }
 
