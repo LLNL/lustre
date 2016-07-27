@@ -11,8 +11,6 @@ ONLY=${ONLY:-"$*"}
 ALWAYS_EXCEPT="                2     5     6    $SANITY_SEC_EXCEPT"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
-[ "$ALWAYS_EXCEPT$EXCEPT" ] && echo "Skipping tests: $ALWAYS_EXCEPT $EXCEPT"
-
 SRCDIR=$(dirname $0)
 export PATH=$PWD/$SRCDIR:$SRCDIR:$PWD/$SRCDIR/../utils:$PATH:/sbin
 export NAME=${NAME:-local}
@@ -22,6 +20,14 @@ LUSTRE=${LUSTRE:-$(dirname $0)/..}
 init_test_env $@
 . ${CONFIG:=$LUSTRE/tests/cfg/$NAME.sh}
 init_logging
+
+NODEMAP_TESTS=$(seq 7 24)
+
+if ! check_versions; then
+        echo "It is NOT necessary to test nodemap under interoperation mode"
+        EXCEPT="$EXCEPT $NODEMAP_TESTS"
+fi
+[ "$ALWAYS_EXCEPT$EXCEPT" ] && echo "Skipping tests: $ALWAYS_EXCEPT $EXCEPT"
 
 RUNAS_CMD=${RUNAS_CMD:-runas}
 
