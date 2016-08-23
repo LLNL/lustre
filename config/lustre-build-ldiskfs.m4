@@ -32,8 +32,8 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 	])],[LDISKFS_SERIES="3.12-sles12.series"],[LDISKFS_SERIES="3.12-sles12.series"])
 ])
 AS_IF([test -z "$LDISKFS_SERIES"],
-	[AC_MSG_WARN([Unknown kernel version $LDISKFS_VERSIONRELEASE])])
-AC_MSG_RESULT([$LDISKFS_SERIES])
+	[AC_MSG_RESULT([failed to identify series])],
+	[AC_MSG_RESULT([$LDISKFS_SERIES])])
 AC_SUBST(LDISKFS_SERIES)
 ]) # LDISKFS_LINUX_SERIES
 
