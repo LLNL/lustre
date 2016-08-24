@@ -612,7 +612,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 
 # new fast registration API introduced in 4.4
 AS_IF([test $ENABLEO2IB != "no"], [
-	AC_MSG_CHECKING([if 'ib_map_mr_sg' exists])
+	AC_MSG_CHECKING([if 4arg 'ib_map_mr_sg' exists])
 	LB_LINUX_TRY_COMPILE([
 		#ifdef HAVE_COMPAT_RDMA
 		#undef PACKAGE_NAME
@@ -630,6 +630,34 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_MSG_RESULT([yes])
 		AC_DEFINE(HAVE_IB_MAP_MR_SG, 1,
 			[ib_map_mr_sg exists])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
+
+# ib_map_mr_sg changes from 4 to 5 args (adding sg_offset_p)
+# in kernel 4.7 (and RHEL 7.3)
+AS_IF([test $ENABLEO2IB != "no"], [
+	AC_MSG_CHECKING([if 5arg 'ib_map_mr_sg' exists])
+	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+	        #undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		ib_map_mr_sg(NULL, NULL, 0, NULL, 0);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_IB_MAP_MR_SG, 1,
+			[ib_map_mr_sg exists])
+		AC_DEFINE(HAVE_IB_MAP_MR_SG_5ARGS, 1,
+			[ib_map_mr_sg has 5 arguments])
 	],[
 		AC_MSG_RESULT([no])
 	])
