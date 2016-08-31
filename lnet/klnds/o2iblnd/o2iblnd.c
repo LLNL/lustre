@@ -1420,7 +1420,9 @@ kiblnd_destroy_fmr_pool(kib_fmr_pool_t *fpo)
 		list_for_each_entry_safe(frd, tmp, &fpo->fast_reg.fpo_pool_list,
 					 frd_list) {
 			list_del(&frd->frd_list);
+#ifndef HAVE_IB_MAP_MR_SG
 			ib_free_fast_reg_page_list(frd->frd_frpl);
+#endif
 			ib_dereg_mr(frd->frd_mr);
 			LIBCFS_FREE(frd, sizeof(*frd));
 			i++;
@@ -1505,6 +1507,7 @@ static int kiblnd_alloc_freg_pool(kib_fmr_poolset_t *fps, kib_fmr_pool_t *fpo)
 		}
 		frd->frd_mr = NULL;
 
+#ifndef HAVE_IB_MAP_MR_SG
 		frd->frd_frpl = ib_alloc_fast_reg_page_list(fpo->fpo_hdev->ibh_ibdev,
 							    LNET_MAX_PAYLOAD/PAGE_SIZE);
 		if (IS_ERR(frd->frd_frpl)) {
@@ -1513,6 +1516,7 @@ static int kiblnd_alloc_freg_pool(kib_fmr_poolset_t *fps, kib_fmr_pool_t *fpo)
 				rc);
 			goto out_middle;
 		}
+#endif
 
 		frd->frd_mr = ib_alloc_fast_reg_mr(fpo->fpo_hdev->ibh_pd,
 						   LNET_MAX_PAYLOAD/PAGE_SIZE);
@@ -1533,15 +1537,19 @@ static int kiblnd_alloc_freg_pool(kib_fmr_poolset_t *fps, kib_fmr_pool_t *fpo)
 out_middle:
 	if (frd->frd_mr)
 		ib_dereg_mr(frd->frd_mr);
+#ifndef HAVE_IB_MAP_MR_SG
 	if (frd->frd_frpl)
 		ib_free_fast_reg_page_list(frd->frd_frpl);
+#endif
 	LIBCFS_FREE(frd, sizeof(*frd));
 
 out:
 	list_for_each_entry_safe(frd, tmp, &fpo->fast_reg.fpo_pool_list,
 				 frd_list) {
 		list_del(&frd->frd_list);
+#ifndef HAVE_IB_MAP_MR_SG
 		ib_free_fast_reg_page_list(frd->frd_frpl);
+#endif
 		ib_dereg_mr(frd->frd_mr);
 		LIBCFS_FREE(frd, sizeof(*frd));
 	}
@@ -1681,6 +1689,28 @@ kiblnd_fmr_pool_is_idle(kib_fmr_pool_t *fpo, cfs_time_t now)
         return cfs_time_aftereq(now, fpo->fpo_deadline);
 }
 
+static int
+kiblnd_map_tx_pages(kib_tx_t *tx, kib_rdma_desc_t *rd)
+{
+	kib_hca_dev_t	*hdev;
+	__u64		*pages = tx->tx_pages;
+	int		npages;
+	int		size;
+	int		i;
+
+	hdev = tx->tx_pool->tpo_hdev;
+
+	for (i = 0, npages = 0; i < rd->rd_nfrags; i++) {
+		for (size = 0; size <  rd->rd_frags[i].rf_nob;
+			size += hdev->ibh_page_size) {
+			pages[npages++] = (rd->rd_frags[i].rf_addr &
+					   hdev->ibh_page_mask) + size;
+		}
+	}
+
+	return npages;
+}
+
 void
 kiblnd_fmr_pool_unmap(kib_fmr_t *fmr, int status)
 {
@@ -1739,11 +1769,15 @@ kiblnd_fmr_pool_unmap(kib_fmr_t *fmr, int status)
 }
 
 int
-kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, __u64 *pages, int npages,
-		    __u32 nob, __u64 iov, bool is_rx, kib_fmr_t *fmr)
+kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, kib_tx_t *tx, kib_rdma_desc_t *rd,
+		    __u32 nob, __u64 iov, kib_fmr_t *fmr)
 {
         kib_fmr_pool_t     *fpo;
+	__u64 *pages = tx->tx_pages;
         __u64               version;
+	bool is_rx = (rd != tx->tx_rd);
+	bool tx_pages_mapped = 0;
+	int npages = 0;
         int                 rc;
 
  again:
@@ -1757,6 +1791,12 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, __u64 *pages, int npages,
 			struct ib_pool_fmr *pfmr;
 
 			spin_unlock(&fps->fps_lock);
+
+			if (!tx_pages_mapped) {
+				npages = kiblnd_map_tx_pages(tx, rd);
+				tx_pages_mapped = 1;
+			}
+
 			pfmr = ib_fmr_pool_map_phys(fpo->fmr.fpo_fmr_pool,
                                             pages, npages, iov);
                 if (likely(!IS_ERR(pfmr))) {
@@ -1770,9 +1810,14 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, __u64 *pages, int npages,
 			rc = PTR_ERR(pfmr);
 		} else {
 			if (!list_empty(&fpo->fast_reg.fpo_pool_list)) {
-				struct ib_send_wr *wr;
 				struct kib_fast_reg_descriptor *frd;
+#ifdef HAVE_IB_MAP_MR_SG
+				struct ib_reg_wr *wr;
+				int n;
+#else
+				struct ib_send_wr *wr;
 				struct ib_fast_reg_page_list *frpl;
+#endif
 				struct ib_mr *mr;
 
 				frd = list_first_entry(&fpo->fast_reg.fpo_pool_list,
@@ -1781,7 +1826,9 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, __u64 *pages, int npages,
 				list_del(&frd->frd_list);
 				spin_unlock(&fps->fps_lock);
 
+#ifndef HAVE_IB_MAP_MR_SG
 				frpl = frd->frd_frpl;
+#endif
 				mr   = frd->frd_mr;
 
 				if (!frd->frd_valid) {
@@ -1797,6 +1844,33 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, __u64 *pages, int npages,
 					/* Bump the key */
 					key = ib_inc_rkey(key);
 					ib_update_fast_reg_key(mr, key);
+				}
+
+#ifdef HAVE_IB_MAP_MR_SG
+				n = ib_map_mr_sg(mr, tx->tx_frags,
+						 tx->tx_nfrags, PAGE_SIZE);
+				if (unlikely(n != tx->tx_nfrags)) {
+					CERROR("Failed to map mr %d/%d "
+					       "elements\n", n, tx->tx_nfrags);
+					return n < 0 ? n : -EINVAL;
+				}
+
+				mr->iova = iov;
+
+				wr = &frd->frd_fastreg_wr;
+				memset(wr, 0, sizeof(*wr));
+				wr->wr.opcode = IB_WR_REG_MR;
+				wr->wr.wr_id = IBLND_WID_MR;
+				wr->wr.num_sge = 0;
+				wr->wr.send_flags = 0;
+				wr->mr = mr;
+				wr->key = is_rx ? mr->rkey : mr->lkey;
+				wr->access = (IB_ACCESS_LOCAL_WRITE |
+					      IB_ACCESS_REMOTE_WRITE);
+#else
+				if (!tx_pages_mapped) {
+					npages = kiblnd_map_tx_pages(tx, rd);
+					tx_pages_mapped = 1;
 				}
 
 				LASSERT(npages <= frpl->max_page_list_len);
@@ -1818,6 +1892,7 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, __u64 *pages, int npages,
 				wr->wr.fast_reg.access_flags =
 						(IB_ACCESS_LOCAL_WRITE |
 						 IB_ACCESS_REMOTE_WRITE);
+#endif
 
 				fmr->fmr_key  = is_rx ? mr->rkey : mr->lkey;
 				fmr->fmr_frd  = frd;
