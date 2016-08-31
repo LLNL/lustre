@@ -1815,7 +1815,7 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, kib_tx_t *tx, kib_rdma_desc_t *rd,
 				struct ib_reg_wr *wr;
 				int n;
 #else
-				struct ib_send_wr *wr;
+				struct ib_rdma_wr *wr;
 				struct ib_fast_reg_page_list *frpl;
 #endif
 				struct ib_mr *mr;
@@ -1832,14 +1832,15 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, kib_tx_t *tx, kib_rdma_desc_t *rd,
 				mr   = frd->frd_mr;
 
 				if (!frd->frd_valid) {
-					struct ib_send_wr *inv_wr;
+					struct ib_rdma_wr *inv_wr;
 					__u32 key = is_rx ? mr->rkey : mr->lkey;
 
 					inv_wr = &frd->frd_inv_wr;
 					memset(inv_wr, 0, sizeof(*inv_wr));
-					inv_wr->opcode = IB_WR_LOCAL_INV;
-					inv_wr->wr_id = IBLND_WID_MR;
-					inv_wr->ex.invalidate_rkey = key;
+
+					inv_wr->wr.opcode = IB_WR_LOCAL_INV;
+					inv_wr->wr.wr_id  = IBLND_WID_MR;
+					inv_wr->wr.ex.invalidate_rkey = key;
 
 					/* Bump the key */
 					key = ib_inc_rkey(key);
@@ -1859,6 +1860,7 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, kib_tx_t *tx, kib_rdma_desc_t *rd,
 
 				wr = &frd->frd_fastreg_wr;
 				memset(wr, 0, sizeof(*wr));
+
 				wr->wr.opcode = IB_WR_REG_MR;
 				wr->wr.wr_id = IBLND_WID_MR;
 				wr->wr.num_sge = 0;
@@ -1880,16 +1882,18 @@ kiblnd_fmr_pool_map(kib_fmr_poolset_t *fps, kib_tx_t *tx, kib_rdma_desc_t *rd,
 				/* Prepare FastReg WR */
 				wr = &frd->frd_fastreg_wr;
 				memset(wr, 0, sizeof(*wr));
-				wr->opcode = IB_WR_FAST_REG_MR;
-				wr->wr_id = IBLND_WID_MR;
-				wr->wr.fast_reg.iova_start = iov;
-				wr->wr.fast_reg.page_list  = frpl;
-				wr->wr.fast_reg.page_list_len = npages;
-				wr->wr.fast_reg.page_shift = PAGE_SHIFT;
-				wr->wr.fast_reg.length = nob;
-				wr->wr.fast_reg.rkey = is_rx ? mr->rkey
-							     : mr->lkey;
-				wr->wr.fast_reg.access_flags =
+
+				wr->wr.opcode = IB_WR_FAST_REG_MR;
+				wr->wr.wr_id  = IBLND_WID_MR;
+
+				wr->wr.wr.fast_reg.iova_start = iov;
+				wr->wr.wr.fast_reg.page_list  = frpl;
+				wr->wr.wr.fast_reg.page_list_len = npages;
+				wr->wr.wr.fast_reg.page_shift = PAGE_SHIFT;
+				wr->wr.wr.fast_reg.length = nob;
+				wr->wr.wr.fast_reg.rkey =
+						is_rx ? mr->rkey : mr->lkey;
+				wr->wr.wr.fast_reg.access_flags =
 						(IB_ACCESS_LOCAL_WRITE |
 						 IB_ACCESS_REMOTE_WRITE);
 #endif

@@ -580,6 +580,36 @@ AS_IF([test $ENABLEO2IB != "no"], [
 	])
 ])
 
+# In v4.4 Linux kernel,
+# commit e622f2f4ad2142d2a613a57fb85f8cf737935ef5
+# split up struct ib_send_wr so that all non-trivial verbs
+# use their own structure which embedds struct ib_send_wr.
+AS_IF([test $ENABLEO2IB != "no"], [
+	AC_MSG_CHECKING([if 'struct ib_rdma_wr' is defined])
+	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		struct ib_rdma_wr *wr __attribute__ ((unused));
+
+		wr = rdma_wr(NULL);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_IB_RDMA_WR, 1,
+			[struct ib_rdma_wr is defined])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
+
 # new fast registration API introduced in 4.4
 AS_IF([test $ENABLEO2IB != "no"], [
 	AC_MSG_CHECKING([if 'ib_map_mr_sg' exists])
