@@ -44,9 +44,6 @@ sbin_SCRIPTS = lustre_rmmod ko2iblnd-probe
 if RHEL
 initdir = $(sysconfdir)/init.d
 init_SCRIPTS  = lnet lsvcgss
-if SERVER
-init_SCRIPTS += lustre
-endif
 endif
 
 if UTILS
@@ -74,7 +71,7 @@ endif # UTILS
 EXTRA_DIST = license-status lustre_rmmod ldev lc_mon lhbadm \
 	     lc_servip lustre_routes_config lustre_routes_conversion \
 	     $(addsuffix .in,$(genscripts)) lfs_migrate lustre_req_history \
-	     lustre lnet lsvcgss lc_common haconfig Lustre.ha_v2 dkms.mkconf \
+	     lnet lsvcgss lc_common haconfig Lustre.ha_v2 dkms.mkconf \
 	     zfsobj2fid ko2iblnd-probe
 
 CLEANFILES = $(genscripts)
