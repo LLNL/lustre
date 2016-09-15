@@ -640,4 +640,8 @@ osd_zap_create_flags(objset_t *os, int normflags, zap_flags_t flags,
 }
 #endif /* HAVE_DMU_OBJECT_ALLOC_DNSIZE */
 
+#ifndef DN_MAX_BONUSLEN
+#define DN_MAX_BONUSLEN        DN_OLD_MAX_BONUSLEN
+#endif
+
 #endif /* _OSD_INTERNAL_H */
