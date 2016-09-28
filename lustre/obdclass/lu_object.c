@@ -60,7 +60,7 @@ enum {
 	LU_CACHE_PERCENT_DEFAULT = 20
 };
 
-#define	LU_CACHE_NR_MAX_ADJUST		128
+#define	LU_CACHE_NR_MAX_ADJUST		512
 #define	LU_CACHE_NR_UNLIMITED		-1
 #define	LU_CACHE_NR_DEFAULT		LU_CACHE_NR_UNLIMITED
 #define	LU_CACHE_NR_LDISKFS_LIMIT	LU_CACHE_NR_UNLIMITED
@@ -347,8 +347,11 @@ static void lu_object_free(const struct lu_env *env, struct lu_object *o)
 
 /**
  * Free \a nr objects from the cold end of the site LRU list.
+ * if canblock is 0, then don't block awaiting for another
+ * instance of lu_site_purge() to complete
  */
-int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
+int lu_site_purge_objects(const struct lu_env *env, struct lu_site *s,
+			  int nr, int canblock)
 {
         struct lu_object_header *h;
         struct lu_object_header *temp;
@@ -377,7 +380,11 @@ int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
 	 * It doesn't make any sense to make purge threads parallel, that can
 	 * only bring troubles to us. See LU-5331.
 	 */
-	mutex_lock(&s->ls_purge_mutex);
+	if (canblock != 0)
+		mutex_lock(&s->ls_purge_mutex);
+	else if (mutex_trylock(&s->ls_purge_mutex) == 0)
+		goto out;
+
         did_sth = 0;
         cfs_hash_for_each_bucket(s->ls_obj_hash, &bd, i) {
                 if (i < start)
@@ -433,9 +440,10 @@ int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
         /* race on s->ls_purge_start, but nobody cares */
         s->ls_purge_start = i % CFS_HASH_NBKT(s->ls_obj_hash);
 
+out:
         return nr;
 }
-EXPORT_SYMBOL(lu_site_purge);
+EXPORT_SYMBOL(lu_site_purge_objects);
 
 /*
  * Object printing.
@@ -663,11 +671,11 @@ static void lu_object_limit(const struct lu_env *env,
 
 	size = cfs_hash_size_get(dev->ld_site->ls_obj_hash);
 	nr = (__u64)lu_cache_nr;
-	if (size > nr)
-		lu_site_purge(env, dev->ld_site,
-			      MIN(size - nr, LU_CACHE_NR_MAX_ADJUST));
+	if (size <= nr)
+		return;
 
-	return;
+	lu_site_purge_objects(env, dev->ld_site,
+			      MIN(size - nr, LU_CACHE_NR_MAX_ADJUST), 0);
 }
 
 static struct lu_object *lu_object_new(const struct lu_env *env,
@@ -2286,19 +2294,24 @@ void lu_object_assign_fid(const struct lu_env *env, struct lu_object *o,
 {
 	struct lu_site		*s = o->lo_dev->ld_site;
 	struct lu_fid		*old = &o->lo_header->loh_fid;
-	struct lu_object	*shadow;
-	wait_queue_t		 waiter;
 	struct cfs_hash		*hs;
 	struct cfs_hash_bd	 bd;
-	__u64			 version = 0;
 
 	LASSERT(fid_is_zero(old));
 
+	/* supposed to be unique */
 	hs = s->ls_obj_hash;
 	cfs_hash_bd_get_and_lock(hs, (void *)fid, &bd, 1);
-	shadow = htable_lookup(s, &bd, fid, &waiter, &version);
-	/* supposed to be unique */
-	LASSERT(IS_ERR(shadow) && PTR_ERR(shadow) == -ENOENT);
+#ifdef CONFIG_LUSTRE_DEBUG_EXPENSIVE_CHECK
+	{
+		__u64                    version = 0;
+		wait_queue_t             waiter;
+		struct lu_object        *shadow;
+		shadow = htable_lookup(s, &bd, fid, &waiter, &version);
+		/* supposed to be unique */
+		LASSERT(IS_ERR(shadow) && PTR_ERR(shadow) == -ENOENT);
+	}
+#endif
 	*old = *fid;
 	cfs_hash_bd_add_locked(hs, &bd, &o->lo_header->loh_hash);
 	cfs_hash_bd_unlock(hs, &bd, 1);

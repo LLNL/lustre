@@ -585,6 +585,7 @@ restart:
         } else {
                 LASSERT(*och_usecount == 0);
                 if (!it->d.lustre.it_disposition) {
+			struct ll_dentry_data *ldd = ll_d2d(file->f_path.dentry);
                         /* We cannot just request lock handle now, new ELC code
                            means that one of other OPEN locks for this file
                            could be cancelled, and since blocking ast handler
@@ -598,12 +599,24 @@ restart:
 			 *    handle to be returned from LOOKUP|OPEN request,
 			 *    for example if the target entry was a symlink.
 			 *
-			 * Always fetch MDS_OPEN_LOCK if this is not setstripe.
+			 *  Only fetch MDS_OPEN_LOCK if this is in NFS path,
+			 *  marked by a bit set in ll_iget_for_nfs. Clear the
+			 *  bit so that it's not confusing later callers.
 			 *
+			 *  NB; when ldd is NULL, it must have come via normal
+			 *  lookup path only, since ll_iget_for_nfs always calls
+			 *  ll_d_init().
+			 */
+			if (ldd && ldd->lld_nfs_dentry) {
+				ldd->lld_nfs_dentry = 0;
+				it->it_flags |= MDS_OPEN_LOCK;
+			}
+
+			 /*
 			 * Always specify MDS_OPEN_BY_FID because we don't want
 			 * to get file with different fid.
 			 */
-			it->it_flags |= MDS_OPEN_LOCK | MDS_OPEN_BY_FID;
+			it->it_flags |= MDS_OPEN_BY_FID;
                         rc = ll_intent_file_open(file, NULL, 0, it);
                         if (rc)
                                 GOTO(out_openerr, rc);
@@ -3185,8 +3198,11 @@ static int __ll_inode_revalidate(struct dentry *dentry, __u64 ibits)
                    do_lookup() -> ll_revalidate_it(). We cannot use d_drop
                    here to preserve get_cwd functionality on 2.6.
                    Bug 10503 */
-		if (!dentry->d_inode->i_nlink)
+		if (!dentry->d_inode->i_nlink) {
+			ll_lock_dcache(inode);
 			d_lustre_invalidate(dentry, 0);
+			ll_unlock_dcache(inode);
+		}
 
                 ll_lookup_finish_locks(&oit, dentry);
         } else if (!ll_have_md_lock(dentry->d_inode, &ibits, LCK_MINMODE)) {
