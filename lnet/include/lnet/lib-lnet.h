@@ -184,11 +184,6 @@ lnet_net_lock_current(void)
 
 #define MAX_PORTALS     64
 
-#define LNET_SMALL_MD_SIZE   offsetof(lnet_libmd_t, md_iov.iov[1])
-extern struct kmem_cache *lnet_mes_cachep;	 /* MEs kmem_cache */
-extern struct kmem_cache *lnet_small_mds_cachep; /* <= LNET_SMALL_MD_SIZE bytes
-						  * MDs kmem_cache */
-
 static inline lnet_eq_t *
 lnet_eq_alloc (void)
 {
@@ -220,20 +215,7 @@ lnet_md_alloc (lnet_md_t *umd)
                 size = offsetof(lnet_libmd_t, md_iov.iov[niov]);
         }
 
-	if (size <= LNET_SMALL_MD_SIZE) {
-		md = kmem_cache_alloc(lnet_small_mds_cachep,
-				      GFP_NOFS | __GFP_ZERO);
-		if (md) {
-			CDEBUG(D_MALLOC, "slab-alloced 'md' of size %u at "
-			       "%p.\n", size, md);
-		} else {
-			CDEBUG(D_MALLOC, "failed to allocate 'md' of size %u\n",
-			       size);
-			return NULL;
-		}
-	} else {
-		LIBCFS_ALLOC(md, size);
-	}
+        LIBCFS_ALLOC(md, size);
 
 	if (md != NULL) {
 		/* Set here in case of early free */
@@ -255,34 +237,22 @@ lnet_md_free(lnet_libmd_t *md)
 	else
 		size = offsetof(lnet_libmd_t, md_iov.iov[md->md_niov]);
 
-	if (size <= LNET_SMALL_MD_SIZE) {
-		CDEBUG(D_MALLOC, "slab-freed 'md' at %p.\n", md);
-		kmem_cache_free(lnet_small_mds_cachep, md);
-	} else {
-		LIBCFS_FREE(md, size);
-	}
+	LIBCFS_FREE(md, size);
 }
 
 static inline lnet_me_t *
 lnet_me_alloc (void)
 {
-	lnet_me_t *me;
+        lnet_me_t *me;
 
-	me = kmem_cache_alloc(lnet_mes_cachep, GFP_NOFS | __GFP_ZERO);
-
-	if (me)
-		CDEBUG(D_MALLOC, "slab-alloced 'me' at %p.\n", me);
-	else
-		CDEBUG(D_MALLOC, "failed to allocate 'me'\n");
-
-	return me;
+        LIBCFS_ALLOC(me, sizeof(*me));
+        return (me);
 }
 
 static inline void
 lnet_me_free(lnet_me_t *me)
 {
-	CDEBUG(D_MALLOC, "slab-freed 'me' at %p.\n", me);
-	kmem_cache_free(lnet_mes_cachep, me);
+	LIBCFS_FREE(me, sizeof(*me));
 }
 
 static inline lnet_msg_t *

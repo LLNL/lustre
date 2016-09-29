@@ -477,11 +477,9 @@ squash_id() {
 	fi
 }
 
-if [[ $(lustre_version_code mgs) -ge $(version_code 2.5.53) ]]; then
-	# ensure that the squash defaults are the expected defaults
-	squash_id default 99 0
-	squash_id default 99 1
-fi
+# ensure that the squash defaults are the expected defaults
+squash_id default 99 0
+squash_id default 99 1
 
 test_nid() {
 	local cmd

@@ -3345,14 +3345,22 @@ int lod_declare_striped_object(const struct lu_env *env, struct dt_object *dt,
 	int			 rc;
 	ENTRY;
 
-	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_ALLOC_OBDO))
+	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_ALLOC_OBDO)) {
+		/* failed to create striping, let's reset
+		 * config so that others don't get confused */
+		lod_object_free_striping(env, lo);
 		GOTO(out, rc = -ENOMEM);
+	}
 
 	if (!dt_object_remote(next)) {
 		/* choose OST and generate appropriate objects */
 		rc = lod_qos_prep_create(env, lo, attr, lovea, th);
-		if (rc)
+		if (rc) {
+			/* failed to create striping, let's reset
+			 * config so that others don't get confused */
+			lod_object_free_striping(env, lo);
 			GOTO(out, rc);
+		}
 
 		/*
 		 * declare storage for striping data
@@ -3383,11 +3391,6 @@ int lod_declare_striped_object(const struct lu_env *env, struct dt_object *dt,
 		rc = lod_declare_init_size(env, dt, th);
 
 out:
-	/* failed to create striping or to set initial size, let's reset
-	 * config so that others don't get confused */
-	if (rc)
-		lod_object_free_striping(env, lo);
-
 	RETURN(rc);
 }
 

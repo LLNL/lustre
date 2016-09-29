@@ -2284,7 +2284,7 @@ test_18e() {
 	echo "Trigger layout LFSCK on all devices to find out orphan OST-object"
 	$START_LAYOUT -r -o -c || error "(2) Fail to start LFSCK for layout!"
 
-	wait_update --verbose $(facet_active_host mds1) "$LCTL get_param -n \
+	wait_update_facet mds1 "$LCTL get_param -n \
 		mdd.$(facet_svc mds1).lfsck_layout |
 		awk '/^status/ { print \\\$2 }'" "scanning-phase2" $LTIME ||
 		error "(3) MDS1 is not the expected 'scanning-phase2'"

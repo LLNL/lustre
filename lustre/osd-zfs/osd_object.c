@@ -417,9 +417,6 @@ static int osd_object_init(const struct lu_env *env, struct lu_object *l,
 		RETURN(0);
 	}
 
-	if (conf != NULL && conf->loc_flags & LOC_F_NEW)
-		GOTO(out, rc = 0);
-
 	rc = osd_fid_lookup(env, osd, lu_object_fid(l), &oid);
 	if (rc == 0) {
 		LASSERT(obj->oo_db == NULL);
@@ -957,15 +954,6 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 	if (!S_ISREG(dt->do_lu.lo_header->loh_attr))
 		valid &= ~(LA_SIZE | LA_BLOCKS);
 
-	if (valid & LA_CTIME && la->la_ctime == obj->oo_attr.la_ctime)
-		valid &= ~LA_CTIME;
-
-	if (valid & LA_MTIME && la->la_mtime == obj->oo_attr.la_mtime)
-		valid &= ~LA_MTIME;
-
-	if (valid & LA_ATIME && la->la_atime == obj->oo_attr.la_atime)
-		valid &= ~LA_ATIME;
-
 	if (valid == 0)
 		GOTO(out, rc = 0);
 
@@ -1390,9 +1378,8 @@ static dmu_buf_t *osd_mkreg(const struct lu_env *env, struct osd_object *obj,
 			    struct lu_attr *la, uint64_t parent,
 			    struct osd_thandle *oh)
 {
-	const struct lu_fid *fid = lu_object_fid(&obj->oo_dt.do_lu);
-	dmu_buf_t	    *db;
-	int		     rc;
+	dmu_buf_t	  *db;
+	int		   rc;
 	struct osd_device *osd = osd_obj2dev(obj);
 
 	LASSERT(S_ISREG(la->la_mode));
@@ -1407,7 +1394,7 @@ static dmu_buf_t *osd_mkreg(const struct lu_env *env, struct osd_object *obj,
 	 * blocksize is selected based on the file size rather than the
 	 * making broad assumptions based on the osd type.
 	 */
-	if ((fid_is_idif(fid) || fid_is_norm(fid)) && osd->od_is_ost) {
+	if (!lu_device_is_md(osd2lu_dev(osd))) {
 		rc = -dmu_object_set_blocksize(osd->od_os, db->db_object,
 					       osd->od_max_blksz, 0, oh->ot_tx);
 		if (unlikely(rc)) {

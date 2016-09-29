@@ -128,9 +128,10 @@ osd_oi_lookup(const struct lu_env *env, struct osd_device *o,
 	if (rc >= sizeof(oi->oi_name))
 		return -E2BIG;
 
+	rc = 0;
 	oi->oi_zapid = zde->zde_dnode;
 
-	return 0;
+	return rc;
 }
 
 /**
@@ -504,8 +505,6 @@ osd_oi_remove_table(const struct lu_env *env, struct osd_device *o, int key)
 
 	oi = o->od_oi_table[key];
 	if (oi) {
-		if (oi->oi_db)
-			sa_buf_rele(oi->oi_db, osd_obj_tag);
 		OBD_FREE_PTR(oi);
 		o->od_oi_table[key] = NULL;
 	}
@@ -535,7 +534,6 @@ osd_oi_add_table(const struct lu_env *env, struct osd_device *o,
 	}
 
 	o->od_oi_table[key] = oi;
-	__osd_obj2dbuf(env, o->od_os, oi->oi_zapid, &oi->oi_db);
 
 	return 0;
 }
@@ -619,6 +617,15 @@ osd_oi_probe(const struct lu_env *env, struct osd_device *o, int *count)
 	RETURN(0);
 }
 
+static void osd_ost_seq_init(const struct lu_env *env, struct osd_device *osd)
+{
+	struct osd_seq_list *osl = &osd->od_seq_list;
+
+	INIT_LIST_HEAD(&osl->osl_seq_list);
+	rwlock_init(&osl->osl_seq_list_lock);
+	sema_init(&osl->osl_seq_init_sem, 1);
+}
+
 static void osd_ost_seq_fini(const struct lu_env *env, struct osd_device *osd)
 {
 	struct osd_seq_list	*osl = &osd->od_seq_list;
@@ -653,6 +660,7 @@ osd_oi_init_compat(const struct lu_env *env, struct osd_device *o)
 
 	o->od_O_id = sdb;
 
+	osd_ost_seq_init(env, o);
 	/* Create on-disk indexes to maintain per-UID/GID inode usage.
 	 * Those new indexes are created in the top-level ZAP outside the
 	 * namespace in order not to confuse ZPL which might interpret those
