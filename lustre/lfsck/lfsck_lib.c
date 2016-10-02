@@ -645,13 +645,9 @@ static int lfsck_create_lpf_local(const struct lu_env *env,
 	int			 rc;
 	ENTRY;
 
-	rc = linkea_data_new(&ldata,
-			     &lfsck_env_info(env)->lti_linkea_buf2);
-	if (rc != 0)
-		RETURN(rc);
-
 	cname = lfsck_name_get_const(env, name, strlen(name));
-	rc = linkea_add_buf(&ldata, cname, lfsck_dto2fid(parent));
+	rc = linkea_links_new(&ldata, &lfsck_env_info(env)->lti_linkea_buf2,
+			      cname, lfsck_dto2fid(parent));
 	if (rc != 0)
 		RETURN(rc);
 
@@ -804,13 +800,9 @@ static int lfsck_create_lpf_remote(const struct lu_env *env,
 	int			 rc;
 	ENTRY;
 
-	rc = linkea_data_new(&ldata,
-			     &lfsck_env_info(env)->lti_linkea_buf2);
-	if (rc != 0)
-		RETURN(rc);
-
 	cname = lfsck_name_get_const(env, name, strlen(name));
-	rc = linkea_add_buf(&ldata, cname, lfsck_dto2fid(parent));
+	rc = linkea_links_new(&ldata, &lfsck_env_info(env)->lti_linkea_buf2,
+			      cname, lfsck_dto2fid(parent));
 	if (rc != 0)
 		RETURN(rc);
 
@@ -3237,8 +3229,6 @@ int lfsck_in_notify(const struct lu_env *env, struct dt_device *key,
 	case LE_FID_ACCESSED:
 	case LE_PEER_EXIT:
 	case LE_CONDITIONAL_DESTROY:
-	case LE_SKIP_NLINK_DECLARE:
-	case LE_SKIP_NLINK:
 	case LE_SET_LMV_MASTER:
 	case LE_SET_LMV_SLAVE:
 	case LE_PAIRS_VERIFY: {
