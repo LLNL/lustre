@@ -557,15 +557,6 @@ AC_SUBST(GNILND)
 AC_DEFUN([LN_CONFIG_SK_SLEEP], [
 LB_CHECK_COMPILE([if Linux kernel has 'sk_sleep'],
 sk_sleep, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <net/sock.h>
 ],[
 	sk_sleep(NULL);
@@ -578,22 +569,14 @@ sk_sleep, [
 #
 # LN_CONFIG_TCP_SENDPAGE
 #
-# 2.6.36 tcp_sendpage() first parameter is 'struct sock' instead of 'struct socket'.
+# 2.6.36 tcp_sendpage() first parameter is 'struct sock'
+# instead of 'struct socket'.
 #
 AC_DEFUN([LN_CONFIG_TCP_SENDPAGE], [
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'tcp_sendpage' first parameter is socket],
 tcp_sendpage_socket, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/tcp.h>
 ],[
@@ -615,15 +598,6 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'sk_data_ready' takes only one argument],
 sk_data_ready, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/sock.h>
 ],[
