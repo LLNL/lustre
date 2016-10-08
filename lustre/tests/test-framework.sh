@@ -2033,13 +2033,14 @@ wait_update () {
 	local RESULT
 	local PREV_RESULT
 	local WAIT=0
+	local sleep=1
 	local print=10
 
 	PREV_RESULT=$(do_node $node "$TEST")
 	while [ true ]; do
 		RESULT=$(do_node $node "$TEST")
 		if [[ "$RESULT" == "$FINAL" ]]; then
-			[[ -z "$RESULT" || $WAIT -le 1 ]] ||
+			[[ -z "$RESULT" || $WAIT -le $sleep ]] ||
 				echo "Updated after ${WAIT}s: wanted '$FINAL'"\
 				     "got '$RESULT'"
 			return 0
@@ -2052,9 +2053,8 @@ wait_update () {
 		[[ $WAIT -ge $MAX ]] && break
 		[[ $((WAIT % print)) -eq 0 ]] &&
 			echo "Waiting $((MAX - WAIT)) secs for update"
-		WAIT=$((WAIT + 1))
-		$verbose && echo "$(date): waited $WAIT secs for update"
-		sleep 1
+		WAIT=$((WAIT + sleep))
+		sleep $sleep
 	done
 	echo "Update not seen after ${MAX}s: wanted '$FINAL' got '$RESULT'"
 	return 3

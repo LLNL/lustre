@@ -3388,16 +3388,11 @@ static int lfsck_layout_assistant_handler_p2(const struct lu_env *env,
 {
 	struct lfsck_assistant_data	*lad	= com->lc_data;
 	struct lfsck_instance		*lfsck	= com->lc_lfsck;
-	struct lfsck_layout		*lo	= com->lc_file_ram;
 	struct lfsck_bookmark		*bk     = &lfsck->li_bookmark_ram;
 	struct lfsck_tgt_descs		*ltds	= &lfsck->li_ost_descs;
 	struct lfsck_tgt_desc		*ltd;
 	int				 rc	= 0;
 	ENTRY;
-
-	LASSERTF(lo->ll_status == LS_SCANNING_PHASE2,
-		 "%s: unexpected layout phase2 status %d\n",
-		 lfsck_lfsck2name(lfsck), lo->ll_status);
 
 	CDEBUG(D_LFSCK, "%s: layout LFSCK phase2 scan start\n",
 	       lfsck_lfsck2name(lfsck));
@@ -4672,9 +4667,8 @@ static int lfsck_layout_master_post(const struct lu_env *env,
 	rc = lfsck_layout_store(env, com);
 	up_write(&com->lc_sem);
 
-	CDEBUG(D_LFSCK, "%s: layout LFSCK master post done, status = %d, "
-	       "result = %d, rc = %d\n",
-	       lfsck_lfsck2name(lfsck), lo->ll_status, result, rc);
+	CDEBUG(D_LFSCK, "%s: layout LFSCK master post done: rc = %d\n",
+	       lfsck_lfsck2name(lfsck), rc);
 
 	RETURN(rc);
 }
@@ -4743,9 +4737,8 @@ static int lfsck_layout_slave_post(const struct lu_env *env,
 
 	lfsck_layout_slave_notify_master(env, com, LE_PHASE1_DONE, result);
 
-	CDEBUG(D_LFSCK, "%s: layout LFSCK slave post done, status = %d, "
-	       "result = %d, rc = %d\n",
-	       lfsck_lfsck2name(lfsck), lo->ll_status, result, rc);
+	CDEBUG(D_LFSCK, "%s: layout LFSCK slave post done: rc = %d\n",
+	       lfsck_lfsck2name(lfsck), rc);
 
 	return rc;
 }
