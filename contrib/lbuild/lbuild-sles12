@@ -13,7 +13,7 @@ source ${LBUILD_DIR}/lbuild-sles
 
 kernel_srpm_location() {
 
-    local site="http://mgmt/cobbler/repo_mirror/updates-sles12.0-src"
+    local site="http://mgmt/cobbler/repo_mirror/updates-sles12.1-src"
     echo "$site/src/"
 
 }
@@ -112,7 +112,7 @@ find_linux_rpm-sles12() {
     local wanted_kernel="$2"
     local pathtorpms=${3:-"$KERNELRPMSBASE/$lnxmaj/$DISTROMAJ/$TARGET_ARCH"}
 
-    local site="http://mgmt/cobbler/repo_mirror/updates-sles12.0-x86_64"
+    local site="http://mgmt/cobbler/repo_mirror/updates-sles12.1-x86_64"
     if [ ! -f $pathtorpms/kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm ]; then
         fetch_url "$site/x86_64/kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm" $pathtorpms
     fi
