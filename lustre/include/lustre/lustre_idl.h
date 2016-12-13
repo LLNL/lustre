@@ -2691,6 +2691,18 @@ static inline int lmv_mds_md_stripe_count_set(union lmv_mds_md *lmm,
 	return 0;
 }
 
+static inline int lmv_mds_md_hash_type_get(const union lmv_mds_md *lmm)
+{
+	switch (le32_to_cpu(lmm->lmv_magic)) {
+	case LMV_MAGIC_V1:
+		return le32_to_cpu(lmm->lmv_md_v1.lmv_hash_type);
+	case LMV_USER_MAGIC:
+		return le32_to_cpu(lmm->lmv_user_md.lum_hash_type);
+	default:
+		return -EINVAL;
+	}
+}
+
 enum fld_rpc_opc {
 	FLD_QUERY	= 900,
 	FLD_READ	= 901,
