@@ -3644,7 +3644,8 @@ static int lod_declare_object_destroy(const struct lu_env *env,
 	if (rc)
 		RETURN(rc);
 
-	if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_LOST_MDTOBJ))
+	if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_LOST_MDTOBJ) ||
+	    OBD_FAIL_CHECK(OBD_FAIL_LFSCK_LOST_MDTOBJ2))
 		RETURN(0);
 
 	/* declare destroy all striped objects */
@@ -3716,7 +3717,8 @@ static int lod_object_destroy(const struct lu_env *env,
 	if (rc != 0)
 		RETURN(rc);
 
-	if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_LOST_MDTOBJ))
+	if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_LOST_MDTOBJ) ||
+	    OBD_FAIL_CHECK(OBD_FAIL_LFSCK_LOST_MDTOBJ2))
 		RETURN(0);
 
 	/* destroy all striped objects */
