@@ -442,7 +442,7 @@ test_4a() {
 	local -a updated0
 	for n in $(seq $MDSCOUNT); do
 		updated0[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 	done
 
 	scrub_check_data2 sanity-scrub.sh 9
@@ -451,7 +451,7 @@ test_4a() {
 	local -a updated1
 	for n in $(seq $MDSCOUNT); do
 		updated1[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 		[ ${updated0[$n]} -eq ${updated1[$n]} ] ||
 			error "(10) NOT auto trigger full scrub as expected"
 	done
@@ -477,7 +477,7 @@ test_4b() {
 	local -a updated0
 	for n in $(seq $MDSCOUNT); do
 		updated0[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 	done
 
 	scrub_check_data2 sanity-scrub.sh 9
@@ -489,7 +489,7 @@ test_4b() {
 	local -a updated1
 	for n in $(seq $MDSCOUNT); do
 		updated1[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 		[ ${updated0[$n]} -lt ${updated1[$n]} ] ||
 			error "(12) Auto trigger full scrub unexpectedly"
 	done
@@ -505,7 +505,7 @@ test_4b() {
 
 	for n in $(seq $MDSCOUNT); do
 		updated0[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 		[ ${updated0[$n]} -gt ${updated1[$n]} ] ||
 			error "(16) Auto trigger full scrub unexpectedly"
 	done
@@ -517,7 +517,7 @@ test_4b() {
 
 	for n in $(seq $MDSCOUNT); do
 		updated1[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 		[ ${updated0[$n]} -eq ${updated1[$n]} ] ||
 			error "(18) NOT auto trigger full scrub as expected"
 	done
@@ -543,7 +543,7 @@ test_4c() {
 	local -a updated0
 	for n in $(seq $MDSCOUNT); do
 		updated0[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 	done
 
 	scrub_check_data2 sanity-scrub.sh 9
@@ -555,7 +555,7 @@ test_4c() {
 	local -a updated1
 	for n in $(seq $MDSCOUNT); do
 		updated1[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 		[ ${updated0[$n]} -lt ${updated1[$n]} ] ||
 			error "(12) Auto trigger full scrub unexpectedly"
 	done
@@ -571,7 +571,7 @@ test_4c() {
 
 	for n in $(seq $MDSCOUNT); do
 		updated0[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 		[ ${updated0[$n]} -gt ${updated1[$n]} ] ||
 			error "(16) Auto trigger full scrub unexpectedly"
 	done
@@ -583,7 +583,7 @@ test_4c() {
 
 	for n in $(seq $MDSCOUNT); do
 		updated1[$n]=$(scrub_status $n |
-			       awk '/^sf_items_updated_prior/ { print $2 }')
+			       awk '/^prior_updated/ { print $2 }')
 		[ ${updated0[$n]} -eq ${updated1[$n]} ] ||
 			error "(18) NOT auto trigger full scrub as expected"
 	done
