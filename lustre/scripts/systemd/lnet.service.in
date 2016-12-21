@@ -1,0 +1,19 @@
+[Unit]
+Description=lnet management
+
+Requires=network-online.target
+After=network-online.target
+
+ConditionPathExists=!/proc/sys/lnet/
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/sbin/modprobe lnet
+ExecStart=@sbindir@/lctl network up
+ExecStop=@sbindir@/lustre_rmmod ptlrpc
+ExecStop=@sbindir@/lctl_wrapper network down
+ExecStop=@sbindir@/lustre_rmmod libcfs ldiskfs
+
+[Install]
+WantedBy=multi-user.target

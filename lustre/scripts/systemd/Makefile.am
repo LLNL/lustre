@@ -37,51 +37,23 @@
 #
 
 # These are scripts that are generated from .in files
-genscripts = lc_modprobe lc_net lc_hb lc_cluman lc_md lc_lvm lustre_start
-
-SUBDIRS = systemd
-
-sbin_SCRIPTS = lustre_rmmod ko2iblnd-probe
+genscripts = lctl_wrapper
+genunitfiles = lnet.service
 
 if RHEL
-initdir = $(sysconfdir)/init.d
-init_SCRIPTS  = lsvcgss
-
-if !HAVE_SYSTEMD
-init_SCRIPTS += lnet
+if HAVE_SYSTEMD
+sbin_SCRIPTS = lctl_wrapper
+systemdsystemunit_DATA = lnet.service
 endif
 endif
 
-if UTILS
-sbin_SCRIPTS += ldev lustre_routes_config lustre_routes_conversion
-bin_SCRIPTS   = lfs_migrate
+EXTRA_DIST = $(addsuffix .in,$(genscripts)) $(addsuffix .in,$(genunitfiles))
 
-if SERVER
-sbin_SCRIPTS += $(genscripts) lc_mon lhbadm lc_servip
-bin_SCRIPTS  += lustre_req_history
+CLEANFILES = $(genscripts) $(genunitfiles)
 
-hadir = $(sysconfdir)/ha.d/resource.d
-ha_SCRIPTS = Lustre.ha_v2
-
-scriptlibdir = @libexecdir@/@PACKAGE@
-scriptlib_SCRIPTS = haconfig
-scriptlib_DATA = lc_common
-endif # SERVER
-
-if ZFS_ENABLED
-sbin_SCRIPTS += zfsobj2fid
-endif
-
-endif # UTILS
-
-EXTRA_DIST = license-status lustre_rmmod ldev lc_mon lhbadm \
-	     lc_servip lustre_routes_config lustre_routes_conversion \
-	     $(addsuffix .in,$(genscripts)) lfs_migrate lustre_req_history \
-	     lnet lsvcgss lc_common haconfig Lustre.ha_v2 dkms.mkconf \
-	     zfsobj2fid ko2iblnd-probe
-
-CLEANFILES = $(genscripts)
+$(genunitfiles): %: %.in
+	sed -e 's#@sbindir\@#$(sbindir)#' < $< > $@
 
 $(genscripts): %: %.in
-	sed -e 's#@scriptlibdir@#$(scriptlibdir)#' < $< > $@
+	sed -e 's#@sbindir\@#$(sbindir)#' < $< > $@
 	chmod +x $@

@@ -132,6 +132,12 @@ BuildRequires: redhat-rpm-config
 %endif
 %endif
 
+# required for %{_unitdir} macro
+%if 0%{?el7}
+%{?systemd_requires}
+BuildRequires: systemd
+%endif
+
 %description
 Userspace tools and files for the Lustre file system.
 
@@ -304,6 +310,7 @@ fi
 	%{?with_lnet_dlc:--enable-dlc} \
 	%{!?with_lnet_dlc:--disable-dlc} \
 	%{!?with_manpages:--disable-manpages} \
+	%{?_unitdir:--with-systemdsystemunitdir=%{_unitdir}} \
 	--with-linux=%{kdir} \
 	--with-linux-obj=%{kobjdir} \
 	--with-kmp-moddir=%{kmoddir}/%{name}
@@ -346,10 +353,18 @@ echo '%{_sysconfdir}/ha.d/resource.d/Lustre.ha_v2' >>lustre.files
 echo '%{_sysconfdir}/ha.d/resource.d/Lustre' >>lustre.files
 %endif
 
-%if %{_vendor}=="redhat"
+%if 0%{?rhel}
 # The following scripts are Red Hat specific
-echo '%{_sysconfdir}/init.d/lnet' >>lustre.files
 echo '%{_sysconfdir}/init.d/lsvcgss' >>lustre.files
+%endif
+
+%if 0%{?el6}
+echo '%{_sysconfdir}/init.d/lnet' >>lustre.files
+%endif
+
+%if 0%{?el7}
+echo '%{_unitdir}/lnet.service' >>lustre.files
+echo '%{_sbindir}/lctl_wrapper' >>lustre.files
 %endif
 
 # fc18 needs 'x' permission for library files
@@ -479,6 +494,21 @@ echo '%{_sbindir}/wiretest' >>lustre-tests.files
 %doc lustre-iokit/ost-survey/README.ost-survey
 %doc lustre-iokit/sgpdd-survey/README.sgpdd-survey
 %doc lustre-iokit/stats-collect/README.iokit-lstats
+%endif
+
+%post
+%if 0%{?el7}
+%systemd_post lnet.service
+%endif
+
+%preun
+%if 0%{?el7}
+%systemd_preun lnet.service
+%endif
+
+%postun
+%if 0%{?el7}
+%systemd_postun_with_restart lnet.service
 %endif
 
 %clean

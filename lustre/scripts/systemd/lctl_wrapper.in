@@ -1,0 +1,25 @@
+#!/bin/bash
+#
+# lctl_wrapper
+#	This shell script calls and error checks
+#	lctl network down. This wrapper exists
+#	because lctl network down returns an error
+#	if the network is already down. We wish to
+#	ignore LNET unconfigure error 19.
+#
+
+LCTL="@sbindir@/lctl"
+
+errmsg=$($LCTL "$@" 2>&1)
+errcode=$?
+if [ $errcode -gt 0 ]; then
+	# The following error message means that lnet is already
+	# unconfigured, and the modules are not loaded.
+	echo $errmsg | grep "LNET unconfigure error 19" > /dev/null
+	if [ $? -ne 0 ]; then
+		echo "$errmsg"
+		exit $errcode
+	fi
+fi
+
+exit 0
