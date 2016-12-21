@@ -629,9 +629,9 @@ static int ll_write_begin(struct file *file, struct address_space *mapping,
 			  struct page **pagep, void **fsdata)
 {
 	struct ll_cl_context *lcc;
-	const struct lu_env  *env;
+	const struct lu_env  *env = NULL;
 	struct cl_io   *io;
-	struct cl_page *page;
+	struct cl_page *page = NULL;
 
 	struct cl_object *clob = ll_i2info(mapping->host)->lli_clob;
 	pgoff_t index = pos >> PAGE_CACHE_SHIFT;
@@ -717,6 +717,10 @@ out:
 		if (vmpage != NULL) {
 			unlock_page(vmpage);
 			page_cache_release(vmpage);
+		}
+		if (!IS_ERR_OR_NULL(page)) {
+			lu_ref_del(&page->cp_reference, "cl_io", io);
+			cl_page_put(env, page);
 		}
 		if (io)
 			io->ci_result = result;

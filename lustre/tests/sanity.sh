@@ -14491,6 +14491,26 @@ test_402() {
 }
 run_test 402 "Return ENOENT to lod_generate_and_set_lovea"
 
+test_408() {
+	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1 oflag=direct
+
+	#define OBD_FAIL_OSC_BRW_PREP_REQ2        0x40a
+	lctl set_param fail_loc=0x8000040a
+	# let ll_prepare_partial_page() fail
+	dd if=/dev/zero of=$DIR/$tfile bs=2048 count=1 conv=notrunc || true
+
+	rm -f $DIR/$tfile
+
+	# create at least 100 unused inodes so that
+	# shrink_icache_memory(0) should not return 0
+	touch $DIR/$tfile-{0..100}
+	rm -f $DIR/$tfile-{0..100}
+	sync
+
+	echo 2 > /proc/sys/vm/drop_caches
+}
+run_test 408 "drop_caches should not hang due to page leaks"
+
 #
 # tests that do cleanup/setup should be run at the end
 #
