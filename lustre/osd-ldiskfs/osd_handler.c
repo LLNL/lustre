@@ -387,6 +387,7 @@ int osd_get_lma(struct osd_thread_info *info, struct inode *inode,
 struct inode *osd_iget(struct osd_thread_info *info, struct osd_device *dev,
 		       struct osd_inode_id *id)
 {
+	int rc;
 	struct inode *inode = NULL;
 
 	/* if we look for an inode withing a running
@@ -416,6 +417,9 @@ struct inode *osd_iget(struct osd_thread_info *info, struct osd_device *dev,
 		LDISKFS_SB(osd_sb(dev))->s_es->s_volume_name, id->oii_ino);
 		iput(inode);
 		inode = ERR_PTR(-ENOENT);
+	} else if ((rc = osd_attach_jinode(inode))) {
+		iput(inode);
+		inode = ERR_PTR(rc);
 	} else {
 		ldiskfs_clear_inode_state(inode, LDISKFS_STATE_LUSTRE_DESTROY);
 		if (id->oii_gen == OSD_OII_NOGEN)
@@ -1010,6 +1014,13 @@ join:
 found:
 	obj->oo_compat_dot_created = 1;
 	obj->oo_compat_dotdot_created = 1;
+
+	result = osd_attach_jinode(inode);
+	if (result) {
+		obj->oo_inode = NULL;
+		iput(inode);
+		GOTO(out, result);
+	}
 
 	if (!S_ISDIR(inode->i_mode) || !ldiskfs_pdo) /* done */
 		GOTO(out, result = 0);
