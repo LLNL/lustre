@@ -92,6 +92,7 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 {
 	struct osd_thread_info	*info = osd_oti_get(env);
 	char			*buf  = info->oti_buf;
+	size_t			 buflen = sizeof(info->oti_buf);
 	struct lquota_acct_rec	*rec  = (struct lquota_acct_rec *)dtrec;
 	struct osd_object	*obj = osd_dt_obj(dtobj);
 	struct osd_device	*osd = osd_obj2dev(obj);
@@ -102,7 +103,7 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 	rec->bspace = rec->ispace = 0;
 
 	/* convert the 64-bit uid/gid into a string */
-	sprintf(buf, "%llx", *((__u64 *)dtkey));
+	snprintf(buf, buflen, "%llx", *((__u64 *)dtkey));
 	/* fetch DMU object ID (DMU_USERUSED_OBJECT/DMU_GROUPUSED_OBJECT) to be
 	 * used */
 	oid = osd_quota_fid2dmu(lu_object_fid(&dtobj->do_lu));
@@ -114,18 +115,31 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 	 * requires a valid oo_db. */
 	rc = -zap_lookup(osd->od_os, oid, buf, sizeof(uint64_t), 1,
 			&rec->bspace);
-	if (rc == -ENOENT)
+	if (rc == -ENOENT) {
 		/* user/group has not created anything yet */
 		CDEBUG(D_QUOTA, "%s: id %s not found in DMU accounting ZAP\n",
 		       osd->od_svname, buf);
-	else if (rc)
+	} else if (rc) {
 		RETURN(rc);
+	}
 
-	if (osd->od_quota_iused_est) {
+	if (!osd_dmu_userobj_accounting_available(osd)) {
 		if (rec->bspace != 0)
 			/* estimate #inodes in use */
 			rec->ispace = osd_objset_user_iused(osd, rec->bspace);
-		RETURN(+1);
+		rc = 1;
+	} else {
+		snprintf(buf, buflen, OSD_DMU_USEROBJ_PREFIX "%llx",
+			 *((__u64 *)dtkey));
+		rc = zap_lookup(osd->od_os, oid, buf, sizeof(uint64_t), 1,
+				&rec->ispace);
+		if (rc == -ENOENT) {
+			CDEBUG(D_QUOTA,
+			       "%s: id %s not found dnode accounting\n",
+			       osd->od_svname, buf);
+		} else if (rc == 0) {
+			rc = 1;
+		}
 	}
 
 	/* as for inode accounting, it is not maintained by DMU, so we just
@@ -329,7 +343,7 @@ static int osd_it_acct_rec(const struct lu_env *env,
 	if (rc)
 		RETURN(rc);
 
-	if (osd->od_quota_iused_est) {
+	if (!osd_dmu_userobj_accounting_available(osd)) {
 		if (rec->bspace != 0)
 			/* estimate #inodes in use */
 			rec->ispace = osd_objset_user_iused(osd, rec->bspace);
