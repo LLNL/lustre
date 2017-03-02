@@ -714,6 +714,33 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_MSG_RESULT([no])
 	])
 ])
+
+# 4.9 must stop using ib_get_dma_mr and the global MR
+# We then have to use FMR/Fastreg for all RDMA.
+AS_IF([test $ENABLEO2IB != "no"], [
+	AC_MSG_CHECKING([if 'ib_get_dma_mr' exists])
+	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		ib_get_dma_mr(NULL, 0);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_IB_GET_DMA_MR, 1,
+			[ib_get_dma_mr is defined])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
+
 ]) # LN_CONFIG_O2IB
 
 #

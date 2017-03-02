@@ -108,7 +108,14 @@ static int concurrent_sends = 0;
 CFS_MODULE_PARM(concurrent_sends, "i", int, 0444,
                 "send work-queue sizing");
 
-static int map_on_demand = 0;
+#ifdef HAVE_IB_GET_DMA_MR
+#define IBLND_DEFAULT_MAP_ON_DEMAND 0
+#define IBLND_MIN_MAP_ON_DEMAND 0
+#else
+#define IBLND_DEFAULT_MAP_ON_DEMAND IBLND_MAX_RDMA_FRAGS
+#define IBLND_MIN_MAP_ON_DEMAND 1
+#endif
+static int map_on_demand = IBLND_DEFAULT_MAP_ON_DEMAND;
 CFS_MODULE_PARM(map_on_demand, "i", int, 0444,
                 "map on demand");
 
@@ -467,9 +474,14 @@ kiblnd_tunables_init (void)
         if (*kiblnd_tunables.kib_peercredits_hiw >= *kiblnd_tunables.kib_peertxcredits)
                 *kiblnd_tunables.kib_peercredits_hiw = *kiblnd_tunables.kib_peertxcredits - 1;
 
-        if (*kiblnd_tunables.kib_map_on_demand < 0 ||
-            *kiblnd_tunables.kib_map_on_demand > IBLND_MAX_RDMA_FRAGS)
-                *kiblnd_tunables.kib_map_on_demand = 0; /* disable map-on-demand */
+        if (*kiblnd_tunables.kib_map_on_demand < IBLND_MIN_MAP_ON_DEMAND ||
+            *kiblnd_tunables.kib_map_on_demand > IBLND_MAX_RDMA_FRAGS) {
+	        /* Use the default */
+                CWARN("Invalid map_on_demand (%d), expects %d - %d. Using default of %d\n",
+                      *kiblnd_tunables.kib_map_on_demand, IBLND_MIN_MAP_ON_DEMAND,
+                      IBLND_MAX_RDMA_FRAGS, IBLND_DEFAULT_MAP_ON_DEMAND);
+                *kiblnd_tunables.kib_map_on_demand = IBLND_DEFAULT_MAP_ON_DEMAND;
+	}
 
         if (*kiblnd_tunables.kib_map_on_demand == 1)
                 *kiblnd_tunables.kib_map_on_demand = 2; /* don't make sense to create map if only one fragment */

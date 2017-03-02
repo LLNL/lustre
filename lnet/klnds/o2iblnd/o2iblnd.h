@@ -234,7 +234,9 @@ typedef struct kib_hca_dev
         __u64                ibh_page_mask;     /* page mask of current HCA */
         int                  ibh_mr_shift;      /* bits shift of max MR size */
         __u64                ibh_mr_size;       /* size of MR */
+#ifdef HAVE_IB_GET_DMA_MR
 	struct ib_mr        *ibh_mrs;           /* global MR */
+#endif
         struct ib_pd        *ibh_pd;            /* PD */
         kib_dev_t           *ibh_dev;           /* owner */
         cfs_atomic_t         ibh_ref;           /* refcount */
@@ -1104,8 +1106,10 @@ static inline unsigned int kiblnd_sg_dma_len(struct ib_device *dev,
 
 #endif
 
+#ifdef HAVE_IB_GET_DMA_MR
 struct ib_mr *kiblnd_find_rd_dma_mr(kib_hca_dev_t *hdev,
                                     kib_rdma_desc_t *rd);
+#endif
 void kiblnd_map_rx_descs(kib_conn_t *conn);
 void kiblnd_unmap_rx_descs(kib_conn_t *conn);
 int kiblnd_map_tx(lnet_ni_t *ni, kib_tx_t *tx,
