@@ -63,6 +63,10 @@
 #include <sys/txg.h>
 
 char *osd_obj_tag = "osd_object";
+static int osd_object_sync_delay_us = -1;
+module_param(osd_object_sync_delay_us, int, 0644);
+MODULE_PARM_DESC(osd_object_sync_delay_us,
+                 "When zero or greater delay N usec instead doing object sync");
 
 static struct dt_object_operations osd_obj_ops;
 static struct lu_object_operations osd_lu_obj_ops;
@@ -1735,8 +1739,12 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt,
 	 * support ZIL.  If the object tracked the txg that it was last
 	 * modified in, it could pass that txg here instead of "0".  Maybe
 	 * the changes are already committed, so no wait is needed at all? */
-	if (!osd->od_dt_dev.dd_rdonly)
-		txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
+        if (!osd->od_dt_dev.dd_rdonly) {
+                if (osd_object_sync_delay_us < 0)
+                        txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
+                else
+                        udelay(osd_object_sync_delay_us);
+        }
 
 	RETURN(0);
 }
