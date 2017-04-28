@@ -67,6 +67,11 @@
 
 struct lu_context_key	osd_key;
 
+static int osd_txg_sync_delay_us = -1;
+module_param(osd_txg_sync_delay_us, int, 0644);
+MODULE_PARM_DESC(osd_txg_sync_delay_us,
+                 "When zero or greater delay N usec instead of doing txg sync");
+
 /* Slab for OSD object allocation */
 struct kmem_cache *osd_object_kmem;
 
@@ -318,8 +323,12 @@ static int osd_trans_stop(const struct lu_env *env, struct dt_device *dt,
 
 	osd_unlinked_list_emptify(env, osd, &unlinked, true);
 
-	if (sync)
-		txg_wait_synced(dmu_objset_pool(osd->od_os), txg);
+	if (sync) {
+		if (osd_txg_sync_delay_us < 0)
+			txg_wait_synced(dmu_objset_pool(osd->od_os), txg);
+		else
+			udelay(osd_txg_sync_delay_us);
+	}
 
 	RETURN(rc);
 }
