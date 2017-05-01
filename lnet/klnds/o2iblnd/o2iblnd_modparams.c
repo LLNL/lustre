@@ -151,7 +151,7 @@ static int use_privileged_port = 1;
 CFS_MODULE_PARM(use_privileged_port, "i", int, 0644,
                 "use privileged port when initiating connection");
 
-static unsigned int wrq_sge = 1;
+static unsigned int wrq_sge = 2;
 module_param(wrq_sge, uint, 0444);
 MODULE_PARM_DESC(wrq_sge, "# scatter/gather element per work request");
 
