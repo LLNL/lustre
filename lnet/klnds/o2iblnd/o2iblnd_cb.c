@@ -51,7 +51,7 @@ static int kiblnd_init_rdma(kib_conn_t *conn, kib_tx_t *tx, int type,
 			    int resid, kib_rdma_desc_t *dstrd, __u64 dstcookie);
 static void kiblnd_queue_tx_locked(kib_tx_t *tx, kib_conn_t *conn);
 static void kiblnd_queue_tx(kib_tx_t *tx, kib_conn_t *conn);
-static void kiblnd_unmap_tx(lnet_ni_t *ni, kib_tx_t *tx);
+static void kiblnd_unmap_tx(kib_tx_t *tx);
 
 static void
 kiblnd_tx_done (lnet_ni_t *ni, kib_tx_t *tx)
@@ -68,7 +68,7 @@ kiblnd_tx_done (lnet_ni_t *ni, kib_tx_t *tx)
 	LASSERT (!tx->tx_waiting);              /* mustn't be awaiting peer response */
 	LASSERT (tx->tx_pool != NULL);
 
-	kiblnd_unmap_tx(ni, tx);
+	kiblnd_unmap_tx(tx);
 
 	/* tx may have up to 2 lnet msgs to finalise */
 	lntmsg[0] = tx->tx_lntmsg[0]; tx->tx_lntmsg[0] = NULL;
@@ -601,20 +601,16 @@ kiblnd_fmr_map_tx(kib_net_t *net, kib_tx_t *tx, kib_rdma_desc_t *rd, __u32 nob)
 }
 
 static void
-kiblnd_unmap_tx(lnet_ni_t *ni, kib_tx_t *tx)
+kiblnd_unmap_tx(kib_tx_t *tx)
 {
-	kib_net_t  *net = ni->ni_data;
-
-	LASSERT(net != NULL);
-
-	if (net->ibn_fmr_ps != NULL)
+	if (tx->fmr.fmr_pfmr || tx->fmr.fmr_frd)
 		kiblnd_fmr_pool_unmap(&tx->fmr, tx->tx_status);
 
-        if (tx->tx_nfrags != 0) {
-                kiblnd_dma_unmap_sg(tx->tx_pool->tpo_hdev->ibh_ibdev,
-                                    tx->tx_frags, tx->tx_nfrags, tx->tx_dmadir);
-                tx->tx_nfrags = 0;
-        }
+	if (tx->tx_nfrags != 0) {
+		kiblnd_dma_unmap_sg(tx->tx_pool->tpo_hdev->ibh_ibdev,
+				    tx->tx_frags, tx->tx_nfrags, tx->tx_dmadir);
+		tx->tx_nfrags = 0;
+	}
 }
 
 static int

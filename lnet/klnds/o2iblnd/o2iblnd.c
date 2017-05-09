@@ -1941,7 +1941,7 @@ again:
 				return 0;
 			}
 			spin_unlock(&fps->fps_lock);
-			rc = -EBUSY;
+			rc = -EAGAIN;
 		}
 
 		spin_lock(&fps->fps_lock);
