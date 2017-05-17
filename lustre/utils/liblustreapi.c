@@ -3886,45 +3886,45 @@ static int get_mdtname(char *name, char *format, char *buf)
 int root_ioctl(const char *mdtname, int opc, void *data, int *mdtidxp,
 	       int want_error)
 {
-        char fsname[20];
-        char *ptr;
+	char fsname[20];
+	char *ptr;
 	int fd, rc;
 	long index;
 
-        /* Take path, fsname, or MDTname.  Assume MDT0000 in the former cases.
-         Open root and parse mdt index. */
-        if (mdtname[0] == '/') {
-                index = 0;
-                rc = get_root_path(WANT_FD | want_error, NULL, &fd,
-                                   (char *)mdtname, -1);
-        } else {
-                if (get_mdtname((char *)mdtname, "%s%s", fsname) < 0)
-                        return -EINVAL;
-                ptr = fsname + strlen(fsname) - 8;
-                *ptr = '\0';
-                index = strtol(ptr + 4, NULL, 10);
-                rc = get_root_path(WANT_FD | want_error, fsname, &fd, NULL, -1);
-        }
-        if (rc < 0) {
-                if (want_error)
-                        llapi_err_noerrno(LLAPI_MSG_ERROR,
-                                          "Can't open %s: %d\n", mdtname, rc);
-                return rc;
-        }
+	/* Take path, fsname, or MDTname.  Assume MDT0000 in the former cases.
+	 Open root and parse mdt index. */
+	if (mdtname[0] == '/') {
+		index = 0;
+		rc = get_root_path(WANT_FD | want_error, NULL, &fd,
+				   (char *)mdtname, -1);
+	} else {
+		if (get_mdtname((char *)mdtname, "%s%s", fsname) < 0)
+			return -EINVAL;
+		ptr = fsname + strlen(fsname) - 8;
+		*ptr = '\0';
+		index = strtol(ptr + 4, NULL, 16);
+		rc = get_root_path(WANT_FD | want_error, fsname, &fd, NULL, -1);
+	}
+	if (rc < 0) {
+		if (want_error)
+			llapi_err_noerrno(LLAPI_MSG_ERROR,
+					  "Can't open %s: %d\n", mdtname, rc);
+		return rc;
+	}
 
-        if (mdtidxp)
-                *mdtidxp = index;
+	if (mdtidxp)
+		*mdtidxp = index;
 
-        rc = ioctl(fd, opc, data);
-        if (rc == -1)
-                rc = -errno;
-        else
-                rc = 0;
-        if (rc && want_error)
-                llapi_error(LLAPI_MSG_ERROR, rc, "ioctl %d err %d", opc, rc);
+	rc = ioctl(fd, opc, data);
+	if (rc == -1)
+		rc = -errno;
+	else
+		rc = 0;
+	if (rc && want_error)
+		llapi_error(LLAPI_MSG_ERROR, rc, "ioctl %d err %d", opc, rc);
 
-        close(fd);
-        return rc;
+	close(fd);
+	return rc;
 }
 
 /****** Changelog API ********/
