@@ -45,8 +45,6 @@ init_SCRIPTS  =
 
 if !HAVE_SYSTEMD
 init_SCRIPTS += lnet
-endif
-
 if SERVER
 if !HAVE_SYSTEMD
 init_SCRIPTS += lustre
@@ -55,6 +53,8 @@ if GSS_KEYRING
 init_SCRIPTS += lsvcgss
 endif
 endif
+endif
+
 endif
 
 if UTILS
