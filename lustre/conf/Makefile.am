@@ -43,7 +43,9 @@ if ZFS_ENABLED
 sysconf_DATA += ldev.conf
 endif
 if RHEL
+if !HAVE_SYSTEMD
 sysconfig_DATA += lustre
+endif
 if GSS_KEYRING
 sysconfig_DATA += lsvcgss
 endif
