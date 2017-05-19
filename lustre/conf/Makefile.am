@@ -51,7 +51,10 @@ udevrules_DATA = 99-lustre.rules
 if RHEL
 if SERVER
 sysconfigdir = $(sysconfdir)/sysconfig
-sysconfig_DATA = lustre lsvcgss
+sysconfig_DATA = lsvcgss
+if !HAVE_SYSTEMD
+sysconfig_DATA += lustre
+endif
 endif
 endif
 
