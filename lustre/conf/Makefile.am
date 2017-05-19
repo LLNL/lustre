@@ -39,6 +39,8 @@ EXTRA_DIST = lustre.xml 99-lustre.rules lustre ldev.conf ko2iblnd.conf \
              lnet-sysctl.conf 99-lustre-server.rules
 
 sysconf_DATA = lnet.conf
+sysconfig_DATA =
+sysconfigdir = $(sysconfdir)/sysconfig
 
 if UTILS
 sysconf_DATA += lnet_routes.conf
@@ -55,10 +57,11 @@ if ZFS_ENABLED
 sysconf_DATA += ldev.conf
 endif
 if RHEL
-sysconfigdir = $(sysconfdir)/sysconfig
-sysconfig_DATA = lustre
 if GSS_KEYRING
 sysconfig_DATA += lsvcgss
+endif
+if !HAVE_SYSTEMD
+sysconfig_DATA += lustre
 endif
 endif
 endif
