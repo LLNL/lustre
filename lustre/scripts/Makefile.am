@@ -45,11 +45,11 @@ init_SCRIPTS  = lsvcgss
 
 if !HAVE_SYSTEMD
 init_SCRIPTS += lnet
-endif
-
 if SERVER
 init_SCRIPTS += lustre
 endif
+endif
+
 endif
 
 if UTILS
