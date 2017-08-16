@@ -385,6 +385,25 @@ LB_LINUX_TRY_COMPILE([
 ]) # LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK
 
 #
+# Kernel version 3.17 changed hlist_add_after to
+# hlist_add_behind
+#
+AC_DEFUN([LIBCFS_HLIST_ADD_AFTER],[
+AC_MSG_CHECKING([does function 'hlist_add_after' exist])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/list.h>
+],[
+        hlist_add_after(NULL, NULL);
+],[
+	AC_MSG_RESULT([yes])
+        AC_DEFINE(HAVE_HLIST_ADD_AFTER, 1,
+                [hlist_add_after is available])
+],[
+	AC_MSG_RESULT([no])
+])
+]) # LIBCFS_HLIST_ADD_AFTER
+
+#
 # LIBCFS_PROG_LINUX
 #
 # LNet linux kernel checks
@@ -415,6 +434,8 @@ LC_SHRINK_CONTROL
 LIBCFS_PROCESS_NAMESPACE
 # 3.7
 LIBCFS_SOCK_ALLOC_FILE
+# 3.17
+LIBCFS_HLIST_ADD_AFTER
 # 4.2
 LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK
 ])

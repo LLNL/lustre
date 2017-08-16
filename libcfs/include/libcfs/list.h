@@ -85,7 +85,7 @@ typedef struct hlist_node cfs_hlist_node_t;
 
 #define cfs_hlist_add_head(n, next)        hlist_add_head(n, next)
 #define cfs_hlist_add_before(n, next)      hlist_add_before(n, next)
-#define cfs_hlist_add_after(n, next)       hlist_add_after(n, next)
+#define cfs_hlist_add_after(n, next)       hlist_add_behind(next, n)
 
 #define cfs_hlist_entry(ptr, type, member) hlist_entry(ptr, type, member)
 #define cfs_hlist_for_each(pos, head)      hlist_for_each(pos, head)
@@ -649,5 +649,9 @@ static inline void cfs_hlist_add_after(cfs_hlist_node_t *n,
 	     pos && (n = pos->next, 1) &&                                     \
 		(tpos = cfs_hlist_entry(pos, type, member), 1);               \
 	     pos = n)
+
+#ifdef HAVE_HLIST_ADD_AFTER
+#define hlist_add_behind(hnode, tail)  hlist_add_after(tail, hnode)
+#endif /* HAVE_HLIST_ADD_AFTER */
 
 #endif /* __LIBCFS_LUSTRE_LIST_H__ */
