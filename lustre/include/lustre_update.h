@@ -33,7 +33,6 @@
 #include <lustre_net.h>
 #include <dt_object.h>
 
-#define OUT_UPDATE_INIT_BUFFER_SIZE	4096
 #define OUT_UPDATE_REPLY_SIZE		4096
 #define OUT_BULK_BUFFER_SIZE		4096
 

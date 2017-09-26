@@ -130,11 +130,13 @@ int osp_object_update_request_create(struct osp_update_request *our,
 	if (ours == NULL)
 		return -ENOMEM;
 
-	if (size < OUT_UPDATE_INIT_BUFFER_SIZE)
-		size = OUT_UPDATE_INIT_BUFFER_SIZE;
-
+	/* Since this buffer will be put on wire, let's
+	 * align the buffer size to PAGE_SIZE to avoid
+	 * trouble.
+	 */
+	LASSERT(size > 0);
+	size = ((size - 1) | (PAGE_SIZE - 1)) + 1;
 	ours->ours_req = object_update_request_alloc(size);
-
 	if (IS_ERR(ours->ours_req)) {
 		OBD_FREE_PTR(ours);
 		return -ENOMEM;
@@ -186,6 +188,7 @@ osp_current_object_update_request(struct osp_update_request *our)
 struct osp_update_request *osp_update_request_create(struct dt_device *dt)
 {
 	struct osp_update_request *our;
+	int rc;
 
 	OBD_ALLOC_PTR(our);
 	if (our == NULL)
@@ -196,7 +199,11 @@ struct osp_update_request *osp_update_request_create(struct dt_device *dt)
 	INIT_LIST_HEAD(&our->our_list);
 	spin_lock_init(&our->our_list_lock);
 
-	osp_object_update_request_create(our, OUT_UPDATE_INIT_BUFFER_SIZE);
+	rc = osp_object_update_request_create(our, PAGE_SIZE);
+	if (rc != 0) {
+		OBD_FREE_PTR(our);
+		return ERR_PTR(rc);
+	}
 	return our;
 }
 
