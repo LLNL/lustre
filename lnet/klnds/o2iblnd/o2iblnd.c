@@ -1530,7 +1530,7 @@ static int kiblnd_alloc_freg_pool(kib_fmr_poolset_t *fps, kib_fmr_pool_t *fpo)
 						   LNET_MAX_PAYLOAD/PAGE_SIZE);
 #else
 		frd->frd_mr = ib_alloc_mr(fpo->fpo_hdev->ibh_pd,
-					  IB_MR_TYPE_MEM_REG,
+					  IB_MR_TYPE_SG_GAPS,
 					  LNET_MAX_PAYLOAD/PAGE_SIZE);
 #endif
 		if (IS_ERR(frd->frd_mr)) {
