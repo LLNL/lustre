@@ -1,5 +1,5 @@
-07-21-2017 Intel Corporation
-       * version 2.8.1
+11-07-2017 Intel Corporation
+       * version 2.8.2
        * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
          for currently supported client and server kernel versions.
        * Server known to build on patched kernels:
