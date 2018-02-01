@@ -15,6 +15,15 @@
 %bcond_without static
 %bcond_with    systemd
 
+# We are temporarily avoiding the server build on ARM,
+# but we want the standard "lustre" package names.
+%ifarch aarch64
+    %undefine with_servers
+    %if %{undefined lustre_name}
+        %global lustre_name lustre
+    %endif
+%endif
+
 %if %{without servers}
     # --without servers overrides --with {ldiskfs|zfs}
     # so undefine the internal variables set by bcond_*
