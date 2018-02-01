@@ -15,6 +15,10 @@
 %bcond_without static
 %bcond_with    systemd
 
+%ifarch aarch64
+    %undefine with_servers
+%endif
+
 %if %{without servers}
     # --without servers overrides --with {ldiskfs|zfs}
     # so undefine the internal variables set by bcond_*
