@@ -83,6 +83,8 @@ AS_IF([fgrep -q RHEL_RELEASE $LINUX_OBJ/include/$VERSION_HDIR/version.h], [
 		$LINUX_OBJ/include/$VERSION_HDIR/version.h)$(awk \
 		'/ RHEL_MINOR / { print [$]3 }' \
 		$LINUX_OBJ/include/$VERSION_HDIR/version.h)
+],[lsb_release -rs && lsb_release -is | grep RedHat], [
+	lb_cv_rhel_kernel_version=$(lsb_release -rs | sed 's/\.//g')
 ])
 ])
 AS_IF([test -n "$lb_cv_rhel_kernel_version"], [
