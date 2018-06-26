@@ -54,9 +54,12 @@ sysconf_DATA += ldev.conf
 endif
 if RHEL
 sysconfigdir = $(sysconfdir)/sysconfig
-sysconfig_DATA = lustre
+sysconfig_DATA =
+if !HAVE_SYSTEMD
+sysconfig_DATA += lustre
 if GSS_KEYRING
 sysconfig_DATA += lsvcgss
+endif
 endif
 endif
 endif
