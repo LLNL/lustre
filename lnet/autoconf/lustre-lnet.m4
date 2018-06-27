@@ -106,10 +106,13 @@ AS_IF([test "x$enable_backoff" = xyes], [
 # fail to build if libyaml is not installed
 #
 AC_DEFUN([LN_CONFIG_DLC], [
-	AC_CHECK_LIB([yaml], [yaml_parser_initialize],
-		     [LIBYAML="libyaml"],
-		     [AC_MSG_ERROR([YAML development libraries not not installed])],
-		     [-lm])
+	# libyaml is not needed at dist time
+	AS_IF([test x$enable_dist = xno], [
+		AC_CHECK_LIB([yaml], [yaml_parser_initialize],
+			     [LIBYAML="libyaml"],
+			     [AC_MSG_ERROR([YAML development libraries not not installed])],
+			     [-lm])
+	])
 ])
 
 #

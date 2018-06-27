@@ -3140,12 +3140,13 @@ AC_CHECK_HEADERS([blkid/blkid.h])
 AC_CHECK_HEADERS([ext2fs/ext2fs.h])
 
 # lustre/utils/lfs.c
-AC_CHECK_LIB([z], [crc32], [
+AS_IF([test x$enable_dist = xno], [
+	AC_CHECK_LIB([z], [crc32], [
 	     AC_CHECK_HEADER([zlib.h], [], [
 			     AC_MSG_ERROR([zlib.h not found.])])
 	     ], [
-	     AC_MSG_ERROR([
-zlib library not found. Please install zlib development package.])
+	     AC_MSG_ERROR([zlib library not found. Please install zlib development package.])
+	])
 ])
 
 SELINUX=""
