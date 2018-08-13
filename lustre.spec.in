@@ -62,11 +62,7 @@
 
 # Set the package name prefix
 %if %{undefined lustre_name}
-    %if %{with servers}
-        %global lustre_name lustre
-    %else
-        %global lustre_name lustre-client
-    %endif
+    %global lustre_name lustre
 %endif
 
 %if %{undefined kmoddir}
