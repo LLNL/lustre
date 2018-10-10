@@ -915,4 +915,8 @@ static inline int osd_dmu_read(struct osd_device *osd, dnode_t *dn,
 #define dmu_tx_mark_netfree(tx)
 #endif
 
+#ifndef HAVE_ZFS_INODE_TIMESPEC
+#define inode_timespec_t timestruc_t
+#endif
+
 #endif /* _OSD_INTERNAL_H */
