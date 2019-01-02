@@ -520,10 +520,18 @@ static void tgt_grant_incoming(const struct lu_env *env, struct obd_export *exp,
 
 	/* inflate grant counters if required */
 	if (!exp_grant_param_supp(exp)) {
+		__u64 undirty;
 		oa->o_grant	= tgt_grant_inflate(tgd, oa->o_grant);
 		oa->o_dirty	= tgt_grant_inflate(tgd, oa->o_dirty);
 		oa->o_dropped	= tgt_grant_inflate(tgd, (u64)oa->o_dropped);
-		oa->o_undirty	= tgt_grant_inflate(tgd, oa->o_undirty);
+		undirty		= tgt_grant_inflate(tgd, oa->o_undirty);
+		/*
+		 * inflation can bump client's wish to >2GB which doesn't fit
+		 * 32bit o_undirty, limit that to 1GB ..
+		 */
+		if (undirty >= (2ULL * 1024 * 1024 * 1024))
+			undirty = 1024 * 1024 * 1024;
+		oa->o_undirty	= undirty;
 	}
 
 	dirty = oa->o_dirty;
