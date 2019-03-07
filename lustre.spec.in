@@ -31,6 +31,17 @@
     %undefine with_zfs
 %endif
 
+# TOSS-4431
+# Lustre 2.12.0 has no ldiskfs patch set for RHEL kernel-alt, so we
+# must enable ldiskfs build only for std kernel.  We build x86_64
+# arch only against std kernel, and do not expect this to change.
+# We also have no demand for servers on aarch64/ppc64le.
+# Ideally ldiskfs could be built w/o patches that are kernel-specific,
+# or less so, and then this would not be necessary.
+%ifnarch x86_64
+    %undefine with_ldiskfs
+%endif
+
 %{!?version: %global version @VERSION@}
 %{!?kver:    %global kver    %(uname -r)}
 %{!?kdir:    %global kdir    /lib/modules/%{kver}/source}
