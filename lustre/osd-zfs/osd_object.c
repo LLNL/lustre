@@ -292,6 +292,7 @@ int __osd_obj2dnode(objset_t *os, uint64_t oid, dnode_t **dnp)
 	dbi = (dmu_buf_impl_t *)db;
 	DB_DNODE_ENTER(dbi);
 	*dnp = DB_DNODE(dbi);
+	DB_DNODE_EXIT(dbi);
 	LASSERT(*dnp != NULL);
 
 	return 0;
@@ -1407,6 +1408,7 @@ static int osd_find_new_dnode(const struct lu_env *env, dmu_tx_t *tx,
 			atomic_inc_32(&dn->dn_dbufs_count);
 		}
 		*dnp = dn;
+		DB_DNODE_EXIT(db);
 		dbuf_read(db, NULL, DB_RF_MUST_SUCCEED | DB_RF_NOPREFETCH);
 		break;
 	}
