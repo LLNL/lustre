@@ -208,6 +208,10 @@ struct ll_inode_info {
 			 * accurate if the file is shared by different jobs.
 			 */
 			char                    lli_jobid[LUSTRE_JOBID_SIZE];
+
+			struct mutex			lli_group_mutex;
+			__u64				lli_group_users;
+			unsigned long			lli_group_gid;
 		};
 	};
 
