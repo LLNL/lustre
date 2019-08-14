@@ -986,6 +986,9 @@ void ll_lli_init(struct ll_inode_info *lli)
 		INIT_LIST_HEAD(&lli->lli_agl_list);
 		lli->lli_agl_index = 0;
 		lli->lli_async_rc = 0;
+		mutex_init(&lli->lli_group_mutex);
+		lli->lli_group_users = 0;
+		lli->lli_group_gid = 0;
 	}
 	mutex_init(&lli->lli_layout_mutex);
 	memset(lli->lli_jobid, 0, sizeof(lli->lli_jobid));
