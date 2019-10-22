@@ -38,6 +38,7 @@
 #include <getopt.h>
 #include <sys/ioctl.h>
 #include <time.h>
+#include <inttypes.h>
 
 #include "obdctl.h"
 #include "lustreapi_internal.h"
@@ -615,7 +616,8 @@ bad_type:
 			printf("%s_osts_%s: %d\n", name,
 			       lfsck_status2name(j), query.lu_osts_count[i][j]);
 
-		printf("%s_repaired: %llu\n", name, query.lu_repaired[i]);
+		printf("%s_repaired: %ju\n", name, (uintmax_t)
+		    query.lu_repaired[i]);
 	}
 
 	return 0;

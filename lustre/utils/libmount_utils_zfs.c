@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <libzfs.h>
+#include <inttypes.h>
 #include <sys/systeminfo.h>
 
 /* Persistent mount data is stored in these user attributes */
@@ -569,8 +570,8 @@ static char *zfs_mkfs_opts(struct mkfs_opts *mop, char *str, int len)
 	if (strlen(mop->mo_mkfsopts) != 0)
 		snprintf(str, len, " -o %s", mop->mo_mkfsopts);
 	if (mop->mo_device_kb)
-		snprintf(str, len, " -o quota=%llu",
-			 mop->mo_device_kb * 1024);
+		snprintf(str, len, " -o quota=%ju",
+			 (uintmax_t) mop->mo_device_kb * 1024);
 
 	return str;
 }

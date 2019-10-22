@@ -58,6 +58,7 @@
 
 #include <string.h>
 #include <getopt.h>
+#include <inttypes.h>
 
 #include <asm/byteorder.h>
 #include <linux/lustre/lustre_disk.h>
@@ -209,9 +210,9 @@ int main(int argc, char *const argv[])
 	printf("  feature_compat: %#x\n", lsd.lsd_feature_compat);
 	printf("  feature_incompat: %#x\n", lsd.lsd_feature_incompat);
 	printf("  feature_rocompat: %#x\n", lsd.lsd_feature_rocompat);
-	printf("  last_transaction: %llu\n", lsd.lsd_last_transno);
+	printf("  last_transaction: %ju\n", (uintmax_t) lsd.lsd_last_transno);
 	printf("  target_index: %u\n", lsd.lsd_osd_index);
-	printf("  mount_count: %llu\n", lsd.lsd_mount_count);
+	printf("  mount_count: %ju\n", (uintmax_t) lsd.lsd_mount_count);
 
 	/* read client information */
 	if (opt_client) {
@@ -258,9 +259,10 @@ int main(int argc, char *const argv[])
 			/* display per-client data area */
 			printf("\n  %.40s:\n", lcd.lcd_uuid);
 			printf("    generation: %u\n", lcd.lcd_generation);
-			printf("    last_transaction: %llu\n",
-			       lcd.lcd_last_transno);
-			printf("    last_xid: %llu\n", lcd.lcd_last_xid);
+			printf("    last_transaction: %ju\n",
+			       (uintmax_t) lcd.lcd_last_transno);
+			printf("    last_xid: %ju\n",
+			       (uintmax_t) lcd.lcd_last_xid);
 			printf("    last_result: %u\n", lcd.lcd_last_result);
 			printf("    last_data: %u\n", lcd.lcd_last_data);
 
@@ -274,10 +276,10 @@ int main(int argc, char *const argv[])
 					__le32_to_cpu(lcd.lcd_last_close_result);
 				lcd.lcd_last_close_data =
 					__le32_to_cpu(lcd.lcd_last_close_data);
-				printf("    last_close_transation: %llu\n",
-				       lcd.lcd_last_close_transno);
-				printf("    last_close_xid: %llu\n",
-				       lcd.lcd_last_close_xid);
+				printf("    last_close_transation: %ju\n",
+				       (uintmax_t) lcd.lcd_last_close_transno);
+				printf("    last_close_xid: %ju\n",
+				       (uintmax_t) lcd.lcd_last_close_xid);
 				printf("    last_close_result: %u\n",
 				       lcd.lcd_last_close_result);
 				printf("    last_close_data: %u\n",
@@ -375,10 +377,13 @@ int main(int argc, char *const argv[])
 			printf("  %lld:\n", slot);
 			printf("    client_generation: %u\n",
 			       lrd.lrd_client_gen);
-			printf("    last_transaction: %llu\n", lrd.lrd_transno);
-			printf("    last_xid: %llu\n", lrd.lrd_xid);
+			printf("    last_transaction: %ju\n",
+			       (uintmax_t) lrd.lrd_transno);
+			printf("    last_xid: %ju\n",
+			       (uintmax_t) lrd.lrd_xid);
 			printf("    last_result: %u\n", lrd.lrd_result);
-			printf("    last_data: %llu\n\n", lrd.lrd_data);
+			printf("    last_data: %ju\n\n",
+			       (uintmax_t) lrd.lrd_data);
 		}
 	}
 

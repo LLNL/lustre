@@ -41,6 +41,7 @@
 #include <time.h>
 #include <limits.h>
 #include <ctype.h>
+#include <inttypes.h>
 
 #include <libcfs/util/list.h>
 #include <libcfs/util/ioctl.h>
@@ -1233,10 +1234,11 @@ static int __snapshot_create(struct snapshot_instance *si,
 				       DRSH" '"DZFS" snapshot "
 				       "-o lustre:fsname=%s "
 				       "-o lustre:magic=%s "
-				       "-o lustre:ctime=%llu "
-				       "-o lustre:mtime=%llu ",
+				       "-o lustre:ctime=%ju "
+				       "-o lustre:mtime=%ju ",
 				       PRSH(si, st), PZFS(st), fsname,
-				       SNAPSHOT_MAGIC, xtime, xtime);
+				       SNAPSHOT_MAGIC, (uintmax_t) xtime,
+				       (uintmax_t) xtime);
 			if (len <= 0)
 				exit(-EOVERFLOW);
 
@@ -1796,29 +1798,31 @@ static int __snapshot_modify(struct snapshot_instance *si,
 					 DSSNAME" "DSSNAME" && "DZFS
 					 " set lustre:comment=\"%s\" "DSSNAME
 					 " && "DZFS
-					 " set lustre:mtime=%llu "DSSNAME"'",
+					 " set lustre:mtime=%ju "DSSNAME"'",
 					 PRSH(si, st), PIMPORT(st), PZFS(st),
 					 PSSNAME(si, st), PSS_NEW(si, st),
 					 PZFS(st), si->si_comment,
-					 PSS_NEW(si, st), PZFS(st), xtime,
-					 PSS_NEW(si, st));
+					 PSS_NEW(si, st), PZFS(st),
+					 (uintmax_t) xtime, PSS_NEW(si, st));
 			else if (si->si_new_ssname)
 				snprintf(cmd, sizeof(cmd) - 1,
 					 DRSH" '"DIMPORT"; "DZFS
 					 " rename "DSSNAME" "DSSNAME" && "DZFS
-					 " set lustre:mtime=%llu "DSSNAME"'",
+					 " set lustre:mtime=%ju "DSSNAME"'",
 					 PRSH(si, st), PIMPORT(st), PZFS(st),
 					 PSSNAME(si, st), PSS_NEW(si, st),
-					 PZFS(st), xtime, PSS_NEW(si, st));
+					 PZFS(st), (uintmax_t) xtime,
+					 PSS_NEW(si, st));
 			else if (si->si_comment)
 				snprintf(cmd, sizeof(cmd) - 1,
 					 DRSH" '"DIMPORT"; "DZFS
 					 " set lustre:comment=\"%s\" "DSSNAME
 					 " && "DZFS
-					 " set lustre:mtime=%llu "DSSNAME"'",
+					 " set lustre:mtime=%ju "DSSNAME"'",
 					 PRSH(si, st), PIMPORT(st), PZFS(st),
 					 si->si_comment, PSSNAME(si, st),
-					 PZFS(st), xtime, PSSNAME(si, st));
+					 PZFS(st), (uintmax_t) xtime,
+					 PSSNAME(si, st));
 			else
 				exit(-EINVAL);
 
@@ -1977,7 +1981,7 @@ static int snapshot_list_one(struct snapshot_instance *si,
 			    strlen("lustre:ctime")) == 0) {
 			ptr = snapshot_first_skip_blank(buf);
 			if (ptr) {
-				sscanf(ptr, "%llu", &xtime);
+				xtime = (__u64) strtoull(ptr, NULL, 10);
 				printf("create_time: %s",
 				       ctime((time_t *)&xtime));
 			}
@@ -1988,7 +1992,7 @@ static int snapshot_list_one(struct snapshot_instance *si,
 			    strlen("lustre:mtime")) == 0) {
 			ptr = snapshot_first_skip_blank(buf);
 			if (ptr) {
-				sscanf(ptr, "%llu", &xtime);
+				xtime = (__u64) strtoull(ptr, NULL, 10);
 				printf("modify_time: %s",
 				       ctime((time_t *)&xtime));
 			}

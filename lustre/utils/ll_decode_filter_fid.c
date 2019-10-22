@@ -40,6 +40,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
 #include <asm/byteorder.h>
@@ -131,11 +132,11 @@ int main(int argc, char *argv[])
 							PFID_STRIPE_IDX_BITS);
 				if (loa->loa_comp_id != 0)
 					printf(" component_id=%u "
-					       "component_start=%llu "
-					       "component_end=%llu",
+					       "component_start=%ju "
+					       "component_end=%ju",
 					       loa->loa_comp_id,
-					       loa->loa_comp_start,
-					       loa->loa_comp_end);
+					       (uintmax_t) loa->loa_comp_start,
+					       (uintmax_t) loa->loa_comp_end);
 				printf("\n");
 				continue;
 			}
@@ -184,10 +185,12 @@ int main(int argc, char *argv[])
 			       __le32_to_cpu(ol->ol_stripe_count));
 			if (ol->ol_comp_id != 0)
 				printf(" component_id=%u "
-				       "component_start=%llu "
-				       "component_end=%llu",
+				       "component_start=%ju "
+				       "component_end=%ju",
 				       __le32_to_cpu(ol->ol_comp_id),
+				       (uintmax_t)
 				       __le64_to_cpu(ol->ol_comp_start),
+				       (uintmax_t)
 				       __le64_to_cpu(ol->ol_comp_end));
 		}
 		if (size >= sizeof(struct filter_fid))

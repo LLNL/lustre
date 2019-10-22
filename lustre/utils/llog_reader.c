@@ -53,6 +53,7 @@
 #include <linux/magic.h>
 #include <errno.h>
 #include <time.h>
+#include <inttypes.h>
 #include <linux/lnet/nidstr.h>
 #include <linux/lustre/lustre_cfg.h>
 #include <linux/lustre/lustre_fid.h>
@@ -659,10 +660,10 @@ void print_changelog_rec(struct llog_changelog_rec *rec)
 
 	secs = __le64_to_cpu(rec->cr.cr_time) >> 30;
 	gmtime_r(&secs, &ts);
-	printf("changelog record id:0x%x index:%llu cr_flags:0x%x "
+	printf("changelog record id:0x%x index:%ju cr_flags:0x%x "
 	       "cr_type:%s(0x%x) date:'%02d:%02d:%02d.%09d %04d.%02d.%02d' "
 	       "target:"DFID, __le32_to_cpu(rec->cr_hdr.lrh_id),
-	       __le64_to_cpu(rec->cr.cr_index),
+	       (uintmax_t) __le64_to_cpu(rec->cr.cr_index),
 	       __le32_to_cpu(rec->cr.cr_flags),
 	       changelog_type2str(__le32_to_cpu(rec->cr.cr_type)),
 	       __le32_to_cpu(rec->cr.cr_type),
@@ -683,8 +684,8 @@ void print_changelog_rec(struct llog_changelog_rec *rec)
 		struct changelog_ext_extra_flags *ef =
 			changelog_rec_extra_flags(&rec->cr);
 
-		printf(" cr_extra_flags:0x%llx",
-		       __le64_to_cpu(ef->cr_extra_flags));
+		printf(" cr_extra_flags:0x%jx",
+		       (uintmax_t) __le64_to_cpu(ef->cr_extra_flags));
 
 		if (ef->cr_extra_flags & CLFE_UIDGID) {
 			struct changelog_ext_uidgid *uidgid =
