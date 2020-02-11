@@ -38,6 +38,7 @@
  * @{
  */
 
+#include <glob.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <lustre/lustre_user.h>
@@ -816,6 +817,10 @@ int llapi_layout_file_comp_del(const char *path, uint32_t id, uint32_t flags);
 int llapi_layout_file_comp_set(const char *path,
 			       const struct llapi_layout *comp,
 			       uint32_t valid);
+
+int llapi_param_get_paths(const char *pattern, glob_t *paths);
+int llapi_param_get_value(const char *path, char **buf, size_t *buflen);
+void llapi_param_paths_free(glob_t *paths);
 
 /** @} llapi */
 
