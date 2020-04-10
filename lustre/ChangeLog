@@ -1,4 +1,8 @@
 TBD Whamcloud
+       * Added RHEL 7.8 kernel support
+         3.10.0-1127.el7     (RHEL7.8)
+
+2020-02-11 Whamcloud
        * version 2.12.4
        * See https://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
          for currently supported client and server kernel versions.
