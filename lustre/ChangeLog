@@ -1,5 +1,6 @@
 TBD Whamcloud
        * Added RHEL 7.8 kernel support
+       * Server primary kernels built and tested
          3.10.0-1127.el7     (RHEL7.8)
 
 2020-02-11 Whamcloud
