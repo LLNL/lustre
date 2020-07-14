@@ -326,7 +326,8 @@ bool lnet_is_route_alive(struct lnet_route *route)
 	 * that the remote net must exist on the gateway. For multi-hop
 	 * routes the next-hop will not have the remote net.
 	 */
-	if (avoid_asym_router_failure && route->lr_single_hop) {
+	if (avoid_asym_router_failure &&
+	    (route->lr_hops == 1 || route->lr_hops == LNET_UNDEFINED_HOPS)) {
 		rlpn = lnet_peer_get_net_locked(gw, route->lr_net);
 		if (!rlpn)
 			return false;
@@ -493,7 +494,9 @@ lnet_router_discovery_ping_reply(struct lnet_peer *lp)
 		}
 
 		route->lr_single_hop = single_hop;
-		if (avoid_asym_router_failure && single_hop)
+		if (avoid_asym_router_failure &&
+		    (route->lr_hops == 1 ||
+		     route->lr_hops == LNET_UNDEFINED_HOPS))
 			lnet_set_route_aliveness(route, net_up);
 		else
 			lnet_set_route_aliveness(route, true);
