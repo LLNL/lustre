@@ -379,6 +379,11 @@ replica will be written by client nodes, and the other replicas need to
 be resynched using the
 .B lfs mirror resync
 command, or an external resync agent.
+.SH LOGGING
+Upon success, lfs setstripe target paths are logged via syslog.
+.TP
+Messages are logged to facility daemon.info with keyword "lfs_arguments" to identify the messages.  An example message is:
+.B lfs_arguments jobid=2383 node=pascal23 path="/p/lustre1/doe/test.4"
 .SH EXAMPLES
 .TP
 .B lfs setstripe -S 128K -c 2 /mnt/lustre/file1

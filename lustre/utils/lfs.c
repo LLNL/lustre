@@ -63,6 +63,8 @@
 #include <dirent.h>
 #include <time.h>
 #include <ctype.h>
+#include <syslog.h>
+#include <sys/utsname.h>
 #include <zlib.h>
 #include <libgen.h>
 #include <asm/byteorder.h>
@@ -2103,6 +2105,40 @@ static int parse_targets(__u32 *tgts, int size, int offset, char *arg)
 	return rc < 0 ? rc : nr;
 }
 
+#define LFS_PRIORITY		(LOG_DAEMON | LOG_INFO)
+#define LFS_MSG_TAG		"lfs_arguments"
+#define LFS_JOBID_VAR		"SLURM_JOB_ID"
+static void log_to_syslog(const char *in_path)
+{
+	char rp[PATH_MAX];
+	struct utsname uts;
+	int have_uts;
+	char *jobid;
+
+	jobid = getenv(LFS_JOBID_VAR);
+	have_uts = !uname(&uts);
+
+	memset(rp, 0, sizeof(rp));
+
+	/*
+	 * If realpath fails, we need not log the path. log_to_syslog() must be
+	 * called after setstripe has finished
+	 *
+	 * lfs setstripe must be called on a path that either
+	 * (a) refers to a directory, which must exist
+	 * (b) refers to a file, which must not exist. lfs setstripe creates
+	 *     the file.
+	 *
+	 * So after lfs setstripe has finished operating on a path, the path
+	 * refers to a file or directory which exists, if lfs succeeded.
+	 */
+
+	if (realpath(in_path, rp) != NULL)
+		syslog(LFS_PRIORITY, "%s jobid=%s node=%s path=\"%s\"",
+			LFS_MSG_TAG, (jobid ? jobid : "none"),
+			(have_uts ? uts.nodename : "unknown"), rp);
+}
+
 struct lfs_setstripe_args {
 	unsigned long long	 lsa_comp_end;
 	unsigned long long	 lsa_stripe_size;
@@ -3506,6 +3542,8 @@ static int lfs_setstripe_internal(int argc, char **argv,
 			if (result2 == 0)
 				result2 = result;
 			continue;
+		} else {
+			log_to_syslog(fname);
 		}
 	}
 
