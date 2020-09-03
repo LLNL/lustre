@@ -682,11 +682,14 @@ your distribution.
 				[Have inode_timespec_t])
 		])
 		dnl # ZFS 0.7.12/0.8.x uses zfs_refcount_add() instead of
-		dnl # refcount_add().
+		dnl # refcount_add().  ZFS 2.0 renamed sys/refcount.h to
+		dnl # sys/zfs_refcount.h, rather the add another check to
+		dnl # determine the correct header name include it
+		dnl # indirectly through sys/dnode.h.
 		dnl #
 		LB_CHECK_COMPILE([if ZFS has 'zfs_refcount_add'],
 		zfs_refcount_add, [
-			#include <sys/refcount.h>
+			#include <sys/dnode.h>
 		],[
 			zfs_refcount_add((zfs_refcount_t *) NULL, NULL);
 		],[
