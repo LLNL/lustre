@@ -23836,6 +23836,46 @@ test_426() {
 }
 run_test 426 "splice test on Lustre"
 
+test_427() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+
+	[[ -n "$($LCTL list_param llite.*.inode_cache 2>/dev/null)" ]] ||
+		skip "$d inode cache not supported"
+
+	$LCTL set_param llite.*.inode_cache=0
+	stack_trap "$LCTL set_param llite.*.inode_cache=1"
+
+	local count=256
+
+	local before
+	local after
+
+	cancel_lru_locks mdc
+	test_mkdir $DIR/$tdir || error "mkdir $tdir"
+	createmany -m $DIR/$tdir/f $count
+	createmany -d $DIR/$tdir/d $count
+	ls -l $DIR/$tdir > /dev/null
+
+	before=$(num_objects)
+	cancel_lru_locks mdc
+	after=$(num_objects)
+
+	# sometimes even @before is less than 2 * count
+	while (( before - after < count )); do
+		sleep 1
+		after=$(num_objects)
+		wait=$((wait + 1))
+		(( wait % 5 == 0 )) && echo "wait $wait seconds objects: $after"
+		if (( wait > 60 )); then
+			error "inode slab grew from $before to $after"
+		fi
+	done
+
+	echo "lustre_inode_cache $before objects before lock cancel, $after after"
+	rm -rf $DIR/$tdir
+}
+run_test 427 "ldlm lock cancel releases dentries and inodes"
+
 lseek_test_430() {
 	local offset
 	local file=$1
