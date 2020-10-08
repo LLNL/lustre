@@ -28,6 +28,7 @@ TBD Whamcloud
          3.10.0-862.14.4.el7 (RHEL7.5)
          3.10.0-957.1.3.el7  (RHEL7.6)
          3.10.0-1127.el7     (RHEL7.8)
+         3.10.0-1160.2.1.el7 (RHEL7.9)
          3.0.101-0.47.71     (SLES11 SP3)
          3.0.101-107         (SLES11 SP4)
          3.12.74-60.64.40    (SLES12 SP1)
@@ -43,6 +44,7 @@ TBD Whamcloud
          stack overflow. For more information, please refer to bugzilla 17630.
        * NFSv4 reexport to 32-bit NFS client nodes requires Lustre client on
          the re-exporting nodes to be mounted with "32bitapi" mount option
+
 
 2019-05-26 Whamcloud
        * version 2.10.8
