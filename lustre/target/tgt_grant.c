@@ -514,9 +514,16 @@ static void tgt_grant_incoming(const struct lu_env *env, struct obd_export *exp,
 	 * out-or-order and have already consumed some grant.  We want to
 	 * leave this here in case there is a large error in accounting. */
 	CDEBUG(D_CACHE,
-	       "%s: cli %s/%p reports grant %llu dropped %u, local %lu\n",
-	       obd->obd_name, exp->exp_client_uuid.uuid, exp, oa->o_grant,
-	       oa->o_dropped, ted->ted_grant);
+	       "%s: cli %s/%p reports grant %llu dropped %u used %llu, local %ld"
+	       " grant_param %d\n", obd->obd_name, exp->exp_client_uuid.uuid,
+	       exp, oa->o_grant, oa->o_dropped, oa->o_grant_used,
+	       ted->ted_grant, exp_grant_param_supp(exp));
+
+	if (ted->ted_grant >= 2 * oa->o_grant)
+		CWARN("%s: cli %s/%p TOSS-4917 client server grant mismatch "
+		      "client: %llu vs local %lu grant_param %d\n",
+		      obd->obd_name, exp->exp_client_uuid.uuid, exp,
+		      oa->o_grant, ted->ted_grant, exp_grant_param_supp(exp));
 
 	if ((long long)oa->o_dirty < 0)
 		oa->o_dirty = 0;
@@ -903,6 +910,13 @@ static long tgt_grant_alloc(struct obd_export *exp, u64 curgrant,
 
 	ENTRY;
 
+	CDEBUG(D_CACHE,
+	       "%s: cli %s/%p want: %llu current grant %llu left: %llu "
+	       "chunk: %ld conservative %d\n", obd->obd_name,
+	       exp->exp_client_uuid.uuid, exp, want, curgrant, left, chunk,
+	       conservative);
+
+
 	if (OBD_FAIL_CHECK(OBD_FAIL_TGT_NO_GRANT))
 		RETURN(0);
 
@@ -973,13 +987,9 @@ static long tgt_grant_alloc(struct obd_export *exp, u64 curgrant,
 	}
 
 	CDEBUG(D_CACHE,
-	       "%s: cli %s/%p wants: %llu current grant %llu"
-	       " granting: %llu\n", obd->obd_name, exp->exp_client_uuid.uuid,
-	       exp, want, curgrant, grant);
-	CDEBUG(D_CACHE,
-	       "%s: cli %s/%p tot cached:%llu granted:%llu"
+	       "%s: cli %s/%p grant %llu tot cached:%llu granted:%llu"
 	       " num_exports: %d\n", obd->obd_name, exp->exp_client_uuid.uuid,
-	       exp, tgd->tgd_tot_dirty, tgd->tgd_tot_granted,
+	       exp, grant, tgd->tgd_tot_dirty, tgd->tgd_tot_granted,
 	       obd->obd_num_exports);
 
 	RETURN(grant);
