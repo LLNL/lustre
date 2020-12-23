@@ -1536,7 +1536,7 @@ static int name_create_mdt(char **logname, char *fsname, int i)
 {
 	char mdt_index[9];
 
-	sprintf(mdt_index, "-MDT%04x", i);
+	snprintf(mdt_index, sizeof(mdt_index), "-MDT%04x", i);
 	return name_create(logname, fsname, mdt_index);
 }
 
