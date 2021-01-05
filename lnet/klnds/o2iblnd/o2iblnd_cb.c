@@ -1394,8 +1394,6 @@ kiblnd_resolve_addr_cap(struct rdma_cm_id *cmid,
         unsigned short port;
         int rc;
 
-	LASSERT(capable(CAP_NET_BIND_SERVICE));
-
         /* allow the port to be reused */
         rc = rdma_set_reuseaddr(cmid, 1);
         if (rc != 0) {
@@ -1423,8 +1421,9 @@ kiblnd_resolve_addr_cap(struct rdma_cm_id *cmid,
                 }
         }
 
-        CERROR("Failed to bind to a free privileged port\n");
-        return rc;
+	CERROR("cannot bind to a free privileged port: rc = %d\n", rc);
+
+	return rc;
 }
 
 static int
@@ -1438,7 +1437,7 @@ kiblnd_resolve_addr(struct rdma_cm_id *cmid,
 	int rc;
 
 	if (!capable(CAP_NET_BIND_SERVICE)) {
-		new_creds = prepare_creds();
+		new_creds = prepare_kernel_cred(NULL);
 		if (!new_creds)
 			return -ENOMEM;
 
