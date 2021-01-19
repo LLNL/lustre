@@ -519,12 +519,6 @@ static void tgt_grant_incoming(const struct lu_env *env, struct obd_export *exp,
 	       exp, oa->o_grant, oa->o_dropped, oa->o_grant_used,
 	       ted->ted_grant, exp_grant_param_supp(exp));
 
-	if (ted->ted_grant >= 2 * oa->o_grant)
-		CWARN("%s: cli %s/%p TOSS-4917 client server grant mismatch "
-		      "client: %llu vs local %lu grant_param %d\n",
-		      obd->obd_name, exp->exp_client_uuid.uuid, exp,
-		      oa->o_grant, ted->ted_grant, exp_grant_param_supp(exp));
-
 	if ((long long)oa->o_dirty < 0)
 		oa->o_dirty = 0;
 
