@@ -49,6 +49,12 @@
 %undefine with_lustre_tests
 %endif
 
+%if 0%{?suse_version} >= 1310
+	%define _flavor %(basename %{kobjdir})
+%else
+	%define _flavor default
+%endif
+
 %{!?version: %global version @VERSION@}
 # if you want a custom kernel version set it variable with $ver.$arch
 %{!?kver:    %global kver    %(uname -r)}
@@ -63,12 +69,6 @@
 %endif
 %{!?kdir:    %global kdir    /lib/modules/%{_kver}/source}
 %{!?kobjdir: %global kobjdir %(if [ "%{kdir}" = "/lib/modules/%{_kver}/source" ]; then echo "/lib/modules/%{_kver}/build"; else echo "%{kdir}"; fi)}
-
-%if 0%{?suse_version} >= 1310 && %{defined _take_kobj}
-	%global _flavor %(basename "%{kobjdir}")
-%else
-	%global _flavor default
-%endif
 
 %if %{defined _take_kver}
 # as an alternative to this implementation we could simply "make -C $kdir kernelversion"
