@@ -22,7 +22,8 @@
 %bcond_without shared
 %bcond_without static
 %bcond_with systemd
-%bcond_without mpi
+%bcond_with mofed
+%bcond_with mpi
 %bcond_with kabi
 %bcond_with multiple_lnds
 %bcond_with mofed
