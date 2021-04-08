@@ -10,4 +10,4 @@ BuildRequires:  kmod-zfs-devel
 Provides:       %{name}-osd = %{version}
 Provides:       %{name}-osd-zfs = %{version}
 Obsoletes:      %{name}-osd-zfs < %{version}
-BuildRequires:  libzfs4-devel kmod-zfs-devel
+BuildRequires:  libzfs5-devel kmod-zfs-devel
