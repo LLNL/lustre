@@ -90,6 +90,10 @@
 # response from them
 #%%global _use_internal_dependency_generator 0
 
+# Always call the package "lustre" so the scripts that build TOSS do not need
+# to be adjusted when we switch between client-only and client-server builds
+%global lustre_name lustre
+
 # Set the package name prefix
 %if %{undefined lustre_name}
     %if %{with servers}
