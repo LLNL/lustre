@@ -1814,12 +1814,13 @@ static int lnet_peer_queue_for_discovery(struct lnet_peer *lp)
 
 /*
  * Discovery of a peer is complete. Wake all waiters on the peer.
- * Call with lnet_net_lock/EX held.
  */
 static void lnet_peer_discovery_complete(struct lnet_peer *lp)
+__must_hold(&lp->lp_lock)
 {
 	struct lnet_msg *msg, *tmp;
 	int rc = 0;
+	int dc_error = lp->lp_dc_error;
 	struct list_head pending_msgs;
 
 	INIT_LIST_HEAD(&pending_msgs);
@@ -1827,10 +1828,11 @@ static void lnet_peer_discovery_complete(struct lnet_peer *lp)
 	CDEBUG(D_NET, "Discovery complete. Dequeue peer %s\n",
 	       libcfs_nid2str(lp->lp_primary_nid));
 
-	list_del_init(&lp->lp_dc_list);
-	spin_lock(&lp->lp_lock);
 	list_splice_init(&lp->lp_dc_pendq, &pending_msgs);
 	spin_unlock(&lp->lp_lock);
+
+	lnet_net_lock(LNET_LOCK_EX);
+	list_del_init(&lp->lp_dc_list);
 	wake_up_all(&lp->lp_dc_waitq);
 
 	lnet_net_unlock(LNET_LOCK_EX);
@@ -1838,8 +1840,8 @@ static void lnet_peer_discovery_complete(struct lnet_peer *lp)
 	/* iterate through all pending messages and send them again */
 	list_for_each_entry_safe(msg, tmp, &pending_msgs, msg_list) {
 		list_del_init(&msg->msg_list);
-		if (lp->lp_dc_error) {
-			lnet_finalize(msg, lp->lp_dc_error);
+		if (dc_error) {
+			lnet_finalize(msg, dc_error);
 			continue;
 		}
 
@@ -1855,8 +1857,7 @@ static void lnet_peer_discovery_complete(struct lnet_peer *lp)
 			lnet_finalize(msg, rc);
 		}
 	}
-	lnet_net_lock(LNET_LOCK_EX);
-	lnet_peer_decref_locked(lp);
+	spin_lock(&lp->lp_lock);
 }
 
 /*
@@ -2980,15 +2981,14 @@ fail_error:
  * Set error status in peer and abort discovery.
  */
 static void lnet_peer_discovery_error(struct lnet_peer *lp, int error)
+__must_hold(&lp->lp_lock)
 {
 	CDEBUG(D_NET, "Discovery error %s: %d\n",
 	       libcfs_nid2str(lp->lp_primary_nid), error);
 
-	spin_lock(&lp->lp_lock);
 	lp->lp_dc_error = error;
 	lp->lp_state &= ~LNET_PEER_DISCOVERING;
 	lp->lp_state |= LNET_PEER_REDISCOVER;
-	spin_unlock(&lp->lp_lock);
 }
 
 /*
@@ -3202,17 +3202,25 @@ static int lnet_peer_discovery(void *arg)
 			CDEBUG(D_NET, "peer %s state %#x rc %d\n",
 				libcfs_nid2str(lp->lp_primary_nid),
 				lp->lp_state, rc);
-			spin_unlock(&lp->lp_lock);
 
-			lnet_net_lock(LNET_LOCK_EX);
+			if (rc && rc != LNET_REDISCOVER_PEER)
+				lnet_peer_discovery_error(lp, rc);
+
 			if (rc == LNET_REDISCOVER_PEER) {
+				spin_unlock(&lp->lp_lock);
+				lnet_net_lock(LNET_LOCK_EX);
 				list_move(&lp->lp_dc_list,
 					  &the_lnet.ln_dc_request);
-			} else if (rc) {
-				lnet_peer_discovery_error(lp, rc);
-			}
-			if (!(lp->lp_state & LNET_PEER_DISCOVERING))
+			} else if (!(lp->lp_state & LNET_PEER_DISCOVERING)) {
 				lnet_peer_discovery_complete(lp);
+				spin_unlock(&lp->lp_lock);
+				lnet_net_lock(LNET_LOCK_EX);
+				lnet_peer_decref_locked(lp);
+			} else {
+				spin_unlock(&lp->lp_lock);
+				lnet_net_lock(LNET_LOCK_EX);
+			}
+
 			if (the_lnet.ln_dc_state == LNET_DC_STATE_STOPPING)
 				break;
 		}
@@ -3249,8 +3257,13 @@ static int lnet_peer_discovery(void *arg)
 	while (!list_empty(&the_lnet.ln_dc_request)) {
 		lp = list_first_entry(&the_lnet.ln_dc_request,
 				      struct lnet_peer, lp_dc_list);
+		lnet_net_unlock(LNET_LOCK_EX);
+		spin_lock(&lp->lp_lock);
 		lnet_peer_discovery_error(lp, -ESHUTDOWN);
 		lnet_peer_discovery_complete(lp);
+		spin_unlock(&lp->lp_lock);
+		lnet_net_lock(LNET_LOCK_EX);
+		lnet_peer_decref_locked(lp);
 	}
 	lnet_net_unlock(LNET_LOCK_EX);
 
