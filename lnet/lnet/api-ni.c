@@ -4331,7 +4331,6 @@ lnet_discover(struct lnet_process_id id, __u32 force,
 out_relock:
 	lnet_net_lock(cpt);
 out_decref:
-	lpni->lpni_debug_info[45] += 1;
 	lnet_peer_ni_decref_locked(lpni);
 out:
 	lnet_net_unlock(cpt);

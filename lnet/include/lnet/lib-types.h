@@ -627,8 +627,6 @@ struct lnet_peer_ni {
 	__u32			lpni_pref_nnids;
 	/* router checker state */
 	struct lnet_rc_data	*lpni_rcd;
-	/* debug info */
-	unsigned int		lpni_debug_info[45];
 };
 
 /* Preferred path added due to traffic on non-MR peer_ni */

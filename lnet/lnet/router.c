@@ -211,7 +211,6 @@ lnet_rtr_addref_locked(struct lnet_peer_ni *lp)
 		list_add(&lp->lpni_rtr_list, pos);
 		/* addref for the_lnet.ln_routers */
 		lnet_peer_ni_addref_locked(lp);
-		lp->lpni_debug_info[2] += 1;
 		the_lnet.ln_routers_version++;
 	}
 }
@@ -235,7 +234,6 @@ lnet_rtr_decref_locked(struct lnet_peer_ni *lp)
 
 		list_del(&lp->lpni_rtr_list);
 		/* decref for the_lnet.ln_routers */
-		lp->lpni_debug_info[10] += 1;
 		lnet_peer_ni_decref_locked(lp);
 		the_lnet.ln_routers_version++;
 	}
@@ -413,7 +411,6 @@ lnet_add_route(__u32 net, __u32 hops, lnet_nid_t gateway,
 
 	if (add_route) {
 		lnet_peer_ni_addref_locked(route->lr_gateway); /* +1 for notify */
-		route->lr_gateway->lpni_debug_info[3] += 1;
 		lnet_add_route_to_rnet(rnet2, route);
 
 		ni = lnet_get_next_ni_locked(route->lr_gateway->lpni_net, NULL);
@@ -427,7 +424,6 @@ lnet_add_route(__u32 net, __u32 hops, lnet_nid_t gateway,
 	}
 
 	/* -1 for notify or !add_route */
-	route->lr_gateway->lpni_debug_info[11] += 1;
 	lnet_peer_ni_decref_locked(route->lr_gateway);
 	lnet_net_unlock(LNET_LOCK_EX);
 
@@ -554,7 +550,6 @@ again:
 				rnet = NULL;
 
 			lnet_rtr_decref_locked(gateway);
-			gateway->lpni_debug_info[12] += 1;
 			lnet_peer_ni_decref_locked(gateway);
 
 			lnet_net_unlock(LNET_LOCK_EX);
@@ -944,7 +939,6 @@ lnet_destroy_rc_data(struct lnet_rc_data *rcd)
 		int cpt = rcd->rcd_gateway->lpni_cpt;
 
 		lnet_net_lock(cpt);
-		rcd->rcd_gateway->lpni_debug_info[13] += 1;
 		lnet_peer_ni_decref_locked(rcd->rcd_gateway);
 		lnet_net_unlock(cpt);
 	}
@@ -1027,7 +1021,6 @@ lnet_update_rc_data_locked(struct lnet_peer_ni *gateway)
 	/* Install and/or update the router data. */
 	if (!gateway->lpni_rcd) {
 		lnet_peer_ni_addref_locked(gateway);
-		gateway->lpni_debug_info[4] += 1;
 		rcd->rcd_gateway = gateway;
 		gateway->lpni_rcd = rcd;
 	}
@@ -1070,7 +1063,6 @@ lnet_ping_router_locked(struct lnet_peer_ni *rtr)
 	struct lnet_ni *ni;
 
 	lnet_peer_ni_addref_locked(rtr);
-	rtr->lpni_debug_info[5] += 1;
 
 	if (rtr->lpni_ping_deadline != 0 && /* ping timed out? */
 	    now >  rtr->lpni_ping_deadline)
@@ -1083,7 +1075,6 @@ lnet_ping_router_locked(struct lnet_peer_ni *rtr)
 	if (!lnet_isrouter(rtr) ||
 	    the_lnet.ln_mt_state != LNET_MT_STATE_RUNNING) {
 		/* router table changed or router checker is shutting down */
-		rtr->lpni_debug_info[14] += 1;
 		lnet_peer_ni_decref_locked(rtr);
 		return;
 	}
@@ -1139,7 +1130,7 @@ lnet_ping_router_locked(struct lnet_peer_ni *rtr)
 		if (rc != 0)
 			rtr->lpni_ping_notsent = 0; /* no event pending */
 	}
-	rtr->lpni_debug_info[15] += 1;
+
 	lnet_peer_ni_decref_locked(rtr);
 	return;
 }
@@ -1836,7 +1827,6 @@ lnet_notify(struct lnet_ni *ni, lnet_nid_t nid, int alive, time64_t when)
 	if (ni != NULL)
 		lnet_ni_notify_locked(ni, lp);
 
-	lp->lpni_debug_info[16] += 1;
 	lnet_peer_ni_decref_locked(lp);
 
 	lnet_net_unlock(cpt);
