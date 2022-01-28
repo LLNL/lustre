@@ -1231,6 +1231,7 @@ lnet_return_tx_credits_locked(struct lnet_msg *msg)
 
 	if (txpeer != NULL) {
 		msg->msg_txpeer = NULL;
+		atomic_inc(&txpeer->lpni_debug_info[17]);
 		lnet_peer_ni_decref_locked(txpeer);
 	}
 }
@@ -1355,6 +1356,7 @@ routing_off:
 	}
 	if (rxpeer != NULL) {
 		msg->msg_rxpeer = NULL;
+		atomic_inc(&rxpeer->lpni_debug_info[18]);
 		lnet_peer_ni_decref_locked(rxpeer);
 	}
 }
@@ -1652,6 +1654,7 @@ lnet_handle_send(struct lnet_send_data *sd)
 	 * we need to drop and relock the lnet_net_lock below.
 	 */
 	lnet_peer_ni_addref_locked(best_lpni);
+	atomic_inc(&best_lpni->lpni_debug_info[6]);
 
 	/*
 	 * Use lnet_cpt_of_nid() to determine the CPT used to commit the
@@ -1669,6 +1672,7 @@ lnet_handle_send(struct lnet_send_data *sd)
 		sd->sd_cpt = cpt2;
 		lnet_net_lock(sd->sd_cpt);
 		if (seq != lnet_get_dlc_seq_locked()) {
+			atomic_inc(&best_lpni->lpni_debug_info[19]);
 			lnet_peer_ni_decref_locked(best_lpni);
 			return REPEAT_SEND;
 		}
@@ -2583,6 +2587,7 @@ again:
 		lnet_nid_t primary_nid;
 		rc = lnet_discover_peer_locked(lpni, cpt, false);
 		if (rc) {
+			atomic_inc(&lpni->lpni_debug_info[20]);
 			lnet_peer_ni_decref_locked(lpni);
 			lnet_net_unlock(cpt);
 			return rc;
@@ -2595,6 +2600,7 @@ again:
 		spin_lock(&peer->lp_lock);
 		list_add_tail(&msg->msg_list, &peer->lp_dc_pendq);
 		spin_unlock(&peer->lp_lock);
+		atomic_inc(&lpni->lpni_debug_info[21]);
 		lnet_peer_ni_decref_locked(lpni);
 		primary_nid = peer->lp_primary_nid;
 		lnet_net_unlock(cpt);
@@ -2604,6 +2610,7 @@ again:
 
 		return LNET_DC_WAIT;
 	}
+	atomic_inc(&lpni->lpni_debug_info[22]);
 	lnet_peer_ni_decref_locked(lpni);
 
 	/*
@@ -2882,6 +2889,7 @@ lnet_finalize_expired_responses(void)
 				lpni = lnet_find_peer_ni_locked(nid);
 				if (lpni) {
 					lnet_handle_remote_failure_locked(lpni);
+					atomic_inc(&lpni->lpni_debug_info[23]);
 					lnet_peer_ni_decref_locked(lpni);
 				}
 				lnet_net_unlock(0);
@@ -2945,6 +2953,7 @@ lnet_resend_pending_msgs_locked(struct list_head *resendq, int cpt)
 			 */
 			if (msg->msg_src_nid_param != LNET_NID_ANY)
 				src_nid = msg->msg_src_nid_param;
+			atomic_inc(&lpni->lpni_debug_info[24]);
 			lnet_peer_ni_decref_locked(lpni);
 
 			lnet_net_unlock(cpt);
@@ -3237,6 +3246,7 @@ lnet_clean_peer_ni_recoveryq(void)
 		list_del_init(&lpni->lpni_recovery);
 		spin_lock(&lpni->lpni_lock);
 		lnet_unlink_lpni_recovery_mdh_locked(lpni, LNET_LOCK_EX, true);
+		atomic_inc(&lpni->lpni_debug_info[25]);
 		spin_unlock(&lpni->lpni_lock);
 		lnet_peer_ni_decref_locked(lpni);
 	}
@@ -3305,6 +3315,7 @@ lnet_recover_peer_nis(void)
 		    healthv == LNET_MAX_HEALTH_VALUE) {
 			list_del_init(&lpni->lpni_recovery);
 			lnet_unlink_lpni_recovery_mdh_locked(lpni, 0, false);
+			atomic_inc(&lpni->lpni_debug_info[26]);
 			spin_unlock(&lpni->lpni_lock);
 			lnet_peer_ni_decref_locked(lpni);
 			lnet_net_unlock(0);
@@ -3351,6 +3362,7 @@ lnet_recover_peer_nis(void)
 			nid = lpni->lpni_nid;
 			lnet_net_lock(0);
 			list_del_init(&lpni->lpni_recovery);
+			atomic_inc(&lpni->lpni_debug_info[27]);
 			lnet_peer_ni_decref_locked(lpni);
 			lnet_net_unlock(0);
 
@@ -3385,8 +3397,10 @@ lnet_recover_peer_nis(void)
 			 */
 			if (list_empty(&lpni->lpni_recovery))
 				list_add_tail(&lpni->lpni_recovery, &processed_list);
-			else
+			else {
+				atomic_inc(&lpni->lpni_debug_info[28]);
 				lnet_peer_ni_decref_locked(lpni);
+			}
 			lnet_net_unlock(0);
 
 			spin_lock(&lpni->lpni_lock);
@@ -3584,6 +3598,7 @@ lnet_handle_recovery_reply(struct lnet_mt_event_info *ev_info,
 		lpni->lpni_state &= ~LNET_PEER_NI_RECOVERY_PENDING;
 		if (status)
 			lpni->lpni_state |= LNET_PEER_NI_RECOVERY_FAILED;
+		atomic_inc(&lpni->lpni_debug_info[29]);
 		spin_unlock(&lpni->lpni_lock);
 		lnet_peer_ni_decref_locked(lpni);
 		lnet_net_unlock(cpt);

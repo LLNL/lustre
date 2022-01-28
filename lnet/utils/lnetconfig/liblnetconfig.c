@@ -2850,7 +2850,6 @@ calculate_buffers:
 		    NULL)
 			goto out;
 	}
-
 add_buffer_section:
 	/* create a buffers entry in the show. This is necessary so that
 	 * if the YAML output is used to configure a node, the buffer
@@ -2919,6 +2918,8 @@ int lustre_lnet_show_peer(char *knid, int detail, int seq_no,
 	struct lnet_ioctl_element_stats *lpni_stats;
 	struct lnet_ioctl_element_msg_stats *msg_stats;
 	struct lnet_ioctl_peer_ni_hstats *hstats;
+	struct lnet_peer_ni_debug_info *lpni_debug_info;
+
 	lnet_nid_t *nidp;
 	int rc = LUSTRE_CFG_RC_OUT_OF_MEM;
 	int i, j, k;
@@ -2928,6 +2929,7 @@ int lustre_lnet_show_peer(char *knid, int detail, int seq_no,
 	struct cYAML *root = NULL, *peer = NULL, *peer_ni = NULL,
 		     *first_seq = NULL, *peer_root = NULL, *tmp = NULL,
 		     *msg_statistics = NULL, *statistics = NULL,
+		     *dbginfo = NULL,
 		     *yhstats;
 	char err_str[LNET_MAX_STR_LEN];
 	struct lnet_process_id *list = NULL;
@@ -3069,7 +3071,8 @@ int lustre_lnet_show_peer(char *knid, int detail, int seq_no,
 			lpni_stats = (void *)lpni_cri + sizeof(*lpni_cri);
 			msg_stats = (void *)lpni_stats + sizeof(*lpni_stats);
 			hstats = (void *)msg_stats + sizeof(*msg_stats);
-			lpni_data = (void *)hstats + sizeof(*hstats);
+			lpni_debug_info = (void *)hstats + sizeof(*hstats);
+			lpni_data = (void *)lpni_debug_info + sizeof(*lpni_debug_info);
 
 			peer_ni = cYAML_create_seq_item(tmp);
 			if (peer_ni == NULL)
@@ -3187,6 +3190,22 @@ int lustre_lnet_show_peer(char *knid, int detail, int seq_no,
 						hstats->hlpni_network_timeout)
 							== NULL)
 				goto out;
+
+			if (detail < 5)
+				continue;
+
+			dbginfo = cYAML_create_object(peer_ni, "debug info");
+			if (dbginfo == NULL)
+				goto out;
+			for (k = 0; k < 45; k++) {
+				char dbgtoken[16];
+
+				sprintf(dbgtoken, "count%u", k);
+				if (cYAML_create_number(dbginfo, dbgtoken,
+				    lpni_debug_info->di_arr[k])
+							== NULL)
+					goto out;
+			}
 		}
 	}
 

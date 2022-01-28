@@ -53,6 +53,7 @@ lnet_peer_remove_from_remote_list(struct lnet_peer_ni *lpni)
 {
 	if (!list_empty(&lpni->lpni_on_remote_peer_ni_list)) {
 		list_del_init(&lpni->lpni_on_remote_peer_ni_list);
+		atomic_inc(&lpni->lpni_debug_info[30]);
 		lnet_peer_ni_decref_locked(lpni);
 	}
 }
@@ -197,6 +198,7 @@ lnet_peer_ni_alloc(lnet_nid_t nid)
 		atomic_inc(&lpni->lpni_refcount);
 		list_add_tail(&lpni->lpni_on_remote_peer_ni_list,
 			      &the_lnet.ln_remote_peer_ni_list);
+		atomic_inc(&lpni->lpni_debug_info[1]);
 	}
 
 	CDEBUG(D_NET, "%p nid %s\n", lpni, libcfs_nid2str(lpni->lpni_nid));
@@ -412,6 +414,7 @@ lnet_peer_ni_del_locked(struct lnet_peer_ni *lpni)
 	lnet_peer_detach_peer_ni_locked(lpni);
 
 	/* remove hashlist reference on peer_ni */
+	atomic_inc(&lpni->lpni_debug_info[31]);
 	lnet_peer_ni_decref_locked(lpni);
 
 	return 0;
@@ -490,6 +493,7 @@ lnet_peer_del_nid(struct lnet_peer *lp, lnet_nid_t nid, unsigned flags)
 		rc = -ENOENT;
 		goto out;
 	}
+	atomic_inc(&lpni->lpni_debug_info[32]);
 	lnet_peer_ni_decref_locked(lpni);
 	if (lp != lpni->lpni_peer_net->lpn_peer) {
 		rc = -ECHILD;
@@ -639,6 +643,7 @@ lnet_get_peer_ni_locked(struct lnet_peer_table *ptable, lnet_nid_t nid)
 	list_for_each_entry(lp, peers, lpni_hashlist) {
 		if (lp->lpni_nid == nid) {
 			lnet_peer_ni_addref_locked(lp);
+			atomic_inc(&lp->lpni_debug_info[7]);
 			return lp;
 		}
 	}
@@ -673,6 +678,7 @@ lnet_find_peer(lnet_nid_t nid)
 	if (lpni) {
 		lp = lpni->lpni_peer_net->lpn_peer;
 		lnet_peer_addref_locked(lp);
+		atomic_inc(&lpni->lpni_debug_info[33]);
 		lnet_peer_ni_decref_locked(lpni);
 	}
 	lnet_net_unlock(cpt);
@@ -1073,6 +1079,7 @@ lnet_peer_primary_nid_locked(lnet_nid_t nid)
 	lpni = lnet_find_peer_ni_locked(nid);
 	if (lpni) {
 		primary_nid = lpni->lpni_peer_net->lpn_peer->lp_primary_nid;
+		atomic_inc(&lpni->lpni_debug_info[34]);
 		lnet_peer_ni_decref_locked(lpni);
 	}
 
@@ -1145,6 +1152,7 @@ LNetPrimaryNID(lnet_nid_t nid)
 	}
 	primary_nid = lp->lp_primary_nid;
 out_decref:
+	atomic_inc(&lpni->lpni_debug_info[35]);
 	lnet_peer_ni_decref_locked(lpni);
 out_unlock:
 	lnet_net_unlock(cpt);
@@ -1196,6 +1204,7 @@ lnet_peer_attach_peer_ni(struct lnet_peer *lp,
 		ptable->pt_number++;
 		/* This is the 1st refcount on lpni. */
 		atomic_inc(&lpni->lpni_refcount);
+		atomic_inc(&lpni->lpni_debug_info[0]);
 	}
 
 	/* Detach the peer_ni from an existing peer, if necessary. */
@@ -1274,6 +1283,7 @@ lnet_peer_add(lnet_nid_t nid, unsigned flags)
 	if (lpni) {
 		/* A peer with this NID already exists. */
 		lp = lpni->lpni_peer_net->lpn_peer;
+		atomic_inc(&lpni->lpni_debug_info[36]);
 		lnet_peer_ni_decref_locked(lpni);
 		/*
 		 * This is an error if the peer was configured and the
@@ -1367,6 +1377,7 @@ lnet_peer_add_nid(struct lnet_peer *lp, lnet_nid_t nid, unsigned flags)
 		 * it is not connected to this peer and was configured
 		 * by DLC.
 		 */
+		atomic_inc(&lpni->lpni_debug_info[37]);
 		lnet_peer_ni_decref_locked(lpni);
 		if (lpni->lpni_peer_net->lpn_peer == lp)
 			goto out;
@@ -1469,6 +1480,7 @@ lnet_peer_ni_traffic_add(lnet_nid_t nid, lnet_nid_t pref)
 		 * traffic, we just assume everything is ok and
 		 * return.
 		 */
+		atomic_inc(&lpni->lpni_debug_info[38]);
 		lnet_peer_ni_decref_locked(lpni);
 		goto out;
 	}
@@ -1536,6 +1548,7 @@ lnet_add_peer_ni(lnet_nid_t prim_nid, lnet_nid_t nid, bool mr)
 	lpni = lnet_find_peer_ni_locked(prim_nid);
 	if (!lpni)
 		return -ENOENT;
+	atomic_inc(&lpni->lpni_debug_info[39]);
 	lnet_peer_ni_decref_locked(lpni);
 	lp = lpni->lpni_peer_net->lpn_peer;
 
@@ -1588,6 +1601,7 @@ lnet_del_peer_ni(lnet_nid_t prim_nid, lnet_nid_t nid)
 	lpni = lnet_find_peer_ni_locked(prim_nid);
 	if (!lpni)
 		return -ENOENT;
+	atomic_inc(&lpni->lpni_debug_info[40]);
 	lnet_peer_ni_decref_locked(lpni);
 	lp = lpni->lpni_peer_net->lpn_peer;
 
@@ -1736,8 +1750,10 @@ out_mutex_unlock:
 
 	/* Lock has been dropped, check again for shutdown. */
 	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
-		if (!IS_ERR(lpni))
+		if (!IS_ERR(lpni)) {
+			atomic_inc(&lpni->lpni_debug_info[41]);
 			lnet_peer_ni_decref_locked(lpni);
+		}
 		lpni = ERR_PTR(-ESHUTDOWN);
 	}
 
@@ -2714,6 +2730,7 @@ __must_hold(&lp->lp_lock)
 		} else {
 			rc = lnet_peer_set_primary_data(
 				lpni->lpni_peer_net->lpn_peer, pbuf);
+			atomic_inc(&lpni->lpni_debug_info[42]);
 			lnet_peer_ni_decref_locked(lpni);
 		}
 	}
@@ -3338,6 +3355,7 @@ lnet_debug_peer(lnet_nid_t nid)
 	       lp->lpni_rtrcredits, lp->lpni_minrtrcredits,
 	       lp->lpni_txcredits, lp->lpni_mintxcredits, lp->lpni_txqnob);
 
+	atomic_inc(&lp->lpni_debug_info[43]);
 	lnet_peer_ni_decref_locked(lp);
 
 	lnet_net_unlock(cpt);
@@ -3415,11 +3433,13 @@ int lnet_get_peer_info(struct lnet_ioctl_peer_cfg *cfg, void __user *bulk)
 	struct lnet_ioctl_element_msg_stats *lpni_msg_stats;
 	struct lnet_ioctl_peer_ni_hstats *lpni_hstats;
 	struct lnet_peer_ni_credit_info *lpni_info;
+	struct lnet_peer_ni_debug_info *lpni_debug_info;
 	struct lnet_peer_ni *lpni;
 	struct lnet_peer *lp;
 	lnet_nid_t nid;
 	__u32 size;
 	int rc;
+	int i;
 
 	lp = lnet_find_peer(cfg->prcfg_prim_nid);
 
@@ -3429,7 +3449,8 @@ int lnet_get_peer_info(struct lnet_ioctl_peer_cfg *cfg, void __user *bulk)
 	}
 
 	size = sizeof(nid) + sizeof(*lpni_info) + sizeof(*lpni_stats)
-		+ sizeof(*lpni_msg_stats) + sizeof(*lpni_hstats);
+		+ sizeof(*lpni_msg_stats) + sizeof(*lpni_hstats)
+		+ sizeof(*lpni_debug_info);
 	size *= lp->lp_nnis;
 	if (size > cfg->prcfg_size) {
 		cfg->prcfg_size = size;
@@ -3458,14 +3479,16 @@ int lnet_get_peer_info(struct lnet_ioctl_peer_cfg *cfg, void __user *bulk)
 	LIBCFS_ALLOC(lpni_hstats, sizeof(*lpni_hstats));
 	if (!lpni_hstats)
 		goto out_free_msg_stats;
-
+	LIBCFS_ALLOC(lpni_debug_info, sizeof(*lpni_debug_info));
+	if (!lpni_debug_info)
+		goto out_free_hstats;
 
 	lpni = NULL;
 	rc = -EFAULT;
 	while ((lpni = lnet_get_next_peer_ni_locked(lp, NULL, lpni)) != NULL) {
 		nid = lpni->lpni_nid;
 		if (copy_to_user(bulk, &nid, sizeof(nid)))
-			goto out_free_hstats;
+			goto out_free_debug_info;
 		bulk += sizeof(nid);
 
 		memset(lpni_info, 0, sizeof(*lpni_info));
@@ -3484,7 +3507,7 @@ int lnet_get_peer_info(struct lnet_ioctl_peer_cfg *cfg, void __user *bulk)
 		lpni_info->cr_peer_min_tx_credits = lpni->lpni_mintxcredits;
 		lpni_info->cr_peer_tx_qnob = lpni->lpni_txqnob;
 		if (copy_to_user(bulk, lpni_info, sizeof(*lpni_info)))
-			goto out_free_hstats;
+			goto out_free_debug_info;
 		bulk += sizeof(*lpni_info);
 
 		memset(lpni_stats, 0, sizeof(*lpni_stats));
@@ -3495,11 +3518,11 @@ int lnet_get_peer_info(struct lnet_ioctl_peer_cfg *cfg, void __user *bulk)
 		lpni_stats->iel_drop_count = lnet_sum_stats(&lpni->lpni_stats,
 							    LNET_STATS_TYPE_DROP);
 		if (copy_to_user(bulk, lpni_stats, sizeof(*lpni_stats)))
-			goto out_free_hstats;
+			goto out_free_debug_info;
 		bulk += sizeof(*lpni_stats);
 		lnet_usr_translate_stats(lpni_msg_stats, &lpni->lpni_stats);
 		if (copy_to_user(bulk, lpni_msg_stats, sizeof(*lpni_msg_stats)))
-			goto out_free_hstats;
+			goto out_free_debug_info;
 		bulk += sizeof(*lpni_msg_stats);
 		lpni_hstats->hlpni_network_timeout =
 		  atomic_read(&lpni->lpni_hstats.hlt_network_timeout);
@@ -3512,11 +3535,19 @@ int lnet_get_peer_info(struct lnet_ioctl_peer_cfg *cfg, void __user *bulk)
 		lpni_hstats->hlpni_health_value =
 		  atomic_read(&lpni->lpni_healthv);
 		if (copy_to_user(bulk, lpni_hstats, sizeof(*lpni_hstats)))
-			goto out_free_hstats;
+			goto out_free_debug_info;
 		bulk += sizeof(*lpni_hstats);
+		memset(lpni_debug_info, 0, sizeof(*lpni_debug_info));
+		for (i = 0; i < 45; i++)
+			lpni_debug_info->di_arr[i] = atomic_read(&lpni->lpni_debug_info[i]);
+		if (copy_to_user(bulk, lpni_debug_info, sizeof(*lpni_debug_info)))
+			goto out_free_debug_info;
+		bulk += sizeof(*lpni_debug_info);
 	}
 	rc = 0;
 
+out_free_debug_info:
+	LIBCFS_FREE(lpni_debug_info, sizeof(*lpni_debug_info));
 out_free_hstats:
 	LIBCFS_FREE(lpni_hstats, sizeof(*lpni_hstats));
 out_free_msg_stats:
@@ -3545,6 +3576,7 @@ lnet_peer_ni_add_to_recoveryq_locked(struct lnet_peer_ni *lpni)
 			atomic_read(&lpni->lpni_healthv));
 		list_add_tail(&lpni->lpni_recovery, &the_lnet.ln_mt_peerNIRecovq);
 		lnet_peer_ni_addref_locked(lpni);
+		atomic_inc(&lpni->lpni_debug_info[8]);
 	}
 }
 
@@ -3571,6 +3603,7 @@ lnet_peer_ni_set_healthv(lnet_nid_t nid, int value, bool all)
 		}
 		atomic_set(&lpni->lpni_healthv, value);
 		lnet_peer_ni_add_to_recoveryq_locked(lpni);
+		atomic_inc(&lpni->lpni_debug_info[44]);
 		lnet_peer_ni_decref_locked(lpni);
 		lnet_net_unlock(LNET_LOCK_EX);
 		return;
