@@ -1084,8 +1084,7 @@ lnet_ping_router_locked(struct lnet_peer_ni *rtr)
 	    the_lnet.ln_mt_state != LNET_MT_STATE_RUNNING) {
 		/* router table changed or router checker is shutting down */
 		rtr->lpni_debug_info[14] += 1;
-		lnet_peer_ni_decref_locked(rtr);
-		return;
+		goto out_decref;
 	}
 
 	rcd = rtr->lpni_rcd;
@@ -1098,8 +1097,9 @@ lnet_ping_router_locked(struct lnet_peer_ni *rtr)
 	if (!rcd || rcd->rcd_nnis > rcd->rcd_pingbuffer->pb_nnis ||
 	    LNetMDHandleIsInvalid(rcd->rcd_mdh))
 		rcd = lnet_update_rc_data_locked(rtr);
-	if (rcd == NULL)
-		return;
+
+	if (!rcd)
+		goto out_decref;
 
 	secs = lnet_router_check_interval(rtr);
 
@@ -1140,8 +1140,9 @@ lnet_ping_router_locked(struct lnet_peer_ni *rtr)
 			rtr->lpni_ping_notsent = 0; /* no event pending */
 	}
 	rtr->lpni_debug_info[15] += 1;
+
+out_decref:
 	lnet_peer_ni_decref_locked(rtr);
-	return;
 }
 
 int lnet_router_pre_mt_start(void)
