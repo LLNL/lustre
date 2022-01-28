@@ -244,6 +244,10 @@ struct lnet_peer_ni_credit_info {
 	__u32 cr_ncpt;
 };
 
+struct lnet_peer_ni_debug_info {
+	__u32 di_arr[45];
+};
+
 struct lnet_ioctl_peer {
 	struct libcfs_ioctl_hdr pr_hdr;
 	__u32 pr_count;
