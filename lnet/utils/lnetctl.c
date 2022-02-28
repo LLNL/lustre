@@ -81,6 +81,7 @@ static int jt_global(int argc, char **argv);
 static int jt_peers(int argc, char **argv);
 static int jt_set_ni_value(int argc, char **argv);
 static int jt_set_peer_ni_value(int argc, char **argv);
+static int jt_show_peer_debug_info(int argc, char **argv);
 
 command_t cmd_list[] = {
 	{"lnet", jt_lnet, 0, "lnet {configure | unconfigure} [--all]"},
@@ -93,7 +94,7 @@ command_t cmd_list[] = {
 	{"import", jt_import, 0, "import FILE.yaml"},
 	{"export", jt_export, 0, "export FILE.yaml"},
 	{"stats", jt_stats, 0, "stats {show | help}"},
-	{"debug", jt_debug, 0, "debug recovery {local | peer}"},
+	{"debug", jt_debug, 0, "debug {recovery {local | peer} | peer}"},
 	{"global", jt_global, 0, "global {show | help}"},
 	{"peer", jt_peers, 0, "peer {add | del | show | help}"},
 	{"ping", jt_ping, 0, "ping nid,[nid,...]"},
@@ -168,6 +169,8 @@ command_t debug_cmds[] = {
 	{"recovery", jt_show_recovery, 0, "list recovery queues\n"
 		"\t--local : list local recovery queue\n"
 		"\t--peer : list peer recovery queue\n"},
+	{"peer", jt_show_peer_debug_info, 0, "show peer debug info\n"
+		"\t--prim_nid: peer's primary NID\n"},
 	{ 0, 0, 0, NULL }
 };
 
@@ -1109,7 +1112,6 @@ static int jt_show_recovery(int argc, char **argv)
 {
 	int rc, opt;
 	struct cYAML *err_rc = NULL, *show_rc = NULL;
-
 	const char *const short_options = "lp";
 	static const struct option long_options[] = {
 		{ .name = "local", .has_arg = no_argument, .val = 'l' },
@@ -1141,6 +1143,42 @@ static int jt_show_recovery(int argc, char **argv)
 
 	cYAML_free_tree(err_rc);
 	cYAML_free_tree(show_rc);
+
+	return rc;
+}
+
+static int jt_show_peer_debug_info(int argc, char **argv)
+{
+	int rc, opt;
+	struct cYAML *err_rc = NULL;
+	char *prim_nid = optarg;
+	const char *const short_opts = "k";
+	const struct option long_opts[] = {
+	{ .name = "prim_nid",	.has_arg = required_argument,	.val = 'k' },
+	{ .name = NULL } };
+
+	rc = check_cmd(peer_cmds, "debug", "peer", 2, argc, argv);
+
+	if (rc)
+		return rc;
+
+	while ((opt = getopt_long(argc, argv, short_opts,
+				   long_opts, NULL)) != -1) {
+		switch (opt) {
+		case 'k':
+			prim_nid = optarg;
+			break;
+		default:
+			return 0;
+		}
+	}
+
+	rc = lustre_lnet_show_peer_debug_info(prim_nid, -1, &err_rc);
+
+	if (rc != LUSTRE_CFG_RC_NO_ERR)
+		cYAML_print_tree2file(stderr, err_rc);
+
+	cYAML_free_tree(err_rc);
 
 	return rc;
 }
@@ -1368,7 +1406,7 @@ static int jt_debug(int argc, char **argv)
 {
 	int rc;
 
-	rc = check_cmd(debug_cmds, "recovery", NULL, 2, argc, argv);
+	rc = check_cmd(debug_cmds, "debug", NULL, 2, argc, argv);
 	if (rc)
 		return rc;
 

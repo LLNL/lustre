@@ -645,4 +645,8 @@ int lustre_lnet_parse_interfaces(char *intf_str,
 int lustre_lnet_parse_nids(char *nids, char **array, int size,
 			   char ***out_array);
 
+
+int lustre_lnet_show_peer_debug_info(char *prim_nid, int seq_no,
+				     struct cYAML **err_rc);
+
 #endif /* LIB_LNET_CONFIG_API_H */
