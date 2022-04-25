@@ -150,4 +150,8 @@ void cfs_arch_init(void);
 })
 #endif /* memset_startat() */
 
+#ifndef HAVE_TASK_IS_RUNNING
+#define task_is_running(task)		(task->state == TASK_RUNNING)
+#endif
+
 #endif /* __LIBCFS_LINUX_MISC_H__ */
