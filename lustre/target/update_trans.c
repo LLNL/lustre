@@ -1594,7 +1594,11 @@ static int distribute_txn_commit_thread(void *_arg)
 			top_multiple_thandle_put(tmt);
 		}
 
+#ifdef HAVE_TASK_STRUCT_NEW_STATE
+		if (current->__state)
+#else
 		if (current->state)
+#endif
 			schedule();
 	}
 
