@@ -2299,55 +2299,6 @@ Will use embedded llcrypt if possible.])
 ]) # LC_FSCRYPT_SUPPORT
 
 #
-# LC_HAVE_USER_NAMESPACE_ARG
-#
-# kernel 5.12 commit 549c7297717c32ee53f156cd949e055e601f67bb
-# fs: make helpers idmap mount aware
-# Extend some inode methods with an additional user namespace argument.
-#
-AC_DEFUN([LC_HAVE_USER_NAMESPACE_ARG], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if 'inode_operations' members have user namespace argument],
-user_namespace_argument, [
-	#include <linux/fs.h>
-],[
-	((struct inode_operations *)1)->getattr((struct user_namespace *)NULL,
-						NULL, NULL, 0, 0);
-],[
-	AC_DEFINE(HAVE_USER_NAMESPACE_ARG, 1,
-		['inode_operations' members have user namespace argument])
-])
-EXTRA_KCFLAGS="$tmp_flags"
-]) # LC_HAVE_USER_NAMESPACE_ARG
-
-#
-# LC_TASK_STRUCT_HAS_NEW_STATE
-#
-# kernel 5.13 commit 2f064a59a11ff9bc22e52e9678bc601404c7cb34
-# Change the type and name of task_struct::state. Drop the volatile and
-# shrink it to an 'unsigned int'. Rename it in order to find all uses
-# such that we can use READ_ONCE/WRITE_ONCE as appropriate.
-#
-AC_DEFUN([LC_TASK_STRUCT_HAS_NEW_STATE], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if 'struct task_struct' has a '__state' member],
-task_struct_state, [
-	#include <linux/sched.h>
-],[
-	((struct task_struct *)NULL)->__state = 0;
-],[
-	AC_DEFINE(HAVE_TASK_STRUCT_NEW_STATE, 1,
-		['struct task_struct' has a '__state' member])
-])
-EXTRA_KCFLAGS="$tmp_flags"
-]) # LC_TASK_STRUCT_HAS_NEW_STATE
-
-AC_DEFUN([LC_PROG_LINUX_SRC], [])
-AC_DEFUN([LC_PROG_LINUX_RESULTS], [])
-
-#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2526,12 +2477,6 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 5.3
 	LC_BIO_BI_PHYS_SEGMENTS
 	LC_LM_COMPARE_OWNER_EXISTS
-
-	# 5.12
-	LC_HAVE_USER_NAMESPACE_ARG
-
-	# 5.13
-	LC_TASK_STRUCT_HAS_NEW_STATE
 
 	# kernel patch to extend integrity interface
 	LC_BIO_INTEGRITY_PREP_FN
