@@ -1352,6 +1352,24 @@ nr_unstable_nfs_exists, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LIBCFS_HAVE_NR_UNSTABLE_NFS
 
+#
+# LIBCFS_PARAM_SET_UINT_MINMAX
+#
+# Kernel 5.15-rc1 commit 2a14c9ae15a38148484a128b84bff7e9ffd90d68
+# moved param_set_uint_minmax to common code
+#
+AC_DEFUN([LIBCFS_PARAM_SET_UINT_MINMAX],[
+LB_CHECK_COMPILE([does function 'param_set_uint_minmax' exist],
+param_set_uint_minmax, [
+	#include <linux/moduleparam.h>
+],[
+	param_set_uint_minmax(NULL, NULL, 0, 0);
+],[
+	AC_DEFINE(HAVE_PARAM_SET_UINT_MINMAX, 1,
+		['param_set_uint_minmax' is available])
+])
+]) # LIBCFS_PARAM_SET_UINT_MINMAX
+
 AC_DEFUN([LIBCFS_PROG_LINUX_SRC], [] )
 AC_DEFUN([LIBCFS_PROG_LINUX_RESULTS], [])
 
@@ -1463,6 +1481,8 @@ LIBCFS_LOOKUP_USER_KEY
 LIBCFS_FORCE_SIG_WITH_TASK
 LIBCFS_CACHE_DETAIL_WRITERS
 LIBCFS_HAVE_NR_UNSTABLE_NFS
+# 5.15
+LIBCFS_PARAM_SET_UINT_MINMAX
 ]) # LIBCFS_PROG_LINUX
 
 #
