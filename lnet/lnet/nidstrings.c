@@ -955,6 +955,15 @@ static struct netstrfns libcfs_netstrfns[] = {
 	  .nf_print_addrlist	= libcfs_num_addr_range_print,
 	  .nf_match_addr	= libcfs_num_match,
 	  .nf_min_max		= cfs_num_min_max},
+	{ .nf_type		= KFILND,
+	  .nf_name		= "kfi",
+	  .nf_modname		= "kkfilnd",
+	  .nf_addr2str		= libcfs_decnum_addr2str,
+	  .nf_str2addr		= libcfs_num_str2addr,
+	  .nf_parse_addrlist	= libcfs_num_parse,
+	  .nf_print_addrlist	= libcfs_num_addr_range_print,
+	  .nf_match_addr	= libcfs_num_match,
+	  .nf_min_max		= cfs_num_min_max},
 };
 
 static const size_t libcfs_nnetstrfns = ARRAY_SIZE(libcfs_netstrfns);

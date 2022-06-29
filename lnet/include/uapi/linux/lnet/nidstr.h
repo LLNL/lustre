@@ -60,6 +60,9 @@ enum {
 	GNILND		= 13,
 	GNIIPLND	= 14,
 	PTL4LND		= 15,
+	KFILND		= 16,
+
+	NUM_LNDS
 };
 
 struct list_head;
