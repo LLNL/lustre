@@ -78,6 +78,11 @@ module_param(lnet_numa_range, uint, 0444);
 MODULE_PARM_DESC(lnet_numa_range,
 		"NUMA range to consider during Multi-Rail selection");
 
+static int check_for_loop = 0;
+module_param(check_for_loop, int, 0664);
+MODULE_PARM_DESC(check_for_loop,
+		 "check for loop in lnet resource handle hashtable");
+
 /*
  * lnet_health_sensitivity determines by how much we decrement the health
  * value on sending error. The value defaults to 100, which means health
@@ -1068,12 +1073,37 @@ lnet_res_lh_lookup(struct lnet_res_container *rec, __u64 cookie)
 	struct list_head	*head;
 	struct lnet_libhandle	*lh;
 	unsigned int		hash;
+	struct list_head        *runner1;
+	struct list_head        *runner2;
+	int                     list_length = -1;
 
 	if ((cookie & LNET_COOKIE_MASK) != rec->rec_type)
 		return NULL;
 
 	hash = cookie >> (LNET_COOKIE_TYPE_BITS + LNET_CPT_BITS);
 	head = &rec->rec_lh_hash[hash & LNET_LH_HASH_MASK];
+
+	runner1 = head;
+	runner2 = head;
+	while (check_for_loop) {
+		runner1 = runner1->next;
+		list_length++;
+		runner2 = runner2->next->next;
+
+		/* no loop */
+		if (runner1 == head) {
+			CDEBUG(D_NET, "Hash list length: %d\n",
+			       list_length);
+			break;
+		}
+
+		if (runner1 == runner2) {
+			CDEBUG(D_CONSOLE,
+			       "pid %d: Found loop in hash table.\n",
+			       current->pid);
+			break;
+		}
+	}
 
 	list_for_each_entry(lh, head, lh_hash_chain) {
 		if (lh->lh_cookie == cookie)
