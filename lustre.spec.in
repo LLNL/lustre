@@ -23,12 +23,12 @@
 %bcond_without static
 %bcond_with systemd
 %bcond_with mofed
+%bcond_without kfi
 %bcond_with mpi
 %bcond_with kabi
 %bcond_with multiple_lnds
 %bcond_with mofed
 %bcond_without o2ib
-%bcond_with kfi
 %bcond_with gni
 %bcond_without l_getsepol
 
@@ -245,6 +245,8 @@ Source17: kmp-lnet-kfilnd.preamble
 Source18: kmp-lnet-kfilnd.files
 Source19: kmp-lnet-in-kernel-o2iblnd.preamble
 Source20: kmp-lnet-in-kernel-o2iblnd.files
+Source21: kmp-lustre-lnd-kfi.preamble
+Source22: kmp-lustre-lnd-kfi.files
 URL: https://wiki.whamcloud.com/
 BuildRoot: %{_tmppath}/lustre-%{version}-root
 %if %{with lustre_modules}
@@ -388,6 +390,10 @@ lustre tools (mount/mkfs) to provide support for ldisfs
 # with lustre_utils
 %endif
 # with ldiskfs
+%endif
+
+%if %{with kfi}
+%kernel_module_package -n %{name}-lnd-kfi -p %SOURCE21 -f %SOURCE22 %{_flavor}
 %endif
 
 %if %{with zfs}
@@ -785,6 +791,10 @@ for fname in $(find libcfs/include/libcfs -type f -name \*.h); do
 	target=$(echo ${fname} | sed -e 's:^libcfs/include/::g')
 	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_usrsrc}/lustre-%{version}/${target}
 done
+%endif
+%if %{with kfi}
+mkdir -p $basemodpath-lnd-kfi/net
+mv $basemodpath/net/kkfilnd.ko $basemodpath-lnd-kfi/net/kkfilnd.ko
 %endif
 %if %{with ldiskfs}
 mkdir -p $basemodpath-osd-ldiskfs/fs
