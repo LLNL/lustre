@@ -255,6 +255,7 @@ Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_ma
 %else
 Requires: %{requires_kmod_name} >= %{requires_release_major_minor}
 %endif
+BuildRequires: bison flex
 %endif
 %if %{with lustre_tests_lutf}
 Requires: python3 >= 3.6.0
