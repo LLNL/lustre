@@ -153,10 +153,12 @@ AC_ARG_ENABLE([modules],
 	])
 	AC_MSG_RESULT([$enable_modules ($target_os)])
 	AS_IF([test "x$enable_modules" = xyes], [
-		AS_IF([test "x$FLEX" = "x"], [AC_MSG_ERROR(
-			[flex package is required to build kernel modules])])
-		AS_IF([test "x$BISON" = "x"], [AC_MSG_ERROR(
-			[bison package is required to build kernel modules])])
+		AS_IF([test "x$enable_dist" != xno], [],[
+			AS_IF([test "x$FLEX" = "x"], [AC_MSG_ERROR(
+				[flex package is required to build kernel modules])])
+			AS_IF([test "x$BISON" = "x"], [AC_MSG_ERROR(
+				[bison package is required to build kernel modules])])
+		])
 	AS_CASE([$target_os], [linux*], [
 			# Ensure SUBARCH is defined
 			SUBARCH=$(echo $target_cpu | sed -e 's/powerpc.*/powerpc/' -e 's/ppc.*/powerpc/' -e 's/x86_64/x86/' -e 's/i.86/x86/' -e 's/k1om/x86/' -e 's/aarch64.*/arm64/' -e 's/armv7.*/arm/')
