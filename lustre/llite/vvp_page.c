@@ -270,6 +270,11 @@ static void vvp_page_completion_read(const struct lu_env *env,
 		ll_ra_count_put(ll_i2sbi(inode), 1);
 
 	if (ioret == 0)  {
+		/**
+		 * cp_defer_uptodate is used for readahead page, and the
+		 * vmpage Uptodate bit is deferred to set in ll_readpage/
+		 * ll_io_read_page.
+		 */
 		if (!vpg->vpg_defer_uptodate)
 			cl_page_export(env, page, 1);
 	} else if (vpg->vpg_defer_uptodate) {

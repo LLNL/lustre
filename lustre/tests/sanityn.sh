@@ -564,6 +564,35 @@ test_16f() { # LU-14541
 }
 run_test 16f "rw sequential consistency vs drop_caches"
 
+test_16g() {
+	local file1=$DIR1/$tfile
+	local file2=$DIR2/$tfile
+	local duration=20
+	local status
+
+	timeout --preserve-status --signal=USR1 $duration \
+		rw_seq_cst_vs_drop_caches -m $file1 $file2
+	status=$?
+
+	case $((status & 0x7f)) in
+		0)
+			echo OK # Computers must be fast now.
+			;;
+		6) # SIGABRT
+			error "sequential consistency violation detected"
+			;;
+		10) # SIGUSR1
+			echo TIMEOUT # This is fine.
+			;;
+		*)
+			error "strange status '$status'"
+			;;
+	esac
+
+	rm -f $file1
+}
+run_test 16g "mmap rw sequential consistency vs drop_caches"
+
 test_17() { # bug 3513, 3667
 	remote_ost_nodsh && skip "remote OST with nodsh" && return
 

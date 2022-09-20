@@ -95,6 +95,13 @@ static void ll_invalidatepage(struct page *vmpage,
 		if (obj != NULL) {
 			page = cl_vmpage_page(vmpage, obj);
 			if (page != NULL) {
+				/**
+				 * clear vmpage uptodate bit, since
+				 * ll_read_ahead_pages()->ll_read_ahead_page()
+				 * could pick up this stale vmpage and take it
+				 * as uptodated.
+				 */
+				ClearPageUptodate(vmpage);
 				cl_page_delete(env, page);
 				cl_page_put(env, page);
 			}

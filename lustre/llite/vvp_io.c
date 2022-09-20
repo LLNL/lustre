@@ -1388,10 +1388,18 @@ static void vvp_io_rw_end(const struct lu_env *env,
 	trunc_sem_up_read(&lli->lli_trunc_sem);
 }
 
-static int vvp_io_kernel_fault(struct vvp_fault_io *cfio)
+static int vvp_io_kernel_fault(const struct lu_env *env,
+			       struct vvp_fault_io *cfio)
 {
 	struct vm_fault *vmf = cfio->ft_vmf;
+	struct file *vmff = cfio->ft_vma->vm_file;
+	struct address_space *mapping = vmff->f_mapping;
+	struct inode *inode = mapping->host;
+	int rc = 0;
+	ENTRY;
 
+	ll_inode_size_lock(inode);
+retry:
 	cfio->ft_flags = ll_filemap_fault(cfio->ft_vma, vmf);
 	cfio->ft_flags_valid = 1;
 
@@ -1405,25 +1413,64 @@ static int vvp_io_kernel_fault(struct vvp_fault_io *cfio)
 
 		cfio->ft_vmpage = vmf->page;
 
-		return 0;
+		GOTO(unlock, rc = 0);
 	}
 
 	if (cfio->ft_flags & VM_FAULT_SIGBUS) {
+		struct page *vmpage;
+		struct cl_page *page = NULL;
+		pgoff_t max_idx;
+
+		/**
+		 * ll_filemap_fault()->ll_readpage() could fill vmpage
+		 * correctly, and unlock the vmpage, while memory pressure or
+		 * truncate could delete page from vmpage, and kernel
+		 * filemap_fault() will wait_on_page_locked(vmpage) and find
+		 * out that the vmpage has been cleared its uptodate bit,
+		 * so it returns VM_FAULT_SIGBUS.
+		 *
+		 * In this case, we'd retry the filemap_fault()->ll_readpage()
+		 * to rebuild the cl_page and fill vmpage with uptodated data.
+		 */
+		vmpage = find_get_page(mapping, vmf->pgoff);
+		if (likely(vmpage)) {
+			lock_page(vmpage);
+			page = cl_vmpage_page(vmpage, NULL);
+			unlock_page(vmpage);
+			if (page) {
+				cl_page_put(env, page);
+			} else {
+				/**
+				 * check i_size to make sure it's not over EOF,
+				 * we don't want to call filemap_fault()
+				 * repeatedly since it returns VM_FAULT_SIGBUS
+				 * without even trying if vmf->pgoff is over
+				 * EOF.
+				 */
+				max_idx = DIV_ROUND_UP(i_size_read(inode),
+						       PAGE_SIZE);
+				if (vmf->pgoff < max_idx)
+					goto retry;
+			}
+		}
+
 		CDEBUG(D_PAGE, "got addr %p - SIGBUS\n", get_vmf_address(vmf));
-		return -EFAULT;
+		GOTO(unlock, rc = -EFAULT);
 	}
 
 	if (cfio->ft_flags & VM_FAULT_OOM) {
 		CDEBUG(D_PAGE, "got addr %p - OOM\n", get_vmf_address(vmf));
-		return -ENOMEM;
+		GOTO(unlock, rc = -ENOMEM);
 	}
 
 	if (cfio->ft_flags & VM_FAULT_RETRY)
-		return -EAGAIN;
+		GOTO(unlock, rc = -EAGAIN);
 
 	CERROR("unknown error in page fault %d\n", cfio->ft_flags);
-
-	return -EINVAL;
+	rc = -EINVAL;
+unlock:
+	ll_inode_size_unlock(inode);
+	return rc;
 }
 
 static void mkwrite_commit_callback(const struct lu_env *env, struct cl_io *io,
@@ -1464,7 +1511,7 @@ static int vvp_io_fault_start(const struct lu_env *env,
 		LASSERT(cfio->ft_vmpage != NULL);
 		lock_page(cfio->ft_vmpage);
 	} else {
-		result = vvp_io_kernel_fault(cfio);
+		result = vvp_io_kernel_fault(env, cfio);
 		if (result != 0)
 			RETURN(result);
 	}
