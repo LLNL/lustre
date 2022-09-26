@@ -816,12 +816,6 @@ lnet_peer_alive_locked(struct lnet_ni *ni, struct lnet_peer_ni *lpni,
 	if (!lnet_is_peer_deadline_passed(lpni, now))
 		return true;
 
-	/* ignore peer ni down status on initial communication attempt */
-	if (!lpni->lpni_last_alive &&
-	    lpni->lpni_ns_status == LNET_NI_STATUS_DOWN &&
-	    lnet_peers_start_down())
-		return 1;
-
 	return lnet_is_peer_ni_alive(lpni);
 }
 
