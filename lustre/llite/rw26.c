@@ -153,6 +153,12 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	 */
 	if (!cl_page_in_use(clpage) && !vmpage_in_use(vmpage, 1)) {
 		result = 1;
+		/**
+		 * drop cache goes through .releasepage, while truncate
+		 * goes through .invalidatepage.
+		 */
+		if (clpage->cp_type == CPT_CACHEABLE && PageUptodate(vmpage))
+			ClearPageUptodate(vmpage);
 		cl_page_delete(env, clpage);
 	}
 
