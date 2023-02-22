@@ -779,7 +779,7 @@ out:
 static int migrate_copy_data(int fd_src, int fd_dst, int (*check_file)(int))
 {
 	struct llapi_layout *layout;
-	size_t buf_size = 4 * 1024 * 1024;
+	size_t buf_size = 64 * 1024 * 1024;
 	void *buf = NULL;
 	off_t pos = 0;
 	off_t data_end = 0;
@@ -792,8 +792,14 @@ static int migrate_copy_data(int fd_src, int fd_dst, int (*check_file)(int))
 		uint64_t stripe_size;
 
 		rc = llapi_layout_stripe_size_get(layout, &stripe_size);
-		if (rc == 0)
-			buf_size = stripe_size;
+		if (rc == 0) {
+			/* We like big bufs */
+			if (stripe_size > buf_size)
+				buf_size = stripe_size;
+			else
+				/* Trim to stripe_size multiple */
+				buf_size -= buf_size % stripe_size;
+		}
 
 		llapi_layout_free(layout);
 	}
