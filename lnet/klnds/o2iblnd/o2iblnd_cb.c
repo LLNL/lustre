@@ -1417,6 +1417,8 @@ kiblnd_resolve_addr_cap(struct rdma_cm_id *cmid,
                         CDEBUG(D_NET, "bind to port %hu failed: %d\n",
                                port, rc);
                 } else {
+                        CDEBUG(D_NET, "bind to port %hu failed: %d\n",
+                               port, rc);
                         return rc;
                 }
         }
@@ -1440,6 +1442,7 @@ kiblnd_resolve_addr(struct rdma_cm_id *cmid,
 		if (!new_creds)
 			return -ENOMEM;
 
+		CDEBUG(D_NET, "preparing for override_creds() comm %s\n", current_comm());
 		cap_raise(new_creds->cap_effective, CAP_NET_BIND_SERVICE);
 		old_creds = override_creds(new_creds);
 	}
@@ -1496,6 +1499,7 @@ kiblnd_connect_peer(struct kib_peer_ni *peer_ni)
 				       (struct sockaddr *)&srcaddr,
 				       (struct sockaddr *)&dstaddr,
 				       lnet_get_lnd_timeout() * 1000);
+                CDEBUG(D_NET, "rdma_resolve_addr returned %d\n", rc);
 	}
 	if (rc != 0) {
 		/* Can't initiate address resolution:  */
