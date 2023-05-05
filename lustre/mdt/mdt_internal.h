@@ -331,6 +331,9 @@ struct mdt_device {
 	struct mdt_object	  *mdt_md_root;
 
 	struct mdt_dir_restriper   mdt_restriper;
+
+	/* name of xattr used to store jobid in mdt inode */
+	char			   mdt_job_xattr[XATTR_JOB_MAX_LEN];
 };
 
 #define MDT_SERVICE_WATCHDOG_FACTOR	(2)
