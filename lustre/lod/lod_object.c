@@ -5628,6 +5628,7 @@ static int lod_declare_create(const struct lu_env *env, struct dt_object *dt,
 				 */
 				if (hint->dah_parent &&
 				    dt_object_remote(hint->dah_parent) && lds &&
+				    lds->lds_dir_def_striping_set &&
 				    lds->lds_dir_def_stripe_offset !=
 				    LMV_OFFSET_DEFAULT)
 					GOTO(out, rc = -EREMOTE);
