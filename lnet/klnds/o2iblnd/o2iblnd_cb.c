@@ -825,7 +825,7 @@ __must_hold(&conn->ibc_lock)
 	int ver = conn->ibc_version;
 	int rc;
 	int done;
-	int invalidate_succeeded;
+	int invalidate_succeeded = 0;
 
 	LASSERT(tx->tx_queued);
 	/* We rely on this for QP sizing */
