@@ -1036,7 +1036,7 @@ static int osd_attr_get(const struct lu_env *env, struct dt_object *dt,
 	}
 	/* Block size may be not set; suggest maximal I/O transfers. */
 	if (blksize == 0)
-		blksize = osd_spa_maxblocksize(
+		blksize = spa_maxblocksize(
 			dmu_objset_spa(osd_obj2dev(obj)->od_os));
 
 	attr->la_blksize = blksize;
@@ -1115,7 +1115,7 @@ static int osd_add_projid(const struct lu_env *env, struct osd_object *obj,
 		if (rc)
 			GOTO(out, rc);
 
-		dxattr = osd_zio_buf_alloc(sa_size);
+		dxattr = zio_buf_alloc(sa_size);
 		if (dxattr == NULL)
 			GOTO(out, rc = -ENOMEM);
 
@@ -1131,7 +1131,7 @@ static int osd_add_projid(const struct lu_env *env, struct osd_object *obj,
 	rc = -sa_replace_all_by_template(obj->oo_sa_hdl, bulk, cnt, oh->ot_tx);
 out:
 	if (dxattr)
-		osd_zio_buf_free(dxattr, sa_size);
+		zio_buf_free(dxattr, sa_size);
 	return rc;
 }
 #endif
@@ -1649,7 +1649,7 @@ int __osd_attr_init(const struct lu_env *env, struct osd_device *osd,
 		rc = -nvlist_size(xattr, &sa_size, NV_ENCODE_XDR);
 		LASSERT(rc == 0);
 
-		dxattr = osd_zio_buf_alloc(sa_size);
+		dxattr = zio_buf_alloc(sa_size);
 		LASSERT(dxattr);
 
 		rc = -nvlist_pack(xattr, &dxattr, &sa_size,
@@ -1662,7 +1662,7 @@ int __osd_attr_init(const struct lu_env *env, struct osd_device *osd,
 
 	rc = -sa_replace_all_by_template(sa_hdl, bulk, cnt, tx);
 	if (dxattr)
-		osd_zio_buf_free(dxattr, sa_size);
+		zio_buf_free(dxattr, sa_size);
 
 	return rc;
 }
@@ -1710,7 +1710,6 @@ int osd_find_new_dnode(const struct lu_env *env, dmu_tx_t *tx,
 	return rc;
 }
 
-#ifdef HAVE_DMU_OBJECT_ALLOC_DNSIZE
 int osd_find_dnsize(struct osd_device *osd, int ea_in_bonus)
 {
 	int dnsize;
@@ -1739,7 +1738,6 @@ int osd_find_dnsize(struct osd_device *osd, int ea_in_bonus)
 	}
 	return dnsize;
 }
-#endif
 
 /*
  * The transaction passed to this routine must have
