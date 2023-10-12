@@ -2095,6 +2095,10 @@ check_write_checksum(struct obdo *oa, const struct lnet_processid *peer,
 			   client_cksum,
 			   obd_cksum_type_unpack(aa->aa_oa->o_flags),
 			   server_cksum, cksum_type, new_cksum);
+
+	if (obd_dump_on_checksum)
+		libcfs_debug_dumplog();
+
 	return 1;
 }
 

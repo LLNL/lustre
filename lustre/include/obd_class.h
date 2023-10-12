@@ -1854,6 +1854,7 @@ extern char obd_jobid_name[];
 
 extern unsigned int obd_lbug_on_eviction;
 extern unsigned int obd_dump_on_eviction;
+extern unsigned int obd_dump_on_checksum;
 
 static inline bool do_dump_on_eviction(struct obd_device *exp_obd)
 {
