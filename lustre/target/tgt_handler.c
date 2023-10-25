@@ -2604,9 +2604,6 @@ static void tgt_warn_on_cksum(struct ptlrpc_request *req,
 			   local_nb[npages-1].lnb_file_offset +
 			   local_nb[npages - 1].lnb_len - 1,
 			   client_cksum, server_cksum);
-
-	if (obd_dump_on_checksum)
-		libcfs_debug_dumplog();
 }
 
 int tgt_brw_write(struct tgt_session_info *tsi)

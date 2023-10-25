@@ -116,7 +116,6 @@ LUSTRE_STATIC_UINT_ATTR(timeout, &obd_timeout);
 LUSTRE_STATIC_UINT_ATTR(debug_peer_on_timeout, &obd_debug_peer_on_timeout);
 LUSTRE_STATIC_UINT_ATTR(dump_on_timeout, &obd_dump_on_timeout);
 LUSTRE_STATIC_UINT_ATTR(dump_on_eviction, &obd_dump_on_eviction);
-LUSTRE_STATIC_UINT_ATTR(dump_on_checksum, &obd_dump_on_checksum);
 LUSTRE_STATIC_UINT_ATTR(at_min, &at_min);
 LUSTRE_STATIC_UINT_ATTR(at_max, &at_max);
 LUSTRE_STATIC_UINT_ATTR(at_extra, &at_extra);
@@ -409,7 +408,6 @@ static struct attribute *lustre_attrs[] = {
 	&lustre_sattr_debug_peer_on_timeout.u.attr,
 	&lustre_sattr_dump_on_timeout.u.attr,
 	&lustre_sattr_dump_on_eviction.u.attr,
-	&lustre_sattr_dump_on_checksum.u.attr,
 	&lustre_sattr_at_min.u.attr,
 	&lustre_sattr_at_max.u.attr,
 	&lustre_sattr_at_extra.u.attr,
