@@ -1939,7 +1939,7 @@ no_bulk:
 
 	*reqp = req;
 	niobuf = req_capsule_client_get(pill, &RMF_NIOBUF_REMOTE);
-	CDEBUG(D_RPCTRACE, "brw rpc %p - object "DOSTID" offset %lld<>%lld\n",
+	CDEBUG(D_SNAPSHOT, "brw rpc %p - object "DOSTID" offset %lld<>%lld\n",
 		req, POSTID(&oa->o_oi), niobuf[0].rnb_offset,
 		niobuf[niocount - 1].rnb_offset + niobuf[niocount - 1].rnb_len);
         RETURN(0);

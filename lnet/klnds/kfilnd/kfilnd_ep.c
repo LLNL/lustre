@@ -351,10 +351,10 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 	switch (rc) {
 	case 0:
 	case -EAGAIN:
-		KFILND_EP_DEBUG(ep,
-				"Transaction ID %p: %s tagged recv of %u bytes (%u frags) with tag 0x%llx: rc=%d",
+		KFILND_EP_DEBUG2(ep,
+				"Transaction ID %p: %s tagged recv of %u bytes (%u frags) with tag 0x%llx klsk %u tmk %u: rc=%d",
 				tn, rc ? "Failed to post" : "Posted",
-				tn->tn_nob, tn->tn_num_iovec, msg.tag, rc);
+				tn->tn_nob, tn->tn_num_iovec, msg.tag, tn->tn_kp->kp_local_session_key, tn->tn_mr_key, rc);
 		break;
 
 	default:
@@ -488,7 +488,7 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	switch (rc) {
 	case 0:
 	case -EAGAIN:
-		KFILND_EP_DEBUG(ep,
+		KFILND_EP_DEBUG2(ep,
 				"Transaction ID %p: %s write of %u bytes in %u frags with key 0x%x to peer 0x%llx: rc=%d",
 				tn, rc ? "Failed to post" : "Posted",
 				tn->tn_nob, tn->tn_num_iovec,
