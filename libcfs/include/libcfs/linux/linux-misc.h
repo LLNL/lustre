@@ -139,4 +139,15 @@ void cfs_arch_init(void);
 		((type *)(__mptr - offsetof(type, member))); })
 #endif
 
+#ifndef memset_startat
+/** from linux 5.19 include/linux/string.h: */
+#define memset_startat(obj, v, member)					\
+({									\
+	u8 *__ptr = (u8 *)(obj);					\
+	typeof(v) __val = (v);						\
+	memset(__ptr + offsetof(typeof(*(obj)), member), __val,		\
+	       sizeof(*(obj)) - offsetof(typeof(*(obj)), member));	\
+})
+#endif /* memset_startat() */
+
 #endif /* __LIBCFS_LINUX_MISC_H__ */
