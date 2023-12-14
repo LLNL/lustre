@@ -666,6 +666,7 @@ struct obd_device *class_str2obd(const char *str)
 				class_incref(obd, "find", current);
 				break;
 			}
+			obd_device_unlock();
 			RETURN(NULL);
 		}
 	}
