@@ -618,6 +618,40 @@ mdt_nosquash_nids_seq_write(struct file *file, const char __user *buffer,
 }
 LPROC_SEQ_FOPS(mdt_nosquash_nids);
 
+static int mdt_enable_cap_mask_seq_show(struct seq_file *m, void *data)
+{
+	struct obd_device *obd = m->private;
+	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
+	cfs_cap_t cap;
+
+	cap = mdt->mdt_enable_cap_mask;
+
+	seq_printf(m, "%#0x\n", cap);
+
+	return 0;
+}
+
+static ssize_t mdt_enable_cap_mask_seq_write(struct file *file,
+					     const char __user *buffer,
+					     size_t count, loff_t *off)
+{
+	struct seq_file   *m = file->private_data;
+	struct obd_device *obd = m->private;
+	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
+	unsigned int val;
+	int rc;
+
+	rc = kstrtouint_from_user(buffer, count, 0, &val);
+	if (rc)
+		/* should also accept symbolic names via cfs_str2mask() */
+		return rc;
+
+	mdt->mdt_enable_cap_mask = val & CFS_CAP_FS_MASK;
+
+	return count;
+}
+LPROC_SEQ_FOPS(mdt_enable_cap_mask);
+
 static ssize_t enable_remote_dir_show(struct kobject *kobj,
 				      struct attribute *attr, char *buf)
 {
@@ -1369,6 +1403,8 @@ static struct lprocfs_vars lprocfs_mdt_obd_vars[] = {
 	  .fops =	&mdt_root_squash_fops			},
 	{ .name =	"nosquash_nids",
 	  .fops =	&mdt_nosquash_nids_fops			},
+	{ .name =	"enable_cap_mask",
+	  .fops =	&mdt_enable_cap_mask_fops		},
 	{ NULL }
 };
 

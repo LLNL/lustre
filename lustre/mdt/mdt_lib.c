@@ -327,6 +327,13 @@ static int new_init_ucred(struct mdt_thread_info *info, ucred_init_type_t type,
 	/* process root_squash here. */
 	mdt_root_squash(info, peernid);
 
+	if (ucred->uc_fsuid) {
+		if (ucred->uc_cap)
+			CDEBUG(D_SEC, "%s: drop capabilities %x for NID %s\n",
+			       mdt_obd_name(mdt), ucred->uc_cap,
+			       libcfs_nid2str(mdt_info_req(info)->rq_peer.nid));
+		ucred->uc_cap &= mdt->mdt_enable_cap_mask;
+	}
 	ucred->uc_valid = UCRED_NEW;
 	ucred_set_jobid(info, ucred);
 	ucred_set_nid(info, ucred);
@@ -495,6 +502,13 @@ static int old_init_ucred_common(struct mdt_thread_info *info,
 	/* process root_squash here. */
 	mdt_root_squash(info, mdt_info_req(info)->rq_peer.nid);
 
+	if (uc->uc_fsuid) {
+		if (uc->uc_cap)
+			CDEBUG(D_SEC, "%s: drop capabilities %x for NID %s\n",
+			       mdt_obd_name(mdt), uc->uc_cap,
+			       libcfs_nid2str(mdt_info_req(info)->rq_peer.nid));
+		uc->uc_cap &= mdt->mdt_enable_cap_mask;
+	}
 	uc->uc_valid = UCRED_OLD;
 	ucred_set_jobid(info, uc);
 	ucred_set_nid(info, uc);
