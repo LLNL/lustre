@@ -604,6 +604,9 @@ int main(int argc, char **argv)
 						     ~ALIGN_LEN);
 			}
 			while (len > 0) {
+				off_t start, off;
+
+				start = lseek(fd, 0, SEEK_CUR);
 				rc = read(fd, buf_align, len);
 				if (rc == -1) {
 					save_errno = errno;
@@ -611,8 +614,10 @@ int main(int argc, char **argv)
 					exit(save_errno);
 				}
 				if (rc < len) {
-					fprintf(stderr, "short read: %lld/%u\n",
-						rc, len);
+					off = lseek(fd, 0, SEEK_CUR);
+					fprintf(stderr,
+						"short read: %ld ->+ %u -> %ld %lld\n",
+						start, len, off, rc);
 					if (rc == 0)
 						exit(ENODATA);
 				}

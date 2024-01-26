@@ -2013,6 +2013,7 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	struct lu_env *env;
 	struct vvp_io_args *args;
 	struct file *file = iocb->ki_filp;
+	loff_t orig_ki_pos = iocb->ki_pos;
 	ssize_t result;
 	ssize_t rc2;
 	__u16 refcheck;
@@ -2040,6 +2041,8 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	else if (result > 0)
 		stale_data = true;
 
+	CFS_FAIL_TIMEOUT_ORSET(OBD_FAIL_LLITE_READ_PAUSE, CFS_FAIL_ONCE,
+			       cfs_fail_val);
 	/**
 	 * Currently when PCC read failed, we do not fall back to the
 	 * normal read path, just return the error.
@@ -2080,6 +2083,7 @@ out:
 		 * we've reached EOF before the read, the data read are cached
 		 * stale data.
 		 */
+		iocb->ki_pos = orig_ki_pos;
 		iov_iter_truncate(to, 0);
 		result = 0;
 	}
