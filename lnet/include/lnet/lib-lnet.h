@@ -396,19 +396,32 @@ lnet_peer_decref_locked(struct lnet_peer *lp)
 		lnet_destroy_peer_locked(lp);
 }
 
-static inline void
-lnet_peer_ni_addref_locked(struct lnet_peer_ni *lp)
-{
-	kref_get(&lp->lpni_kref);
-}
+/* static inline void */
+/* lnet_peer_ni_addref_locked(struct lnet_peer_ni *lp) */
+/* { */
+/* 	kref_get(&lp->lpni_kref); */
+/* } */
+#define lnet_peer_ni_addref_locked(lp) \
+do { \
+	int my_nrefs = kref_read(&(lp)->lpni_kref); \
+	CDEBUG(D_NET, "lnet_peer_ni_addref_locked %p nid %s %d -> %d\n", (lp), libcfs_nidstr(&(lp)->lpni_nid), my_nrefs, (my_nrefs + 1)); \
+	kref_get(&(lp)->lpni_kref); \
+} while(0)
 
 extern void lnet_destroy_peer_ni_locked(struct kref *ref);
 
-static inline void
-lnet_peer_ni_decref_locked(struct lnet_peer_ni *lp)
-{
-	kref_put(&lp->lpni_kref, lnet_destroy_peer_ni_locked);
-}
+/* static inline void */
+/* lnet_peer_ni_decref_locked(struct lnet_peer_ni *lp) */
+/* { */
+/* 	kref_put(&lp->lpni_kref, lnet_destroy_peer_ni_locked); */
+/* } */
+#define lnet_peer_ni_decref_locked(lp) \
+do { \
+	int my_nrefs = kref_read(&(lp)->lpni_kref); \
+	CDEBUG(D_NET, "lnet_peer_ni_decref_locked %p nid %s %d -> %d\n", (lp), libcfs_nidstr(&(lp)->lpni_nid), my_nrefs, (my_nrefs - 1)); \
+	kref_put(&(lp)->lpni_kref, lnet_destroy_peer_ni_locked); \
+} while(0)
+
 
 static inline int
 lnet_isrouter(struct lnet_peer_ni *lpni)
