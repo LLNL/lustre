@@ -2180,6 +2180,7 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 	 */
 	if (!LNET_NID_IS_ANY(&sd->sd_rtr_nid)) {
 		gwni = lnet_peer_ni_find_locked(&sd->sd_rtr_nid);
+                CDEBUG(D_NET, "1 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 		if (gwni) {
 			gwni_decref = true;
 			gw = gwni->lpni_peer_net->lpn_peer;
@@ -2191,6 +2192,9 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 		}
 	}
 
+        CDEBUG(D_NET, "2 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
+
+
 	if (!route_found) {
 		if (sd->sd_msg->msg_routing || (src_nid && !LNET_NID_IS_ANY(src_nid))) {
 			/* If I'm routing this message then I need to find the
@@ -2199,7 +2203,9 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 			 * We also find next hop based on the destination NID
 			 * if the source NI was specified
 			 */
+                        CDEBUG(D_NET, "3 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 			best_rnet = lnet_find_rnet_locked(LNET_NID_NET(&sd->sd_dst_nid));
+                        CDEBUG(D_NET, "4 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 			if (!best_rnet) {
 				CERROR("Unable to send message from %s to %s - Route table may be misconfigured\n",
 				       (src_nid && LNET_NID_IS_ANY(src_nid)) ?
@@ -2220,6 +2226,7 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 			lp = lpni->lpni_peer_net->lpn_peer;
 
 			list_for_each_entry(lpn, &lp->lp_peer_nets, lpn_peer_nets) {
+                                CDEBUG(D_NET, "5 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 				/* is this remote network reachable?  */
 				rnet = lnet_find_rnet_locked(lpn->lpn_net_id);
 				if (!rnet)
@@ -2256,7 +2263,7 @@ use_lpn:
 				rc =  -EHOSTUNREACH;
 				goto out;
 			}
-
+                        CDEBUG(D_NET, "6 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 			sd->sd_best_lpni = lnet_find_best_lpni(sd->sd_best_ni,
 							       lnet_nid_to_nid4(&sd->sd_dst_nid),
 							       lp,
@@ -2288,6 +2295,7 @@ use_lpn:
 		 * select will be reachable by virtue of the restriction we have
 		 * when adding a route.
 		 */
+                CDEBUG(D_NET, "7 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 		best_route = lnet_find_route_locked(best_rnet,
 						    LNET_NID_NET(src_nid),
 						    sd->sd_best_lpni,
@@ -2300,7 +2308,7 @@ use_lpn:
 			rc = -EHOSTUNREACH;
 			goto out;
 		}
-
+                CDEBUG(D_NET, "8 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 		if (!gwni) {
 			CERROR("Internal Error. Route expected to %s from %s\n",
 			       libcfs_nidstr(dst_nid),
@@ -2310,6 +2318,7 @@ use_lpn:
 		}
 
 		gw = best_route->lr_gateway;
+                CDEBUG(D_NET, "9 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 		LASSERT(gw == gwni->lpni_peer_net->lpn_peer);
 	}
 
@@ -2331,7 +2340,7 @@ use_lpn:
 		if (rc)
 			goto out;
 	}
-
+        CDEBUG(D_NET, "10 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 	if (!sd->sd_best_ni) {
 		lpn = gwni->lpni_peer_net;
 		sd->sd_best_ni = lnet_find_best_ni_on_spec_net(NULL, gw, lpn,
@@ -2345,7 +2354,7 @@ use_lpn:
 			goto out;
 		}
 	}
-
+        CDEBUG(D_NET, "11 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 	*gw_lpni = gwni;
 	*gw_peer = gw;
 
@@ -2361,6 +2370,7 @@ use_lpn:
 	}
 
 out:
+        CDEBUG(D_NET, "13 gwni: %s\n", libcfs_nidstr(&sd->sd_rtr_nid));
 	if (gwni_decref && gwni)
 		lnet_peer_ni_decref_locked(gwni);
 
