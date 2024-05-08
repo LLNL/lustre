@@ -154,7 +154,11 @@ static int zfs_set_prop_str(zfs_handle_t *zhp, char *prop, void *val)
 /*
  * Remove a property from zfs property dataset
  */
+#ifdef HAVE_ZFS_NVLIST_CONST_INTERFACES
+static int zfs_remove_prop(zfs_handle_t *zhp, nvlist_t *nvl, const char *propname)
+#else
 static int zfs_remove_prop(zfs_handle_t *zhp, nvlist_t *nvl, char *propname)
+#endif
 {
 	nvlist_remove_all(nvl, propname);
 	/* XXX: please replace zfs_prop_inherit() if there is a better function
@@ -181,21 +185,6 @@ static int zfs_erase_prop(zfs_handle_t *zhp, char *param)
 
 	snprintf(propname, len + 1, "%s%s", LDD_PREFIX, param);
 	return zfs_remove_prop(zhp, nvl, propname);
-}
-
-#ifdef HAVE_ZFS_NVLIST_CONST_INTERFACES
-static int zfs_is_special_ldd_prop_param(const char *name)
-#else
-static int zfs_is_special_ldd_prop_param(char *name)
-#endif
-{
-	int i;
-
-	for (i = 0; special_ldd_prop_params[i].zlpb_prop_name != NULL; i++)
-		if (!strcmp(name, special_ldd_prop_params[i].zlpb_prop_name))
-			return 1;
-
-	return 0;
 }
 
 static int zfs_erase_allprops(zfs_handle_t *zhp)
@@ -519,7 +508,11 @@ static int zfs_get_prop_str(zfs_handle_t *zhp, char *prop, void *val)
 	return ret;
 }
 
+#ifdef HAVE_ZFS_NVLIST_CONST_INTERFACES
+static int zfs_is_special_ldd_prop_param(const char *name)
+#else
 static int zfs_is_special_ldd_prop_param(char *name)
+#endif
 {
 	int i;
 
