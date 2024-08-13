@@ -291,6 +291,11 @@ void lnet_acceptor_remove_sockets(const char *iface)
 }
 EXPORT_SYMBOL(lnet_acceptor_remove_sockets);
 
+/*
+ * https://lc.llnl.gov/jira/browse/TOSS-6350
+ */
+#define EDVRPFTPD 1022
+
 struct socket *
 lnet_connect(struct lnet_nid *peer_nid, int interface,
 	     struct sockaddr *peeraddr, struct net *ns,
@@ -320,7 +325,14 @@ lnet_connect(struct lnet_nid *peer_nid, int interface,
 	for (port = LNET_ACCEPTOR_MAX_RESERVED_PORT;
 	     port >= LNET_ACCEPTOR_MIN_RESERVED_PORT;
 	     --port) {
+
 		/* Iterate through reserved ports. */
+
+		if (port == EDVRPFTPD) {
+			LCONSOLE_INFO("skipping EDVRPFTPD port %d\n", port);
+			continue;
+		}
+
 		sock = lnet_sock_connect(interface, port,
 					 (struct sockaddr *)&destaddr, ns);
 		if (IS_ERR(sock)) {
