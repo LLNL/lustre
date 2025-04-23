@@ -369,3 +369,22 @@ char *nla_strdup(const struct nlattr *nla, gfp_t flags)
 }
 EXPORT_SYMBOL(nla_strdup);
 #endif /* !HAVE_NLA_STRDUP */
+
+unsigned int libcfs_reserved_cache = 0;
+module_param(libcfs_reserved_cache, int, 0644);
+MODULE_PARM_DESC(libcfs_reserved_cache, "system page cache reservation in mbytes (for arc cache)");
+
+#ifdef HAVE_TOTALRAM_PAGES_AS_FUNC
+  #define _totalram_pages() totalram_pages()
+#else
+  #define _totalram_pages() totalram_pages
+#endif
+
+unsigned long cfs_totalram_pages()
+{
+	if (libcfs_reserved_cache > _totalram_pages()/2)
+		libcfs_reserved_cache = _totalram_pages() / 2;
+
+	return _totalram_pages() - libcfs_reserved_cache;
+}
+EXPORT_SYMBOL(cfs_totalram_pages);
