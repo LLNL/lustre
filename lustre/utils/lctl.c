@@ -476,7 +476,21 @@ command_t cmdlist[] = {
 	 "       check all records from index 1 by default."},
 	{"llog_remove", jt_llog_remove, 0,
 	 "remove one log from catalog or plain log, erase it from disk.\n"
-	 "usage: llog_remove <logname|FID> [--log_id <id>]"},
+	 "usage: llog_remove {LOGNAME|FID} [--log_id ID]"},
+
+	{"lcfg_clear", jt_lcfg_clear, 0,
+	 "drop unused config llog records for a device or filesystem.\n"
+	 "clients and servers must be unmounted during this operation.\n"
+	 "usage: clear_conf {FSNAME|DEVNAME}"},
+	{"clear_conf", jt_lcfg_clear, 0, "alias for 'lcfg_clear'\n"},
+	{"lcfg_fork", jt_lcfg_fork, 0,
+	 "copy configuration logs for named filesystem with given name\n"
+	 "usage: fork_lcfg FSNAME NEWNAME"},
+	{"fork_lcfg", jt_lcfg_fork, 0, "alias for 'lcfg_fork'\n"},
+	{"lcfg_erase", jt_lcfg_erase, 0,
+	 "permanently erase configuration logs for the named filesystem\n"
+	 "usage: lcfg_erase [--help] [--quiet] FSNAME"},
+	{"erase_lcfg", jt_lcfg_erase, 0, "alias for 'lcfg_erase'\n"},
 
 	{"==== obsolete (DANGEROUS) ====", NULL, 0, "obsolete (DANGEROUS)"},
 	/* network operations */
