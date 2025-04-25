@@ -117,6 +117,10 @@ const int nthreads = 1;
 
 static int cur_device = -1;
 
+static int jt_llog_print_iter(char *logname, long start, long end,
+			     int (record_cb)(const char *record, void *private),
+			     void *private, bool reverse, bool raw);
+
 int lcfg_ioctl(char *func, int dev_id, struct lustre_cfg *lcfg)
 {
 	struct obd_ioctl_data data;
@@ -2519,6 +2523,30 @@ int jt_obd_mdc_lookup(int argc, char **argv)
 	return rc;
 }
 
+enum llog_default_dev_op {
+	LLOG_DFLT_MGS_SET = 0,
+	LLOG_DFLT_DEV_RESET
+};
+
+static int llog_default_device(enum llog_default_dev_op op)
+{
+	int rc = 0;
+	static int dflt_dev = -1;
+
+	if (op == LLOG_DFLT_MGS_SET && (cur_device == -1)) {
+		char mgs[] = "$MGS";
+
+		rc = do_device("llog_default_device", mgs);
+		dflt_dev = cur_device;
+
+	} else if (op == LLOG_DFLT_DEV_RESET && (dflt_dev != -1)) {
+		do_disconnect(NULL, 1);
+		dflt_dev = -1;
+	}
+
+	return rc;
+}
+
 #ifdef HAVE_SERVER_SUPPORT
 /**
  * Clear config logs for given device or filesystem.
@@ -2598,40 +2626,173 @@ int jt_lcfg_fork(int argc, char **argv)
 	return rc;
 }
 
-int jt_lcfg_erase(int argc, char **argv)
+struct erase_callback_data {
+	char	*ecd_fsname;
+	int	ecd_count;
+	int	ecd_error;
+	int	ecd_quiet;
+};
+
+static int erase_param_cb(const char *record, void *cb_data)
 {
-	struct obd_ioctl_data data;
-	char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
+	struct erase_callback_data *ecd = cb_data;
+	struct obd_ioctl_data ioc_data = { 0 };
+	char rawbuf[MAX_IOC_BUFLEN] = "", *buf = rawbuf;
+	char *param_name, *end;
+	char *index;
 	int rc;
 
-	if (argc == 3) {
-		if (strncmp(argv[2], "-q", strlen("-q")) != 0 &&
-		    strncmp(argv[2], "--quiet", strlen("--quiet")) != 0)
-			return CMD_HELP;
-	} else if (argc != 2) {
-		return CMD_HELP;
-	}
+	/* Skip records that aren't set_param events */
+	if (!strstr(record, "event: set_param"))
+		return 0;
 
-	memset(&data, 0, sizeof(data));
-	data.ioc_dev = get_mgs_device();
-	data.ioc_inllen1 = strlen(argv[1]) + 1;
-	data.ioc_inlbuf1 = argv[1];
+	/*
+	 * Parameter records look like:
+	 * - { index: 14, event: set_param, device: general,
+	 *     parameter: jobid_var, value: nodelocal }
+	 * - { index: 23, event: set_param, device: general,
+	 *     parameter: jobid_name, value: %H:%e:%u }
+	 * - { index: 32, event: set_param, device: general,
+	 *     parameter: osc.myth-OST*.grant_shrink_interval, value: 120 }
+	 */
+	param_name = strstr(record, "parameter: ");
+	if (!param_name)
+		return 0;
+	param_name += strlen("parameter: ");
 
-	memset(buf, 0, sizeof(rawbuf));
-	rc = llapi_ioctl_pack(&data, &buf, sizeof(rawbuf));
+	/* Find the end of the parameter name */
+	end = strstr(param_name, ",");
+	if (!end)
+		return 0;
+	*end = '\0';
+
+	/* Check if fsname appears anywhere in the parameter name */
+	if (!strstr(param_name, ecd->ecd_fsname))
+		return 0;
+
+	index = strstr(record, "index: ");
+	if (!index)
+		return 0;
+	index += strlen("index: ");
+	end = strstr(index, ",");
+	*end = '\0';
+
+	/* Found a matching parameter, prepare to cancel it */
+	ioc_data.ioc_dev = cur_device;
+	ioc_data.ioc_inlbuf1 = "params";
+	ioc_data.ioc_inllen1 = strlen("params") + 1; /* catalog name */
+	ioc_data.ioc_inlbuf3 = index;
+	ioc_data.ioc_inllen3 = strlen(index) + 1;	/* index to cancel */
+
+	rc = llapi_ioctl_pack(&ioc_data, &buf, sizeof(rawbuf));
 	if (rc) {
-		fprintf(stderr, "error: %s: invalid ioctl\n",
-			jt_cmdname(argv[0]));
+		if (!ecd->ecd_quiet)
+			fprintf(stderr,
+				"ioctl_pack failed to cancel param '%s': %s\n",
+				param_name, strerror(-rc));
+		if (!ecd->ecd_error)
+			ecd->ecd_error = rc;
 		return rc;
 	}
 
-	rc = l_ioctl(OBD_DEV_ID, OBD_IOC_LCFG_ERASE, buf);
-	if (rc < 0)
-		fprintf(stderr, "error: %s: OBD_IOC_LCFG_ERASE failed: %s\n",
-			jt_cmdname(argv[0]), strerror(errno));
+	rc = l_ioctl(OBD_DEV_ID, OBD_IOC_LLOG_CANCEL, buf);
+	if (rc) {
+		if (!ecd->ecd_quiet)
+			fprintf(stderr, "failed to cancel param '%s': %s\n",
+				param_name, strerror(errno));
+		if (!ecd->ecd_error)
+			ecd->ecd_error = rc;
+		return rc;
+	}
 
+	ecd->ecd_count++;
+
+	return 0;
+}
+
+/* erase the configuration log for the named filesystem and all persistent
+ * params that contain the fsname from the "params" log on the MGS.
+ */
+int jt_lcfg_erase(int argc, char **argv)
+{
+	struct obd_ioctl_data data = { 0 };
+	char rawbuf[MAX_IOC_BUFLEN] = "", *buf = rawbuf;
+	char *fsname = NULL;
+	char *cmd = argv[0];
+	bool quiet = false;
+	struct erase_callback_data ecd = { 0 };
+	int rc, c;
+
+	static const struct option long_opts[] = {
+	{ .val = 'h',	.name = "help",		.has_arg = no_argument },
+	{ .val = 'q',	.name = "quiet",	.has_arg = no_argument },
+	{ .name = NULL }
+	};
+
+	while ((c = getopt_long(argc, argv, "qh", long_opts, NULL)) != -1) {
+		switch (c) {
+		case 'q':
+			quiet = true;
+			break;
+		case 'h':
+		default:
+			return CMD_HELP;
+		}
+	}
+
+	if (optind >= argc)
+		return CMD_HELP;
+
+	fsname = argv[optind];
+
+	/* First do the normal lcfg_erase operation */
+	if (llog_default_device(LLOG_DFLT_MGS_SET))
+		return CMD_INCOMPLETE;
+
+	data.ioc_dev = cur_device;
+	data.ioc_inllen1 = strlen(fsname) + 1;
+	data.ioc_inlbuf1 = fsname;
+
+	rc = llapi_ioctl_pack(&data, &buf, sizeof(rawbuf));
+	if (rc) {
+		if (!quiet)
+			fprintf(stderr, "%s: ioctl_pack failed: %s\n",
+				jt_cmdname(cmd), strerror(-rc));
+		goto out;
+	}
+
+	rc = l_ioctl(OBD_DEV_ID, OBD_IOC_LCFG_ERASE, buf);
+	if (rc < 0) {
+		if (!quiet)
+			fprintf(stderr, "%s: OBD_IOC_LCFG_ERASE failed: %s\n",
+				jt_cmdname(cmd), strerror(-rc));
+		goto out;
+	}
+
+	/* Now handle the params configuration log */
+	ecd.ecd_fsname = fsname;
+	ecd.ecd_quiet = quiet;
+	rc = jt_llog_print_iter("params", 1, -1, erase_param_cb,
+				&ecd, false, false);
+	if (rc) {
+		if (!quiet)
+			fprintf(stderr, "%s: failed params log iteration: %s\n",
+				jt_cmdname(cmd), strerror(-rc));
+		goto out;
+	}
+
+	if (ecd.ecd_error)
+		rc = ecd.ecd_error;
+
+	if (!quiet) /* below message is checked in conf-sanity.sh test_250 */
+		printf("%s: erased %d parameters matching fsname '%s'\n",
+		       jt_cmdname(cmd), ecd.ecd_count, fsname);
+
+out:
+	llog_default_device(LLOG_DFLT_DEV_RESET);
 	return rc;
 }
+
 #else /* !HAVE_SERVER_SUPPORT */
 int jt_lcfg_clear(int argc, char **argv)
 {
@@ -2663,30 +2824,6 @@ int jt_lcfg_erase(int argc, char **argv)
 	return -EOPNOTSUPP;
 }
 #endif /* HAVE_SERVER_SUPPORT */
-
-enum llog_default_dev_op {
-	LLOG_DFLT_MGS_SET = 0,
-	LLOG_DFLT_DEV_RESET
-};
-
-static int llog_default_device(enum llog_default_dev_op op)
-{
-	int rc = 0;
-	static int dflt_dev = -1;
-
-	if (op == LLOG_DFLT_MGS_SET && (cur_device == -1)) {
-		char mgs[] = "$MGS";
-
-		rc = do_device("llog_default_device", mgs);
-		dflt_dev = cur_device;
-
-	} else if (op == LLOG_DFLT_DEV_RESET && (dflt_dev != -1)) {
-		do_disconnect(NULL, 1);
-		dflt_dev = -1;
-	}
-
-	return rc;
-}
 
 int jt_llog_catlist(int argc, char **argv)
 {
@@ -2865,9 +3002,9 @@ out:
  * \retval		0 on success
  *			others handled by the caller
  */
-int jt_llog_print_iter(char *logname, long start, long end,
-		       int (record_cb)(const char *record, void *private),
-		       void *private, bool reverse, bool raw)
+static int jt_llog_print_iter(char *logname, long start, long end,
+			     int (record_cb)(const char *record, void *private),
+			     void *private, bool reverse, bool raw)
 {
 	struct obd_ioctl_data data = { 0 };
 	char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
