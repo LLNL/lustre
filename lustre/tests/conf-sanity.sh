@@ -10046,6 +10046,52 @@ test_132() {
 }
 run_test 132 "hsm_actions processed after failover"
 
+test_250() {
+	stack_trap "export FSNAME=$FSNAME; formatall"
+	export FSNAME=tst250fs
+
+	# Set up a new filesystem
+	formatall || error "Failed to format filesystem"
+
+	mountmgs || error "Failed to mount MGS"
+	mountmds || error "Failed to mount MDS"
+	mountoss || error "Failed to mount OST"
+
+	# Set some test parameters that include the fsname
+	do_facet mgs $LCTL set_param -P osc.$FSNAME-*.max_rpcs_in_flight=16 ||
+		error "Failed to set OSC parameter"
+	do_facet mgs $LCTL set_param -P mdt.$FSNAME-*.enable_pin_gid=-1 ||
+		error "Failed to set MDT parameter"
+	do_facet mgs $LCTL set_param -P llite.$FSNAME-*.max_read_ahead_mb=32 ||
+		error "Failed to set llite parameter"
+	# Set some parameters that do not include the fsname
+	do_facet mgs $LCTL set_param -P osc.*.max_dirty_mb=512 ||
+		error "Failed to set OSC parameter"
+
+	unmountmds || error "Failed to unmount MDSs"
+	unmountoss || error "Failed to unmount OSTs"
+
+	# Verify parameters were set
+	local params=$(do_facet mgs $LCTL llog_print params | grep $FSNAME)
+	[[ -n "$params" ]] || error "No parameters found for $FSNAME"
+	echo -e "Found parameters:\n$params"
+
+	local output=$(do_facet mgs $LCTL lcfg_erase $FSNAME 2>&1) ||
+		error "lcfg_erase failed"
+	echo -e "lcfg_erase output:\n$output"
+	[[ "$output" =~ "erased 3 parameters" ]] ||
+		error "lcfg_erase did not list erased parameters"
+
+	# Verify all parameters for $FSNAME were removed
+	params=$(do_facet mgs $LCTL get_param -n params | grep $FSNAME)
+	[[ -z "$params" ]] || error "Parameters left after lcfg_erase: $params"
+
+	# Verify parameters not including $FSNAME were not removed
+	params=$(do_facet mgs $LCTL get_param -n params)
+	[[ "$params" =~ "max_diry_mb" ]] ||
+		error "Non-$FSNAME parameters removed: $params"
+}
+run_test 250 "verify lcfg_erase removes filesystem parameters"
 if ! combined_mgs_mds ; then
 	stop mgs
 fi
