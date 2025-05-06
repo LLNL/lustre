@@ -124,9 +124,10 @@
 # to be adjusted when we switch between client-only and client-server builds
 %global lustre_name lustre
 
-# KFILND only built for x86_64 due to build issues for cassini dependencies
+# for TOSS version < 5 which corresponds to rhel < 9
+# build KFILND only for x86_64 due to build issues for cassini dependencies
 # on other arches
-%ifnarch x86_64
+%ifnarch x86_64 && ( 0%{?rhel} < 9 )
     %undefine with_kfi
 %endif
 
