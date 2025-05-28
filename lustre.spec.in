@@ -127,8 +127,10 @@
 # for TOSS version < 5 which corresponds to rhel < 9
 # build KFILND only for x86_64 due to build issues for cassini dependencies
 # on other arches
-%ifnarch x86_64 && ( 0%{?rhel} < 9 )
-    %undefine with_kfi
+%ifnarch x86_64
+    %if 0%{?rhel} < 9
+        %undefine with_kfi
+    %endif
 %endif
 
 # Set the package name prefix
