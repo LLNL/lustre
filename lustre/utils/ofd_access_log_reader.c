@@ -39,6 +39,9 @@
  * Structured trace points (when --trace is used) are added to permit
  * testing of the access log functionality (see test_165* in
  * lustre/tests/sanity.sh).
+ *
+ * The access logs are not enabled by default - see the usage message
+ * for this utility, or the ofd implementation referenced above.
  */
 #include <stddef.h>
 #include <stdio.h>
@@ -682,6 +685,12 @@ void usage(void)
 {
 	printf("Usage: %s: [OPTION]...\n"
 "Discover, read, batch, and write Lustre access logs\n"
+"\n"
+"Access log entries are stored in a circular buffer, whose size is set by\n"
+"obdfilter.DEVICE.access_log_size. Setting this size > 0 enables logs on a\n"
+"target, at which point it will be listed by --list, below. The size required\n"
+"depends on the activity level on the server and the polling period determined\n"
+"by the options below.\n"
 "\n"
 "Mandatory arguments to long options are mandatory for short options too.\n"
 "  -f, --batch-file=FILE          print batch to file (default stdout)\n"
