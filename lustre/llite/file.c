@@ -1952,59 +1952,6 @@ ll_do_fast_read(struct kiocb *iocb, struct iov_iter *iter)
 	return result;
 }
 
-/**
- * Confine read iter lest read beyond the EOF
- *
- * \param iocb [in]	kernel iocb
- * \param to [in]	reader iov_iter
- *
- * \retval <0	failure
- * \retval 0	success
- * \retval >0	@iocb->ki_pos has passed the EOF
- */
-static int file_read_confine_iter(struct lu_env *env, struct kiocb *iocb,
-				  struct iov_iter *to)
-{
-	struct cl_attr *attr = vvp_env_thread_attr(env);
-	struct file *file = iocb->ki_filp;
-	struct inode *inode = file_inode(file);
-	struct ll_inode_info *lli = ll_i2info(inode);
-	loff_t read_end = iocb->ki_pos + iov_iter_count(to);
-	loff_t kms;
-	loff_t size;
-	int rc;
-
-	cl_object_attr_lock(lli->lli_clob);
-	rc = cl_object_attr_get(env, lli->lli_clob, attr);
-	cl_object_attr_unlock(lli->lli_clob);
-	if (rc != 0)
-		return rc;
-
-	kms = attr->cat_kms;
-	/* if read beyond end-of-file, adjust read count */
-	if (kms > 0 && (iocb->ki_pos >= kms || read_end > kms)) {
-		rc = ll_glimpse_size(inode);
-		if (rc != 0)
-			return rc;
-
-		size = i_size_read(inode);
-		if (iocb->ki_pos >= size || read_end > size) {
-			CDEBUG(D_VFSTRACE,
-			       "%s: read [%llu, %llu] over eof, kms %llu, file_size %llu.\n",
-			       file_dentry(file)->d_name.name,
-			       iocb->ki_pos, read_end, kms, size);
-
-			if (iocb->ki_pos >= size)
-				return 1;
-
-			if (read_end > size)
-				iov_iter_truncate(to, size - iocb->ki_pos);
-		}
-	}
-
-	return rc;
-}
-
 /*
  * Read from a file (through the page cache).
  */
@@ -2013,13 +1960,11 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	struct lu_env *env;
 	struct vvp_io_args *args;
 	struct file *file = iocb->ki_filp;
-	loff_t orig_ki_pos = iocb->ki_pos;
 	ssize_t result;
 	ssize_t rc2;
 	__u16 refcheck;
 	ktime_t kstart = ktime_get();
 	bool cached;
-	bool stale_data = false;
 
 	ENTRY;
 
@@ -2034,12 +1979,6 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
 		RETURN(PTR_ERR(env));
-
-	result = file_read_confine_iter(env, iocb, to);
-	if (result < 0)
-		GOTO(out, result);
-	else if (result > 0)
-		stale_data = true;
 
 	CFS_FAIL_TIMEOUT_ORSET(OBD_FAIL_LLITE_READ_PAUSE, CFS_FAIL_ONCE,
 			       cfs_fail_val);
@@ -2077,16 +2016,6 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 
 out:
 	cl_env_put(env, &refcheck);
-
-	if (stale_data && result > 0) {
-		/**
-		 * we've reached EOF before the read, the data read are cached
-		 * stale data.
-		 */
-		iocb->ki_pos = orig_ki_pos;
-		iov_iter_truncate(to, 0);
-		result = 0;
-	}
 
 	if (result > 0) {
 		ll_rw_stats_tally(ll_i2sbi(file_inode(file)), current->pid,

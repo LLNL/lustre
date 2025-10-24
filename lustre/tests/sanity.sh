@@ -21668,28 +21668,6 @@ test_251a() {
 }
 run_test 251a "Handling short read and write correctly"
 
-test_251b() {
-	dd if=/dev/zero of=$DIR/$tfile bs=1k count=4 ||
-		error "write $tfile failed"
-
-	sleep 2 && echo 12345 >> $DIR/$tfile &
-
-	#define OBD_FAIL_LLITE_READ_PAUSE 0x1431
-	$LCTL set_param fail_loc=0x1431 fail_val=5
-	# seek to 4096, 2 seconds later, file size expand to 4102, and after
-	# 5 seconds, read 10 bytes, the short read should
-	# report:
-	#                start ->+ read_len -> offset_after_read read_count
-	#     short read: 4096 ->+ 10 -> 4096 0
-	# not:
-	#     short read: 4096 ->+ 10 -> 4102 0
-	local off=$($MULTIOP $DIR/$tfile oO_RDONLY:z4096r10c 2>&1 | \
-			awk '/short read/ { print $7 }')
-	(( off == 4096 )) ||
-		error "short read should set offset at 4096, not $off"
-}
-run_test 251b "short read restore offset correctly"
-
 test_252() {
 	remote_mds_nodsh && skip "remote MDS with nodsh"
 	remote_ost_nodsh && skip "remote OST with nodsh"
