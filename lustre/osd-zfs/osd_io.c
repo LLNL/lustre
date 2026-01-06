@@ -471,9 +471,10 @@ static int osd_bufs_get_read(const struct lu_env *env, struct osd_object *obj,
 		if (unlikely(npages >= maxlnb))
 			GOTO(err, rc = -EOVERFLOW);
 
-		rc = -dmu_buf_hold_array_by_bonus(&obj->oo_dn->dn_bonus->db,
+		rc = -ll_dmu_buf_hold_array_by_bonus(&obj->oo_dn->dn_bonus->db,
 						  off, len, TRUE, osd_0copy_tag,
-						  &numbufs, &dbp);
+						  &numbufs, &dbp,
+						  DMU_READ_PREFETCH);
 		if (unlikely(rc))
 			GOTO(err, rc);
 
@@ -919,8 +920,9 @@ static void osd_evict_dbufs_after_write(struct osd_object *obj,
 	dmu_buf_t **dbp;
 	int i, rc, numbufs;
 
-	rc = -dmu_buf_hold_array_by_bonus(&obj->oo_dn->dn_bonus->db, off, len,
-					  TRUE, osd_0copy_tag, &numbufs, &dbp);
+	rc = -ll_dmu_buf_hold_array_by_bonus(&obj->oo_dn->dn_bonus->db, off,
+					  len, TRUE, osd_0copy_tag, &numbufs,
+					  &dbp, DMU_READ_PREFETCH);
 	if (unlikely(rc))
 		return;
 
