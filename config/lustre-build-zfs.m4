@@ -568,6 +568,7 @@ your distribution.
 ]) # LB_CONFIG_ZFS
 
 AC_DEFUN([LZ_ZFS_KABI_SERIAL], [
+	AC_DEFINE(_KERNEL, 1, [Tell ZFS we are kernel space code])
 	LB_CHECK_COMPILE([if zfs defines dsl_pool_config_enter/exit],
 	dsl_pool_config_enter, [
 		#include <sys/dsl_pool.h>
@@ -969,5 +970,37 @@ AC_DEFUN([LZ_ZFS_KABI_SERIAL], [
 		AC_DEFINE([ll_dmu_assign_arcbuf_by_dbuf(h, off, buf, tx, f)],
 			  [dmu_assign_arcbuf_by_dbuf((h), (off), (buf), (tx))],
 			  [dmu_assign_arcbuf_by_dbuf does not have flags arg])
+	])
+	#
+	# zfs-2.4.0 commit 5847626175
+	# Pass flags to dmu_buf_hold_array_by_bonus()
+	#
+	# <  zfs-2.4.0, No flags arg:
+	# 	dmu_buf_hold_array_by_bonus() has 7 args
+	#
+	# >= zfs-2.4.0, Added dmu_flags_t arg:
+	# 	dmu_buf_hold_array_by_bonus() has 8 args
+	LB_CHECK_COMPILE([if ZFS has 'dmu_buf_hold_array_by_bonus has flags'],
+	dmu_write_hold_flags, [
+		#include <sys/zap.h>
+		#include <sys/dnode.h>
+		#include <sys/dmu.h>
+	],[
+		dmu_buf_t *h = NULL;
+		dmu_buf_t ***dbpp = NULL;
+		int numbufsp = 0;
+		(void) dmu_buf_hold_array_by_bonus(h, 0, 0, true, NULL, &numbufsp, dbpp, 0);
+	],[
+		AC_DEFINE([HAVE_DMU_HOLD_ARRAY_BY_BONUS_FLAGS], 1,
+			  [dmu_buf_hold_array_by_bonus has flags])
+		AC_DEFINE([ll_dmu_buf_hold_array_by_bonus(db, offset, len, read, tag, numbufsp, dbpp, flags)],
+			  [dmu_buf_hold_array_by_bonus((db), (offset), (len), (read), (tag), (numbufsp), (dbpp), (flags))],
+			  [dmu_buf_hold_array_by_bonus has 8 args])
+	],[
+		AC_DEFINE([HAVE_DMU_HOLD_ARRAY_BY_BONUS_NOFLAGS], 1,
+			  [dmu_buf_hold_array_by_bonus has no flags])
+		AC_DEFINE([ll_dmu_buf_hold_array_by_bonus(db, offset, len, read, tag, numbufsp, dbpp, flags)],
+			  [dmu_buf_hold_array_by_bonus((db), (offset), (len), (read), (tag), (numbufsp), (dbpp))],
+			  [dmu_buf_hold_array_by_bonus has 7 args])
 	])
 ])
