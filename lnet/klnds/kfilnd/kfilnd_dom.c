@@ -99,9 +99,9 @@ err:
  * Return: On success (matching domain is found), valid pointer is returned.
  * Else, NULL.
  */
-struct kfilnd_dom *kfilnd_dom_reuse(const char *node, const char *service,
-				    struct kfi_info *hints,
-				    struct kfilnd_fab *fab)
+static struct kfilnd_dom *kfilnd_dom_reuse(const char *node, const char *service,
+					   struct kfi_info *hints,
+					   struct kfilnd_fab *fab)
 {
 	struct kfilnd_dom *dom;
 	struct kfi_info *info;
@@ -214,8 +214,8 @@ err:
  * Return: On success (matching fabric is found), valid pointer is returned.
  * Else, NULL.
  */
-struct kfilnd_fab *kfilnd_fab_reuse(const char *node, const char *service,
-				    struct kfi_info *hints)
+static struct kfilnd_fab *kfilnd_fab_reuse(const char *node, const char *service,
+					   struct kfi_info *hints)
 {
 	struct kfilnd_fab *fab;
 	struct kfi_info *info;
