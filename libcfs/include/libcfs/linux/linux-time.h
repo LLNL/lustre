@@ -234,8 +234,13 @@ static inline unsigned long cfs_time_seconds(time64_t seconds)
 
 #ifdef HAVE_TIMER_SETUP
 #define cfs_timer_cb_arg_t struct timer_list *
+#if defined(timer_container_of)
+#define cfs_from_timer(var, callback_timer, timer_fieldname) \
+	timer_container_of(var, callback_timer, timer_fieldname)
+#else
 #define cfs_from_timer(var, callback_timer, timer_fieldname) \
 	from_timer(var, callback_timer, timer_fieldname)
+#endif
 #define cfs_timer_setup(timer, callback, data, flags) \
 	timer_setup((timer), (callback), (flags))
 #define cfs_timer_cb_arg(var, timer_fieldname) (&(var)->timer_fieldname)
